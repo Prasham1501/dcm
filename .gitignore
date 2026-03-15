@@ -1,0 +1,14 @@
+node_modules/
+dist/
+www/node_modules/
+www/dist/
+www/vendor/
+*.log
+.env
+*.exe
+php/
+mysql/
+orthanc/
+data/
+config/*.env
+!config/.env.example
