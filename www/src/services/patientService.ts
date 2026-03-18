@@ -130,8 +130,28 @@ export const patientService = {
     // Date range
     if (filters.dateRange && filters.dateRange !== 'all') {
       if (filters.dateRange === 'custom') {
-        if (filters.fromDate) params.set('studyDateFrom', filters.fromDate);
-        if (filters.toDate) params.set('studyDateTo', filters.toDate);
+        if (filters.month && filters.year) {
+          const y = parseInt(filters.year);
+          const m = parseInt(filters.month) - 1;
+          const firstDay = new Date(y, m, 1);
+          const lastDay = new Date(y, m + 1, 0);
+          const formatDate = (d: Date) => d.toISOString().split('T')[0];
+          params.set('studyDateFrom', formatDate(firstDay));
+          params.set('studyDateTo', formatDate(lastDay));
+        } else if (filters.year && !filters.month) {
+          params.set('studyDateFrom', `${filters.year}-01-01`);
+          params.set('studyDateTo', `${filters.year}-12-31`);
+        } else {
+          const formatCustomDate = (d: string) => {
+            if (/^\d{2}-\d{2}-\d{4}$/.test(d)) {
+              const parts = d.split('-'); // [DD, MM, YYYY]
+              return `${parts[2]}-${parts[1]}-${parts[0]}`;
+            }
+            return d;
+          };
+          if (filters.fromDate) params.set('studyDateFrom', formatCustomDate(filters.fromDate));
+          if (filters.toDate) params.set('studyDateTo', formatCustomDate(filters.toDate));
+        }
       } else {
         const { from, to } = formatDateForApi('', filters.dateRange);
         if (from) params.set('studyDateFrom', from);

@@ -37,7 +37,7 @@ export function PatientDateFilter() {
         {/* Month */}
         <select
           value={filters.month}
-          onChange={(e) => { setFilter('month', e.target.value); }}
+          onChange={(e) => { setFilter('month', e.target.value); setDateRange('custom'); }}
           className="h-6 px-1 text-xs border border-app-border bg-app-bg text-app-text rounded-sm"
         >
           <option value="">Month</option>
@@ -50,7 +50,7 @@ export function PatientDateFilter() {
         <input
           type="text"
           value={filters.fromDate || `15-03-${currentYear}`}
-          onChange={(e) => setFilter('fromDate', e.target.value)}
+          onChange={(e) => { setFilter('fromDate', e.target.value); setDateRange('custom'); }}
           className="w-20 h-6 px-1 text-xs border border-app-border bg-app-bg text-app-text rounded-sm"
           placeholder="DD-MM-YYYY"
         />
@@ -59,7 +59,7 @@ export function PatientDateFilter() {
         {/* Year */}
         <select
           value={filters.year || String(currentYear)}
-          onChange={(e) => setFilter('year', e.target.value)}
+          onChange={(e) => { setFilter('year', e.target.value); setDateRange('custom'); }}
           className="h-6 px-1 text-xs border border-app-border bg-app-bg text-app-text rounded-sm"
         >
           {years.map((y) => (
@@ -75,16 +75,16 @@ export function PatientDateFilter() {
         <input
           type="text"
           value={filters.fromDate || `15-03-${currentYear}`}
+          onChange={(e) => { setFilter('fromDate', e.target.value); setDateRange('custom'); }}
           className="w-20 h-6 px-1 text-xs border border-app-border bg-app-bg text-app-text rounded-sm"
-          readOnly
         />
         <span className="text-xs text-app-text-secondary">v</span>
         <span className="text-xs font-semibold text-app-accent">To</span>
         <input
           type="text"
           value={filters.toDate || `15-03-${currentYear}`}
+          onChange={(e) => { setFilter('toDate', e.target.value); setDateRange('custom'); }}
           className="w-20 h-6 px-1 text-xs border border-app-border bg-app-bg text-app-text rounded-sm"
-          readOnly
         />
         <span className="text-xs text-app-text-secondary">v</span>
       </div>

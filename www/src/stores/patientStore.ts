@@ -123,6 +123,32 @@ function matchesFilter(patient: Patient, filters: PatientFilters): boolean {
           if (studyDate < weekAgo) return false;
           break;
         }
+        case 'custom': {
+          if (filters.month && filters.year) {
+            if (studyDate.getMonth() + 1 !== parseInt(filters.month)) return false;
+            if (studyDate.getFullYear() !== parseInt(filters.year)) return false;
+          } else if (filters.year) {
+            if (studyDate.getFullYear() !== parseInt(filters.year)) return false;
+          } else {
+            const parseDDMMYYYY = (d: string) => {
+              if (/^\d{2}-\d{2}-\d{4}$/.test(d)) {
+                const parts = d.split('-');
+                return new Date(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0]));
+              }
+              return new Date(d);
+            };
+            if (filters.fromDate) {
+              const fromD = parseDDMMYYYY(filters.fromDate);
+              if (!isNaN(fromD.getTime()) && studyDate < fromD) return false;
+            }
+            if (filters.toDate) {
+              const toD = parseDDMMYYYY(filters.toDate);
+              toD.setHours(23, 59, 59, 999);
+              if (!isNaN(toD.getTime()) && studyDate > toD) return false;
+            }
+          }
+          break;
+        }
       }
     }
 
@@ -310,37 +336,44 @@ export const usePatientStore = create<PatientState>()(
   },
 
   applyFilters: async () => {
+    const { patients, filters } = get();
+
+    // Always apply local filtering immediately for instant feedback
+    const localFiltered = patients.filter((p) => matchesFilter(p, filters));
+    set({ filteredPatients: localFiltered, totalRecords: localFiltered.length });
+
     if (USE_API) {
       set({ loading: true, currentPage: 1 });
       try {
-        const { patients, pagination } = await patientService.fetchPatients(
+        const { patients: apiPatients, pagination } = await patientService.fetchPatients(
           get().filters,
           1,
           get().perPage,
           get().sortBy
         );
+        // Merge API results with any folder-synced patients that have local file paths
+        const existing = get().patients;
+        const apiIds = new Set(apiPatients.map((p) => p.patientId));
+        const folderOnly = existing.filter(
+          (p) => p.filePaths && p.filePaths.length > 0 && !apiIds.has(p.patientId)
+        );
+        const merged = [...apiPatients, ...folderOnly];
         set({
-          patients,
-          filteredPatients: patients,
+          patients: merged,
+          filteredPatients: merged,
           loading: false,
           currentPage: pagination.page,
           totalPages: pagination.total_pages,
           totalRecords: pagination.total,
         });
       } catch (err: any) {
-        set({ loading: false, error: err.message });
-      }
-    } else {
-      try {
-        const { patients, filters } = get();
-        const filtered = patients.filter((p) => matchesFilter(p, filters));
-        set({ filteredPatients: filtered, totalRecords: filtered.length, loading: false });
-      } catch (err: any) {
-        console.error('[patientStore] applyFilters error:', err);
-        set({ loading: false });
+        // API failed — keep local filter result already applied above
+        console.warn('[patientStore] applyFilters API call failed, using local filter:', err.message);
+        set({ loading: false, error: null });
       }
     }
   },
+
 
   clearFilters: () => {
     set({ filters: { ...defaultFilters } });
