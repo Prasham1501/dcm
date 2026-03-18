@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import type { Patient } from '@/types/patient';
 
 interface CreatePatientModalProps {
@@ -17,6 +17,53 @@ export function CreatePatientModal({ onSave, onClose }: CreatePatientModalProps)
     modality: 'US',
     accessionNumber: '',
   });
+  const [filePaths, setFilePaths] = useState<string[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  /** Pick DCM files via Electron dialog (if available) or browser file input */
+  const handleBrowseFiles = async () => {
+    const api = (window as any).electronAPI;
+    if (api?.invoke) {
+      try {
+        const result = await api.invoke('show-open-dialog', {
+          properties: ['openFile', 'multiSelections'],
+          filters: [
+            { name: 'DICOM Files', extensions: ['dcm', 'DCM'] },
+            { name: 'All Files', extensions: ['*'] },
+          ],
+          title: 'Select DICOM Files',
+        });
+        if (result && !result.canceled && result.filePaths?.length) {
+          setFilePaths(result.filePaths);
+        }
+      } catch { /* fallback to native input */ fileInputRef.current?.click(); }
+    } else {
+      fileInputRef.current?.click();
+    }
+  };
+
+  const handleBrowseFolder = async () => {
+    const api = (window as any).electronAPI;
+    if (api?.invoke) {
+      try {
+        const result = await api.invoke('show-open-dialog', {
+          properties: ['openDirectory'],
+          title: 'Select DICOM Folder',
+        });
+        if (result && !result.canceled && result.filePaths?.length) {
+          // Store folder path as a single entry (loader will scan it)
+          setFilePaths(result.filePaths);
+        }
+      } catch { /* ignore */ }
+    }
+  };
+
+  const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    // In browser mode, file.path may not be available; use file.name as fallback
+    const paths = files.map((f: any) => f.path || f.name).filter(Boolean);
+    if (paths.length) setFilePaths(paths);
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -34,11 +81,12 @@ export function CreatePatientModal({ onSave, onClose }: CreatePatientModalProps)
       sex: form.sex,
       studyDate,
       studyDescription: form.studyDescription,
-      images: 0,
+      images: filePaths.length || 0,
       modality: form.modality,
       accessionNumber: form.accessionNumber,
       referringPhysician: form.referringPhysician,
       printed: false,
+      filePaths: filePaths.length ? filePaths : undefined,
     };
     onSave(patient);
     onClose();
@@ -46,6 +94,15 @@ export function CreatePatientModal({ onSave, onClose }: CreatePatientModalProps)
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onClose}>
+      {/* Hidden native file input fallback */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".dcm,.DCM"
+        multiple
+        style={{ display: 'none' }}
+        onChange={handleFileInputChange}
+      />
       <div
         className="bg-app-bg border border-app-border rounded-lg shadow-xl p-6 min-w-[450px] max-w-lg"
         onClick={(e) => e.stopPropagation()}
@@ -134,6 +191,40 @@ export function CreatePatientModal({ onSave, onClose }: CreatePatientModalProps)
               />
             </div>
           </div>
+          {/* DCM File / Folder Path */}
+          <div>
+            <label className="block text-xs text-app-text-secondary mb-1">DCM Files / Folder (optional)</label>
+            <div className="flex gap-2">
+              <div className="flex-1 px-3 py-2 text-xs border border-app-border rounded bg-app-bg text-app-text truncate">
+                {filePaths.length === 0
+                  ? <span className="text-app-text-muted">No files selected</span>
+                  : filePaths.length === 1
+                    ? filePaths[0]
+                    : `${filePaths.length} files selected`
+                }
+              </div>
+              <button
+                type="button"
+                onClick={handleBrowseFiles}
+                className="px-3 py-2 text-xs border border-app-border rounded text-app-text hover:bg-app-hover transition-colors whitespace-nowrap"
+                title="Select .dcm files"
+              >
+                Files
+              </button>
+              <button
+                type="button"
+                onClick={handleBrowseFolder}
+                className="px-3 py-2 text-xs border border-app-border rounded text-app-text hover:bg-app-hover transition-colors whitespace-nowrap"
+                title="Select folder containing DICOM files"
+              >
+                Folder
+              </button>
+            </div>
+            {filePaths.length > 1 && (
+              <p className="text-[10px] text-app-text-muted mt-1 truncate">{filePaths[0]}</p>
+            )}
+          </div>
+
           <div className="flex justify-end gap-3 pt-3">
             <button
               type="button"

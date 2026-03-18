@@ -1,6 +1,8 @@
 import { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
+import JSZip from 'jszip';
 import { usePatientStore } from '@/stores/patientStore';
+import { useViewerStore } from '@/stores/viewerStore';
 import { EditPatientModal } from './EditPatientModal';
 import { CreatePatientModal } from './CreatePatientModal';
 import { ConfirmDialog } from '../shared/ConfirmDialog';
@@ -51,38 +53,72 @@ export function PatientActionBar() {
     e.target.value = '';
   };
 
-  const handleReadBackup = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleReadBackup = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      try {
-        const data = JSON.parse(ev.target?.result as string);
+    e.target.value = '';
+
+    try {
+      if (file.name.endsWith('.zip')) {
+        const zip = await JSZip.loadAsync(file);
+        const jsonFile = zip.file('patients.json');
+        if (!jsonFile) {
+          alert('Invalid backup ZIP: patients.json not found');
+          return;
+        }
+        const text = await jsonFile.async('string');
+        const data = JSON.parse(text);
+        if (Array.isArray(data)) {
+          importPatients(data);
+          alert(`Restored ${data.length} patient(s) from ZIP backup`);
+        } else {
+          alert('Invalid backup format in ZIP');
+        }
+      } else {
+        // JSON file
+        const text = await file.text();
+        const data = JSON.parse(text);
         if (Array.isArray(data)) {
           importPatients(data);
           alert(`Restored ${data.length} patient(s) from backup`);
         } else {
           alert('Invalid backup format: expected an array of patients');
         }
-      } catch {
-        alert('Failed to parse backup file');
       }
-    };
-    reader.readAsText(file);
-    e.target.value = '';
+    } catch {
+      alert('Failed to read backup file');
+    }
   };
 
-  const handleBackupSelected = () => {
+  const handleBackupSelected = async () => {
     const selected = patients.filter((p) => selectedPatients.has(p.id));
     if (selected.length === 0) {
       alert('No patients selected');
       return;
     }
-    const blob = new Blob([JSON.stringify(selected, null, 2)], { type: 'application/json' });
+
+    const zip = new JSZip();
+    const dateStr = new Date().toISOString().slice(0, 10);
+
+    // Add patient metadata JSON
+    zip.file('patients.json', JSON.stringify(selected, null, 2));
+
+    // Add a README
+    zip.file('README.txt', [
+      `DICOM Backup — ${dateStr}`,
+      `Patients: ${selected.length}`,
+      '',
+      'To restore: use "Read backup" and select this zip file.',
+      '',
+      'File paths are recorded in patients.json (filePaths field).',
+      'The original DICOM files are not included in this ZIP — only metadata.',
+    ].join('\n'));
+
+    const blob = await zip.generateAsync({ type: 'blob' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `dicom-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    a.download = `dicom-backup-${dateStr}.zip`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -91,7 +127,18 @@ export function PatientActionBar() {
     <div className="border-t border-app-border bg-app-surface">
       {/* Row 1: Action buttons */}
       <div className="flex items-center justify-center gap-1.5 px-3 py-1.5">
-        <ActionButton label="Open" onClick={() => navigate('/viewer')} />
+        <ActionButton label="Open" onClick={() => {
+          const p = selectedPatient;
+          if (p?.filePaths && p.filePaths.length > 0) {
+            useViewerStore.getState().loadStudyFiles({
+              patientName: p.patientName,
+              patientId: p.patientId,
+              studyDate: p.studyDate,
+              filePaths: p.filePaths,
+            });
+          }
+          navigate('/viewer');
+        }} />
         <ActionButton
           label="Edit"
           onClick={() => {
@@ -139,10 +186,7 @@ export function PatientActionBar() {
       {/* Row 2: Bottom buttons */}
       <div className="flex items-center justify-between px-3 py-1.5 border-t border-app-border">
         <div className="flex items-center gap-1.5">
-          <ActionButton
-            label="Nondicom"
-            onClick={() => alert('Non-DICOM import: Use Import DICOM to import files')}
-          />
+          {/* Nondicom button removed */}
         </div>
 
         <div className="flex items-center gap-3">
@@ -174,7 +218,7 @@ export function PatientActionBar() {
       <input
         ref={backupInputRef}
         type="file"
-        accept=".json"
+        accept=".json,.zip"
         className="hidden"
         onChange={handleReadBackup}
       />

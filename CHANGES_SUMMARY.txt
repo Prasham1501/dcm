@@ -1,0 +1,71 @@
+=============================================================
+MediView Pro - Changes Summary
+=============================================================
+
+1. SOFTWARE RENAMING
+   ✓ Renamed from "Accurate 15.2.7" to "MediView Pro 1.0"
+   ✓ Updated all pages: PatientListPage, PrintManagementPage, StudiesPage
+   ✓ Updated ToolsPanel dropdown options (Accurate -> MediView)
+   ✓ Updated About dialog in main.js
+
+2. NETWORK DICOM RECEIVER (New Feature)
+   ✓ Added DICOM C-STORE listener on port 3458
+   ✓ Created NetworkReceiverTab component in ConfigPage
+   ✓ Added IPC handlers for:
+     - get-network-dicom-path: Returns listening port and storage path
+     - get-received-dicom-files: Lists all received DICOM files
+   ✓ Files automatically saved to: [AppData]/network-dicom/
+   ✓ Real-time file monitoring in UI (auto-refresh every 5 seconds)
+   ✓ Added "Network" tab to Settings page
+
+3. FILES MODIFIED
+   - main.js: Added DICOM network receiver + IPC handlers
+   - preload.js: Added expose for invoke/on/off methods
+   - ConfigPage.tsx: Added Network tab
+   - NetworkReceiverTab.tsx: NEW - Configuration & monitoring UI
+   - PatientListPage.tsx: Renamed to "MediView Pro 1.0"
+   - PrintManagementPage.tsx: Renamed to "MediView Pro 1.0"
+   - StudiesPage.tsx: Renamed to "MediView Pro 1.0"
+   - ToolsPanel.tsx: Updated options dropdown
+
+4. FILES CREATED
+   - NetworkReceiverTab.tsx: Network receiver configuration component
+   - NETWORK_SETUP_GUIDE.md: Setup instructions for USG devices
+   - CHANGES_SUMMARY.txt: This file
+
+5. HOW TO USE NETWORK RECEIVER
+   Step 1: Start MediView Pro
+   Step 2: Go to Settings > Network tab
+   Step 3: Copy the IP:Port shown
+   Step 4: Configure your USG machine with this IP:Port
+   Step 5: Send DICOM files from USG - they'll appear in Network tab
+   Step 6: Files are auto-saved in [AppData]/network-dicom/
+
+6. NETWORK RECEIVER DETAILS
+   - Port: 3458 (configurable in main.js DICOM_LISTEN_PORT)
+   - Listen Address: 0.0.0.0 (all interfaces)
+   - Storage: [UserData]/network-dicom/
+   - File Naming: received_[timestamp].dcm
+   - Auto-detection: Detects DICOM by magic bytes (0x28 or DICM signature)
+
+7. UI IMPROVEMENTS
+   ✓ New Network tab in Settings with:
+     - Network address display (IP:Port)
+     - Copy to clipboard button
+     - Storage location with folder opener
+     - Setup instructions for USG configuration
+     - Real-time file list showing received DICOM files
+     - File size and timestamp display
+     - Refresh button for manual refresh
+     - Status indicator (green checkmark when ready)
+
+8. NEXT STEPS (Optional)
+   - Customize software name if "MediView Pro" not preferred
+   - Configure custom network port (edit DICOM_LISTEN_PORT in main.js)
+   - Add authentication/security for network receiver
+   - Integrate received files into patient database
+   - Add DICOM C-FIND and C-MOVE support
+
+=============================================================
+No buttons were removed as "Nondicom" was not found in the code.
+=============================================================

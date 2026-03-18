@@ -33,7 +33,9 @@
             {
                 "from": "php",
                 "to": "php",
-                "filter": ["**/*"]
+                "filter": [
+                    "**/*"
+                ]
             },
             {
                 "from": "mysql",
@@ -54,20 +56,31 @@
             {
                 "from": "orthanc",
                 "to": "orthanc",
-                "filter": ["**/*"]
+                "filter": [
+                    "**/*"
+                ]
             },
             {
                 "from": "www",
                 "to": "www",
                 "filter": [
-                    "**/*",
+                    "dist/**/*",
+                    "api/**/*",
+                    "auth/**/*",
+                    "includes/**/*",
+                    "database/**/*",
+                    "orthanc-config/**/*",
+                    "router.php",
+                    "index.html",
                     "!node_modules/**",
                     "!src/**",
                     "!.claude/**",
                     "!*.config.*",
                     "!tsconfig*",
                     "!postcss*",
-                    "!vite*"
+                    "!vite*",
+                    "!.env*",
+                    "!package*.json"
                 ]
             }
         ],
@@ -75,7 +88,9 @@
             "target": [
                 {
                     "target": "nsis",
-                    "arch": ["x64"]
+                    "arch": [
+                        "x64"
+                    ]
                 }
             ]
         },
@@ -88,5 +103,8 @@
             "shortcutName": "DICOM Viewer Pro"
         },
         "compression": "normal"
+    },
+    "dependencies": {
+        "dicom-parser": "^1.8.21"
     }
 }

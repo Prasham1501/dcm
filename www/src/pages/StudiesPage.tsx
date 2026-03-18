@@ -3,18 +3,22 @@ import { useNavigate } from 'react-router-dom';
 import { useThemeStore } from '@/stores/themeStore';
 import { useReportStore } from '@/stores/reportStore';
 import { useStudyMetaStore } from '@/stores/studyMetaStore';
+import { usePatientStore } from '@/stores/patientStore';
+import { useViewerStore } from '@/stores/viewerStore';
 import { Sun, Moon, ArrowLeft, FileText, Eye, Stethoscope, MessageSquare, Merge } from 'lucide-react';
-import { mockStudies, mockReports } from '@/data/mockStudies';
 import { DoctorModal } from '@/components/study/DoctorModal';
 import { RemarksModal } from '@/components/study/RemarksModal';
 import { ReportEditor } from '@/components/report/ReportEditor';
-import type { Study, Report } from '@/types/study';
+import type { Report } from '@/types/study';
 
 export function StudiesPage() {
   const navigate = useNavigate();
   const { mode, toggleTheme } = useThemeStore();
   const reportStore = useReportStore();
   const studyMeta = useStudyMetaStore();
+  const { patients } = usePatientStore();
+  const loadStudyFiles = useViewerStore((s) => s.loadStudyFiles);
+
   const [selectedStudyId, setSelectedStudyId] = useState<string | null>(null);
   const [reportPanelOpen, setReportPanelOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -23,37 +27,37 @@ export function StudiesPage() {
   const [showReportEditor, setShowReportEditor] = useState<{studyId: string; mode: 'create' | 'edit'} | null>(null);
 
   const filteredStudies = useMemo(() => {
-    if (!searchTerm) return mockStudies;
+    if (!searchTerm) return patients;
     const term = searchTerm.toLowerCase();
-    return mockStudies.filter(s =>
-      s.patientName.toLowerCase().includes(term) ||
-      s.patientId.toLowerCase().includes(term) ||
-      s.studyDescription.toLowerCase().includes(term) ||
-      s.accessionNumber.toLowerCase().includes(term)
+    return patients.filter(p =>
+      p.patientName.toLowerCase().includes(term) ||
+      p.patientId.toLowerCase().includes(term) ||
+      p.studyDescription.toLowerCase().includes(term) ||
+      p.accessionNumber.toLowerCase().includes(term)
     );
-  }, [searchTerm]);
+  }, [patients, searchTerm]);
 
-  const selectedStudy = mockStudies.find(s => s.id === selectedStudyId);
-  const selectedReport = selectedStudyId
-    ? (reportStore.getReport(selectedStudyId) || mockReports.find(r => r.studyId === selectedStudyId))
+  const selectedPatient = patients.find(p => p.id === selectedStudyId);
+  const selectedReport: Report | undefined = selectedStudyId
+    ? reportStore.getReport(selectedStudyId)
     : undefined;
 
-  const handleViewReport = (study: Study) => {
-    setSelectedStudyId(study.id);
+  const handleViewReport = (patientId: string) => {
+    setSelectedStudyId(patientId);
     setReportPanelOpen(true);
   };
 
-  const statusBadge = (status: Study['status']) => {
-    const colors = {
-      completed: 'bg-green-600 text-white',
-      pending: 'bg-yellow-500 text-black',
-      'in-progress': 'bg-blue-500 text-white',
-    };
-    return (
-      <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${colors[status]}`}>
-        {status.toUpperCase()}
-      </span>
-    );
+  const handleOpenInViewer = (patientId: string) => {
+    const p = patients.find(pt => pt.id === patientId);
+    if (p?.filePaths && p.filePaths.length > 0) {
+      loadStudyFiles({
+        patientName: p.patientName,
+        patientId: p.patientId,
+        studyDate: p.studyDate,
+        filePaths: p.filePaths,
+      });
+    }
+    navigate('/viewer');
   };
 
   return (
@@ -67,7 +71,7 @@ export function StudiesPage() {
           >
             <ArrowLeft className="w-4 h-4" />
           </button>
-          <span className="text-sm font-bold text-app-accent">Accurate 15.2.7</span>
+          <span className="text-sm font-bold text-app-accent">MediView Pro 1.0</span>
           <span className="text-xs text-app-text-muted">|</span>
           <span className="text-sm font-semibold text-app-text">Studies</span>
         </div>
@@ -80,9 +84,7 @@ export function StudiesPage() {
             className="h-7 w-56 px-2 text-xs border border-app-border bg-app-bg text-app-text rounded-sm focus:border-app-accent focus:outline-none"
           />
           <button
-            onClick={() => {
-              alert('Select 2 or more studies to merge by clicking their rows while holding Ctrl.');
-            }}
+            onClick={() => alert('Select 2 or more studies to merge by clicking their rows while holding Ctrl.')}
             className="px-3 py-1 text-xs font-semibold border-2 border-app-accent text-app-accent bg-app-bg rounded hover:bg-app-accent hover:text-white transition-colors flex items-center gap-1"
           >
             <Merge className="w-3 h-3" />
@@ -100,86 +102,101 @@ export function StudiesPage() {
       {/* Main content */}
       <div className="flex-1 flex overflow-hidden">
         {/* Studies table */}
-        <div className={`flex-1 overflow-auto transition-all ${reportPanelOpen ? '' : ''}`}>
-          <table className="w-full text-xs border-collapse">
-            <thead className="sticky top-0 z-10">
-              <tr className="bg-app-header-bg border-b-2 border-app-accent">
-                <th className="px-3 py-2.5 text-left font-bold text-app-accent uppercase tracking-wide border-r border-app-border">Patient</th>
-                <th className="px-3 py-2.5 text-left font-bold text-app-accent uppercase tracking-wide border-r border-app-border w-24">Date</th>
-                <th className="px-3 py-2.5 text-left font-bold text-app-accent uppercase tracking-wide border-r border-app-border w-20">Modality</th>
-                <th className="px-3 py-2.5 text-left font-bold text-app-accent uppercase tracking-wide border-r border-app-border w-28">Description</th>
-                <th className="px-3 py-2.5 text-left font-bold text-app-accent uppercase tracking-wide border-r border-app-border w-20">Series</th>
-                <th className="px-3 py-2.5 text-left font-bold text-app-accent uppercase tracking-wide border-r border-app-border w-20">Images</th>
-                <th className="px-3 py-2.5 text-left font-bold text-app-accent uppercase tracking-wide border-r border-app-border w-20">Status</th>
-                <th className="px-3 py-2.5 text-center font-bold text-app-accent uppercase tracking-wide w-48">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredStudies.map((study) => (
-                <tr
-                  key={study.id}
-                  onClick={() => setSelectedStudyId(study.id)}
-                  className={`border-b border-app-border cursor-pointer transition-colors ${
-                    selectedStudyId === study.id
-                      ? 'bg-blue-600 text-white'
-                      : 'hover:bg-app-hover text-app-text'
-                  }`}
-                >
-                  <td className="px-3 py-2.5 border-r border-app-border">
-                    <div className="font-semibold">{study.patientName}</div>
-                    <div className={`text-[10px] font-mono ${selectedStudyId === study.id ? 'text-blue-100' : 'text-app-text-muted'}`}>
-                      {study.patientId}
-                    </div>
-                  </td>
-                  <td className="px-3 py-2.5 border-r border-app-border">{study.studyDate}</td>
-                  <td className="px-3 py-2.5 border-r border-app-border font-semibold">{study.modality}</td>
-                  <td className="px-3 py-2.5 border-r border-app-border">{study.studyDescription}</td>
-                  <td className="px-3 py-2.5 border-r border-app-border text-center">{study.seriesCount}</td>
-                  <td className="px-3 py-2.5 border-r border-app-border text-center">{study.instanceCount}</td>
-                  <td className="px-3 py-2.5 border-r border-app-border">{statusBadge(study.status)}</td>
-                  <td className="px-3 py-2.5">
-                    <div className="flex items-center justify-center gap-1">
-                      <ActionBtn
-                        icon={<Eye className="w-3 h-3" />}
-                        label="View"
-                        onClick={(e) => { e.stopPropagation(); navigate('/viewer'); }}
-                        selected={selectedStudyId === study.id}
-                      />
-                      <ActionBtn
-                        icon={<FileText className="w-3 h-3" />}
-                        label="Report"
-                        onClick={(e) => { e.stopPropagation(); handleViewReport(study); }}
-                        selected={selectedStudyId === study.id}
-                        highlight={study.hasReport}
-                      />
-                      <ActionBtn
-                        icon={<Stethoscope className="w-3 h-3" />}
-                        label="Doctor"
-                        onClick={(e) => { e.stopPropagation(); setShowDoctorModal(study.id); }}
-                        selected={selectedStudyId === study.id}
-                      />
-                      <ActionBtn
-                        icon={<MessageSquare className="w-3 h-3" />}
-                        label="Remarks"
-                        onClick={(e) => { e.stopPropagation(); setShowRemarksModal(study.id); }}
-                        selected={selectedStudyId === study.id}
-                      />
-                    </div>
-                  </td>
+        <div className="flex-1 overflow-auto">
+          {filteredStudies.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-full text-app-text-muted">
+              <FileText className="w-16 h-16 mb-4 opacity-20" />
+              <p className="text-sm font-semibold">No studies available</p>
+              <p className="text-xs mt-1">Use the folder sync on the patients page to load DICOM studies</p>
+              <button
+                onClick={() => navigate('/')}
+                className="mt-4 px-4 py-1.5 text-xs font-semibold border-2 border-app-accent text-app-accent bg-app-bg rounded hover:bg-app-accent hover:text-white transition-colors"
+              >
+                Go to Patients
+              </button>
+            </div>
+          ) : (
+            <table className="w-full text-xs border-collapse">
+              <thead className="sticky top-0 z-10">
+                <tr className="bg-app-header-bg border-b-2 border-app-accent">
+                  <th className="px-3 py-2.5 text-left font-bold text-app-accent uppercase tracking-wide border-r border-app-border">Patient</th>
+                  <th className="px-3 py-2.5 text-left font-bold text-app-accent uppercase tracking-wide border-r border-app-border w-24">Date</th>
+                  <th className="px-3 py-2.5 text-left font-bold text-app-accent uppercase tracking-wide border-r border-app-border w-16">Mod</th>
+                  <th className="px-3 py-2.5 text-left font-bold text-app-accent uppercase tracking-wide border-r border-app-border w-28">Description</th>
+                  <th className="px-3 py-2.5 text-left font-bold text-app-accent uppercase tracking-wide border-r border-app-border w-16">Images</th>
+                  <th className="px-3 py-2.5 text-left font-bold text-app-accent uppercase tracking-wide border-r border-app-border w-20">Doctor</th>
+                  <th className="px-3 py-2.5 text-center font-bold text-app-accent uppercase tracking-wide w-48">Actions</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {filteredStudies.map((patient) => {
+                  const hasReport = !!reportStore.getReport(patient.id);
+                  const assignedDoctor = studyMeta.doctors[patient.id] || patient.referringPhysician;
+                  return (
+                    <tr
+                      key={patient.id}
+                      onClick={() => setSelectedStudyId(patient.id)}
+                      className={`border-b border-app-border cursor-pointer transition-colors ${
+                        selectedStudyId === patient.id
+                          ? 'bg-blue-600 text-white'
+                          : 'hover:bg-app-hover text-app-text'
+                      }`}
+                    >
+                      <td className="px-3 py-2.5 border-r border-app-border">
+                        <div className="font-semibold">{patient.patientName}</div>
+                        <div className={`text-[10px] font-mono ${selectedStudyId === patient.id ? 'text-blue-100' : 'text-app-text-muted'}`}>
+                          {patient.patientId}
+                        </div>
+                      </td>
+                      <td className="px-3 py-2.5 border-r border-app-border">{patient.studyDate}</td>
+                      <td className="px-3 py-2.5 border-r border-app-border font-semibold">{patient.modality}</td>
+                      <td className="px-3 py-2.5 border-r border-app-border">{patient.studyDescription}</td>
+                      <td className="px-3 py-2.5 border-r border-app-border text-center">{patient.images}</td>
+                      <td className="px-3 py-2.5 border-r border-app-border text-[10px] truncate max-w-[80px]">{assignedDoctor || '—'}</td>
+                      <td className="px-3 py-2.5">
+                        <div className="flex items-center justify-center gap-1">
+                          <ActionBtn
+                            icon={<Eye className="w-3 h-3" />}
+                            label="View"
+                            onClick={(e) => { e.stopPropagation(); handleOpenInViewer(patient.id); }}
+                            selected={selectedStudyId === patient.id}
+                          />
+                          <ActionBtn
+                            icon={<FileText className="w-3 h-3" />}
+                            label="Report"
+                            onClick={(e) => { e.stopPropagation(); handleViewReport(patient.id); }}
+                            selected={selectedStudyId === patient.id}
+                            highlight={hasReport}
+                          />
+                          <ActionBtn
+                            icon={<Stethoscope className="w-3 h-3" />}
+                            label="Doctor"
+                            onClick={(e) => { e.stopPropagation(); setShowDoctorModal(patient.id); }}
+                            selected={selectedStudyId === patient.id}
+                          />
+                          <ActionBtn
+                            icon={<MessageSquare className="w-3 h-3" />}
+                            label="Remarks"
+                            onClick={(e) => { e.stopPropagation(); setShowRemarksModal(patient.id); }}
+                            selected={selectedStudyId === patient.id}
+                          />
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
         </div>
 
-        {/* Report panel (collapsible right side) */}
+        {/* Report panel */}
         {reportPanelOpen && (
           <div className="w-[45%] border-l-2 border-app-accent flex flex-col bg-app-surface overflow-hidden">
-            {/* Report header */}
             <div className="flex items-center justify-between px-4 py-2 bg-app-header-bg border-b border-app-border">
               <span className="text-xs font-bold text-app-accent">
                 {selectedReport ? 'Report' : 'No Report'}
-                {selectedStudy && ` - ${selectedStudy.patientName}`}
+                {selectedPatient && ` - ${selectedPatient.patientName}`}
               </span>
               <div className="flex items-center gap-2">
                 {!selectedReport && selectedStudyId && (
@@ -194,12 +211,10 @@ export function StudiesPage() {
                   onClick={() => setReportPanelOpen(false)}
                   className="text-app-text-muted hover:text-app-text text-lg font-bold px-1"
                 >
-                  x
+                  ×
                 </button>
               </div>
             </div>
-
-            {/* Report content */}
             <div className="flex-1 overflow-auto p-4">
               {selectedReport ? (
                 <ReportView
@@ -231,9 +246,8 @@ export function StudiesPage() {
       <div className="flex items-center justify-between px-4 py-1 bg-app-statusbar-bg border-t border-app-border text-xs text-app-text-secondary">
         <span>Total Studies: {filteredStudies.length}</span>
         <span>
-          Completed: {filteredStudies.filter(s => s.status === 'completed').length} |
-          Pending: {filteredStudies.filter(s => s.status === 'pending').length} |
-          In Progress: {filteredStudies.filter(s => s.status === 'in-progress').length}
+          With Reports: {filteredStudies.filter(p => !!reportStore.getReport(p.id)).length} |
+          Without Reports: {filteredStudies.filter(p => !reportStore.getReport(p.id)).length}
         </span>
       </div>
 
@@ -241,31 +255,31 @@ export function StudiesPage() {
       {showDoctorModal && (
         <DoctorModal
           studyId={showDoctorModal}
-          currentDoctor={studyMeta.doctors[showDoctorModal] || filteredStudies.find(s => s.id === showDoctorModal)?.referringPhysician || ''}
+          currentDoctor={studyMeta.doctors[showDoctorModal] || patients.find(p => p.id === showDoctorModal)?.referringPhysician || ''}
           onClose={() => setShowDoctorModal(null)}
         />
       )}
       {showRemarksModal && (() => {
-        const study = filteredStudies.find(s => s.id === showRemarksModal);
+        const patient = patients.find(p => p.id === showRemarksModal);
         return (
           <RemarksModal
             studyId={showRemarksModal}
-            studyDescription={study?.studyDescription || ''}
+            studyDescription={patient?.studyDescription || ''}
             onClose={() => setShowRemarksModal(null)}
           />
         );
       })()}
       {showReportEditor && (() => {
-        const study = filteredStudies.find(s => s.id === showReportEditor.studyId);
+        const patient = patients.find(p => p.id === showReportEditor.studyId);
         const existingReport = reportStore.getReport(showReportEditor.studyId);
         return (
           <ReportEditor
             studyId={showReportEditor.studyId}
             mode={showReportEditor.mode}
             existingReport={showReportEditor.mode === 'edit' ? existingReport : undefined}
-            patientName={study?.patientName}
-            studyDate={study?.studyDate}
-            studyDescription={study?.studyDescription}
+            patientName={patient?.patientName}
+            studyDate={patient?.studyDate}
+            studyDescription={patient?.studyDescription}
             onClose={() => setShowReportEditor(null)}
             onSave={() => { setShowReportEditor(null); }}
           />
@@ -309,7 +323,6 @@ function ReportView({ report, onEdit, onPrint, onExport }: {
 }) {
   return (
     <div className="space-y-4">
-      {/* Report title */}
       <div className="pb-3 border-b-2 border-app-accent">
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-bold text-app-accent">{report.title}</h3>
@@ -326,45 +339,22 @@ function ReportView({ report, onEdit, onPrint, onExport }: {
           <span>Doctor: {report.doctor}</span>
         </div>
       </div>
-
-      {/* Findings */}
       <div>
         <h4 className="text-xs font-bold text-app-accent mb-1">FINDINGS</h4>
         <p className="text-xs text-app-text leading-relaxed">{report.findings}</p>
       </div>
-
-      {/* Impression */}
       <div>
         <h4 className="text-xs font-bold text-app-accent mb-1">IMPRESSION</h4>
         <p className="text-xs text-app-text leading-relaxed">{report.impression}</p>
       </div>
-
-      {/* Recommendation */}
       <div>
         <h4 className="text-xs font-bold text-app-accent mb-1">RECOMMENDATION</h4>
         <p className="text-xs text-app-text leading-relaxed">{report.recommendation}</p>
       </div>
-
-      {/* Action buttons */}
       <div className="flex gap-2 pt-3 border-t border-app-border">
-        <button
-          onClick={onEdit}
-          className="px-3 py-1 text-xs font-semibold border-2 border-app-accent text-app-accent bg-app-bg rounded hover:bg-app-accent hover:text-white transition-colors"
-        >
-          Edit Report
-        </button>
-        <button
-          onClick={onPrint}
-          className="px-3 py-1 text-xs font-semibold border-2 border-app-accent text-app-accent bg-app-bg rounded hover:bg-app-accent hover:text-white transition-colors"
-        >
-          Print Report
-        </button>
-        <button
-          onClick={onExport}
-          className="px-3 py-1 text-xs font-semibold border-2 border-app-accent text-app-accent bg-app-bg rounded hover:bg-app-accent hover:text-white transition-colors"
-        >
-          Export PDF
-        </button>
+        <button onClick={onEdit} className="px-3 py-1 text-xs font-semibold border-2 border-app-accent text-app-accent bg-app-bg rounded hover:bg-app-accent hover:text-white transition-colors">Edit Report</button>
+        <button onClick={onPrint} className="px-3 py-1 text-xs font-semibold border-2 border-app-accent text-app-accent bg-app-bg rounded hover:bg-app-accent hover:text-white transition-colors">Print Report</button>
+        <button onClick={onExport} className="px-3 py-1 text-xs font-semibold border-2 border-app-accent text-app-accent bg-app-bg rounded hover:bg-app-accent hover:text-white transition-colors">Export PDF</button>
       </div>
     </div>
   );

@@ -1,0 +1,797 @@
+/**
+ * DicomViewport - Renders a single DICOM image using Cornerstone.js.
+ * Custom mouse controls: scroll=zoom, right-drag=W/L, left-click=tool.
+ * Supports text/stamp annotations (HTML overlays) and hold-to-draw (canvas overlay).
+ * Uses capture-phase events so stamp/text always work even when cornerstone tools were used.
+ */
+import { useEffect, useRef, useCallback, memo, useState } from 'react';
+import { cornerstone, cornerstoneTools } from '@/lib/cornerstoneSetup';
+import { useViewerStore } from '@/stores/viewerStore';
+
+// ---- Text / Stamp annotation types ----
+interface TextAnnotation {
+  id: string;
+  text: string;
+  xPercent: number; // 0-100
+  yPercent: number; // 0-100
+  color: string;
+  fontSize: number;
+  type: 'text' | 'stamp';
+}
+
+// ---- Draw path annotation ----
+interface DrawPath {
+  id: string;
+  points: { x: number; y: number }[];
+  color: string;
+  strokeWidth: number;
+}
+
+// Global annotation storage keyed by imageUrl
+const annotationMap = new Map<string, TextAnnotation[]>();
+const drawPathMap = new Map<string, DrawPath[]>();
+
+function getAnnotations(imageUrl: string): TextAnnotation[] {
+  return annotationMap.get(imageUrl) || [];
+}
+
+function addAnnotation(imageUrl: string, ann: TextAnnotation) {
+  const list = annotationMap.get(imageUrl) || [];
+  list.push(ann);
+  annotationMap.set(imageUrl, list);
+}
+
+function removeAnnotation(imageUrl: string, annId: string) {
+  const list = annotationMap.get(imageUrl) || [];
+  annotationMap.set(imageUrl, list.filter((a) => a.id !== annId));
+}
+
+function getDrawPaths(imageUrl: string): DrawPath[] {
+  return drawPathMap.get(imageUrl) || [];
+}
+
+function addDrawPath(imageUrl: string, path: DrawPath) {
+  const list = drawPathMap.get(imageUrl) || [];
+  list.push(path);
+  drawPathMap.set(imageUrl, list);
+}
+
+function removeDrawPath(imageUrl: string, pathId: string) {
+  const list = drawPathMap.get(imageUrl) || [];
+  drawPathMap.set(imageUrl, list.filter((p) => p.id !== pathId));
+}
+
+// ---- Component ----
+interface DicomViewportProps {
+  imageId: string | null;
+  isSelected: boolean;
+  isMultiSelected?: boolean;
+  onClick: (e: React.MouseEvent) => void;
+  viewportIndex: number;
+  activeTool?: string;
+  imageStack?: string[];
+  stackIndex?: number;
+  onImageDrop?: (imageUrl: string) => void;
+}
+
+function DicomViewportInner({
+  imageId,
+  isSelected,
+  isMultiSelected = false,
+  onClick,
+  viewportIndex,
+  imageStack,
+  stackIndex,
+  onImageDrop,
+}: DicomViewportProps) {
+  const elementRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const enabledRef = useRef(false);
+  const currentImageIdRef = useRef<string | null>(null);
+
+  // Right-click W/L drag state
+  const rightDragRef = useRef<{
+    startX: number;
+    startY: number;
+    startWW: number;
+    startWC: number;
+  } | null>(null);
+
+  // Text annotation state
+  const [annotations, setAnnotations] = useState<TextAnnotation[]>([]);
+  const [pendingInput, setPendingInput] = useState<{
+    xPercent: number;
+    yPercent: number;
+    type: 'text' | 'stamp';
+  } | null>(null);
+  const [inputText, setInputText] = useState('');
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // Draw/polyline state
+  const [drawPaths, setDrawPaths] = useState<DrawPath[]>([]);
+  const isDrawingRef = useRef(false);
+  const currentDrawPathRef = useRef<{ x: number; y: number }[]>([]);
+  const drawCanvasRef = useRef<HTMLCanvasElement>(null);
+
+  // Sync annotations when imageId changes
+  useEffect(() => {
+    if (imageId) {
+      setAnnotations([...getAnnotations(imageId)]);
+      setDrawPaths([...getDrawPaths(imageId)]);
+    } else {
+      setAnnotations([]);
+      setDrawPaths([]);
+    }
+    setPendingInput(null);
+    isDrawingRef.current = false;
+  }, [imageId]);
+
+  // Listen for annotation updates from other viewports (multi-select placement)
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail as { imageId: string };
+      if (detail?.imageId === imageId) {
+        setAnnotations([...getAnnotations(detail.imageId)]);
+        setDrawPaths([...getDrawPaths(detail.imageId)]);
+      }
+    };
+    window.addEventListener('dicom-annotations-updated', handler);
+    return () => window.removeEventListener('dicom-annotations-updated', handler);
+  }, [imageId]);
+
+  // Focus input when it appears
+  useEffect(() => {
+    if (pendingInput && inputRef.current) {
+      inputRef.current.focus();
+    }
+  }, [pendingInput]);
+
+  // Enable cornerstone on mount
+  useEffect(() => {
+    const el = elementRef.current;
+    if (!el) return;
+    try {
+      cornerstone.enable(el);
+      enabledRef.current = true;
+    } catch { /* may already be enabled */ }
+    return () => {
+      if (enabledRef.current && el) {
+        try { cornerstone.disable(el); } catch { /* ignore */ }
+        enabledRef.current = false;
+      }
+    };
+  }, []);
+
+  // Sync viewport state (W/L, zoom) back to store on every render
+  // This catches changes made by cornerstone tools (Wwwc, Zoom, Pan) interactively
+  useEffect(() => {
+    const el = elementRef.current;
+    if (!el) return;
+
+    const handleImageRendered = () => {
+      if (!enabledRef.current) return;
+      const { selectedViewport, setLevel, setWidth, setZoom } = useViewerStore.getState();
+      // Only sync from the selected viewport to avoid conflicts
+      if (viewportIndex !== selectedViewport) return;
+      try {
+        const vp = cornerstone.getViewport(el);
+        if (vp) {
+          if (vp.voi) {
+            setLevel(Math.round(vp.voi.windowCenter));
+            setWidth(Math.round(vp.voi.windowWidth));
+          }
+          if (vp.scale) {
+            setZoom(vp.scale);
+          }
+        }
+      } catch { /* ignore */ }
+    };
+
+    el.addEventListener('cornerstoneimagerendered', handleImageRendered);
+    return () => el.removeEventListener('cornerstoneimagerendered', handleImageRendered);
+  }, [viewportIndex]);
+
+  // Listen for clear-annotations event (from Reset / Clear All)
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      const targetEl = detail?.element;
+      // Clear if this viewport's element matches, or if no specific element given
+      if (!targetEl || targetEl === elementRef.current) {
+        if (imageId) {
+          annotationMap.set(imageId, []);
+          drawPathMap.set(imageId, []);
+          setAnnotations([]);
+          setDrawPaths([]);
+        }
+      }
+    };
+    window.addEventListener('dicom-clear-annotations', handler);
+    return () => window.removeEventListener('dicom-clear-annotations', handler);
+  }, [imageId]);
+
+  // Load image when imageId changes
+  useEffect(() => {
+    const el = elementRef.current;
+    if (!el || !imageId || !enabledRef.current) return;
+    if (currentImageIdRef.current === imageId) return;
+    let cancelled = false;
+
+    cornerstone.loadImage(imageId).then(
+      (image: any) => {
+        if (cancelled || !enabledRef.current) return;
+        try {
+          cornerstone.displayImage(el, image);
+          currentImageIdRef.current = imageId;
+
+          if (viewportIndex === 0) {
+            const wc = image.windowCenter ?? 127;
+            const ww = image.windowWidth ?? 255;
+            const { setLevel, setWidth } = useViewerStore.getState();
+            setLevel(Array.isArray(wc) ? wc[0] : wc);
+            setWidth(Array.isArray(ww) ? ww[0] : ww);
+          }
+
+          if (imageStack && imageStack.length > 0) {
+            const stack = {
+              currentImageIdIndex: stackIndex ?? 0,
+              imageIds: imageStack,
+            };
+            cornerstoneTools.addStackStateManager(el, ['stack']);
+            cornerstoneTools.addToolState(el, 'stack', stack);
+          }
+
+          cornerstone.resize(el, true);
+        } catch (err) {
+          console.warn('[Viewport] displayImage error:', err);
+        }
+      },
+      (err: any) => {
+        if (!cancelled) {
+          console.warn('[Viewport] loadImage failed:', imageId, err?.message || err);
+        }
+      }
+    );
+
+    return () => { cancelled = true; };
+  }, [imageId, imageStack, stackIndex, viewportIndex]);
+
+  // Handle resize
+  useEffect(() => {
+    const el = elementRef.current;
+    if (!el || !enabledRef.current) return;
+    const observer = new ResizeObserver(() => {
+      try { cornerstone.resize(el, true); } catch { /* ignore */ }
+      // Also resize draw canvas
+      const canvas = drawCanvasRef.current;
+      if (canvas && el.parentElement) {
+        canvas.width = el.parentElement.clientWidth;
+        canvas.height = el.parentElement.clientHeight;
+      }
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  // ---- MOUSE WHEEL = ZOOM ----
+  useEffect(() => {
+    const el = elementRef.current;
+    if (!el) return;
+    const parent = el.parentElement;
+    if (!parent) return;
+
+    const handleWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (!enabledRef.current) return;
+
+      try {
+        const viewport = cornerstone.getViewport(el);
+        if (!viewport) return;
+        const zoomSensitivity = 0.002;
+        const zoomDirection = e.deltaY > 0 ? -1 : 1;
+        const zoomFactor = 1 + (zoomDirection * zoomSensitivity * Math.abs(e.deltaY));
+        viewport.scale = Math.max(0.1, Math.min(10, viewport.scale * zoomFactor));
+        cornerstone.setViewport(el, viewport);
+        useViewerStore.getState().setZoom(viewport.scale);
+      } catch { /* ignore */ }
+    };
+
+    parent.addEventListener('wheel', handleWheel, { passive: false, capture: true });
+    return () => parent.removeEventListener('wheel', handleWheel, true);
+  }, []);
+
+  // ---- RIGHT-CLICK DRAG = WINDOW/LEVEL ----
+  useEffect(() => {
+    const handleGlobalMouseMove = (e: MouseEvent) => {
+      if (!rightDragRef.current) return;
+      const el = elementRef.current;
+      if (!el || !enabledRef.current) return;
+
+      const dx = e.clientX - rightDragRef.current.startX;
+      const dy = e.clientY - rightDragRef.current.startY;
+      const newWW = Math.max(1, rightDragRef.current.startWW + dx * 3.0);
+      const newWC = rightDragRef.current.startWC + dy * 2.0;
+
+      try {
+        const viewport = cornerstone.getViewport(el);
+        if (viewport) {
+          viewport.voi = { windowWidth: newWW, windowCenter: newWC };
+          cornerstone.setViewport(el, viewport);
+          useViewerStore.getState().setWidth(Math.round(newWW));
+          useViewerStore.getState().setLevel(Math.round(newWC));
+        }
+      } catch { /* ignore */ }
+    };
+
+    const handleGlobalMouseUp = (e: MouseEvent) => {
+      if (e.button === 2) {
+        rightDragRef.current = null;
+        document.body.style.cursor = '';
+      }
+    };
+
+    document.addEventListener('mousemove', handleGlobalMouseMove);
+    document.addEventListener('mouseup', handleGlobalMouseUp);
+    return () => {
+      document.removeEventListener('mousemove', handleGlobalMouseMove);
+      document.removeEventListener('mouseup', handleGlobalMouseUp);
+    };
+  }, []);
+
+  // ---- DRAW CANVAS HELPERS ----
+  const redrawCanvas = useCallback(() => {
+    const canvas = drawCanvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // Draw in-progress path
+    if (isDrawingRef.current && currentDrawPathRef.current.length > 1) {
+      ctx.beginPath();
+      ctx.strokeStyle = '#ffff00';
+      ctx.lineWidth = 2;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      const pts = currentDrawPathRef.current;
+      ctx.moveTo(pts[0].x, pts[0].y);
+      for (let i = 1; i < pts.length; i++) {
+        ctx.lineTo(pts[i].x, pts[i].y);
+      }
+      ctx.stroke();
+    }
+  }, []);
+
+  // ---- CAPTURE-PHASE NATIVE EVENT HANDLER ----
+  // This fires BEFORE cornerstone-tools event listeners, ensuring
+  // stamp/text/draw/polyline always work even when cornerstone tools were previously used.
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const handleCaptureMouseDown = (e: MouseEvent) => {
+      if (e.button !== 0) return; // only left click
+
+      // Skip if the click is inside a pending input popup (stamp presets, text input, OK/Cancel buttons).
+      // Without this check, clicking OK/Cancel would create a NEW pending input at the button position.
+      const target = e.target as HTMLElement;
+      if (target.closest('[data-pending-input]')) return;
+
+      const tool = useViewerStore.getState().activeToolId;
+
+      // ---- STAMP ----
+      if (tool === 'stamp' && imageId) {
+        e.stopPropagation();
+        e.preventDefault();
+        const rect = container.getBoundingClientRect();
+        const xPercent = ((e.clientX - rect.left) / rect.width) * 100;
+        const yPercent = ((e.clientY - rect.top) / rect.height) * 100;
+        setPendingInput({ xPercent, yPercent, type: 'stamp' });
+        setInputText('VERIFIED');
+        return;
+      }
+
+      // ---- TEXT ----
+      if (tool === 'text' && imageId) {
+        e.stopPropagation();
+        e.preventDefault();
+        const rect = container.getBoundingClientRect();
+        const xPercent = ((e.clientX - rect.left) / rect.width) * 100;
+        const yPercent = ((e.clientY - rect.top) / rect.height) * 100;
+        setPendingInput({ xPercent, yPercent, type: 'text' });
+        setInputText('');
+        return;
+      }
+
+      // ---- DRAW / POLYLINE (hold to draw) ----
+      if ((tool === 'draw' || tool === 'polyline') && imageId) {
+        e.stopPropagation();
+        e.preventDefault();
+        isDrawingRef.current = true;
+        const rect = container.getBoundingClientRect();
+        currentDrawPathRef.current = [{ x: e.clientX - rect.left, y: e.clientY - rect.top }];
+        redrawCanvas();
+        return;
+      }
+    };
+
+    const handleCaptureMouseMove = (e: MouseEvent) => {
+      if (!isDrawingRef.current) return;
+      const tool = useViewerStore.getState().activeToolId;
+      if (tool !== 'draw' && tool !== 'polyline') return;
+      const rect = container.getBoundingClientRect();
+      currentDrawPathRef.current.push({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+      redrawCanvas();
+    };
+
+    const handleCaptureMouseUp = (e: MouseEvent) => {
+      if (e.button !== 0) return;
+      if (!isDrawingRef.current) return;
+      isDrawingRef.current = false;
+
+      const pts = [...currentDrawPathRef.current];
+      currentDrawPathRef.current = [];
+
+      // Clear drawing canvas
+      const canvas = drawCanvasRef.current;
+      if (canvas) {
+        const ctx = canvas.getContext('2d');
+        ctx?.clearRect(0, 0, canvas.width, canvas.height);
+      }
+
+      if (pts.length > 2 && imageId) {
+        // Normalize to percentages for storage
+        const rect = container.getBoundingClientRect();
+        const pctPoints = pts.map((p) => ({
+          x: (p.x / rect.width) * 100,
+          y: (p.y / rect.height) * 100,
+        }));
+
+        const newPath: DrawPath = {
+          id: `path-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+          points: pctPoints,
+          color: '#ffff00',
+          strokeWidth: 2,
+        };
+        addDrawPath(imageId, newPath);
+        setDrawPaths([...getDrawPaths(imageId)]);
+
+        // Notify other selected viewports
+        placeOnAllSelectedViewports(imageId, newPath);
+      }
+    };
+
+    container.addEventListener('mousedown', handleCaptureMouseDown, { capture: true });
+    container.addEventListener('mousemove', handleCaptureMouseMove, { capture: true });
+    container.addEventListener('mouseup', handleCaptureMouseUp, { capture: true });
+
+    return () => {
+      container.removeEventListener('mousedown', handleCaptureMouseDown, true);
+      container.removeEventListener('mousemove', handleCaptureMouseMove, true);
+      container.removeEventListener('mouseup', handleCaptureMouseUp, true);
+    };
+  }, [imageId, redrawCanvas]);
+
+  // ---- MULTI-VIEWPORT ANNOTATION HELPERS ----
+  function placeOnAllSelectedViewports(sourceImageId: string, drawPath: DrawPath) {
+    const { selectedViewportIndices, selectedViewport } = useViewerStore.getState();
+    if (selectedViewportIndices.length <= 1) return;
+
+    selectedViewportIndices.forEach((vpIdx) => {
+      const vpEl = document.querySelector(`[data-viewport-index="${vpIdx}"]`) as HTMLDivElement;
+      if (!vpEl) return;
+      try {
+        const cs = (window as any).__cornerstone;
+        if (cs) {
+          const enabled = cs.getEnabledElement(vpEl);
+          const targetImageId = enabled?.image?.imageId;
+          if (targetImageId && targetImageId !== sourceImageId) {
+            addDrawPath(targetImageId, { ...drawPath, id: `path-${Date.now()}-${Math.random().toString(36).substr(2, 5)}` });
+            window.dispatchEvent(new CustomEvent('dicom-annotations-updated', { detail: { imageId: targetImageId } }));
+          }
+        }
+      } catch { /* ignore */ }
+    });
+    void selectedViewport; // suppress unused
+  }
+
+  function placeTextOnAllSelectedViewports(sourceImageId: string, ann: TextAnnotation) {
+    const { selectedViewportIndices } = useViewerStore.getState();
+    if (selectedViewportIndices.length <= 1) return;
+
+    selectedViewportIndices.forEach((vpIdx) => {
+      const vpEl = document.querySelector(`[data-viewport-index="${vpIdx}"]`) as HTMLDivElement;
+      if (!vpEl) return;
+      try {
+        const cs = (window as any).__cornerstone;
+        if (cs) {
+          const enabled = cs.getEnabledElement(vpEl);
+          const targetImageId = enabled?.image?.imageId;
+          if (targetImageId && targetImageId !== sourceImageId) {
+            addAnnotation(targetImageId, { ...ann, id: `ann-${Date.now()}-${Math.random().toString(36).substr(2, 5)}` });
+            window.dispatchEvent(new CustomEvent('dicom-annotations-updated', { detail: { imageId: targetImageId } }));
+          }
+        }
+      } catch { /* ignore */ }
+    });
+  }
+
+  // ---- REACT MOUSE DOWN (right-click + viewport selection) ----
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    if (e.button === 2) {
+      e.preventDefault();
+      const el = elementRef.current;
+      if (!el || !enabledRef.current) return;
+      try {
+        const viewport = cornerstone.getViewport(el);
+        if (viewport) {
+          rightDragRef.current = {
+            startX: e.clientX,
+            startY: e.clientY,
+            startWW: viewport.voi?.windowWidth || 255,
+            startWC: viewport.voi?.windowCenter || 127,
+          };
+          document.body.style.cursor = 'ew-resize';
+        }
+      } catch { /* ignore */ }
+    } else if (e.button === 0) {
+      // Only call onClick for regular tools (not stamp/text/draw/polyline — handled by capture)
+      const tool = useViewerStore.getState().activeToolId;
+      if (tool !== 'stamp' && tool !== 'text' && tool !== 'draw' && tool !== 'polyline') {
+        onClick(e);
+      }
+    }
+  }, [onClick]);
+
+  // ---- SUBMIT TEXT/STAMP ANNOTATION ----
+  const handleSubmitAnnotation = useCallback(() => {
+    if (!pendingInput || !inputText.trim() || !imageId) return;
+    const newAnn: TextAnnotation = {
+      id: `ann-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+      text: inputText.trim(),
+      xPercent: pendingInput.xPercent,
+      yPercent: pendingInput.yPercent,
+      color: pendingInput.type === 'stamp' ? '#ff0000' : '#ffff00',
+      fontSize: pendingInput.type === 'stamp' ? 18 : 14,
+      type: pendingInput.type,
+    };
+    addAnnotation(imageId, newAnn);
+    setAnnotations([...getAnnotations(imageId)]);
+
+    // Apply to all selected viewports too
+    placeTextOnAllSelectedViewports(imageId, newAnn);
+
+    setPendingInput(null);
+    setInputText('');
+  }, [pendingInput, inputText, imageId]);
+
+  const handleDeleteAnnotation = useCallback((annId: string) => {
+    if (!imageId) return;
+    removeAnnotation(imageId, annId);
+    setAnnotations([...getAnnotations(imageId)]);
+  }, [imageId]);
+
+  const handleDeleteDrawPath = useCallback((pathId: string) => {
+    if (!imageId) return;
+    removeDrawPath(imageId, pathId);
+    setDrawPaths([...getDrawPaths(imageId)]);
+  }, [imageId]);
+
+  // ---- DRAG-AND-DROP ----
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = 'copy';
+  }, []);
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const imageUrl = e.dataTransfer.getData('application/dicom-image-url');
+    if (imageUrl && onImageDrop) onImageDrop(imageUrl);
+  }, [onImageDrop]);
+
+  const borderClass = isMultiSelected
+    ? 'border-yellow-400'
+    : isSelected
+    ? 'border-blue-500'
+    : 'border-gray-700';
+
+  return (
+    <div
+      ref={containerRef}
+      className={`absolute inset-0 bg-black cursor-crosshair overflow-hidden border-2 rounded ${borderClass}`}
+      onMouseDown={handleMouseDown}
+      onContextMenu={(e) => e.preventDefault()}
+      onDragOver={handleDragOver}
+      onDrop={handleDrop}
+    >
+      {/* Cornerstone render target */}
+      <div
+        ref={elementRef}
+        data-viewport-index={viewportIndex}
+        className="absolute inset-0"
+        style={{ width: '100%', height: '100%' }}
+        onContextMenu={(e) => e.preventDefault()}
+      />
+
+      {/* Draw canvas overlay (for hold-to-draw) */}
+      <canvas
+        ref={drawCanvasRef}
+        className="absolute inset-0 z-10 pointer-events-none"
+        style={{ width: '100%', height: '100%' }}
+      />
+
+      {/* Empty state */}
+      {!imageId && (
+        <div className="absolute inset-0 flex items-center justify-center text-gray-500 text-xs z-10 pointer-events-none">
+          Empty
+        </div>
+      )}
+
+      {/* Stored draw path annotations (SVG) */}
+      {drawPaths.length > 0 && (
+        <svg
+          className="absolute inset-0 z-20 pointer-events-none"
+          style={{ width: '100%', height: '100%' }}
+          viewBox="0 0 100 100"
+          preserveAspectRatio="none"
+        >
+          {drawPaths.map((path) => (
+            <polyline
+              key={path.id}
+              points={path.points.map((p) => `${p.x},${p.y}`).join(' ')}
+              fill="none"
+              stroke={path.color}
+              strokeWidth="0.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          ))}
+        </svg>
+      )}
+
+      {/* Draw path delete buttons (shown on hover) */}
+      {drawPaths.map((path) => {
+        if (path.points.length === 0) return null;
+        const midIdx = Math.floor(path.points.length / 2);
+        const mid = path.points[midIdx];
+        return (
+          <button
+            key={`del-${path.id}`}
+            onClick={() => handleDeleteDrawPath(path.id)}
+            className="absolute z-30 w-4 h-4 bg-red-600 text-white rounded-full text-[8px] flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity cursor-pointer"
+            style={{ left: `${mid.x}%`, top: `${mid.y}%`, transform: 'translate(-50%,-50%)' }}
+            title="Delete path"
+          >
+            ×
+          </button>
+        );
+      })}
+
+      {/* Text/Stamp annotations overlay */}
+      {annotations.map((ann) => (
+        <div
+          key={ann.id}
+          className="absolute z-20 group select-none"
+          style={{
+            left: `${ann.xPercent}%`,
+            top: `${ann.yPercent}%`,
+            transform: 'translate(-50%, -50%)',
+          }}
+        >
+          <span
+            className={`inline-block px-1.5 py-0.5 rounded font-bold whitespace-nowrap ${
+              ann.type === 'stamp'
+                ? 'border-2 border-current uppercase tracking-wider'
+                : ''
+            }`}
+            style={{
+              color: ann.color,
+              fontSize: `${ann.fontSize}px`,
+              backgroundColor: 'rgba(0,0,0,0.6)',
+              fontFamily: 'Arial, sans-serif',
+              textShadow: '1px 1px 2px rgba(0,0,0,0.8)',
+            }}
+          >
+            {ann.text}
+          </span>
+          <button
+            onClick={(e) => { e.stopPropagation(); handleDeleteAnnotation(ann.id); }}
+            className="absolute -top-2 -right-2 w-4 h-4 bg-red-600 text-white rounded-full text-[8px] flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+            title="Delete annotation"
+          >
+            ×
+          </button>
+        </div>
+      ))}
+
+      {/* Pending text/stamp input */}
+      {pendingInput && (
+        <div
+          className="absolute z-30"
+          data-pending-input="true"
+          style={{
+            left: `${pendingInput.xPercent}%`,
+            top: `${pendingInput.yPercent}%`,
+            transform: 'translate(-50%, -50%)',
+          }}
+          onClick={(e) => e.stopPropagation()}
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          <div className="bg-gray-800 border border-blue-500 rounded-lg p-2 shadow-xl min-w-[180px]">
+            <div className="text-[10px] text-blue-400 font-bold mb-1 uppercase">
+              {pendingInput.type === 'stamp' ? 'Place Stamp' : 'Add Text'}
+            </div>
+            {pendingInput.type === 'stamp' ? (
+              <div className="space-y-1">
+                <div className="grid grid-cols-3 gap-1">
+                  {['VERIFIED', 'REVIEWED', 'APPROVED', 'REJECT', 'PENDING', 'URGENT'].map((s) => (
+                    <button
+                      key={s}
+                      onClick={() => {
+                        const newAnn: TextAnnotation = {
+                          id: `ann-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+                          text: s,
+                          xPercent: pendingInput.xPercent,
+                          yPercent: pendingInput.yPercent,
+                          color: '#ff0000',
+                          fontSize: 18,
+                          type: 'stamp',
+                        };
+                        addAnnotation(imageId!, newAnn);
+                        setAnnotations([...getAnnotations(imageId!)]);
+                        placeTextOnAllSelectedViewports(imageId!, newAnn);
+                        setPendingInput(null);
+                      }}
+                      className="px-1 py-1 text-[8px] font-bold border rounded uppercase border-gray-600 text-gray-300 hover:border-red-400 hover:text-red-300"
+                    >
+                      {s}
+                    </button>
+                  ))}
+                </div>
+                <button
+                  onClick={() => setPendingInput(null)}
+                  className="w-full px-2 py-0.5 text-[10px] text-gray-400 hover:text-white"
+                >
+                  Cancel
+                </button>
+              </div>
+            ) : (
+              <div className="flex gap-1">
+                <input
+                  ref={inputRef}
+                  type="text"
+                  value={inputText}
+                  onChange={(e) => setInputText(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleSubmitAnnotation();
+                    if (e.key === 'Escape') setPendingInput(null);
+                  }}
+                  placeholder="Type text..."
+                  className="flex-1 px-2 py-1 text-xs bg-gray-900 text-white border border-gray-600 rounded focus:outline-none focus:border-blue-500"
+                  autoFocus
+                />
+                <button
+                  onClick={handleSubmitAnnotation}
+                  className="px-2 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-500"
+                >
+                  OK
+                </button>
+                <button
+                  onClick={() => setPendingInput(null)}
+                  className="px-1.5 py-1 text-xs text-gray-400 hover:text-white"
+                >
+                  ×
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export const DicomViewport = memo(DicomViewportInner);

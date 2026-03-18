@@ -3,16 +3,10 @@
   "configurations": [
     {
       "name": "vite-dev",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["vite", "--port", "5173"],
       "port": 5173,
       "cwd": "www"
-    },
-    {
-      "name": "electron",
-      "runtimeExecutable": "npx",
-      "runtimeArgs": ["electron", "."],
-      "port": 8080
     }
   ]
 }

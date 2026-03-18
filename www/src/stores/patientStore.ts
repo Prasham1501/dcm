@@ -1,10 +1,9 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { Patient, PatientFilters, DateRangePreset } from '@/types/patient';
-import { mockPatients } from '@/data/mockPatients';
 import { patientService } from '@/services/patientService';
 
-// Set to true to use real API, false for mock data
+// Set to true to use real API (PHP backend), false for local file mode
 const USE_API = import.meta.env.VITE_USE_API === 'true';
 
 interface PatientState {
@@ -15,6 +14,9 @@ interface PatientState {
   filters: PatientFilters;
   loading: boolean;
   error: string | null;
+  folderPath: string;
+  syncing: boolean;
+  syncError: string | null;
 
   // Pagination (from API)
   currentPage: number;
@@ -26,6 +28,8 @@ interface PatientState {
   // Actions
   loadPatients: () => Promise<void>;
   fetchPage: (page: number) => Promise<void>;
+  scanFolder: (dirPath: string) => Promise<void>;
+  setFolderPath: (path: string) => void;
   selectPatient: (patient: Patient | null) => void;
   togglePatientSelection: (id: string) => void;
   selectAll: () => void;
@@ -43,6 +47,7 @@ interface PatientState {
   deleteSelected: () => void;
   importPatients: (newPatients: Patient[]) => void;
   exportSelected: () => Patient[];
+  importToManagedStorage: (filePaths: string[], destDir?: string) => Promise<{ imported: string[]; errors: string[]; managedDir: string }>;
 }
 
 const defaultFilters: PatientFilters = {
@@ -60,46 +65,71 @@ const defaultFilters: PatientFilters = {
 };
 
 // Local filter for mock data mode
+// NOTE: All field accesses are null-safe (use || '') to avoid crashes on
+// incomplete records loaded from localStorage.
 function matchesFilter(patient: Patient, filters: PatientFilters): boolean {
-  if (filters.patientId && !patient.patientId.toLowerCase().includes(filters.patientId.toLowerCase())) return false;
-  if (filters.patientName && !patient.patientName.toLowerCase().includes(filters.patientName.toLowerCase())) return false;
-  if (filters.referringPhysician && !patient.referringPhysician.toLowerCase().includes(filters.referringPhysician.toLowerCase())) return false;
-  if (filters.studyDescription && !patient.studyDescription.toLowerCase().includes(filters.studyDescription.toLowerCase())) return false;
-  if (filters.accessionNumber && !patient.accessionNumber.toLowerCase().includes(filters.accessionNumber.toLowerCase())) return false;
-  if (filters.modality && !patient.modality.toLowerCase().includes(filters.modality.toLowerCase())) return false;
+  try {
+    const pId   = (patient.patientId          || '').toLowerCase();
+    const pName = (patient.patientName        || '').toLowerCase();
+    const pRef  = (patient.referringPhysician || '').toLowerCase();
+    const pDesc = (patient.studyDescription   || '').toLowerCase();
+    const pAcc  = (patient.accessionNumber    || '').toLowerCase();
+    const pMod  = (patient.modality           || '').toLowerCase();
 
-  if (filters.dateRange !== 'all') {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const parts = patient.studyDate.split('-');
-    const studyDate = new Date(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0]));
+    if (filters.patientId          && !pId.includes(filters.patientId.toLowerCase()))          return false;
+    if (filters.patientName        && !pName.includes(filters.patientName.toLowerCase()))       return false;
+    if (filters.referringPhysician && !pRef.includes(filters.referringPhysician.toLowerCase())) return false;
+    if (filters.studyDescription   && !pDesc.includes(filters.studyDescription.toLowerCase()))  return false;
+    if (filters.accessionNumber    && !pAcc.includes(filters.accessionNumber.toLowerCase()))    return false;
+    if (filters.modality           && !pMod.includes(filters.modality.toLowerCase()))           return false;
 
-    switch (filters.dateRange) {
-      case 'today':
-        if (studyDate.toDateString() !== today.toDateString()) return false;
-        break;
-      case 'yesterday': {
-        const yesterday = new Date(today);
-        yesterday.setDate(yesterday.getDate() - 1);
-        if (studyDate.toDateString() !== yesterday.toDateString()) return false;
-        break;
+    if (filters.dateRange && filters.dateRange !== 'all') {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      // Support both DD-MM-YYYY and YYYY-MM-DD formats
+      const raw = patient.studyDate || '';
+      let studyDate: Date;
+      if (/^\d{2}-\d{2}-\d{4}$/.test(raw)) {
+        const parts = raw.split('-');
+        studyDate = new Date(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0]));
+      } else if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+        studyDate = new Date(raw);
+      } else {
+        studyDate = new Date(raw);
       }
-      case 'yesterdayAndToday': {
-        const yesterday = new Date(today);
-        yesterday.setDate(yesterday.getDate() - 1);
-        if (studyDate < yesterday || studyDate > today) return false;
-        break;
-      }
-      case 'last7days': {
-        const weekAgo = new Date(today);
-        weekAgo.setDate(weekAgo.getDate() - 7);
-        if (studyDate < weekAgo) return false;
-        break;
+
+      if (isNaN(studyDate.getTime())) return true; // can't parse date — don't exclude
+
+      switch (filters.dateRange) {
+        case 'today':
+          if (studyDate.toDateString() !== today.toDateString()) return false;
+          break;
+        case 'yesterday': {
+          const yesterday = new Date(today);
+          yesterday.setDate(yesterday.getDate() - 1);
+          if (studyDate.toDateString() !== yesterday.toDateString()) return false;
+          break;
+        }
+        case 'yesterdayAndToday': {
+          const yesterday = new Date(today);
+          yesterday.setDate(yesterday.getDate() - 1);
+          if (studyDate < yesterday || studyDate > today) return false;
+          break;
+        }
+        case 'last7days': {
+          const weekAgo = new Date(today);
+          weekAgo.setDate(weekAgo.getDate() - 7);
+          if (studyDate < weekAgo) return false;
+          break;
+        }
       }
     }
-  }
 
-  return true;
+    return true;
+  } catch {
+    return true; // never hide a patient due to filter crash
+  }
 }
 
 export const usePatientStore = create<PatientState>()(
@@ -112,6 +142,9 @@ export const usePatientStore = create<PatientState>()(
   filters: { ...defaultFilters },
   loading: false,
   error: null,
+  folderPath: '',
+  syncing: false,
+  syncError: null,
 
   currentPage: 1,
   totalPages: 1,
@@ -124,40 +157,71 @@ export const usePatientStore = create<PatientState>()(
 
     if (USE_API) {
       try {
-        const { patients, pagination } = await patientService.fetchPatients(
+        const { patients: apiPatients, pagination } = await patientService.fetchPatients(
           get().filters,
           1,
           get().perPage,
           get().sortBy
         );
+
+        // Preserve filePaths/studyInstanceUID from existing patients (e.g. from folder sync)
+        const existing = get().patients;
+        const existingMap = new Map<string, Patient>();
+        existing.forEach((p) => {
+          existingMap.set(p.patientId, p);
+          if (p.studyInstanceUID) existingMap.set(p.studyInstanceUID, p);
+        });
+
+        const mergedPatients = apiPatients.map((ap) => {
+          const prev = existingMap.get(ap.patientId);
+          if (prev?.filePaths && prev.filePaths.length > 0 && !ap.filePaths) {
+            return { ...ap, filePaths: prev.filePaths, studyInstanceUID: prev.studyInstanceUID || ap.studyInstanceUID };
+          }
+          return ap;
+        });
+
+        // Also keep folder-synced patients that aren't in API results
+        const apiIds = new Set(apiPatients.map((p) => p.patientId));
+        const folderOnlyPatients = existing.filter(
+          (p) => p.filePaths && p.filePaths.length > 0 && !apiIds.has(p.patientId)
+        );
+
+        const patients = [...mergedPatients, ...folderOnlyPatients];
+
         set({
           patients,
           filteredPatients: patients,
           loading: false,
           currentPage: pagination.page,
           totalPages: pagination.total_pages,
-          totalRecords: pagination.total,
+          totalRecords: patients.length,
         });
-      } catch (err: any) {
-        console.error('Failed to load patients from API:', err);
-        // Fallback to mock data on error
+      } catch {
+        // API unavailable — keep persisted patients (from folder sync), don't override with mock
+        const { patients, filters } = get();
         set({
-          patients: mockPatients,
-          filteredPatients: mockPatients,
+          filteredPatients: patients.filter((p) => matchesFilter(p, filters)),
           loading: false,
-          error: err.message || 'Failed to load patients',
-          totalRecords: mockPatients.length,
+          totalRecords: patients.length,
           totalPages: 1,
         });
       }
     } else {
-      set({
-        patients: mockPatients,
-        filteredPatients: mockPatients,
-        loading: false,
-        totalRecords: mockPatients.length,
-        totalPages: 1,
-      });
+      // Local mode: show all persisted patients and apply current filters
+      const { patients, filters } = get();
+      try {
+        const filtered = patients.filter((p) => matchesFilter(p, filters));
+        set({
+          filteredPatients: filtered,
+          loading: false,
+          totalRecords: patients.length,
+          totalPages: 1,
+        });
+      } catch (err: any) {
+        console.error('[patientStore] loadPatients filter error:', err);
+        // Fallback: show all patients unfiltered
+        set({ filteredPatients: patients, loading: false, totalRecords: patients.length, totalPages: 1 });
+      }
     }
   },
 
@@ -189,15 +253,29 @@ export const usePatientStore = create<PatientState>()(
   },
 
   selectPatient: (patient) => {
-    set({ selectedPatient: patient });
+    // Also sync selectedPatients Set so Delete Selected / Backup Selected work on the clicked row
+    const next = new Set<string>();
+    if (patient) next.add(patient.id);
+    set({ selectedPatient: patient, selectedPatients: next });
   },
 
   togglePatientSelection: (id) => {
-    const { selectedPatients } = get();
+    const { selectedPatients, patients, filteredPatients } = get();
     const next = new Set(selectedPatients);
-    if (next.has(id)) next.delete(id);
-    else next.add(id);
-    set({ selectedPatients: next });
+    const adding = !next.has(id);
+    if (adding) next.add(id); else next.delete(id);
+
+    // Keep selectedPatient in sync: point to the last added patient, or
+    // the first remaining selected one when deselecting.
+    const allPatients = [...patients, ...filteredPatients];
+    const patientObj = allPatients.find((p) => p.id === id) ?? null;
+    const selectedPatient = adding
+      ? patientObj
+      : (next.size > 0
+          ? allPatients.find((p) => next.has(p.id)) ?? null
+          : null);
+
+    set({ selectedPatients: next, selectedPatient });
   },
 
   selectAll: () => {
@@ -253,9 +331,14 @@ export const usePatientStore = create<PatientState>()(
         set({ loading: false, error: err.message });
       }
     } else {
-      const { patients, filters } = get();
-      const filtered = patients.filter((p) => matchesFilter(p, filters));
-      set({ filteredPatients: filtered, totalRecords: filtered.length });
+      try {
+        const { patients, filters } = get();
+        const filtered = patients.filter((p) => matchesFilter(p, filters));
+        set({ filteredPatients: filtered, totalRecords: filtered.length, loading: false });
+      } catch (err: any) {
+        console.error('[patientStore] applyFilters error:', err);
+        set({ loading: false });
+      }
     }
   },
 
@@ -290,6 +373,73 @@ export const usePatientStore = create<PatientState>()(
     if (USE_API) {
       await patientService.deleteOldStudies(months);
       get().loadPatients();
+    } else {
+      const cutoff = new Date();
+      cutoff.setMonth(cutoff.getMonth() - months);
+      set((state) => {
+        const patients = state.patients.filter((p) => {
+          const parts = p.studyDate.split('-');
+          if (parts.length === 3) {
+            const d = new Date(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0]));
+            return d >= cutoff;
+          }
+          return true;
+        });
+        return {
+          patients,
+          filteredPatients: patients.filter((p) => matchesFilter(p, state.filters)),
+          totalRecords: patients.length,
+        };
+      });
+    }
+  },
+
+  setFolderPath: (folderPath: string) => {
+    set({ folderPath });
+  },
+
+  scanFolder: async (dirPath: string) => {
+    set({ syncing: true, syncError: null, folderPath: dirPath });
+    try {
+      // Use Electron DICOM server if available, otherwise Vite dev server
+      const isElectron = !!(window as any).electronAPI?.isElectron;
+      const scanBase = isElectron ? 'http://localhost:3457' : '';
+      const response = await fetch(`${scanBase}/api/dicom/scan-patients?dir=${encodeURIComponent(dirPath)}`);
+      const data = await response.json();
+      if (!data.success) {
+        throw new Error(data.error || 'Scan failed');
+      }
+
+      const scannedPatients: Patient[] = data.patients.map((p: any) => ({
+        id: p.id || p.studyInstanceUID,
+        patientId: p.patientId,
+        patientName: p.patientName,
+        age: p.age,
+        sex: (p.sex === 'M' || p.sex === 'F' || p.sex === 'O') ? p.sex : '' as const,
+        studyDate: p.studyDate,
+        studyDescription: p.studyDescription,
+        images: p.images,
+        modality: p.modality,
+        accessionNumber: p.accessionNumber,
+        referringPhysician: p.referringPhysician,
+        printed: false,
+        studyInstanceUID: p.studyInstanceUID,
+        filePaths: p.filePaths,
+      }));
+
+      // Full replace: discard all old patients (including stale database records
+      // with no filePaths) and use only the freshly scanned results.
+      const { filters } = get();
+
+      set({
+        patients: scannedPatients,
+        filteredPatients: scannedPatients.filter((p) => matchesFilter(p, filters)),
+        totalRecords: scannedPatients.length,
+        syncing: false,
+        selectedPatient: null,
+      });
+    } catch (err: any) {
+      set({ syncing: false, syncError: err.message || 'Failed to scan folder' });
     }
   },
 
@@ -351,11 +501,25 @@ export const usePatientStore = create<PatientState>()(
     const { patients, selectedPatients } = get();
     return patients.filter((p) => selectedPatients.has(p.id));
   },
+
+  importToManagedStorage: async (filePaths, destDir) => {
+    const isElectron = !!(window as any).electronAPI?.isElectron;
+    const importBase = isElectron ? 'http://localhost:3457' : '';
+    const response = await fetch(`${importBase}/api/dicom/import-file`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filePaths, destDir }),
+    });
+    const data = await response.json();
+    if (!data.success) throw new Error(data.error || 'Import failed');
+    return { imported: data.imported, errors: data.errors, managedDir: data.managedDir };
+  },
 }),
     {
       name: 'patient-store',
       partialize: (state) => ({
         patients: state.patients,
+        folderPath: state.folderPath,
       }),
       storage: {
         getItem: (name) => {

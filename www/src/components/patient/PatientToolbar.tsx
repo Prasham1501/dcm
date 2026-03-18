@@ -4,7 +4,7 @@ import { usePrintStore } from '@/stores/printStore';
 
 export function PatientToolbar() {
   const navigate = useNavigate();
-  const { filteredPatients, loadPatients, setDateRange } = usePatientStore();
+  const { filteredPatients, loadPatients } = usePatientStore();
   const { printCountRemaining } = usePrintStore();
   const printedCount = filteredPatients.filter((p) => p.printed).length;
 
@@ -49,28 +49,10 @@ export function PatientToolbar() {
       {/* Right section */}
       <div className="flex items-center gap-2">
         <button
-          onClick={() => { loadPatients(); alert('Synced successfully'); }}
-          className="px-3 py-1 text-xs font-semibold border-2 border-app-accent text-app-accent bg-app-bg rounded hover:bg-app-accent hover:text-white transition-colors"
-        >
-          Online sync
-        </button>
-        <button
           onClick={loadPatients}
           className="px-3 py-1 text-xs font-semibold border-2 border-app-accent text-app-accent bg-app-bg rounded hover:bg-app-accent hover:text-white transition-colors"
         >
           Refresh
-        </button>
-        <button
-          onClick={() => setDateRange('today')}
-          className="px-3 py-1 text-xs font-semibold border-2 border-app-accent text-app-accent bg-app-bg rounded hover:bg-app-accent hover:text-white transition-colors"
-        >
-          Updated today
-        </button>
-        <button
-          onClick={() => navigate('/viewer')}
-          className="px-3 py-1 text-xs font-semibold border-2 border-app-accent text-app-accent bg-app-bg rounded hover:bg-app-accent hover:text-white transition-colors"
-        >
-          Cine
         </button>
       </div>
     </div>

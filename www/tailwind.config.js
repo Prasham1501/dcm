@@ -5,7 +5,22 @@ export default {
   theme: {
     extend: {
       colors: {
-        // Semantic colors using CSS custom properties
+        // App-specific colors (Accurate style)
+        'app-bg': 'var(--app-bg)',
+        'app-surface': 'var(--app-surface)',
+        'app-header-bg': 'var(--app-header-bg)',
+        'app-hover': 'var(--app-hover)',
+        'app-border': 'var(--app-border)',
+        'app-accent': 'var(--app-accent)',
+        'app-accent-hover': 'var(--app-accent-hover)',
+        'app-text': 'var(--app-text)',
+        'app-text-secondary': 'var(--app-text-secondary)',
+        'app-text-muted': 'var(--app-text-muted)',
+        'app-thumbnail-bg': 'var(--app-thumbnail-bg)',
+        'app-statusbar-bg': 'var(--app-statusbar-bg)',
+        'app-viewer-bg': 'var(--app-viewer-bg)',
+
+        // Legacy semantic colors
         background: {
           DEFAULT: 'var(--bg-primary)',
           secondary: 'var(--bg-secondary)',
@@ -39,7 +54,7 @@ export default {
         },
       },
       fontFamily: {
-        sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
+        sans: ['Segoe UI', 'Inter', '-apple-system', 'BlinkMacSystemFont', 'Roboto', 'sans-serif'],
         mono: ['JetBrains Mono', 'Fira Code', 'monospace'],
       },
       fontSize: {

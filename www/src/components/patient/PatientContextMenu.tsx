@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useViewerStore } from '@/stores/viewerStore';
 import type { Patient } from '@/types/patient';
 
 interface Props {
@@ -12,18 +13,32 @@ interface Props {
 export function PatientContextMenu({ x, y, patient, onClose }: Props) {
   const menuRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
+  const loadStudyFiles = useViewerStore((s) => s.loadStudyFiles);
   const [showSendTo, setShowSendTo] = useState(false);
+
+  const openInViewer = (layoutParam?: string) => {
+    // If patient has real file paths from folder sync, load them
+    if (patient.filePaths && patient.filePaths.length > 0) {
+      loadStudyFiles({
+        patientName: patient.patientName,
+        patientId: patient.patientId,
+        studyDate: patient.studyDate,
+        filePaths: patient.filePaths,
+      });
+    }
+    navigate(layoutParam ? `/viewer?layout=${layoutParam}` : '/viewer');
+  };
 
   const handleAction = (action: string) => {
     switch (action) {
       case 'open':
-        navigate('/viewer');
+        openInViewer();
         break;
       case 'open-dual':
-        navigate('/viewer?layout=2x1');
+        openInViewer('2x1');
         break;
       case 'open-cr':
-        navigate('/viewer?layout=1x1');
+        openInViewer('1x1');
         break;
       case 'export': {
         const blob = new Blob([JSON.stringify(patient, null, 2)], { type: 'application/json' });

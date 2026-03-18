@@ -23,5 +23,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
     saveCredentials: (credentials) => ipcRenderer.invoke('save-credentials', credentials),
     getCredentials: () => ipcRenderer.invoke('get-credentials'),
     clearCredentials: () => ipcRenderer.invoke('clear-credentials'),
-    hasAutoLoginCredentials: () => ipcRenderer.invoke('has-credentials')
+    hasAutoLoginCredentials: () => ipcRenderer.invoke('has-credentials'),
+
+    // DICOM File Server
+    getDicomPort: () => ipcRenderer.invoke('get-dicom-port'),
+
+    // Network DICOM Receiver
+    invoke: (channel, ...args) => ipcRenderer.invoke(channel, ...args),
+    on: (channel, callback) => ipcRenderer.on(channel, callback),
+    off: (channel, callback) => ipcRenderer.off(channel, callback)
 });
