@@ -11,7 +11,7 @@ import {
   Square, Circle, RotateCw, FlipHorizontal,
   CircleDot, Mouse, SlidersHorizontal,
   RotateCcwIcon, Move, ZoomIn, Triangle, Pipette,
-  FlipVertical, Play, StopCircle, Undo2, X, Pencil, Eraser,
+  FlipVertical, Play, StopCircle, Undo2, X, Pencil, Eraser, ListOrdered,
 } from 'lucide-react';
 
 interface ToolDef {
@@ -67,6 +67,7 @@ const allTools: ToolDef[] = [
   { id: 'square', label: 'Square', icon: Square },
   { id: 'ellipse', label: 'Ellipse', icon: Circle },
   // Navigation
+  { id: 'arrange', label: 'Arrange', icon: ListOrdered },
   { id: 'pan', label: 'Pan', icon: Move },
   { id: 'zoom', label: 'Zoom', icon: ZoomIn },
   { id: 'wwwc', label: 'W/L', icon: SlidersHorizontal },
@@ -113,6 +114,7 @@ export function ToolsPanel() {
     activeToolId, setActiveTool,
     isPlaying, startCine, stopCine, setShowCine,
     selectAllViewports, selectedViewportIndices,
+    isArrangeMode, toggleArrangeMode,
   } = useViewerStore();
   // Print store kept for future use
   const _printStore = usePrintStore(); void _printStore;
@@ -168,6 +170,11 @@ export function ToolsPanel() {
 
     if (tool.id === 'filters') {
       setShowFilters(prev => !prev);
+      return;
+    }
+
+    if (tool.id === 'arrange') {
+      toggleArrangeMode();
       return;
     }
 
@@ -326,15 +333,23 @@ export function ToolsPanel() {
         <div className="grid grid-cols-3 gap-1">
           {allTools.map((tool) => {
             const Icon = tool.icon;
-            const isActive = !tool.isAction && activeToolId === tool.id;
+            let isActive = false;
+            
+            if (tool.id === 'arrange') {
+              isActive = isArrangeMode;
+            } else if (!tool.isAction) {
+              isActive = activeToolId === tool.id;
+            }
+            
             const isToggled = tool.isToggle && toggleStates[tool.id];
+            
             return (
               <button
                 key={tool.id}
                 onClick={() => handleToolClick(tool)}
                 className={`flex flex-col items-center justify-center p-1.5 rounded border transition-colors ${
                   isActive
-                    ? 'border-app-accent bg-app-accent text-white'
+                    ? 'border-app-accent bg-app-accent text-white shadow-[0_0_8px_rgba(var(--app-accent-rgb),0.6)]'
                     : isToggled
                     ? 'border-yellow-500 bg-yellow-500/20 text-yellow-400'
                     : 'border-app-border text-app-text hover:bg-app-hover hover:border-app-accent'

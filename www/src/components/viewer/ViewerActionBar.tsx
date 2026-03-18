@@ -7,7 +7,7 @@ import { useViewerStore } from '@/stores/viewerStore';
 import { usePrintStore } from '@/stores/printStore';
 import { cornerstone } from '@/lib/cornerstoneSetup';
 import {
-  X, ImagePlus, PanelTop, Info, ChevronUp, ChevronDown, Printer,
+  X, ImagePlus, PanelTop, Info, ChevronUp, ChevronDown, Printer, ListOrdered,
 } from 'lucide-react';
 import { HeaderFooterModal } from './HeaderFooterModal';
 
@@ -147,6 +147,7 @@ export function ViewerActionBar() {
   const {
     currentPage, totalPages, totalImages, images,
     nextPage, prevPage, clearViewports, insertAllViewports,
+    isArrangeMode, toggleArrangeMode,
   } = useViewerStore();
   const { settings, setShowPrintPreview } = usePrintStore();
   const [showDicomInfo, setShowDicomInfo] = useState(false);

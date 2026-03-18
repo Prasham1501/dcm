@@ -9,7 +9,11 @@ import { useViewerStore } from '@/stores/viewerStore';
 import { cornerstone } from '@/lib/cornerstoneSetup';
 
 export function ThumbnailSidebar() {
-  const { currentPage, currentLayout, images, setCurrentPage } = useViewerStore();
+  const { 
+    currentPage, currentLayout, images, setCurrentPage,
+    isArrangeMode, arrangeSelectedImages, toggleArrangeImageSelection,
+    viewportImageOverrides
+  } = useViewerStore();
   const hasRealImages = images.length > 0;
 
   // Store rendered data URLs for each image
@@ -144,10 +148,14 @@ export function ThumbnailSidebar() {
     });
   }, [hasRealImages, images]); // thumbDataUrls intentionally NOT a dependency
 
-  const handleThumbClick = useCallback((imgIndex: number) => {
+  const handleThumbClick = useCallback((imgIndex: number, imgUrl: string) => {
+    if (isArrangeMode) {
+      toggleArrangeImageSelection(imgUrl);
+      return;
+    }
     const pageNum = Math.floor(imgIndex / currentLayout.spots) + 1;
     setCurrentPage(pageNum);
-  }, [currentLayout.spots, setCurrentPage]);
+  }, [currentLayout.spots, setCurrentPage, isArrangeMode, toggleArrangeImageSelection]);
 
   // Drag start
   const handleDragStart = useCallback((e: React.DragEvent, imgIndex: number) => {
@@ -171,30 +179,75 @@ export function ThumbnailSidebar() {
     );
   }
 
+  // Precompute which images are in which viewports on the *current page*
+  const activeViewportImages = new Map<string, number>();
+  const startIndex = (currentPage - 1) * currentLayout.spots;
+  for (let i = 0; i < currentLayout.spots; i++) {
+    const overrideUrl = viewportImageOverrides[i];
+    if (overrideUrl) {
+      activeViewportImages.set(overrideUrl, i + 1); // 1-indexed for display
+    } else {
+      const defaultImg = images[startIndex + i];
+      if (defaultImg) {
+        activeViewportImages.set(defaultImg.imageUrl, i + 1);
+      }
+    }
+  }
+
   return (
     <div className="w-24 flex flex-col bg-gray-900 border-l border-gray-700 overflow-y-auto">
       {images.map((img, i) => {
         const pageForImage = Math.floor(i / currentLayout.spots) + 1;
         const isOnCurrentPage = pageForImage === currentPage;
         const dataUrl = thumbDataUrls.get(img.imageUrl);
+        const assignedViewport = activeViewportImages.get(img.imageUrl);
+
+        // Arrange Mode specifics
+        const arrangeIdx = isArrangeMode ? arrangeSelectedImages.indexOf(img.imageUrl) : -1;
+        const isArrangeSelected = arrangeIdx !== -1;
 
         return (
           <div
             key={img.id}
-            className="p-0.5 cursor-grab active:cursor-grabbing select-none"
-            draggable
-            onDragStart={(e) => handleDragStart(e, i)}
-            onClick={() => handleThumbClick(i)}
-            title={`Image ${img.instanceNumber} — drag to viewport`}
+            className={`p-0.5 cursor-pointer select-none relative ${
+              isArrangeMode ? '' : 'active:cursor-grabbing'
+            }`}
+            draggable={!isArrangeMode}
+            onDragStart={(e) => { if (!isArrangeMode) handleDragStart(e, i); }}
+            onClick={() => handleThumbClick(i, img.imageUrl)}
+            title={`Image ${img.instanceNumber}${isArrangeMode ? '' : ' — drag to viewport'}`}
           >
-            <div className={`text-[9px] font-bold px-0.5 ${isOnCurrentPage ? 'text-blue-400' : 'text-gray-500'}`}>
-              {img.instanceNumber}
+            <div className="flex justify-between items-center px-0.5 relative z-10 w-full">
+              <span className={`text-[9px] font-bold ${isOnCurrentPage ? 'text-blue-400' : 'text-gray-500'}`}>
+                {img.instanceNumber}
+              </span>
+              
+              {/* Show Viewport Assignment Badge */}
+              {assignedViewport !== undefined && (
+                <span className="text-[9px] font-bold text-white bg-green-600 px-1 rounded-sm shadow-sm opacity-90 leading-tight">
+                  Spot {assignedViewport}
+                </span>
+              )}
             </div>
+
             <div
-              className={`aspect-[4/3] border rounded-sm overflow-hidden relative bg-black ${
-                isOnCurrentPage ? 'border-blue-500' : 'border-gray-600 hover:border-gray-400'
+              className={`aspect-[4/3] border rounded-sm overflow-hidden relative bg-black transition-all ${
+                isArrangeSelected 
+                  ? 'border-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]' 
+                  : isOnCurrentPage 
+                  ? 'border-blue-500' 
+                  : 'border-gray-600 hover:border-gray-400'
               }`}
             >
+              {/* Arrange Selection Overlay Badge */}
+              {isArrangeSelected && (
+                <div className="absolute inset-0 bg-green-500/20 z-10 flex items-center justify-center pointer-events-none">
+                  <div className="w-6 h-6 rounded-full bg-green-600 border-2 border-white flex items-center justify-center text-white text-xs font-bold shadow-md">
+                    {arrangeIdx + 1}
+                  </div>
+                </div>
+              )}
+
               {dataUrl ? (
                 <img
                   src={dataUrl}

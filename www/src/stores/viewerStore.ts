@@ -71,6 +71,12 @@ interface ViewerState {
   studyError: string | null;
   loadProgress: number; // 0-100
 
+  // Arrange mode
+  isArrangeMode: boolean;
+  arrangeSelectedImages: string[];
+  arrangeClickOrder: number[];
+  viewportImageOverrides: Record<number, string>;
+
   // Cine playback
   isPlaying: boolean;
   cineFps: number;
@@ -115,6 +121,13 @@ interface ViewerState {
   // Viewport actions
   clearViewports: () => void;
   insertAllViewports: () => void;
+
+  // Arrange actions
+  toggleArrangeMode: () => void;
+  toggleArrangeImageSelection: (imageUrl: string) => void;
+  toggleArrangeViewport: (viewportIndex: number) => void;
+  setViewportImageOverride: (viewportIndex: number, imageUrl: string) => void;
+  clearViewportOverrides: () => void;
 
   // Local file loading
   loadLocalFiles: (files: FileList | File[]) => void;
@@ -251,6 +264,11 @@ export const useViewerStore = create<ViewerState>((set, get) => ({
   loadingStudy: false,
   studyError: null,
   loadProgress: 0,
+
+  isArrangeMode: false,
+  arrangeSelectedImages: [],
+  arrangeClickOrder: [],
+  viewportImageOverrides: {},
 
   setLayout: (layout) => {
     const { totalImages } = get();
@@ -433,11 +451,77 @@ export const useViewerStore = create<ViewerState>((set, get) => ({
       currentPage: 1,
       totalPages,
       totalImages: images.length,
+      viewportImageOverrides: {}, // Clear any per-slot overrides so images fill sequentially
     });
 
-    // Clear any per-slot overrides so images fill sequentially from page 1
+    // Fire event for any components still listening
     document.dispatchEvent(new CustomEvent('dicom-insert-all'));
   },
+
+  toggleArrangeMode: () => {
+    const { isArrangeMode, arrangeSelectedImages, arrangeClickOrder, viewportImageOverrides, images } = get();
+    if (isArrangeMode) {
+      // Apply mapping before turning off
+      const newOverrides = { ...viewportImageOverrides };
+      
+      // If user selected viewports but no images, assume they wanted the first N images of the study
+      let finalImagesToArrange = arrangeSelectedImages;
+      if (finalImagesToArrange.length === 0 && arrangeClickOrder.length > 0) {
+        finalImagesToArrange = images.slice(0, arrangeClickOrder.length).map(img => img.imageUrl);
+      }
+
+      for (let i = 0; i < arrangeClickOrder.length; i++) {
+        if (i < finalImagesToArrange.length) {
+          newOverrides[arrangeClickOrder[i]] = finalImagesToArrange[i];
+        }
+      }
+      
+      set({
+        isArrangeMode: false,
+        arrangeSelectedImages: [],
+        arrangeClickOrder: [],
+        viewportImageOverrides: newOverrides,
+      });
+    } else {
+      set({ 
+        isArrangeMode: true, 
+        arrangeSelectedImages: [], 
+        arrangeClickOrder: [] 
+      });
+    }
+  },
+
+  toggleArrangeImageSelection: (imageUrl) => {
+    const { arrangeSelectedImages } = get();
+    if (arrangeSelectedImages.includes(imageUrl)) {
+      set({ arrangeSelectedImages: arrangeSelectedImages.filter(url => url !== imageUrl) });
+    } else {
+      set({ arrangeSelectedImages: [...arrangeSelectedImages, imageUrl] });
+    }
+  },
+
+  toggleArrangeViewport: (viewportIndex) => {
+    const { arrangeClickOrder, currentLayout } = get();
+    if (arrangeClickOrder.includes(viewportIndex)) {
+      set({ arrangeClickOrder: arrangeClickOrder.filter(idx => idx !== viewportIndex) });
+    } else {
+      // Allow selecting up to the total spots on layout, even if images aren't selected yet
+      if (arrangeClickOrder.length < currentLayout.spots) {
+        set({ arrangeClickOrder: [...arrangeClickOrder, viewportIndex] });
+      }
+    }
+  },
+
+  setViewportImageOverride: (viewportIndex, imageUrl) => {
+    set((state) => ({
+      viewportImageOverrides: {
+        ...state.viewportImageOverrides,
+        [viewportIndex]: imageUrl,
+      }
+    }));
+  },
+
+  clearViewportOverrides: () => set({ viewportImageOverrides: {} }),
 
   loadStudy: async (params) => {
     const layout = get().currentLayout;
