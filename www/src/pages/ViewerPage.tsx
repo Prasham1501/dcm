@@ -13,11 +13,28 @@ import { PrintPreview } from '@/components/print/PrintPreview';
 import { PrinterModal } from '@/components/print/PrinterModal';
 import { usePrintStore } from '@/stores/printStore';
 import { useViewerStore } from '@/stores/viewerStore';
+import { useCustomAnnotationStore } from '@/stores/customAnnotationStore';
 
 export function ViewerPage() {
   const { showPrintPreview, showPrinterModal } = usePrintStore();
   const { showCine, setShowCine, stopCine } = useViewerStore();
   const [searchParams] = useSearchParams();
+  const undo = useCustomAnnotationStore((s) => s.undo);
+
+  // Global Ctrl+Z undo listener
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
+        const target = e.target as HTMLElement;
+        if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return;
+        
+        e.preventDefault();
+        undo();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [undo]);
 
   // Auto-open cine if ?cine=1 in URL
   useEffect(() => {

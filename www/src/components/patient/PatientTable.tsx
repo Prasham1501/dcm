@@ -106,8 +106,12 @@ export function PatientTable() {
                     : 'hover:bg-app-hover text-app-text'
                 }`}
               >
-                <td className="px-3 py-2 border-r border-app-border">
-                  {patient.printed && <span className="text-app-accent font-bold">P</span>}
+                <td className="px-3 py-2 border-r border-app-border text-center font-bold">
+                  {patient.printed ? (
+                    <span className="text-green-600">Y</span>
+                  ) : (
+                    <span className="text-red-500">N</span>
+                  )}
                 </td>
                 <td className="px-3 py-2 border-r border-app-border font-mono text-[11px]">{patient.patientId}</td>
                 <td className="px-3 py-2 border-r border-app-border font-semibold">{patient.patientName}</td>

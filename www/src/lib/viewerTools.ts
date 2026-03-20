@@ -363,7 +363,19 @@ export function applyFilter(element: HTMLDivElement, filter: 'sharpen' | 'smooth
         };
         break;
       case 'none':
-        viewport.voi = { windowWidth: 400, windowCenter: 40 };
+        try {
+          const enabledElement = cornerstone.getEnabledElement(element);
+          if (enabledElement.image) {
+            viewport.voi = {
+              windowWidth: enabledElement.image.windowWidth,
+              windowCenter: enabledElement.image.windowCenter
+            };
+          } else {
+            viewport.voi = { windowWidth: 400, windowCenter: 40 };
+          }
+        } catch {
+          viewport.voi = { windowWidth: 400, windowCenter: 40 };
+        }
         break;
     }
     cornerstone.setViewport(element, viewport);

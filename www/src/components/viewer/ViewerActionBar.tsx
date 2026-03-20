@@ -7,8 +7,9 @@ import { useViewerStore } from '@/stores/viewerStore';
 import { usePrintStore } from '@/stores/printStore';
 import { cornerstone } from '@/lib/cornerstoneSetup';
 import {
-  X, ImagePlus, PanelTop, Info, ChevronUp, ChevronDown, Printer, ListOrdered,
+  X, ImagePlus, PanelTop, Info, ChevronUp, ChevronDown, Printer, ListOrdered, Undo2, RotateCcw
 } from 'lucide-react';
+import { useCustomAnnotationStore } from '@/stores/customAnnotationStore';
 import { HeaderFooterModal } from './HeaderFooterModal';
 
 /** Get DICOM metadata tags from the currently displayed image in the selected viewport */
@@ -166,14 +167,29 @@ export function ViewerActionBar() {
   return (
     <>
       <div className="w-12 flex flex-col items-center bg-app-surface border-l border-app-border py-2 gap-2">
-        {/* Clear All Viewports */}
+        {/* Global Undo (Ctrl+Z) */}
         <button
           type="button"
-          onClick={clearViewports}
-          className="w-9 h-9 flex items-center justify-center rounded border border-app-border text-app-text-secondary hover:bg-red-500/20 hover:text-red-400 hover:border-red-500/50 transition-colors"
-          title="Clear all viewports"
+          onClick={() => useCustomAnnotationStore.getState().undo()}
+          className="w-9 h-9 flex items-center justify-center rounded border border-app-border text-app-text-secondary hover:bg-blue-500/20 hover:text-blue-400 hover:border-blue-500/50 transition-colors"
+          title="Undo (Ctrl+Z)"
         >
-          <X className="w-5 h-5" />
+          <Undo2 className="w-5 h-5" />
+        </button>
+
+        {/* Global Reset (Replaced Clear All) */}
+        <button
+          type="button"
+          onClick={() => {
+            if (window.confirm('Reset all viewports and clear all annotations?')) {
+              useCustomAnnotationStore.getState().resetAll();
+              clearViewports();
+            }
+          }}
+          className="w-9 h-9 flex items-center justify-center rounded border border-app-border text-app-text-secondary hover:bg-red-500/20 hover:text-red-400 hover:border-red-500/50 transition-colors"
+          title="Reset All"
+        >
+          <RotateCcw className="w-5 h-5" />
         </button>
 
         {/* Insert / Fill All Viewports */}

@@ -217,6 +217,7 @@ try {
                 cp.study_count,
                 cp.last_study_date,
                 cp.orthanc_id,
+                EXISTS(SELECT 1 FROM medical_reports mr WHERE mr.patient_id = cp.patient_id AND mr.status = 'printed') as printed,
                 CASE 
                     WHEN cp.patient_birth_date IS NOT NULL AND cp.patient_birth_date != '' AND cp.patient_birth_date != '00000000'
                     THEN TIMESTAMPDIFF(YEAR, 
@@ -234,7 +235,7 @@ try {
             LEFT JOIN cached_studies cs ON cp.patient_id = cs.patient_id
             $whereClause
             GROUP BY cp.patient_id, cp.patient_name, cp.patient_sex, cp.patient_birth_date,
-                     cp.study_count, cp.last_study_date, cp.orthanc_id
+                     cp.study_count, cp.last_study_date, cp.orthanc_id, printed
             ORDER BY $orderBy
             LIMIT ? OFFSET ?";
 

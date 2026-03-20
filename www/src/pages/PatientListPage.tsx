@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { Outlet } from 'react-router-dom';
 import { usePatientStore } from '@/stores/patientStore';
 import { PatientSearchBar } from '@/components/patient/PatientSearchBar';
 import { PatientDateFilter } from '@/components/patient/PatientDateFilter';
@@ -12,8 +13,9 @@ import { useThemeStore } from '@/stores/themeStore';
 import { Sun, Moon } from 'lucide-react';
 
 export function PatientListPage() {
-  const { loadPatients } = usePatientStore();
-  const { mode, toggleTheme } = useThemeStore();
+  const loadPatients = usePatientStore((s) => s.loadPatients);
+  const mode = useThemeStore((s) => s.mode);
+  const toggleTheme = useThemeStore((s) => s.toggleTheme);
 
   useEffect(() => {
     loadPatients();
@@ -68,6 +70,9 @@ export function PatientListPage() {
 
       {/* Status bar */}
       <PatientStatusBar />
+      
+      {/* Nested routes (e.g. Config modal) */}
+      <Outlet />
     </div>
   );
 }

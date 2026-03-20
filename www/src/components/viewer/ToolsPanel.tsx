@@ -256,7 +256,7 @@ export function ToolsPanel() {
   const multiSelected = selectedViewportIndices.length > 1;
 
   return (
-    <div className="w-44 flex flex-col bg-app-surface border-l border-app-border overflow-y-auto">
+    <div className="w-60 flex flex-col bg-app-surface border-l border-app-border overflow-y-auto">
       {/* W/L Presets */}
       <div className="p-2 border-b border-app-border">
         <button

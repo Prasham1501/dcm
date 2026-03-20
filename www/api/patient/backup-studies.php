@@ -17,10 +17,15 @@ require_once __DIR__ . '/../../includes/config.php';
 require_once __DIR__ . '/../../auth/session.php';
 
 // Check authentication
+// In Desktop Mode, we allow local requests if session is missing
 if (!isLoggedIn()) {
-    http_response_code(401);
-    echo json_encode(['success' => false, 'error' => 'Not authenticated']);
-    exit;
+    if (!defined('DESKTOP_MODE') || !DESKTOP_MODE) {
+        http_response_code(401);
+        echo json_encode(['success' => false, 'error' => 'Not authenticated', 'debug_session' => isset($_SESSION) ? array_keys($_SESSION) : 'none']);
+        exit;
+    }
+    // Desktop mode bypass - logged but allowed
+    error_log("DESKTOP_MODE: Bypassing auth check for backup-studies.php");
 }
 
 // Increase limits for backup operations
@@ -237,10 +242,16 @@ function handlePrepare() {
  */
 function createArchiveFromOrthanc($studyIds, $jobId) {
     // Use Orthanc's create-archive endpoint
+    // Resources must be wrapped in an object for /tools/create-archive
+    $payload = [
+        'Resources' => $studyIds,
+        'Synchronous' => true
+    ];
+
     $ch = curl_init(ORTHANC_URL . '/tools/create-archive');
     curl_setopt_array($ch, [
         CURLOPT_POST => true,
-        CURLOPT_POSTFIELDS => json_encode($studyIds),
+        CURLOPT_POSTFIELDS => json_encode($payload),
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
         CURLOPT_USERPWD => ORTHANC_USER . ':' . ORTHANC_PASS,
@@ -337,7 +348,18 @@ function handleDownload() {
     }
 
     $fileSize = filesize($archivePath);
-    $fileName = 'DICOM_Backup_' . date('Y-m-d_His') . '.zip';
+    
+    // Use requested filename if provided, otherwise default
+    $requestedName = $_GET['filename'] ?? '';
+    if (!empty($requestedName)) {
+        // Basic sanitization
+        $fileName = basename($requestedName);
+        if (!str_ends_with(strtolower($fileName), '.zip')) {
+            $fileName .= '.zip';
+        }
+    } else {
+        $fileName = 'DICOM_Backup_' . date('Y-m-d_His') . '.zip';
+    }
 
     // Clear any previous output
     while (ob_get_level()) {

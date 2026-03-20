@@ -35,7 +35,7 @@ export function PatientActionBar() {
     const today = new Date();
     const studyDate = `${String(today.getDate()).padStart(2, '0')}-${String(today.getMonth() + 1).padStart(2, '0')}-${today.getFullYear()}`;
     const newPatients = Array.from(files).map((file) => ({
-      id: crypto.randomUUID(),
+      id: (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : `imp-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       patientId: `IMP${Date.now()}`,
       patientName: file.name.replace(/\.(dcm|dicom)$/i, ''),
       age: '',
@@ -90,37 +90,52 @@ export function PatientActionBar() {
     }
   };
 
-  const handleBackupSelected = async () => {
+  const handleExportSelected = async () => {
     const selected = patients.filter((p) => selectedPatients.has(p.id));
     if (selected.length === 0) {
       alert('No patients selected');
       return;
     }
 
-    const zip = new JSZip();
+    // Use Export nomenclature
+    const firstName = selected[0].patientName.replace(/[^a-z0-9]/gi, '_');
     const dateStr = new Date().toISOString().slice(0, 10);
+    const downloadName = selected.length === 1 
+      ? `${firstName}.zip`
+      : `DICOM_Export_${dateStr}.zip`;
 
-    // Add patient metadata JSON
-    zip.file('patients.json', JSON.stringify(selected, null, 2));
+    try {
+      // 1. Get all study Orthanc IDs for selected patients
+      const studyIds: string[] = [];
+      
+      for (const p of selected) {
+        if (p.orthancId) {
+          studyIds.push(p.orthancId);
+        }
+      }
 
-    // Add a README
-    zip.file('README.txt', [
-      `DICOM Backup — ${dateStr}`,
-      `Patients: ${selected.length}`,
-      '',
-      'To restore: use "Read backup" and select this zip file.',
-      '',
-      'File paths are recorded in patients.json (filePaths field).',
-      'The original DICOM files are not included in this ZIP — only metadata.',
-    ].join('\n'));
+      if (studyIds.length === 0) {
+        alert('No DICOM data found for selected patients');
+        return;
+      }
 
-    const blob = await zip.generateAsync({ type: 'blob' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `dicom-backup-${dateStr}.zip`;
-    a.click();
-    URL.revokeObjectURL(url);
+      // 2. Prepare the export on server
+      const response = await fetch('/api/patient/backup-studies.php?action=prepare', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ study_ids: studyIds })
+      });
+
+      const result = await response.json();
+      if (!result.success) throw new Error(result.error);
+
+      // 3. Trigger download
+      const downloadUrl = `/api/patient/backup-studies.php?action=download&job_id=${result.job_id}&filename=${encodeURIComponent(downloadName)}`;
+      window.location.href = downloadUrl;
+
+    } catch (err: any) {
+      alert('Export failed: ' + err.message);
+    }
   };
 
   return (
@@ -129,15 +144,30 @@ export function PatientActionBar() {
       <div className="flex items-center justify-center gap-1.5 px-3 py-1.5">
         <ActionButton label="Open" onClick={() => {
           const p = selectedPatient;
-          if (p?.filePaths && p.filePaths.length > 0) {
+          if (!p) {
+            alert('Select a patient first');
+            return;
+          }
+          if (p.filePaths && p.filePaths.length > 0) {
             useViewerStore.getState().loadStudyFiles({
               patientName: p.patientName,
               patientId: p.patientId,
               studyDate: p.studyDate,
               filePaths: p.filePaths,
             });
+            navigate('/viewer');
+          } else if (p.studyInstanceUID || p.orthancId) {
+            useViewerStore.getState().loadStudy({
+              patientId: p.patientId,
+              patientName: p.patientName,
+              studyDate: p.studyDate,
+              studyUID: p.studyInstanceUID,
+              orthancStudyId: p.orthancId,
+            });
+            navigate('/viewer');
+          } else {
+            alert('No DICOM data found for this patient');
           }
-          navigate('/viewer');
         }} />
         <ActionButton
           label="Edit"
@@ -179,7 +209,7 @@ export function PatientActionBar() {
           </select>
         </div>
 
-        <ActionButton label="Backup selected" onClick={handleBackupSelected} />
+        <ActionButton label="Export selected" onClick={handleExportSelected} />
         <ActionButton label="Read backup" onClick={() => backupInputRef.current?.click()} />
       </div>
 

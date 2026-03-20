@@ -41,13 +41,33 @@ export function PatientContextMenu({ x, y, patient, onClose }: Props) {
         openInViewer('1x1');
         break;
       case 'export': {
-        const blob = new Blob([JSON.stringify(patient, null, 2)], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `patient-${patient.patientId}-${new Date().toISOString().slice(0, 10)}.json`;
-        a.click();
-        URL.revokeObjectURL(url);
+        const firstName = patient.patientName.replace(/[^a-z0-9]/gi, '_');
+        const downloadName = `${firstName}.zip`;
+        
+        // Use a self-invoking async function to handle the fetch
+        (async () => {
+          try {
+            // 1. Prepare
+            const studyIds = patient.orthancId ? [patient.orthancId] : [];
+            const response = await fetch('/api/patient/backup-studies.php?action=prepare', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ 
+                study_ids: studyIds,
+                patient_id: studyIds.length === 0 ? patient.patientId : undefined,
+                months: 999 // Ensure all studies are caught if using patient_id
+              })
+            });
+            const result = await response.json();
+            if (!result.success) throw new Error(result.error);
+
+            // 2. Download
+            const downloadUrl = `/api/patient/backup-studies.php?action=download&job_id=${result.job_id}&filename=${encodeURIComponent(downloadName)}`;
+            window.location.href = downloadUrl;
+          } catch (err: any) {
+            alert('Export failed: ' + err.message);
+          }
+        })();
         break;
       }
       default:

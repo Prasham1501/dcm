@@ -42,10 +42,10 @@ async function request<T>(
   const response = await fetch(fullUrl, config);
 
   if (response.status === 401) {
-    // Session expired - redirect to login
-    if (!window.location.pathname.includes('/login')) {
-      window.location.href = '/login';
-    }
+    // Session expired - handle without full window redirect in desktop version
+    // if (!window.location.pathname.includes('/login')) {
+    //   window.location.href = '/login';
+    // }
     throw new ApiError('Unauthorized', 401);
   }
 
@@ -81,9 +81,6 @@ async function rawRequest<T = any>(
   const response = await fetch(fullUrl, config);
 
   if (response.status === 401) {
-    if (!window.location.pathname.includes('/login')) {
-      window.location.href = '/login';
-    }
     throw new ApiError('Unauthorized', 401);
   }
 
@@ -130,9 +127,6 @@ async function uploadRequest<T>(
   });
 
   if (response.status === 401) {
-    if (!window.location.pathname.includes('/login')) {
-      window.location.href = '/login';
-    }
     throw new ApiError('Unauthorized', 401);
   }
 

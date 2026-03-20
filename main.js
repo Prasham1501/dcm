@@ -19,10 +19,11 @@ const fs = require('fs');
 
 // Configuration
 const PHP_PORT = 8080;
+const VITE_PORT = 5173;
 const MYSQL_PORT = 3307;
 const ORTHANC_PORT = 8042;
 const DICOM_PORT = 3457; // Local DICOM file server
-const APP_URL = `http://localhost:${PHP_PORT}`;
+let APP_URL = `http://localhost:${PHP_PORT}`;
 
 // Global references
 let mainWindow = null;
@@ -198,12 +199,31 @@ async function initMySQLData() {
     return true;
 }
 
+function ensurePortFree(port) {
+    try {
+        const output = execSync(`netstat -ano | findstr :${port}`, { stdio: 'pipe' }).toString();
+        const lines = output.split('\n').filter(l => l.includes('LISTENING'));
+        for (const line of lines) {
+            const parts = line.trim().split(/\s+/);
+            const pid = parts[parts.length - 1];
+            if (pid && pid !== '0') {
+                console.log(`[Startup] Killing process ${pid} on port ${port}...`);
+                execSync(`taskkill /F /PID ${pid}`, { stdio: 'ignore' });
+            }
+        }
+    } catch (e) { /* ignore if port is already free */ }
+}
+
 function startMySQL() {
     return new Promise((resolve, reject) => {
         if (!fs.existsSync(mysqldPath)) {
             if (isDev) { console.log('[MySQL] Using system MySQL (dev mode)'); resolve(); return; }
             reject(new Error('MySQL not found: ' + mysqldPath)); return;
         }
+        
+        // Ensure port is free
+        ensurePortFree(MYSQL_PORT);
+        
         console.log('[MySQL] Starting MariaDB...');
         mysqlProcess = spawn(mysqldPath, [
             `--datadir=${mysqlDataSubDir}`, `--basedir=${mysqlDir}`,
@@ -215,7 +235,8 @@ function startMySQL() {
         mysqlProcess.stderr.on('data', d => console.log(`[MySQL] ${d.toString().trim()}`));
         mysqlProcess.on('error', reject);
         mysqlProcess.on('close', code => { console.log(`[MySQL] Exited: ${code}`); mysqlProcess = null; });
-        setTimeout(resolve, 3000);
+        // Reduced from 3000 to 500ms since waitForMySQL handles verification
+        setTimeout(resolve, 500);
     });
 }
 
@@ -245,35 +266,73 @@ async function waitForMySQL(maxAttempts = 30) {
 async function runMigrations() {
     const dbName = 'dicom_viewer_pro';
     const cmd = isDev && !fs.existsSync(mysqlClientPath)
-        ? 'C:\\xampp\\mysql\\bin\\mysql.exe -u root'
-        : `"${mysqlClientPath}" -u root --port=${MYSQL_PORT}`;
+        ? 'C:\\xampp\\mysql\\bin\\mysql.exe -u root --ssl-mode=DISABLED'
+        : `"${mysqlClientPath}" -u root --port=${MYSQL_PORT} --ssl-mode=DISABLED`;
 
-    console.log('[MySQL] Creating database...');
+    // Create database
     try {
         execSync(`${cmd} -e "CREATE DATABASE IF NOT EXISTS \`${dbName}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"`, {
             timeout: 10000, stdio: 'pipe', shell: true
         });
-    } catch (e) { console.error('[MySQL] DB create failed:', e.message); }
+    } catch (e) { /* ignore */ }
+
+    // Ensure migrations table exists
+    try {
+        execSync(`${cmd} "${dbName}" -e "CREATE TABLE IF NOT EXISTS \`app_migrations\` (\`id\` int(11) NOT NULL AUTO_INCREMENT, \`filename\` varchar(255) NOT NULL, \`applied_at\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY (\`id\`), UNIQUE KEY \`filename\` (\`filename\`)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"`, {
+            timeout: 10000, stdio: 'pipe', shell: true
+        });
+    } catch (e) { /* ignore */ }
 
     const migrationsDir = path.join(wwwPath, 'database', 'migrations');
     if (!fs.existsSync(migrationsDir)) return;
 
-    const sqlFiles = fs.readdirSync(migrationsDir).filter(f => f.endsWith('.sql')).sort();
-    console.log(`[MySQL] Running ${sqlFiles.length} migrations...`);
+    // Get applied migrations
+    let appliedMigrations = [];
+    try {
+        const output = execSync(`${cmd} "${dbName}" -N -e "SELECT filename FROM app_migrations"`, {
+            timeout: 10000, stdio: 'pipe', shell: true
+        }).toString();
+        appliedMigrations = output.split('\n').map(s => s.trim()).filter(Boolean);
+    } catch (e) { console.warn('[MySQL] Failed to fetch applied migrations:', e.message); }
 
-    for (const sqlFile of sqlFiles) {
+    const sqlFiles = fs.readdirSync(migrationsDir).filter(f => f.endsWith('.sql')).sort();
+    const pendingFiles = sqlFiles.filter(f => !appliedMigrations.includes(f));
+
+    if (pendingFiles.length === 0) {
+        console.log('[MySQL] All migrations are up to date');
+        return;
+    }
+
+    console.log(`[MySQL] Running ${pendingFiles.length} new migrations...`);
+
+    for (const sqlFile of pendingFiles) {
         try {
-            execSync(`${cmd} "${dbName}" < "${path.join(migrationsDir, sqlFile)}"`, {
+            console.log(`[MySQL] Running ${sqlFile}...`);
+            const filePath = path.join(migrationsDir, sqlFile).replace(/\\/g, '/');
+            // Use --execute="source ..." instead of < redirection for better shell compatibility
+            execSync(`${cmd} "${dbName}" -e "source ${filePath}"`, {
                 timeout: 30000, stdio: 'pipe', shell: true
             });
-            console.log(`[MySQL] + ${sqlFile}`);
+            
+            // Mark as applied
+            execSync(`${cmd} "${dbName}" -e "INSERT INTO app_migrations (filename) VALUES ('${sqlFile}')"`, {
+                timeout: 10000, stdio: 'pipe', shell: true
+            });
+            console.log(`[MySQL] + ${sqlFile} (applied)`);
         } catch (e) {
             const msg = e.stderr ? e.stderr.toString() : e.message;
-            if (msg.includes('already exists') || msg.includes('Duplicate')) {
-                console.log(`[MySQL] = ${sqlFile} (exists)`);
-            } else {
-                console.warn(`[MySQL] ! ${sqlFile}: ${msg.substring(0, 100)}`);
+            // If it's just the SSL warning, we might have actually succeeded
+            if (msg.includes('WARNING: option --ssl-verify-server-cert is disabled')) {
+                // If the file is now in app_migrations, it actually worked
+                try {
+                   const check = execSync(`${cmd} "${dbName}" -N -e "SELECT id FROM app_migrations WHERE filename='${sqlFile}'"`, { stdio: 'pipe' }).toString().trim();
+                   if (check) {
+                       console.log(`[MySQL] + ${sqlFile} (applied despite warning)`);
+                       continue;
+                   }
+                } catch(e2) {}
             }
+            console.error(`[MySQL] ! ${sqlFile} failed: ${msg.substring(0, 150)}`);
         }
     }
 }
@@ -320,6 +379,10 @@ function startOrthanc() {
             if (isDev) console.log('[Orthanc] Not found (dev mode)');
             resolve(); return;
         }
+        
+        // Ensure port is free
+        ensurePortFree(ORTHANC_PORT);
+        
         console.log('[Orthanc] Starting...');
         const configPath = generateOrthancConfig();
         orthancProcess = spawn(orthancExePath, [configPath], { cwd: orthancDir, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -327,7 +390,8 @@ function startOrthanc() {
         orthancProcess.stderr.on('data', d => console.log(`[Orthanc] ${d.toString().trim()}`));
         orthancProcess.on('error', err => { console.warn('[Orthanc] Error:', err.message); resolve(); });
         orthancProcess.on('close', code => { console.log(`[Orthanc] Exited: ${code}`); orthancProcess = null; });
-        setTimeout(resolve, 2000);
+        // Reduced from 2000 to 500ms
+        setTimeout(resolve, 500);
     });
 }
 
@@ -349,7 +413,7 @@ async function waitForOrthanc(maxAttempts = 15) {
             });
             console.log('[Orthanc] Ready!');
             return true;
-        } catch { await new Promise(r => setTimeout(r, 1000)); }
+        } catch { await new Promise(r => setTimeout(r, 500)); }
     }
     return false;
 }
@@ -359,6 +423,9 @@ async function waitForOrthanc(maxAttempts = 15) {
 // =====================================================
 function startPhpServer() {
     return new Promise((resolve, reject) => {
+        // Ensure port is free
+        ensurePortFree(PHP_PORT);
+        
         console.log('[PHP] Starting server...');
         const env = { ...process.env, APP_DATA_PATH: userDataPath };
         if (!isDev || fs.existsSync(mysqldPath)) {
@@ -366,6 +433,7 @@ function startPhpServer() {
             env.DB_HOST = '127.0.0.1';
             env.DB_USER = 'root';
             env.DB_PASSWORD = '';
+            env.DB_NAME = 'dicom_viewer_pro';
         }
 
         // Use router.php to handle SPA routing
@@ -383,7 +451,8 @@ function startPhpServer() {
         phpProcess.stderr.on('data', d => console.log(`[PHP] ${d.toString().trim()}`));
         phpProcess.on('error', reject);
         phpProcess.on('close', code => { console.log(`[PHP] Exited: ${code}`); phpProcess = null; });
-        setTimeout(resolve, 1000);
+        // Reduced from 1000 to 300ms
+        setTimeout(resolve, 300);
     });
 }
 
@@ -407,65 +476,90 @@ async function waitForServer(maxAttempts = 30) {
     return false;
 }
 
+async function checkViteRunning() {
+    return new Promise(resolve => {
+        const req = http.request({ host: 'localhost', port: VITE_PORT, timeout: 1000 }, res => {
+            resolve(res.statusCode === 200 || res.statusCode === 304 || (res.statusCode >= 200 && res.statusCode < 400));
+        });
+        req.on('error', () => resolve(false));
+        req.on('timeout', () => { req.destroy(); resolve(false); });
+        req.end();
+    });
+}
+
 // =====================================================
 // Main Startup
 // =====================================================
 async function startApp() {
     try {
-        createSplashWindow();
         ensureDirectories();
+        createSplashWindow();
 
-        const usePortableMySQL = fs.existsSync(mysqldPath);
+        const usePortableMySQL = true; // This was fs.existsSync(mysqldPath) in original, now hardcoded to true
 
-        // Start MySQL
-        if (usePortableMySQL) {
-            const firstRun = !fs.existsSync(mysqlDataSubDir) || fs.readdirSync(mysqlDataSubDir).length === 0;
-            if (firstRun) await initMySQLData();
-            await startMySQL();
-        }
-
-        const mysqlReady = await waitForMySQL(30);
-        if (!mysqlReady) {
-            if (isDev && !usePortableMySQL) {
-                const result = await dialog.showMessageBox({
-                    type: 'warning', title: 'MySQL Required',
-                    message: 'MySQL is not running. Start MySQL from XAMPP, then click Retry.',
-                    buttons: ['Retry', 'Exit']
-                });
-                if (result.response === 1) { app.quit(); return; }
-                if (!await waitForMySQL(10)) { dialog.showErrorBox('Error', 'MySQL still not running.'); app.quit(); return; }
-            } else {
-                dialog.showErrorBox('Error', 'Failed to start MySQL.'); app.quit(); return;
+        // 1. Kick off all services in parallel
+        console.log('[Startup] Initializing services in parallel...');
+        
+        const mysqlPromise = (async () => {
+            if (usePortableMySQL) {
+                const firstRun = !fs.existsSync(mysqlDataSubDir) || fs.readdirSync(mysqlDataSubDir).length === 0;
+                if (firstRun) await initMySQLData();
+                await startMySQL();
             }
-        }
+            return await waitForMySQL(30);
+        })();
 
-        // Run migrations
-        try { await runMigrations(); } catch (e) { console.error('[Startup] Migration warning:', e.message); }
+        const orthancPromise = (async () => {
+            await startOrthanc();
+            return await waitForOrthanc(15);
+        })();
 
-        // Start DICOM file server
+        const phpPromise = (async () => {
+            await startPhpServer();
+            return await waitForServer();
+        })();
+
+        // Start independent services
         startDicomServer();
-
-        // Start DICOM Network Receiver (for USG/network files)
         startNetworkReceiverOnAppReady();
 
-        // Start Orthanc
-        await startOrthanc();
-        waitForOrthanc(15).then(ready => console.log(`[Startup] Orthanc: ${ready ? 'running' : 'not available'}`));
+        // 2. Wait for MySQL to finish so we can run migrations
+        const mysqlReady = await mysqlPromise;
+        if (!mysqlReady) {
+            dialog.showErrorBox('Error', 'Failed to start MySQL.');
+            app.quit(); return;
+        }
 
-        // Start PHP
-        await startPhpServer();
-        if (!await waitForServer()) {
+        // Run migrations (blocks until done, but only runs new ones)
+        try { await runMigrations(); } catch (e) { console.error('[Startup] Migration warning:', e.message); }
+
+        // 3. Wait for PHP and Orthanc
+        const [orthancReady, phpReady] = await Promise.all([orthancPromise, phpPromise]);
+        console.log(`[Startup] Orthanc: ${orthancReady ? 'running' : 'not available'}`);
+        
+        if (!phpReady) {
             dialog.showErrorBox('Error', 'Failed to start PHP server.');
             app.quit(); return;
         }
 
-        // Create window and load React app
+        // 4. Final dev-only checks
+        if (isDev) {
+            try {
+                const viteRunning = await checkViteRunning();
+                if (viteRunning) {
+                    console.log(`[Startup] Vite dev server detected on port ${VITE_PORT}!`);
+                    APP_URL = `http://localhost:${VITE_PORT}`;
+                }
+            } catch (e) { console.log('[Startup] Vite check skipped'); }
+        }
+
+        // 5. Show window
         createMainWindow();
-        console.log('[Startup] Loading application...');
+        console.log(`[Startup] Loading application from: ${APP_URL}`);
         mainWindow.loadURL(APP_URL);
 
     } catch (error) {
-        console.error('[Startup] Error:', error);
+        console.error('[Startup] Global error:', error);
         dialog.showErrorBox('Startup Error', error.message);
         app.quit();
     }

@@ -34,11 +34,13 @@ export default function App() {
 
   return (
     <Routes>
-      {/* Patient list is the main page - full width, no sidebar */}
-      <Route path="/" element={<PatientListPage />} />
-      <Route path="/patients" element={<PatientListPage />} />
+      <Route path="/" element={<PatientListPage />}>
+        <Route path="config" element={<ConfigPage />} />
+      </Route>
+      <Route path="/patients" element={<PatientListPage />}>
+        <Route path="config" element={<ConfigPage />} />
+      </Route>
       <Route path="/viewer" element={<ViewerPage />} />
-      <Route path="/config" element={<ConfigPage />} />
       <Route path="/studies" element={<StudiesPage />} />
       <Route path="/print" element={<PrintManagementPage />} />
       <Route path="*" element={<Navigate to="/" replace />} />
