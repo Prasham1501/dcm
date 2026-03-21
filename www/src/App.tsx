@@ -4,6 +4,7 @@ import { useThemeStore } from '@/stores/themeStore';
 import { usePrintStore } from '@/stores/printStore';
 import { PatientListPage } from '@/pages/PatientListPage';
 import { ViewerPage } from '@/pages/ViewerPage';
+import { CRViewerPage } from '@/pages/CRViewerPage';
 import { ConfigPage } from '@/pages/ConfigPage';
 import { StudiesPage } from '@/pages/StudiesPage';
 import { PrintManagementPage } from '@/pages/PrintManagementPage';
@@ -41,6 +42,7 @@ export default function App() {
         <Route path="config" element={<ConfigPage />} />
       </Route>
       <Route path="/viewer" element={<ViewerPage />} />
+      <Route path="/cr-viewer" element={<CRViewerPage />} />
       <Route path="/studies" element={<StudiesPage />} />
       <Route path="/print" element={<PrintManagementPage />} />
       <Route path="*" element={<Navigate to="/" replace />} />

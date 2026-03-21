@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { ViewerHeader } from '@/components/viewer/ViewerHeader';
 import { ViewportGrid } from '@/components/viewer/ViewportGrid';
@@ -17,9 +17,33 @@ import { useCustomAnnotationStore } from '@/stores/customAnnotationStore';
 
 export function ViewerPage() {
   const { showPrintPreview, showPrinterModal } = usePrintStore();
-  const { showCine, setShowCine, stopCine } = useViewerStore();
+  const { showCine, setShowCine, stopCine, loadStudyFiles } = useViewerStore();
   const [searchParams] = useSearchParams();
   const undo = useCustomAnnotationStore((s) => s.undo);
+  const launchChecked = useRef(false);
+
+  // Check for launch data in localStorage (when opened as popup window)
+  useEffect(() => {
+    if (launchChecked.current) return;
+    launchChecked.current = true;
+
+    try {
+      const launchData = localStorage.getItem('viewer-launch');
+      if (launchData) {
+        const data = JSON.parse(launchData);
+        // Only use if fresh (within 10 seconds)
+        if (Date.now() - data.timestamp < 10000) {
+          loadStudyFiles({
+            patientName: data.patientName,
+            patientId: data.patientId,
+            studyDate: data.studyDate,
+            filePaths: data.filePaths,
+          });
+        }
+        localStorage.removeItem('viewer-launch');
+      }
+    } catch { /* ignore parse errors */ }
+  }, [loadStudyFiles]);
 
   // Global Ctrl+Z undo listener
   useEffect(() => {

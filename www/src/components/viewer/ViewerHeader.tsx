@@ -2,7 +2,7 @@ import { useNavigate } from 'react-router-dom';
 import { useViewerStore } from '@/stores/viewerStore';
 import { usePrintStore } from '@/stores/printStore';
 import { useThemeStore } from '@/stores/themeStore';
-import { Sun, Moon, ChevronLeft, ChevronRight, Printer } from 'lucide-react';
+import { Sun, Moon, ChevronLeft, ChevronRight, Printer, X } from 'lucide-react';
 
 export function ViewerHeader() {
   const navigate = useNavigate();
@@ -14,18 +14,33 @@ export function ViewerHeader() {
   const { setShowPrintPreview, printCountRemaining } = usePrintStore();
   const { mode, toggleTheme } = useThemeStore();
 
+  // Detect if we're in a popup window
+  const isPopup = typeof window !== 'undefined' && (window.opener != null || window.history.length <= 1);
+
   return (
     <div className="flex items-center justify-between px-2 py-1 bg-app-header-bg border-b border-app-border">
-      {/* Left: Back to patients + page navigation */}
+      {/* Left: Back to patients / Close + page navigation */}
       <div className="flex items-center gap-2">
-        <button
-          onClick={() => navigate('/')}
-          className="px-2 py-1 text-xs font-semibold border-2 border-app-accent text-app-accent bg-app-bg rounded hover:bg-app-accent hover:text-white transition-colors flex items-center gap-1"
-          title="Back to patient list"
-        >
-          <ChevronLeft className="w-3.5 h-3.5" />
-          Patients
-        </button>
+        {isPopup ? (
+          <button
+            onClick={() => window.close()}
+            className="px-2 py-1 text-xs font-semibold border-2 border-app-accent text-app-accent bg-app-bg rounded hover:bg-app-accent hover:text-white transition-colors flex items-center gap-1"
+            title="Close CR viewer"
+          >
+            <X className="w-3.5 h-3.5" />
+            Close
+          </button>
+        ) : (
+          <button
+            onClick={() => navigate('/')}
+            className="px-2 py-1 text-xs font-semibold border-2 border-app-accent text-app-accent bg-app-bg rounded hover:bg-app-accent hover:text-white transition-colors flex items-center gap-1"
+            title="Back to patient list"
+          >
+            <ChevronLeft className="w-3.5 h-3.5" />
+            Patients
+          </button>
+        )}
+        <span className="text-xs font-bold text-app-accent uppercase tracking-wide">CR Viewer</span>
 
         <button
           onClick={prevPage}

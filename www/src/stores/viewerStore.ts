@@ -208,6 +208,48 @@ function autoSelectLayout(imageCount: number): { layout: ViewerLayout; orientati
   return { layout: defaultLayout, orientation: 'portrait' };
 }
 
+/**
+ * Open main viewer in a popup window (Electron) or navigate to /viewer (browser).
+ * Stores launch data in localStorage for the new window to read.
+ */
+export async function openViewerPopup(params: {
+  patientName: string;
+  patientId: string;
+  studyDate: string;
+  filePaths: string[];
+  layoutParam?: string;
+}, navigate: (path: string) => void) {
+  const imageCount = params.filePaths.length;
+  const { orientation } = autoSelectLayout(imageCount);
+  const isPortrait = orientation === 'portrait';
+
+  // Store launch data for the popup window to read
+  localStorage.setItem('viewer-launch', JSON.stringify({
+    patientName: params.patientName,
+    patientId: params.patientId,
+    studyDate: params.studyDate,
+    filePaths: params.filePaths,
+    layoutParam: params.layoutParam,
+    timestamp: Date.now(),
+  }));
+
+  // Try to open in Electron popup
+  const { layout: autoLayout } = autoSelectLayout(imageCount);
+  const api = (window as any).electronAPI;
+  if (api?.openViewer) {
+    try {
+      await api.openViewer({ isPortrait, imageCount, cols: autoLayout.cols, rows: autoLayout.rows });
+      return; // Success — don't navigate in the main window
+    } catch (e) {
+      console.warn('Failed to open viewer popup, falling back to navigation:', e);
+    }
+  }
+
+  // Fallback: load study in current window and navigate
+  useViewerStore.getState().loadStudyFiles(params);
+  navigate(params.layoutParam ? `/viewer?layout=${params.layoutParam}` : '/viewer');
+}
+
 function recalcPages(totalImages: number, spotsPerPage: number) {
   return {
     totalImages,
@@ -276,6 +318,11 @@ export const useViewerStore = create<ViewerState>((set, get) => ({
       currentLayout: layout,
       ...recalcPages(totalImages || mockImages.length, layout.spots),
     });
+    // Resize the popup window to match the new layout's aspect ratio
+    const api = (window as any).electronAPI;
+    if (api?.resizeViewer) {
+      api.resizeViewer({ cols: layout.cols, rows: layout.rows }).catch(() => {});
+    }
   },
   setOrientation: (o) => {
     const { currentLayout, orientation, totalImages } = get();
@@ -320,6 +367,11 @@ export const useViewerStore = create<ViewerState>((set, get) => ({
         currentLayout: matchedLayout,
         ...recalcPages(totalImages || mockImages.length, matchedLayout.spots),
       });
+      // Resize the popup window to match the new layout's aspect ratio
+      const api = (window as any).electronAPI;
+      if (api?.resizeViewer) {
+        api.resizeViewer({ cols: matchedLayout.cols, rows: matchedLayout.rows }).catch(() => {});
+      }
     } else {
       // No matching layout found — create a swapped version on the fly
       const swapped: ViewerLayout = {
@@ -335,6 +387,11 @@ export const useViewerStore = create<ViewerState>((set, get) => ({
         currentLayout: swapped,
         ...recalcPages(totalImages || mockImages.length, swapped.spots),
       });
+      // Resize the popup window to match the new layout's aspect ratio
+      const api = (window as any).electronAPI;
+      if (api?.resizeViewer) {
+        api.resizeViewer({ cols: swapped.cols, rows: swapped.rows }).catch(() => {});
+      }
     }
   },
   setPaperSize: (s) => set({ paperSize: s }),

@@ -985,6 +985,191 @@ ipcMain.handle('get-dicom-port', () => {
 });
 
 // =====================================================
+// CR Viewer Popup Window
+// =====================================================
+let crViewerWindow = null;
+
+ipcMain.handle('open-cr-viewer', (event, { isPortrait, imageCount, cols, rows }) => {
+    const { screen } = require('electron');
+    const primaryDisplay = screen.getPrimaryDisplay();
+    const { width: screenW, height: screenH } = primaryDisplay.workAreaSize;
+
+    // Calculate optimal window width so grid cells match ~4:3 DICOM image aspect ratio
+    // This eliminates black bars around images in contain-fit mode
+    const winH = Math.round(screenH * 0.93);
+    // CRViewerPage chrome: header(~36px) + CRToolbar(~38px) + bottom-bar(~36px) = ~110px
+    const headerPx = 110;
+    // CRSidebar is w-16 (64px) + 1px border + padding = ~70px
+    const sidebarPx = 70;
+    const availableH = winH - headerPx;
+    const imageAR = 4 / 3; // typical DICOM (ultrasound) aspect ratio
+    const cellH = availableH / (rows || 1);
+    const cellW = cellH * imageAR;
+    const gridW = cellW * (cols || 1);
+    const winW = Math.round(Math.min(Math.max(gridW + sidebarPx, 500), screenW * 0.95));
+
+    // Close existing CR viewer window if open
+    if (crViewerWindow && !crViewerWindow.isDestroyed()) {
+        crViewerWindow.close();
+    }
+
+    crViewerWindow = new BrowserWindow({
+        width: winW,
+        height: winH,
+        minWidth: 500,
+        minHeight: 400,
+        title: `DICOM Viewer Pro - Viewer (${imageCount} images)`,
+        icon: path.join(__dirname, 'icon.ico'),
+        webPreferences: {
+            nodeIntegration: false,
+            contextIsolation: true,
+            preload: path.join(__dirname, 'preload.js')
+        }
+    });
+
+    crViewerWindow.center();
+    crViewerWindow.loadURL(`${APP_URL}/cr-viewer`);
+
+    // Menu for CR viewer window
+    const crMenu = Menu.buildFromTemplate([
+        {
+            label: 'View',
+            submenu: [
+                { role: 'reload' },
+                { role: 'forceReload' },
+                { type: 'separator' },
+                { role: 'resetZoom' },
+                { role: 'zoomIn' },
+                { role: 'zoomOut' },
+                { type: 'separator' },
+                { role: 'togglefullscreen' }
+            ]
+        },
+        {
+            label: 'Tools',
+            submenu: [
+                { role: 'toggleDevTools', label: 'Developer Tools', accelerator: 'F12' }
+            ]
+        }
+    ]);
+    crViewerWindow.setMenu(crMenu);
+
+    crViewerWindow.on('closed', () => { crViewerWindow = null; });
+
+    return { success: true, width: winW, height: winH };
+});
+
+// =====================================================
+// Main Viewer Popup Window
+// =====================================================
+let viewerWindow = null;
+
+ipcMain.handle('open-viewer', (event, { isPortrait, imageCount, cols, rows }) => {
+    const { screen } = require('electron');
+    const primaryDisplay = screen.getPrimaryDisplay();
+    const { width: screenW, height: screenH } = primaryDisplay.workAreaSize;
+
+    // Calculate optimal window width so grid cells match ~4:3 DICOM image aspect ratio
+    // This eliminates black bars around images in contain-fit mode
+    const winH = Math.round(screenH * 0.93);
+    // ViewerPage chrome: ViewerHeader(~36px) + ViewerBottomBar(~38px) = ~74px
+    const headerToolbarPx = 74;
+    // ViewerPage sidebars: study-tab(20) + ViewerActionBar(48) + ThumbnailSidebar(144) + ToolsPanel(240) = 452px
+    const sidebarPx = 452;
+    const availableH = winH - headerToolbarPx;
+    const imageAR = 4 / 3; // typical DICOM (ultrasound) aspect ratio
+    const cellH = availableH / (rows || 1);
+    const cellW = cellH * imageAR;
+    const gridW = cellW * (cols || 1);
+    const winW = Math.round(Math.min(Math.max(gridW + sidebarPx, 500), screenW * 0.95));
+
+    // Close existing viewer window if open
+    if (viewerWindow && !viewerWindow.isDestroyed()) {
+        viewerWindow.close();
+    }
+
+    viewerWindow = new BrowserWindow({
+        width: winW,
+        height: winH,
+        minWidth: 500,
+        minHeight: 400,
+        title: `DICOM Viewer Pro - CR Viewer (${imageCount} images)`,
+        icon: path.join(__dirname, 'icon.ico'),
+        webPreferences: {
+            nodeIntegration: false,
+            contextIsolation: true,
+            preload: path.join(__dirname, 'preload.js')
+        }
+    });
+
+    viewerWindow.center();
+    viewerWindow.loadURL(`${APP_URL}/viewer`);
+
+    // Menu for viewer window
+    const viewerMenu = Menu.buildFromTemplate([
+        {
+            label: 'View',
+            submenu: [
+                { role: 'reload' },
+                { role: 'forceReload' },
+                { type: 'separator' },
+                { role: 'resetZoom' },
+                { role: 'zoomIn' },
+                { role: 'zoomOut' },
+                { type: 'separator' },
+                { role: 'togglefullscreen' }
+            ]
+        },
+        {
+            label: 'Tools',
+            submenu: [
+                { role: 'toggleDevTools', label: 'Developer Tools', accelerator: 'F12' }
+            ]
+        }
+    ]);
+    viewerWindow.setMenu(viewerMenu);
+
+    viewerWindow.on('closed', () => { viewerWindow = null; });
+
+    return { success: true, width: winW, height: winH };
+});
+
+// Resize viewer windows when layout changes
+ipcMain.handle('resize-cr-viewer', (event, { cols, rows }) => {
+    if (!crViewerWindow || crViewerWindow.isDestroyed()) return;
+    const { screen } = require('electron');
+    const primaryDisplay = screen.getPrimaryDisplay();
+    const { width: screenW } = primaryDisplay.workAreaSize;
+    const [, winH] = crViewerWindow.getSize();
+    const headerPx = 110;
+    const sidebarPx = 70;
+    const imageAR = 4 / 3;
+    const cellH = (winH - headerPx) / (rows || 1);
+    const cellW = cellH * imageAR;
+    const gridW = cellW * (cols || 1);
+    const newW = Math.round(Math.min(Math.max(gridW + sidebarPx, 500), screenW * 0.95));
+    crViewerWindow.setSize(newW, winH);
+    crViewerWindow.center();
+});
+
+ipcMain.handle('resize-viewer', (event, { cols, rows }) => {
+    if (!viewerWindow || viewerWindow.isDestroyed()) return;
+    const { screen } = require('electron');
+    const primaryDisplay = screen.getPrimaryDisplay();
+    const { width: screenW } = primaryDisplay.workAreaSize;
+    const [, winH] = viewerWindow.getSize();
+    const headerToolbarPx = 74;
+    const sidebarPx = 452;
+    const imageAR = 4 / 3;
+    const cellH = (winH - headerToolbarPx) / (rows || 1);
+    const cellW = cellH * imageAR;
+    const gridW = cellW * (cols || 1);
+    const newW = Math.round(Math.min(Math.max(gridW + sidebarPx, 500), screenW * 0.95));
+    viewerWindow.setSize(newW, winH);
+    viewerWindow.center();
+});
+
+// =====================================================
 // File / Folder Dialog
 // =====================================================
 ipcMain.handle('show-open-dialog', async (event, options) => {

@@ -9,6 +9,7 @@ import { cornerstone, cornerstoneTools } from '@/lib/cornerstoneSetup';
 import { useViewerStore } from '@/stores/viewerStore';
 import { useCustomAnnotationStore, type TextAnnotation, type DrawPath } from '@/stores/customAnnotationStore';
 
+
 // ---- Draw path annotation ---- (interfaces moved to store)
 
 // ---- Component ----

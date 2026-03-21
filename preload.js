@@ -28,6 +28,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
     // DICOM File Server
     getDicomPort: () => ipcRenderer.invoke('get-dicom-port'),
 
+    // CR Viewer popup
+    openCRViewer: (params) => ipcRenderer.invoke('open-cr-viewer', params),
+
+    // Main Viewer popup
+    openViewer: (params) => ipcRenderer.invoke('open-viewer', params),
+
+    // Resize viewer windows when layout changes
+    resizeCRViewer: (params) => ipcRenderer.invoke('resize-cr-viewer', params),
+    resizeViewer: (params) => ipcRenderer.invoke('resize-viewer', params),
+
     // Network DICOM Receiver
     invoke: (channel, ...args) => ipcRenderer.invoke(channel, ...args),
     on: (channel, callback) => ipcRenderer.on(channel, callback),

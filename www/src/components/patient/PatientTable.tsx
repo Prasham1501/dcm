@@ -1,49 +1,36 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { usePatientStore } from '@/stores/patientStore';
-import { useViewerStore } from '@/stores/viewerStore';
+import { openCRViewerPopup } from '@/stores/crViewerStore';
 import type { Patient } from '@/types/patient';
 import { PatientContextMenu } from './PatientContextMenu';
 
 export function PatientTable() {
   const navigate = useNavigate();
-  const { filteredPatients, selectedPatient, selectedPatients, selectPatient, togglePatientSelection, clearSelection } = usePatientStore();
-  const loadStudyFiles = useViewerStore((s) => s.loadStudyFiles);
+  const { filteredPatients, selectedPatient, selectedPatients, selectPatient, togglePatientSelection } = usePatientStore();
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; patient: Patient } | null>(null);
   const tableRef = useRef<HTMLDivElement>(null);
-
-  // Keep a ref to selectedPatients so handleRowClick doesn't re-create on every selection change
-  const selectedPatientsRef = useRef(selectedPatients);
-  selectedPatientsRef.current = selectedPatients;
 
   const handleRowClick = useCallback((patient: Patient, e: React.MouseEvent) => {
     if (e.ctrlKey || e.metaKey) {
       // Ctrl+click: toggle this patient in/out of multi-selection
       togglePatientSelection(patient.id);
     } else {
-      // Normal click on already-selected sole record → deselect it
-      // Normal click on any other record → select only that one
-      const sel = selectedPatientsRef.current;
-      const isSoleSelection = sel.size === 1 && sel.has(patient.id);
-      if (isSoleSelection) {
-        clearSelection();
-      } else {
-        selectPatient(patient);
-      }
+      // Single click: always select only this record, deselect everything else
+      selectPatient(patient);
     }
-  }, [selectPatient, togglePatientSelection, clearSelection]);
+  }, [selectPatient, togglePatientSelection]);
 
   const handleRowDoubleClick = useCallback((patient: Patient) => {
     if (patient.filePaths && patient.filePaths.length > 0) {
-      loadStudyFiles({
+      openCRViewerPopup({
         patientName: patient.patientName,
         patientId: patient.patientId,
         studyDate: patient.studyDate,
         filePaths: patient.filePaths,
-      });
+      }, navigate);
     }
-    navigate('/viewer');
-  }, [navigate, loadStudyFiles]);
+  }, [navigate]);
 
   const handleContextMenu = useCallback((e: React.MouseEvent, patient: Patient) => {
     e.preventDefault();

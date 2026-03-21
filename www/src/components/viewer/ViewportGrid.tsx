@@ -40,8 +40,8 @@ export function ViewportGrid() {
   // Build grid style - handle asymmetric layouts with grid-template-areas
   const gridStyle: React.CSSProperties = {
     display: 'grid',
-    gap: '2px',
-    padding: '2px',
+    gap: '1px',
+    padding: '1px',
     width: '100%',
     height: '100%',
   };

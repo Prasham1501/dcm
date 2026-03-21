@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { usePrintStore } from '@/stores/printStore';
 import { useViewerStore } from '@/stores/viewerStore';
+import { usePatientStore } from '@/stores/patientStore';
 import { useHospitalConfigStore, getFormattedAddress, renderPrintSlot } from '@/stores/hospitalConfigStore';
 import { captureAllViewports } from '@/lib/viewerTools';
 
@@ -149,12 +150,14 @@ export function PrintPreview() {
     const areaNames = currentLayout.areas ? getAreaLetters(currentLayout.areas) : [];
     const imgsHtml = Array.from({ length: currentLayout.spots }).map((_, i) => {
       const src = printImgs[i];
+      const cellBg = src ? '#000' : '#f5f5f5';
+      const cellBorder = settings.borderEnabled ? '1px solid #ccc' : '1px solid #ddd';
       const areaAttr = currentLayout.areas && areaNames[i]
-        ? `style="grid-area:${areaNames[i]};background:#000;display:flex;align-items:center;justify-content:center;overflow:hidden;border:${settings.borderEnabled ? '1px solid #ccc' : 'none'}"`
-        : `style="background:#000;display:flex;align-items:center;justify-content:center;overflow:hidden;border:${settings.borderEnabled ? '1px solid #ccc' : 'none'}"`;
+        ? `style="grid-area:${areaNames[i]};background:${cellBg};display:flex;align-items:center;justify-content:center;overflow:hidden;border:${cellBorder}"`
+        : `style="background:${cellBg};display:flex;align-items:center;justify-content:center;overflow:hidden;border:${cellBorder}"`;
       return src
-        ? `<div ${areaAttr}><img src="${src}" style="max-width:100%;max-height:100%;object-fit:contain" /></div>`
-        : `<div ${areaAttr}><span style="color:#666;font-size:10px">${(pageIdx * currentLayout.spots) + i + 1}</span></div>`;
+        ? `<div ${areaAttr}><img src="${src}" style="width:100%;height:100%;object-fit:contain" /></div>`
+        : `<div ${areaAttr}><span style="color:#aaa;font-size:10px">${(pageIdx * currentLayout.spots) + i + 1}</span></div>`;
     }).join('');
     return `<div class="page">${settings.headerEnabled ? buildHeaderHtml() : ''}${patientBar()}<div class="grid">${imgsHtml}</div>${settings.footerEnabled ? buildFooterHtml() : ''}</div>`;
   };
@@ -214,13 +217,20 @@ td{padding:3px 5px;border:1px solid #000;font-size:9pt}.label{font-weight:bold;w
       }
 
       const pagesHtml = pageCaptures.map((caps, idx) => buildPageHtml(caps, pages[idx] - 1)).join('');
+      // Calculate grid height so cells match 4:3 image AR — same as preview logic
+      // Print area: 100vw - 20mm margins ≈ 100vw - 76px; grid padding 2px each side
+      const printGridW = `calc(100vw - 80px)`;
+      // Ideal cell height: (gridW / cols) * 3/4; ideal grid height: cellH * rows
+      // Use CSS calc for this: gridH = (100vw - 80px) / cols * 3/4 * rows = (100vw - 80px) * rows * 3 / (cols * 4)
+      const printGridH = `calc((100vw - 80px) * ${currentLayout.rows * 3} / ${currentLayout.cols * 4})`;
+      const { gridCols, gridRows, gridAreas } = buildGridCss();
       printWin.document.write(`<!DOCTYPE html><html><head><title>DICOM Print</title>
 <style>
 @page{size:${localPaperSize} ${isLandscape ? 'landscape' : 'portrait'};margin:10mm}
 body{margin:0;font-family:Arial,sans-serif}
 .page{page-break-after:always;page-break-inside:avoid}
 .page:last-child{page-break-after:auto}
-.grid{display:grid;grid-template-columns:${buildGridCss().gridCols};grid-template-rows:${buildGridCss().gridRows};${buildGridCss().gridAreas}gap:2px;padding:10px 15px;height:calc(100vh - 120px)}
+.grid{display:grid;grid-template-columns:${gridCols};grid-template-rows:${gridRows};${gridAreas}gap:1px;padding:2px;width:${printGridW};height:${printGridH};max-height:calc(100vh - 80px)}
 @media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
 </style></head><body>${pagesHtml}<script>window.onload=function(){setTimeout(function(){window.print()},600)}</script></body></html>`);
     }
@@ -228,13 +238,28 @@ body{margin:0;font-family:Arial,sans-serif}
     printWin.document.close();
     addPrintJob({ patientName, studyDate, layout: `${currentLayout.spots} Spots`, copies: localCopies, paperSize: localPaperSize });
     for (let i = 0; i < localCopies; i++) decrementPrintCount();
+
+    // Mark the patient as printed (P column: N → Y)
+    const { patients, editPatient } = usePatientStore.getState();
+    const matchedPatient = patients.find(p => p.patientId === patientId && p.patientName === patientName);
+    if (matchedPatient) {
+      editPatient(matchedPatient.id, { printed: true });
+    }
+
     setPrinting(false);
     setShowPrintPreview(false);
   };
 
-  // Preview grid style
+  // Preview grid style — size height so cells match ~4:3 image AR, eliminating black bars
+  // Available grid width = paper width minus 2×15px side padding
+  // Cell width = gridW / cols; cell height = cellW * 3/4 for 4:3 aspect images
+  // Cap at (ph - 80) to ensure it fits on the paper preview
+  const previewImageAR = 4 / 3;
+  const previewGridW = pw - 30;
+  const previewIdealCellH = (previewGridW / currentLayout.cols) / previewImageAR;
+  const previewGridH = Math.min(previewIdealCellH * currentLayout.rows, ph - 80);
   const previewGridStyle: React.CSSProperties = {
-    display: 'grid', gap: '2px', width: '100%', height: `${(ph - 130) * zoom}px`,
+    display: 'grid', gap: '1px', width: '100%', height: `${previewGridH * zoom}px`,
     ...(currentLayout.areas ? {
       gridTemplateAreas: currentLayout.areas,
       gridTemplateColumns: currentLayout.gridTemplate?.columns ?? `repeat(${currentLayout.cols}, 1fr)`,
@@ -433,16 +458,16 @@ body{margin:0;font-family:Arial,sans-serif}
                 <span className="text-gray-400 text-[8px]">Showing page {currentPage}/{totalPages}</span>
               </div>
             )}
-            <div style={{ padding: `${12 * zoom}px ${15 * zoom}px` }}>
+            <div style={{ padding: `${2 * zoom}px` }}>
               <div style={previewGridStyle}>
                 {Array.from({ length: currentLayout.spots }).map((_, i) => {
                   const aStyle: React.CSSProperties = currentLayout.areas && areaNames[i] ? { gridArea: areaNames[i] } : {};
                   return (
-                    <div key={i} className="bg-black rounded-sm flex items-center justify-center overflow-hidden" style={{ ...aStyle, border: settings.borderEnabled ? '1px solid #ccc' : 'none' }}>
+                    <div key={i} className="flex items-center justify-center overflow-hidden" style={{ ...aStyle, background: hasRealImages && displayImages[i] ? '#000' : '#f0f0f0', border: settings.borderEnabled ? '1px solid #ccc' : '1px solid #ddd' }}>
                       {hasRealImages && displayImages[i]
                         ? <img src={displayImages[i]} className="w-full h-full object-contain" alt={`Image ${i + 1}`} />
-                        : <div className="w-full h-full relative bg-gradient-to-b from-gray-900 to-black flex items-center justify-center">
-                            <span style={{ fontSize: 7 * zoom }} className="text-gray-600">{i + 1}</span>
+                        : <div className="w-full h-full flex items-center justify-center">
+                            <span style={{ fontSize: 7 * zoom }} className="text-gray-400">{i + 1}</span>
                           </div>
                       }
                     </div>

@@ -2,16 +2,45 @@ import { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import JSZip from 'jszip';
 import { usePatientStore } from '@/stores/patientStore';
-import { useViewerStore } from '@/stores/viewerStore';
+import { openCRViewerPopup } from '@/stores/crViewerStore';
+import { localFileToImageId } from '@/lib/dicomLoader';
 import { EditPatientModal } from './EditPatientModal';
 import { CreatePatientModal } from './CreatePatientModal';
 import { ConfirmDialog } from '../shared/ConfirmDialog';
+
+/** Render a DICOM imageId to a JPEG Blob using the Cornerstone canvas. */
+async function dicomToJpeg(imageId: string): Promise<Blob | null> {
+  const cs = (window as any).__cornerstone;
+  if (!cs) return null;
+  try {
+    const image = await cs.loadAndCacheImage(imageId);
+    const div = document.createElement('div');
+    div.style.cssText = `width:${image.width}px;height:${image.height}px;position:fixed;left:-99999px;top:0;visibility:hidden;`;
+    document.body.appendChild(div);
+    try {
+      cs.enable(div);
+      cs.displayImage(div, image);
+      const el = cs.getEnabledElement(div);
+      return await new Promise<Blob>((resolve, reject) => {
+        el.canvas.toBlob(
+          (b: Blob | null) => (b ? resolve(b) : reject(new Error('toBlob failed'))),
+          'image/jpeg',
+          0.92
+        );
+      });
+    } finally {
+      try { cs.disable(div); } catch { /* ignore */ }
+      document.body.removeChild(div);
+    }
+  } catch {
+    return null;
+  }
+}
 
 export function PatientActionBar() {
   const navigate = useNavigate();
   const {
     selectAll,
-    invertSelection,
     selectedPatients,
     filteredPatients,
     selectedPatient,
@@ -97,42 +126,68 @@ export function PatientActionBar() {
       return;
     }
 
-    // Use Export nomenclature
-    const firstName = selected[0].patientName.replace(/[^a-z0-9]/gi, '_');
+    const safeName = (s: string) =>
+      s.replace(/[^a-z0-9]/gi, '_').replace(/_+/g, '_').replace(/^_|_$/g, '');
+
+    const p0 = selected[0];
     const dateStr = new Date().toISOString().slice(0, 10);
-    const downloadName = selected.length === 1 
-      ? `${firstName}.zip`
+    const zipName = selected.length === 1
+      ? `${safeName(p0.patientName)}_${p0.modality || 'DICOM'}.zip`
       : `DICOM_Export_${dateStr}.zip`;
 
-    try {
-      // 1. Get all study Orthanc IDs for selected patients
-      const studyIds: string[] = [];
-      
-      for (const p of selected) {
-        if (p.orthancId) {
-          studyIds.push(p.orthancId);
+    const hasFilePaths = selected.some(p => p.filePaths && p.filePaths.length > 0);
+
+    if (hasFilePaths) {
+      try {
+        const zip = new JSZip();
+
+        for (const p of selected) {
+          if (!p.filePaths || p.filePaths.length === 0) continue;
+
+          const folderLabel = `${safeName(p.patientName)}_${p.modality || 'DICOM'}`;
+          const dest = selected.length > 1 ? zip.folder(folderLabel)! : zip;
+
+          for (let i = 0; i < p.filePaths.length; i++) {
+            const fp = p.filePaths[i];
+            const imageId = localFileToImageId(fp);
+            const jpegBlob = await dicomToJpeg(imageId);
+            if (!jpegBlob) continue;
+            const baseName = (fp.split(/[\\/]/).pop() || `image_${i + 1}`).replace(/\.[^.]+$/, '');
+            dest.file(`${baseName}.jpg`, jpegBlob);
+          }
         }
-      }
 
-      if (studyIds.length === 0) {
-        alert('No DICOM data found for selected patients');
-        return;
+        const content = await zip.generateAsync({
+          type: 'blob',
+          compression: 'DEFLATE',
+          compressionOptions: { level: 1 },
+        });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(content);
+        link.download = zipName;
+        link.click();
+        URL.revokeObjectURL(link.href);
+      } catch (err: any) {
+        alert('Export failed: ' + err.message);
       }
+      return;
+    }
 
-      // 2. Prepare the export on server
+    // Fallback: server-side PHP backup for Orthanc-based patients
+    const studyIds = selected.filter(p => p.orthancId).map(p => p.orthancId!);
+    if (studyIds.length === 0) {
+      alert('No DICOM data found for selected patients');
+      return;
+    }
+    try {
       const response = await fetch('/api/patient/backup-studies.php?action=prepare', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ study_ids: studyIds })
+        body: JSON.stringify({ study_ids: studyIds }),
       });
-
       const result = await response.json();
       if (!result.success) throw new Error(result.error);
-
-      // 3. Trigger download
-      const downloadUrl = `/api/patient/backup-studies.php?action=download&job_id=${result.job_id}&filename=${encodeURIComponent(downloadName)}`;
-      window.location.href = downloadUrl;
-
+      window.location.href = `/api/patient/backup-studies.php?action=download&job_id=${result.job_id}&filename=${encodeURIComponent(zipName)}`;
     } catch (err: any) {
       alert('Export failed: ' + err.message);
     }
@@ -144,27 +199,14 @@ export function PatientActionBar() {
       <div className="flex items-center justify-center gap-1.5 px-3 py-1.5">
         <ActionButton label="Open" onClick={() => {
           const p = selectedPatient;
-          if (!p) {
-            alert('Select a patient first');
-            return;
-          }
+          if (!p) { alert('Select a patient first'); return; }
           if (p.filePaths && p.filePaths.length > 0) {
-            useViewerStore.getState().loadStudyFiles({
+            openCRViewerPopup({
               patientName: p.patientName,
               patientId: p.patientId,
               studyDate: p.studyDate,
               filePaths: p.filePaths,
-            });
-            navigate('/viewer');
-          } else if (p.studyInstanceUID || p.orthancId) {
-            useViewerStore.getState().loadStudy({
-              patientId: p.patientId,
-              patientName: p.patientName,
-              studyDate: p.studyDate,
-              studyUID: p.studyInstanceUID,
-              orthancStudyId: p.orthancId,
-            });
-            navigate('/viewer');
+            }, navigate);
           } else {
             alert('No DICOM data found for this patient');
           }
@@ -178,7 +220,6 @@ export function PatientActionBar() {
         />
         <ActionButton label="Create new" onClick={() => setShowCreateModal(true)} />
         <ActionButton label="Import dicom" onClick={() => fileInputRef.current?.click()} />
-        <ActionButton label="Invert selection" onClick={invertSelection} />
         <ActionButton label="Select all" onClick={selectAll} />
         <ActionButton
           label="Delete selected"
