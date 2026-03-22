@@ -65,6 +65,8 @@ export function ReportEditorPage() {
   const [currentReportId, setCurrentReportId] = useState<string | null>(null);
   const [saveMessage, setSaveMessage] = useState('');
   const [showColorPicker, setShowColorPicker] = useState(false);
+  const [showTemplateNameInput, setShowTemplateNameInput] = useState(false);
+  const [templateNameInput, setTemplateNameInput] = useState('');
 
   const { mode, toggleTheme } = useThemeStore();
   const {
@@ -176,13 +178,18 @@ export function ReportEditorPage() {
     }
   }, []);
 
-  // Save current content as template
+  // Save current content as template — shows inline input instead of prompt()
   const handleSaveTemplate = useCallback(() => {
-    if (!editorRef.current) return;
-    const name = prompt('Enter template name:');
-    if (!name?.trim()) return;
-    addRichTemplate({ name: name.trim(), content: editorRef.current.innerHTML });
-  }, [addRichTemplate]);
+    setTemplateNameInput('');
+    setShowTemplateNameInput(true);
+  }, []);
+
+  const handleConfirmSaveTemplate = useCallback(() => {
+    if (!editorRef.current || !templateNameInput.trim()) return;
+    addRichTemplate({ name: templateNameInput.trim(), content: editorRef.current.innerHTML });
+    setShowTemplateNameInput(false);
+    setTemplateNameInput('');
+  }, [addRichTemplate, templateNameInput]);
 
   // Print the report
   const handlePrint = useCallback(() => {
@@ -465,6 +472,39 @@ export function ReportEditorPage() {
                 Save as Template
               </button>
             </div>
+            {/* Inline template name input — replaces prompt() */}
+            {showTemplateNameInput && (
+              <div className="px-3 py-2 bg-app-surface border-b border-app-border flex flex-col gap-1.5">
+                <span className="text-[10px] text-app-text-secondary">Template name:</span>
+                <input
+                  type="text"
+                  value={templateNameInput}
+                  onChange={(e) => setTemplateNameInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleConfirmSaveTemplate();
+                    if (e.key === 'Escape') setShowTemplateNameInput(false);
+                  }}
+                  placeholder="e.g. OB Normal"
+                  autoFocus
+                  className="w-full px-2 py-1 text-xs bg-app-bg border border-app-border rounded text-app-text focus:outline-none focus:ring-1 focus:ring-app-accent"
+                />
+                <div className="flex gap-1">
+                  <button
+                    onClick={handleConfirmSaveTemplate}
+                    disabled={!templateNameInput.trim()}
+                    className="flex-1 px-2 py-0.5 text-[10px] font-semibold bg-app-accent text-white rounded hover:bg-app-accent-hover disabled:opacity-40 transition-colors"
+                  >
+                    Save
+                  </button>
+                  <button
+                    onClick={() => setShowTemplateNameInput(false)}
+                    className="px-2 py-0.5 text-[10px] border border-app-border rounded text-app-text hover:bg-app-hover transition-colors"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
             <div className="p-2 space-y-1.5">
               {templates.length === 0 && (
                 <p className="text-xs text-app-text/50 text-center py-4">No templates saved yet</p>

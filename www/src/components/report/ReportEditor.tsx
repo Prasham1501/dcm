@@ -36,7 +36,7 @@ export function ReportEditor() {
       if (existing) {
         setTitle(existing.title || 'Radiology Report');
         setDoctor(existing.doctor || '');
-        setStatus(existing.status || 'draft');
+        setStatus((existing.status === 'final' ? 'final' : 'draft') as 'draft' | 'final');
         setFindings(existing.findings || '');
         setImpression(existing.impression || '');
         setRecommendation(existing.recommendation || '');

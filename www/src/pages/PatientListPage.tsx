@@ -11,12 +11,32 @@ import { FolderSyncBar } from '@/components/patient/FolderSyncBar';
 import { PatientStatusBar } from '@/components/patient/PatientStatusBar';
 import { useThemeStore, DARK_THEME_COLORS } from '@/stores/themeStore';
 import { useReportStore } from '@/stores/reportStore';
+
+// Re-hydrate the report store from localStorage whenever the popup window
+// saves a report (it writes to localStorage in its own JS context, which
+// triggers the main window's 'storage' event).
+function useReportStoreCrossWindowSync() {
+  useEffect(() => {
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key === 'report-store') {
+        // Force Zustand to re-read from localStorage so the patient table
+        // immediately shows updated report counts/indicators.
+        try {
+          useReportStore.persist.rehydrate();
+        } catch { /* older Zustand versions may not expose rehydrate */ }
+      }
+    };
+    window.addEventListener('storage', handleStorage);
+    return () => window.removeEventListener('storage', handleStorage);
+  }, []);
+}
 import { ReportEditor } from '@/components/report/ReportEditor';
 import { Sun, Moon, Palette } from 'lucide-react';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 export function PatientListPage() {
+  useReportStoreCrossWindowSync();
   const navigate = useNavigate();
   const loadPatients = usePatientStore((s) => s.loadPatients);
   const selectedPatient = usePatientStore((s) => s.selectedPatient);
@@ -75,7 +95,7 @@ export function PatientListPage() {
                               ? 'ring-2 ring-offset-1 ring-offset-transparent'
                               : 'hover:bg-app-hover'
                           }`}
-                          style={darkColorId === color.id ? { ringColor: color.accent } : undefined}
+                          style={darkColorId === color.id ? { outline: `2px solid ${color.accent}` } : undefined}
                         >
                           <div
                             className="w-4 h-4 rounded-full border border-gray-600 flex-shrink-0"

@@ -269,22 +269,7 @@ export function StudiesPage() {
           />
         );
       })()}
-      {showReportEditor && (() => {
-        const patient = patients.find(p => p.id === showReportEditor.studyId);
-        const existingReport = reportStore.getReport(showReportEditor.studyId);
-        return (
-          <ReportEditor
-            studyId={showReportEditor.studyId}
-            mode={showReportEditor.mode}
-            existingReport={showReportEditor.mode === 'edit' ? existingReport : undefined}
-            patientName={patient?.patientName}
-            studyDate={patient?.studyDate}
-            studyDescription={patient?.studyDescription}
-            onClose={() => setShowReportEditor(null)}
-            onSave={() => { setShowReportEditor(null); }}
-          />
-        );
-      })()}
+      {showReportEditor && <ReportEditor />}
     </div>
   );
 }

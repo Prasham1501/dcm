@@ -131,7 +131,7 @@ function DicomViewportInner({
     };
   }, []);
 
-  // Sync viewport state (W/L, zoom) back to store on every render
+  // Sync viewport state (W/L, zoom, pan) back to store and to all selected viewports
   // This catches changes made by cornerstone tools (Wwwc, Zoom, Pan) interactively
   useEffect(() => {
     const el = elementRef.current;
@@ -139,8 +139,8 @@ function DicomViewportInner({
 
     const handleImageRendered = () => {
       if (!enabledRef.current) return;
-      const { selectedViewport, setLevel, setWidth, setZoom } = useViewerStore.getState();
-      // Only sync from the selected viewport to avoid conflicts
+      const { selectedViewport, selectedViewportIndices, setLevel, setWidth, setZoom } = useViewerStore.getState();
+      // Only sync from the primary selected viewport to avoid conflicts
       if (viewportIndex !== selectedViewport) return;
       try {
         const vp = cornerstone.getViewport(el);
@@ -151,6 +151,23 @@ function DicomViewportInner({
           }
           if (vp.scale) {
             setZoom(vp.scale);
+          }
+          // Sync pan (translation) to all other selected viewports in real-time
+          if (vp.translation && selectedViewportIndices.length > 1) {
+            const tx = vp.translation.x;
+            const ty = vp.translation.y;
+            selectedViewportIndices.forEach((vpIdx) => {
+              if (vpIdx === viewportIndex) return;
+              const vpEl = document.querySelector(`[data-viewport-index="${vpIdx}"]`) as HTMLElement;
+              if (!vpEl) return;
+              try {
+                const otherVp = cornerstone.getViewport(vpEl);
+                if (otherVp) {
+                  otherVp.translation = { x: tx, y: ty };
+                  cornerstone.setViewport(vpEl, otherVp);
+                }
+              } catch { /* ignore */ }
+            });
           }
         }
       } catch { /* ignore */ }

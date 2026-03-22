@@ -148,7 +148,7 @@ export function ViewerHeader() {
                             ? 'ring-2 ring-offset-1 ring-offset-transparent'
                             : 'hover:bg-app-hover'
                         }`}
-                        style={darkColorId === color.id ? { ringColor: color.accent } : undefined}
+                        style={darkColorId === color.id ? { outline: `2px solid ${color.accent}` } : undefined}
                       >
                         <div
                           className="w-4 h-4 rounded-full border border-gray-600 flex-shrink-0"
