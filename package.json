@@ -21,22 +21,19 @@
     "build": {
         "appId": "com.hospital.dicom-viewer-pro",
         "productName": "DICOM Viewer Pro",
+        "icon": "icon.ico",
         "directories": {
-            "output": "dist"
+            "output": "dist",
+            "app": "."
         },
         "files": [
             "main.js",
             "preload.js",
-            "splash.html"
+            "splash.html",
+            "icon.ico",
+            "package.json"
         ],
         "extraResources": [
-            {
-                "from": "php",
-                "to": "php",
-                "filter": [
-                    "**/*"
-                ]
-            },
             {
                 "from": "mysql",
                 "to": "mysql",
@@ -61,30 +58,15 @@
                 ]
             },
             {
-                "from": "www",
-                "to": "www",
+                "from": "www/dist",
+                "to": "www/dist",
                 "filter": [
-                    "dist/**/*",
-                    "api/**/*",
-                    "auth/**/*",
-                    "includes/**/*",
-                    "database/**/*",
-                    "orthanc-config/**/*",
-                    "router.php",
-                    "index.html",
-                    "!node_modules/**",
-                    "!src/**",
-                    "!.claude/**",
-                    "!*.config.*",
-                    "!tsconfig*",
-                    "!postcss*",
-                    "!vite*",
-                    "!.env*",
-                    "!package*.json"
+                    "**/*"
                 ]
             }
         ],
         "win": {
+            "icon": "icon.ico",
             "target": [
                 {
                     "target": "nsis",

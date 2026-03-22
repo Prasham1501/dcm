@@ -216,12 +216,10 @@ function CRViewportInner({
   return (
     <div
       ref={containerRef}
-      className={`w-full h-full relative bg-black overflow-hidden ${
-        isSelected ? 'outline outline-2 outline-blue-400 outline-offset-[-2px]' : ''
-      } ${isStampMode ? 'cursor-crosshair' : 'cursor-default'}`}
-      onMouseDown={handleMouseDown}
+      className={`w-full h-full relative bg-black overflow-hidden ${isStampMode ? 'cursor-crosshair' : 'cursor-default'}`}
+      onMouseDownCapture={handleMouseDown}
       onContextMenu={(e) => e.preventDefault()}
-      onClick={handleClick}
+      onClickCapture={handleClick}
     >
       {/* Cornerstone render target */}
       <div

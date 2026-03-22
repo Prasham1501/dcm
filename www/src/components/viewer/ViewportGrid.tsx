@@ -1,4 +1,4 @@
-import { useCallback, useRef, useEffect, useState } from 'react';
+import { useCallback, useRef, useEffect } from 'react';
 import { useViewerStore } from '@/stores/viewerStore';
 import { DicomViewport } from './DicomViewport';
 import { useAnnotationPersistence, restoreAnnotations } from '@/hooks/useAnnotationPersistence';
@@ -15,10 +15,28 @@ export function ViewportGrid() {
     currentLayout, currentPage, selectedViewport, setSelectedViewport,
     selectedViewportIndices, toggleViewportSelection,
     patientName, studyDate, images, activeToolId, viewportsCleared,
-    isArrangeMode, arrangeClickOrder, toggleArrangeViewport, viewportImageOverrides, setViewportImageOverride, toggleArrangeMode
+    isArrangeMode, arrangeClickOrder, toggleArrangeViewport, viewportImageOverrides, setViewportImageOverride, toggleArrangeMode,
+    toggleSingleViewport
   } = useViewerStore();
 
   const gridRef = useRef<HTMLDivElement>(null);
+  const shiftFirstRef = useRef<number | null>(null);
+  const selectAllViewports = useViewerStore((s) => s.selectAllViewports);
+
+  // Ctrl+A: select all viewports (capture phase so it fires before browser's native select-all)
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        selectAllViewports();
+      }
+    };
+    document.addEventListener('keydown', handler, true);
+    return () => document.removeEventListener('keydown', handler, true);
+  }, [selectAllViewports]);
 
   // Listen for annotation events and auto-save
   useAnnotationPersistence();
@@ -40,10 +58,11 @@ export function ViewportGrid() {
   // Build grid style - handle asymmetric layouts with grid-template-areas
   const gridStyle: React.CSSProperties = {
     display: 'grid',
-    gap: '1px',
-    padding: '1px',
+    gap: '2px',
+    padding: '2px',
     width: '100%',
     height: '100%',
+    backgroundColor: '#374151', // gray-700 separator lines between viewports
   };
 
   if (currentLayout.areas) {
@@ -68,18 +87,54 @@ export function ViewportGrid() {
     ? images.map((img) => img.imageUrl || '')
     : [];
 
-  // Handle viewport click with multi-select (Ctrl+click adds to selection)
+  // Handle viewport click with multi-select (Ctrl+click adds to selection) and Shift+click swap
   const handleViewportClick = useCallback((index: number, e: React.MouseEvent) => {
     if (isArrangeMode) {
       toggleArrangeViewport(index);
       return;
     }
+
+    // Shift+click: swap two viewports
+    if (e.shiftKey) {
+      if (shiftFirstRef.current === null) {
+        shiftFirstRef.current = index;
+        setSelectedViewport(index);
+      } else {
+        const first = shiftFirstRef.current;
+        shiftFirstRef.current = null;
+        if (first !== index) {
+          const store = useViewerStore.getState();
+          const getImageUrl = (vpIdx: number) => {
+            const override = store.viewportImageOverrides[vpIdx];
+            if (override) return override;
+            const imgIdx = (store.currentPage - 1) * store.currentLayout.spots + vpIdx;
+            return store.images[imgIdx]?.imageUrl || null;
+          };
+          const urlA = getImageUrl(first);
+          const urlB = getImageUrl(index);
+          if (urlA && urlB) {
+            store.setViewportImageOverride(first, urlB);
+            store.setViewportImageOverride(index, urlA);
+          }
+        }
+        setSelectedViewport(index);
+      }
+      return;
+    }
+
+    shiftFirstRef.current = null;
+
     if (e.ctrlKey || e.metaKey) {
       toggleViewportSelection(index);
     } else {
       setSelectedViewport(index);
     }
   }, [isArrangeMode, toggleArrangeViewport, setSelectedViewport, toggleViewportSelection]);
+
+  const handleViewportDoubleClick = useCallback((index: number) => {
+    if (isArrangeMode) return;
+    toggleSingleViewport(index);
+  }, [isArrangeMode, toggleSingleViewport]);
 
   // Handle drop of a thumbnail image onto a specific viewport slot
   const handleViewportImageDrop = useCallback((slotIndex: number, imageUrl: string) => {
@@ -128,7 +183,9 @@ export function ViewportGrid() {
               : imgIndex;
 
             return (
-              <div key={`vp-${i}`} style={areaStyle} className={`relative overflow-hidden min-h-0 ${isArrangeMode ? 'cursor-pointer' : ''}`}>
+              <div key={`vp-${i}`} style={areaStyle} className={`relative overflow-hidden min-h-0 ${isArrangeMode ? 'cursor-pointer' : ''}`}
+                onDoubleClick={() => handleViewportDoubleClick(i)}
+              >
                 <div className={`${isArrangeMode ? 'pointer-events-none' : ''} w-full h-full`}>
                   <DicomViewport
                     imageId={imageId}
@@ -142,6 +199,13 @@ export function ViewportGrid() {
                     onImageDrop={(url) => handleViewportImageDrop(i, url)}
                   />
                 </div>
+                {/* Selection border overlay - rendered ON TOP with box-shadow so it can't be clipped */}
+                {(isSelected || isMultiSelected) && (
+                  <div
+                    className="absolute inset-0 z-40 pointer-events-none"
+                    style={{ boxShadow: 'inset 0 0 0 3px #ef4444' }}
+                  />
+                )}
                 {/* Arrange Overlay */}
                 {isArrangeMode && arrangeClickOrder.includes(i) && (
                   <div 
@@ -167,10 +231,11 @@ export function ViewportGrid() {
               <div
                 key={`empty-${i}`}
                 onClick={(e) => handleViewportClick(i, e)}
-                style={areaStyle}
-                className={`relative bg-black border cursor-pointer overflow-hidden ${
-                  isSelected && !isArrangeMode ? 'border-blue-500' : 'border-gray-800'
-                }`}
+                style={{
+                  ...areaStyle,
+                  ...((isSelected || isMultiSelected) && !isArrangeMode ? { boxShadow: 'inset 0 0 0 3px #ef4444' } : {}),
+                }}
+                className="relative bg-black border border-gray-800 cursor-pointer overflow-hidden"
               >
                 <div className="absolute inset-0 flex flex-col items-center justify-center text-gray-700 text-xs gap-1 select-none">
                   <span className="text-2xl opacity-30">&#x2B1B;</span>

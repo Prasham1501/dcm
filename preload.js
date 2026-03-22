@@ -34,6 +34,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     // Main Viewer popup
     openViewer: (params) => ipcRenderer.invoke('open-viewer', params),
 
+    // Viewer + Report Editor side-by-side
+    openViewerWithReport: (params) => ipcRenderer.invoke('open-viewer-with-report', params),
+
+    // Standalone Report Editor window
+    openReportEditor: () => ipcRenderer.invoke('open-report-editor'),
+
     // Resize viewer windows when layout changes
     resizeCRViewer: (params) => ipcRenderer.invoke('resize-cr-viewer', params),
     resizeViewer: (params) => ipcRenderer.invoke('resize-viewer', params),

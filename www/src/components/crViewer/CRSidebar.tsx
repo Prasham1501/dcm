@@ -13,7 +13,19 @@ export function CRSidebar() {
     resetAll, resetOne, selectedViewport,
     currentPage, totalPages,
     nextPage, prevPage,
+    patientName, patientId, studyDate,
   } = useCRViewerStore();
+
+  const handleOpenReport = async () => {
+    localStorage.setItem('report-launch', JSON.stringify({
+      patientName, patientId, studyDate, timestamp: Date.now(),
+    }));
+    const api = (window as any).electronAPI;
+    if (api?.openReportEditor) {
+      try { await api.openReportEditor(); return; } catch { /* fallback */ }
+    }
+    window.open('/report-editor', '_blank');
+  };
 
   const SidebarButton = ({
     onClick,
@@ -109,9 +121,9 @@ export function CRSidebar() {
 
       {/* Report */}
       <SidebarButton
-        onClick={() => { /* Report functionality - to be wired */ }}
+        onClick={handleOpenReport}
         label="Report"
-        title="Open report"
+        title="Open report editor"
         icon={FileText}
         variant="accent"
       />

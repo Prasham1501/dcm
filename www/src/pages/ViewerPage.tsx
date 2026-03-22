@@ -45,20 +45,26 @@ export function ViewerPage() {
     } catch { /* ignore parse errors */ }
   }, [loadStudyFiles]);
 
-  // Global Ctrl+Z undo listener
+  // Global Ctrl+Z undo and Ctrl+A select-all listener
+  const selectAllViewports = useViewerStore((s) => s.selectAllViewports);
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
-        const target = e.target as HTMLElement;
-        if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return;
-        
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return;
+
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
         e.preventDefault();
         undo();
       }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') {
+        e.preventDefault();
+        e.stopPropagation();
+        selectAllViewports();
+      }
     };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [undo]);
+    window.addEventListener('keydown', handleKeyDown, { capture: true });
+    return () => window.removeEventListener('keydown', handleKeyDown, true);
+  }, [undo, selectAllViewports]);
 
   // Auto-open cine if ?cine=1 in URL
   useEffect(() => {
@@ -68,7 +74,7 @@ export function ViewerPage() {
   }, [searchParams, setShowCine]);
 
   return (
-    <div className="flex flex-col h-screen bg-app-bg">
+    <div className="flex flex-col h-screen bg-app-bg select-none">
       {/* Header */}
       <ViewerHeader />
 

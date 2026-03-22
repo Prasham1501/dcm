@@ -195,8 +195,8 @@ export function PatientActionBar() {
 
   return (
     <div className="border-t border-app-border bg-app-surface">
-      {/* Row 1: Action buttons */}
-      <div className="flex items-center justify-center gap-1.5 px-3 py-1.5">
+      {/* Single row: All action buttons combined */}
+      <div className="flex items-center justify-center gap-1.5 px-3 py-1.5 flex-wrap">
         <ActionButton label="Open" onClick={() => {
           const p = selectedPatient;
           if (!p) { alert('Select a patient first'); return; }
@@ -252,29 +252,18 @@ export function PatientActionBar() {
 
         <ActionButton label="Export selected" onClick={handleExportSelected} />
         <ActionButton label="Read backup" onClick={() => backupInputRef.current?.click()} />
-      </div>
 
-      {/* Row 2: Bottom buttons */}
-      <div className="flex items-center justify-between px-3 py-1.5 border-t border-app-border">
-        <div className="flex items-center gap-1.5">
-          {/* Nondicom button removed */}
-        </div>
+        <label className="flex items-center gap-1.5 text-xs text-app-text-secondary ml-2">
+          <input type="checkbox" className="accent-app-accent w-3 h-3" />
+          Delete after backup
+        </label>
 
-        <div className="flex items-center gap-3">
-          <span className="text-xs font-bold text-app-accent">DELETE</span>
-
-          <label className="flex items-center gap-1.5 text-xs text-app-text-secondary">
-            <input type="checkbox" className="accent-app-accent w-3 h-3" />
-            Delete after backup
-          </label>
-
-          <ActionButton
-            label="Exit"
-            onClick={() => {
-              if (window.confirm('Exit application?')) window.close();
-            }}
-          />
-        </div>
+        <ActionButton
+          label="Exit"
+          onClick={() => {
+            if (window.confirm('Exit application?')) window.close();
+          }}
+        />
       </div>
 
       {/* Hidden file inputs */}

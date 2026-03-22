@@ -2,18 +2,58 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { Report } from '@/types/study';
 
+export interface ReportTemplate {
+  id: string;
+  name: string;
+  findings: string;
+  impression: string;
+  recommendation: string;
+  content?: string; // Rich HTML content for full-page editor templates
+  createdAt: number;
+}
+
+export interface SavedReport {
+  id: string;
+  patientId: string;
+  patientName: string;
+  studyDate: string;
+  content: string; // HTML
+  title: string;
+  doctor: string;
+  status: 'draft' | 'final';
+  createdAt: number;
+  updatedAt: number;
+}
+
 interface ReportStore {
   reports: Record<string, Report>;
+  templates: ReportTemplate[];
+  savedReports: SavedReport[];
+  showReportEditor: boolean;
+  editingPatientId: string | null;
+  editingPatientName: string;
   getReport: (studyId: string) => Report | undefined;
   saveReport: (studyId: string, data: Omit<Report, 'id' | 'studyId'>) => void;
   deleteReport: (studyId: string) => void;
   printReport: (studyId: string) => void;
+  openReportEditor: (patientId: string, patientName: string) => void;
+  closeReportEditor: () => void;
+  addTemplate: (template: Omit<ReportTemplate, 'id' | 'createdAt'>) => void;
+  removeTemplate: (id: string) => void;
+  saveFullReport: (report: Omit<SavedReport, 'id' | 'createdAt' | 'updatedAt'> & { id?: string }) => void;
+  getReportsForPatient: (patientId: string) => SavedReport[];
+  addRichTemplate: (template: { name: string; content: string }) => void;
 }
 
 export const useReportStore = create<ReportStore>()(
   persist(
     (set, get) => ({
       reports: {},
+      templates: [],
+      savedReports: [],
+      showReportEditor: false,
+      editingPatientId: null,
+      editingPatientName: '',
 
       getReport: (studyId: string) => {
         return get().reports[studyId];
@@ -81,11 +121,70 @@ export const useReportStore = create<ReportStore>()(
         printWindow.focus();
         printWindow.print();
       },
+      openReportEditor: (patientId, patientName) => {
+        set({ showReportEditor: true, editingPatientId: patientId, editingPatientName: patientName });
+      },
+
+      closeReportEditor: () => {
+        set({ showReportEditor: false, editingPatientId: null, editingPatientName: '' });
+      },
+
+      addTemplate: (template) => {
+        const id = `tpl-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+        set((s) => ({
+          templates: [...s.templates, { ...template, id, createdAt: Date.now() }],
+        }));
+      },
+
+      removeTemplate: (id) => {
+        set((s) => ({
+          templates: s.templates.filter(t => t.id !== id),
+        }));
+      },
+
+      saveFullReport: (report) => {
+        const now = Date.now();
+        const id = report.id || `rpt-full-${now}-${Math.random().toString(36).slice(2, 6)}`;
+        const existing = get().savedReports.find(r => r.id === id);
+        const savedReport: SavedReport = {
+          ...report,
+          id,
+          createdAt: existing?.createdAt || now,
+          updatedAt: now,
+        };
+        set((s) => ({
+          savedReports: [
+            ...s.savedReports.filter(r => r.id !== id),
+            savedReport,
+          ],
+        }));
+      },
+
+      getReportsForPatient: (patientId) => {
+        return get().savedReports.filter(r => r.patientId === patientId);
+      },
+
+      addRichTemplate: (template) => {
+        const id = `tpl-rich-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+        set((s) => ({
+          templates: [...s.templates, {
+            id,
+            name: template.name,
+            findings: '',
+            impression: '',
+            recommendation: '',
+            content: template.content,
+            createdAt: Date.now(),
+          }],
+        }));
+      },
     }),
     {
       name: 'report-store',
       partialize: (state) => ({
         reports: state.reports,
+        templates: state.templates,
+        savedReports: state.savedReports,
       }),
     }
   )

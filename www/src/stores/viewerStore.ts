@@ -50,6 +50,11 @@ interface ViewerState {
   selectedViewportIndices: number[];
   activeToolId: string;
 
+  // Double-click zoom (toggle 1x1)
+  preDoubleClickLayout: ViewerLayout | null;
+  preDoubleClickPage: number;
+  doubleClickViewportImage: string | null;
+
   // UI
   showLogo: boolean;
   level: number;
@@ -128,6 +133,9 @@ interface ViewerState {
   toggleArrangeViewport: (viewportIndex: number) => void;
   setViewportImageOverride: (viewportIndex: number, imageUrl: string) => void;
   clearViewportOverrides: () => void;
+
+  // Double-click toggle
+  toggleSingleViewport: (viewportIndex: number) => void;
 
   // Local file loading
   loadLocalFiles: (files: FileList | File[]) => void;
@@ -283,6 +291,10 @@ export const useViewerStore = create<ViewerState>((set, get) => ({
   selectedViewport: 0,
   selectedViewportIndices: [0],
   activeToolId: 'select',
+
+  preDoubleClickLayout: null,
+  preDoubleClickPage: 1,
+  doubleClickViewportImage: null,
 
   showLogo: true,
   level: 0,
@@ -516,34 +528,61 @@ export const useViewerStore = create<ViewerState>((set, get) => ({
   },
 
   toggleArrangeMode: () => {
-    const { isArrangeMode, arrangeSelectedImages, arrangeClickOrder, viewportImageOverrides, images } = get();
+    const { isArrangeMode, arrangeSelectedImages, arrangeClickOrder, viewportImageOverrides, images, currentLayout, currentPage } = get();
     if (isArrangeMode) {
-      // Apply mapping before turning off
-      const newOverrides = { ...viewportImageOverrides };
-      
-      // If user selected viewports but no images, assume they wanted the first N images of the study
-      let finalImagesToArrange = arrangeSelectedImages;
-      if (finalImagesToArrange.length === 0 && arrangeClickOrder.length > 0) {
-        finalImagesToArrange = images.slice(0, arrangeClickOrder.length).map(img => img.imageUrl);
+      if (arrangeClickOrder.length === 0) {
+        set({ isArrangeMode: false, arrangeSelectedImages: [], arrangeClickOrder: [] });
+        return;
       }
 
+      const startIndex = (currentPage - 1) * currentLayout.spots;
+      const selectedCount = arrangeClickOrder.length;
+
+      // Collect images from the selected viewports in click order
+      const selectedImages: string[] = [];
       for (let i = 0; i < arrangeClickOrder.length; i++) {
-        if (i < finalImagesToArrange.length) {
-          newOverrides[arrangeClickOrder[i]] = finalImagesToArrange[i];
+        const vpIdx = arrangeClickOrder[i];
+        const overrideUrl = viewportImageOverrides[vpIdx];
+        const defaultImg = images[startIndex + vpIdx];
+        const imageUrl = overrideUrl || defaultImg?.imageUrl;
+        if (imageUrl) selectedImages.push(imageUrl);
+      }
+
+      // If no images collected from viewports, use first N study images
+      if (selectedImages.length === 0) {
+        for (let i = 0; i < selectedCount && i < images.length; i++) {
+          selectedImages.push(images[i].imageUrl);
         }
       }
-      
+
+      // Auto-select best layout for the selected count
+      const { layout: bestLayout } = autoSelectLayout(selectedCount);
+
+      // Build new overrides: place selected images sequentially in the new layout
+      const newOverrides: Record<number, string> = {};
+      for (let i = 0; i < selectedImages.length && i < bestLayout.spots; i++) {
+        newOverrides[i] = selectedImages[i];
+      }
+
       set({
         isArrangeMode: false,
         arrangeSelectedImages: [],
         arrangeClickOrder: [],
+        currentLayout: bestLayout,
+        ...recalcPages(get().totalImages, bestLayout.spots),
         viewportImageOverrides: newOverrides,
       });
+
+      // Resize the popup window
+      const api = (window as any).electronAPI;
+      if (api?.resizeViewer) {
+        api.resizeViewer({ cols: bestLayout.cols, rows: bestLayout.rows }).catch(() => {});
+      }
     } else {
-      set({ 
-        isArrangeMode: true, 
-        arrangeSelectedImages: [], 
-        arrangeClickOrder: [] 
+      set({
+        isArrangeMode: true,
+        arrangeSelectedImages: [],
+        arrangeClickOrder: []
       });
     }
   },
@@ -579,6 +618,54 @@ export const useViewerStore = create<ViewerState>((set, get) => ({
   },
 
   clearViewportOverrides: () => set({ viewportImageOverrides: {} }),
+
+  // Double-click toggle: zoom into 1x1 showing clicked image, or restore previous layout
+  toggleSingleViewport: (viewportIndex) => {
+    const { preDoubleClickLayout, currentLayout, currentPage, images, viewportImageOverrides } = get();
+    const allLayouts = LAYOUT_CATEGORIES.flatMap(c => c.layouts);
+    const singleLayout = allLayouts.find(l => l.id === '1x1')!;
+
+    if (preDoubleClickLayout) {
+      // Restore previous layout
+      const prevLayout = preDoubleClickLayout;
+      const prevPage = get().preDoubleClickPage;
+      set({
+        currentLayout: prevLayout,
+        ...recalcPages(get().totalImages, prevLayout.spots),
+        currentPage: prevPage,
+        preDoubleClickLayout: null,
+        preDoubleClickPage: 1,
+        doubleClickViewportImage: null,
+        viewportImageOverrides: {},
+      });
+      const api = (window as any).electronAPI;
+      if (api?.resizeViewer) {
+        api.resizeViewer({ cols: prevLayout.cols, rows: prevLayout.rows }).catch(() => {});
+      }
+    } else {
+      // Zoom into 1x1 showing the clicked viewport's image
+      const startIndex = (currentPage - 1) * currentLayout.spots;
+      const overrideUrl = viewportImageOverrides[viewportIndex];
+      const defaultImg = images[startIndex + viewportIndex];
+      const imageUrl = overrideUrl || defaultImg?.imageUrl || null;
+
+      if (!imageUrl) return;
+
+      set({
+        preDoubleClickLayout: currentLayout,
+        preDoubleClickPage: currentPage,
+        doubleClickViewportImage: imageUrl,
+        currentLayout: singleLayout,
+        ...recalcPages(get().totalImages, singleLayout.spots),
+        currentPage: 1,
+        viewportImageOverrides: { 0: imageUrl },
+      });
+      const api = (window as any).electronAPI;
+      if (api?.resizeViewer) {
+        api.resizeViewer({ cols: singleLayout.cols, rows: singleLayout.rows }).catch(() => {});
+      }
+    }
+  },
 
   loadStudy: async (params) => {
     const layout = get().currentLayout;

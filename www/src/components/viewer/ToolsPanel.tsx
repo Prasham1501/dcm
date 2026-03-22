@@ -210,6 +210,8 @@ export function ToolsPanel() {
     setActiveFilter('none');
     // Reset toggle states
     setToggleStates({ 'flip-h': false, 'flip-v': false, 'invert': false });
+    // Clear any viewport image swaps/overrides
+    useViewerStore.getState().clearViewportOverrides();
   }, [setActiveTool]);
 
   const handleClearAll = useCallback(() => {
@@ -256,7 +258,7 @@ export function ToolsPanel() {
   const multiSelected = selectedViewportIndices.length > 1;
 
   return (
-    <div className="w-60 flex flex-col bg-app-surface border-l border-app-border overflow-y-auto">
+    <div className="w-72 flex flex-col bg-app-surface border-l border-app-border overflow-y-auto">
       {/* W/L Presets */}
       <div className="p-2 border-b border-app-border">
         <button

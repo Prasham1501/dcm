@@ -168,7 +168,7 @@ export function ThumbnailSidebar() {
 
   if (!hasRealImages) {
     return (
-      <div className="w-36 flex flex-col bg-gray-900 border-l border-gray-700 overflow-y-auto">
+      <div className="w-44 flex flex-col bg-gray-900 border-l border-gray-700 overflow-y-auto">
         {Array.from({ length: 6 }, (_, i) => (
           <div key={i} className="p-1">
             <div className="text-[9px] text-gray-500 px-0.5">P {i + 1}</div>

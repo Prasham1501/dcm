@@ -68,8 +68,14 @@ interface CRViewerState {
   currentPage: number;
   totalPages: number;
 
+  // Double-click zoom (toggle 1x1)
+  preDoubleClickLayout: CRLayout | null;
+  preDoubleClickPage: number;
+  doubleClickViewportImage: string | null;
+
   // Selection
   selectedViewport: number;
+  selectedViewportIndices: number[];
   selectedCount: number;
 
   // Viewport overrides (for arrange mode)
@@ -106,6 +112,8 @@ interface CRViewerState {
   nextPage: () => void;
   prevPage: () => void;
   setSelectedViewport: (index: number) => void;
+  toggleViewportSelection: (index: number) => void;
+  selectAllViewports: () => void;
 
   // Arrange
   toggleArrangeMode: () => void;
@@ -131,6 +139,9 @@ interface CRViewerState {
   setScrollMode: (v: boolean) => void;
   scrollNext: () => void;
   scrollPrev: () => void;
+
+  // Double-click toggle
+  toggleSingleViewport: (viewportIndex: number) => void;
 
   // Stamps
   addStamp: (stamp: Omit<CRStamp, 'id' | 'createdAt'>) => void;
@@ -234,7 +245,11 @@ export const useCRViewerStore = create<CRViewerState>((set, get) => ({
   currentLayout: CR_LAYOUTS[2], // default 4 spots
   currentPage: 1,
   totalPages: 1,
+  preDoubleClickLayout: null,
+  preDoubleClickPage: 1,
+  doubleClickViewportImage: null,
   selectedViewport: 0,
+  selectedViewportIndices: [0],
   selectedCount: 0,
   viewportImageOverrides: {},
   isArrangeMode: false,
@@ -309,7 +324,21 @@ export const useCRViewerStore = create<CRViewerState>((set, get) => ({
     if (currentPage > 1) set({ currentPage: currentPage - 1 });
   },
 
-  setSelectedViewport: (index) => set({ selectedViewport: index }),
+  setSelectedViewport: (index) => set({ selectedViewport: index, selectedViewportIndices: [index] }),
+
+  toggleViewportSelection: (index) => {
+    const current = get().selectedViewportIndices;
+    const next = current.includes(index)
+      ? current.filter(i => i !== index)
+      : [...current, index];
+    set({ selectedViewportIndices: next.length > 0 ? next : [index], selectedViewport: index });
+  },
+
+  selectAllViewports: () => {
+    const { currentLayout } = get();
+    const indices = Array.from({ length: currentLayout.spots }, (_, i) => i);
+    set({ selectedViewportIndices: indices, selectedViewport: 0 });
+  },
 
   // Arrange
   toggleArrangeMode: () => {
@@ -339,20 +368,40 @@ export const useCRViewerStore = create<CRViewerState>((set, get) => ({
     }
 
     const startIndex = (currentPage - 1) * currentLayout.spots;
-    const newOverrides = { ...viewportImageOverrides };
+    const selectedCount = arrangeClickOrder.length;
 
+    // Collect the images from the selected viewports in click order
+    const selectedImages: string[] = [];
     for (let i = 0; i < arrangeClickOrder.length; i++) {
-      const imgIndex = startIndex + i;
-      if (imgIndex < images.length) {
-        newOverrides[arrangeClickOrder[i]] = images[imgIndex].imageUrl;
-      }
+      const vpIdx = arrangeClickOrder[i];
+      const overrideUrl = viewportImageOverrides[vpIdx];
+      const defaultImg = images[startIndex + vpIdx];
+      const imageUrl = overrideUrl || defaultImg?.imageUrl;
+      if (imageUrl) selectedImages.push(imageUrl);
+    }
+
+    // Auto-select best layout for the count of selected images
+    const bestLayout = autoSelectLayout(selectedCount);
+
+    // Build new overrides: place selected images sequentially in the new layout
+    const newOverrides: Record<number, string> = {};
+    for (let i = 0; i < selectedImages.length && i < bestLayout.spots; i++) {
+      newOverrides[i] = selectedImages[i];
     }
 
     set({
       isArrangeMode: false,
       arrangeClickOrder: [],
+      currentLayout: bestLayout,
+      ...recalcPages(get().totalImages, bestLayout.spots),
       viewportImageOverrides: newOverrides,
     });
+
+    // Resize the popup window
+    const api = (window as any).electronAPI;
+    if (api?.resizeCRViewer) {
+      api.resizeCRViewer({ cols: bestLayout.cols, rows: bestLayout.rows }).catch(() => {});
+    }
   },
 
   setViewportImageOverride: (index, imageUrl) => {
@@ -384,6 +433,53 @@ export const useCRViewerStore = create<CRViewerState>((set, get) => ({
   // Resequence: reset overrides to default sequential order
   resequence: () => {
     set({ viewportImageOverrides: {} });
+  },
+
+  // Double-click toggle: zoom into 1x1 showing clicked image, or restore previous layout
+  toggleSingleViewport: (viewportIndex) => {
+    const { preDoubleClickLayout, currentLayout, currentPage, images, viewportImageOverrides } = get();
+    const singleLayout = CR_LAYOUTS[0]; // 1 Spot
+
+    if (preDoubleClickLayout) {
+      // Restore previous layout
+      const prevLayout = preDoubleClickLayout;
+      const prevPage = get().preDoubleClickPage;
+      set({
+        currentLayout: prevLayout,
+        ...recalcPages(get().totalImages, prevLayout.spots),
+        currentPage: prevPage,
+        preDoubleClickLayout: null,
+        preDoubleClickPage: 1,
+        doubleClickViewportImage: null,
+        viewportImageOverrides: {},
+      });
+      const api = (window as any).electronAPI;
+      if (api?.resizeCRViewer) {
+        api.resizeCRViewer({ cols: prevLayout.cols, rows: prevLayout.rows }).catch(() => {});
+      }
+    } else {
+      // Zoom into 1x1 showing the clicked viewport's image
+      const startIndex = (currentPage - 1) * currentLayout.spots;
+      const overrideUrl = viewportImageOverrides[viewportIndex];
+      const defaultImg = images[startIndex + viewportIndex];
+      const imageUrl = overrideUrl || defaultImg?.imageUrl || null;
+
+      if (!imageUrl) return;
+
+      set({
+        preDoubleClickLayout: currentLayout,
+        preDoubleClickPage: currentPage,
+        doubleClickViewportImage: imageUrl,
+        currentLayout: singleLayout,
+        ...recalcPages(get().totalImages, singleLayout.spots),
+        currentPage: 1,
+        viewportImageOverrides: { 0: imageUrl },
+      });
+      const api = (window as any).electronAPI;
+      if (api?.resizeCRViewer) {
+        api.resizeCRViewer({ cols: singleLayout.cols, rows: singleLayout.rows }).catch(() => {});
+      }
+    }
   },
 
   // Apply to all

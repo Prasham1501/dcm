@@ -1,8 +1,9 @@
 /**
  * CRViewportGrid — Grid layout for CR viewer matching reference software layouts.
  * Supports 1, 2, 4, 6, 8, 9 spot layouts with proper image fitting.
+ * Features: red border selection, Ctrl+click multi-select, Shift+click swap, Ctrl+A select-all.
  */
-import { useCallback } from 'react';
+import { useCallback, useRef, useEffect } from 'react';
 import { useCRViewerStore } from '@/stores/crViewerStore';
 import { CRViewport } from './CRViewport';
 import { Check } from 'lucide-react';
@@ -10,34 +11,89 @@ import { Check } from 'lucide-react';
 export function CRViewportGrid() {
   const {
     currentLayout, currentPage, images, selectedViewport, setSelectedViewport,
+    selectedViewportIndices, toggleViewportSelection, selectAllViewports,
     isArrangeMode, arrangeClickOrder, toggleArrangeViewport, toggleArrangeMode,
-    viewportImageOverrides, showLogo,
+    viewportImageOverrides, setViewportImageOverride, showLogo,
   } = useCRViewerStore();
 
   const startIndex = (currentPage - 1) * currentLayout.spots;
   const hasImages = images.length > 0;
+  const shiftFirstRef = useRef<number | null>(null);
+
+  // Ctrl+A: select all viewports (capture phase)
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        selectAllViewports();
+      }
+    };
+    document.addEventListener('keydown', handler, true);
+    return () => document.removeEventListener('keydown', handler, true);
+  }, [selectAllViewports]);
 
   const handleViewportClick = useCallback((index: number, e: React.MouseEvent) => {
     if (isArrangeMode) {
       toggleArrangeViewport(index);
       return;
     }
-    setSelectedViewport(index);
-  }, [isArrangeMode, toggleArrangeViewport, setSelectedViewport]);
+
+    // Shift+click: swap two viewports
+    if (e.shiftKey) {
+      if (shiftFirstRef.current === null) {
+        shiftFirstRef.current = index;
+        setSelectedViewport(index);
+      } else {
+        const first = shiftFirstRef.current;
+        shiftFirstRef.current = null;
+        if (first !== index) {
+          const store = useCRViewerStore.getState();
+          const getImageUrl = (vpIdx: number) => {
+            const override = store.viewportImageOverrides[vpIdx];
+            if (override) return override;
+            const imgIdx = (store.currentPage - 1) * store.currentLayout.spots + vpIdx;
+            return store.images[imgIdx]?.imageUrl || null;
+          };
+          const urlA = getImageUrl(first);
+          const urlB = getImageUrl(index);
+          if (urlA && urlB) {
+            store.setViewportImageOverride(first, urlB);
+            store.setViewportImageOverride(index, urlA);
+          }
+        }
+        setSelectedViewport(index);
+      }
+      return;
+    }
+
+    shiftFirstRef.current = null;
+
+    // Ctrl+click: toggle multi-select
+    if (e.ctrlKey || e.metaKey) {
+      toggleViewportSelection(index);
+    } else {
+      setSelectedViewport(index);
+    }
+  }, [isArrangeMode, toggleArrangeViewport, setSelectedViewport, toggleViewportSelection, setViewportImageOverride]);
 
   // Build grid style — gap creates visible separator lines using the container bg color
   const gridStyle: React.CSSProperties = {
     display: 'grid',
-    gap: '1px',
+    gap: '2px',
+    padding: '2px',
     width: '100%',
     height: '100%',
     gridTemplateColumns: `repeat(${currentLayout.cols}, 1fr)`,
     gridTemplateRows: `repeat(${currentLayout.rows}, 1fr)`,
+    backgroundColor: '#374151', // gray-700 separator color
   };
 
   return (
-    // bg-gray-600 shows through the 3px gap as visible separator lines between viewports
-    <div className="flex-1 flex flex-col bg-gray-600 overflow-hidden relative">
+    // gray background shows through the 2px gap as visible separator lines between viewports
+    <div className="flex-1 flex flex-col bg-gray-700 overflow-hidden relative">
       <div style={gridStyle} className="flex-1">
         {Array.from({ length: currentLayout.spots }, (_, i) => {
           const imgIndex = startIndex + i;
@@ -45,6 +101,7 @@ export function CRViewportGrid() {
           const defaultImg = hasImages ? images[imgIndex] : null;
           const imageId = overrideUrl || defaultImg?.imageUrl || null;
           const isSelected = selectedViewport === i;
+          const isMultiSelected = selectedViewportIndices.includes(i) && selectedViewportIndices.length > 1;
 
           return (
             <div key={`cr-vp-${i}`} className={`relative overflow-hidden min-h-0 ${isArrangeMode ? 'cursor-pointer' : ''}`}>
@@ -58,6 +115,15 @@ export function CRViewportGrid() {
                   showLogo={showLogo}
                 />
               </div>
+
+              {/* Red selection border overlay — inset box-shadow so it's never clipped */}
+              {(isSelected || isMultiSelected) && !isArrangeMode && (
+                <div
+                  className="absolute inset-0 z-40 pointer-events-none"
+                  style={{ boxShadow: 'inset 0 0 0 3px #ef4444' }}
+                />
+              )}
+
               {/* Arrange overlay */}
               {isArrangeMode && arrangeClickOrder.includes(i) && (
                 <div

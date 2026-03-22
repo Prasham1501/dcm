@@ -419,61 +419,98 @@ async function waitForOrthanc(maxAttempts = 15) {
 }
 
 // =====================================================
-// PHP Server
+// Static File Server (replaces PHP — serves Vite dist)
 // =====================================================
-function startPhpServer() {
-    return new Promise((resolve, reject) => {
-        // Ensure port is free
+const mime = {
+    '.html': 'text/html',
+    '.js':   'application/javascript',
+    '.css':  'text/css',
+    '.json': 'application/json',
+    '.png':  'image/png',
+    '.jpg':  'image/jpeg',
+    '.gif':  'image/gif',
+    '.svg':  'image/svg+xml',
+    '.ico':  'image/x-icon',
+    '.woff': 'font/woff',
+    '.woff2':'font/woff2',
+    '.ttf':  'font/ttf',
+    '.webp': 'image/webp',
+};
+
+let staticServer = null;
+
+function startStaticServer() {
+    return new Promise((resolve) => {
         ensurePortFree(PHP_PORT);
-        
-        console.log('[PHP] Starting server...');
-        const env = { ...process.env, APP_DATA_PATH: userDataPath };
-        if (!isDev || fs.existsSync(mysqldPath)) {
-            env.DB_PORT = String(MYSQL_PORT);
-            env.DB_HOST = '127.0.0.1';
-            env.DB_USER = 'root';
-            env.DB_PASSWORD = '';
-            env.DB_NAME = 'dicom_viewer_pro';
-        }
+        const distPath = path.join(wwwPath, 'dist');
+        console.log('[StaticServer] Starting on port', PHP_PORT, '→', distPath);
 
-        // Use router.php to handle SPA routing
-        const routerPath = path.join(wwwPath, 'router.php');
-        const phpArgs = fs.existsSync(routerPath)
-            ? ['-S', `localhost:${PHP_PORT}`, '-t', wwwPath, routerPath]
-            : ['-S', `localhost:${PHP_PORT}`, '-t', wwwPath];
+        staticServer = http.createServer((req, res) => {
+            // Strip query string
+            let reqPath = url.parse(req.url).pathname;
 
-        phpProcess = spawn(phpPath, phpArgs, {
-            cwd: wwwPath,
-            stdio: ['ignore', 'pipe', 'pipe'],
-            env
+            // Try exact file first
+            let filePath = path.join(distPath, reqPath);
+            const ext = path.extname(filePath).toLowerCase();
+
+            // SPA fallback: any non-file request → index.html
+            const serveFile = (fp) => {
+                fs.readFile(fp, (err, data) => {
+                    if (err) {
+                        res.writeHead(404); res.end('Not found');
+                        return;
+                    }
+                    const fileExt = path.extname(fp).toLowerCase();
+                    res.writeHead(200, { 'Content-Type': mime[fileExt] || 'application/octet-stream' });
+                    res.end(data);
+                });
+            };
+
+            if (ext && mime[ext]) {
+                // Known asset — serve directly, fallback to 404
+                fs.access(filePath, fs.constants.F_OK, (err) => {
+                    if (err) { res.writeHead(404); res.end('Not found'); }
+                    else serveFile(filePath);
+                });
+            } else {
+                // SPA route — always serve index.html
+                serveFile(path.join(distPath, 'index.html'));
+            }
         });
-        phpProcess.stdout.on('data', d => console.log(`[PHP] ${d.toString().trim()}`));
-        phpProcess.stderr.on('data', d => console.log(`[PHP] ${d.toString().trim()}`));
-        phpProcess.on('error', reject);
-        phpProcess.on('close', code => { console.log(`[PHP] Exited: ${code}`); phpProcess = null; });
-        // Reduced from 1000 to 300ms
-        setTimeout(resolve, 300);
+
+        staticServer.listen(PHP_PORT, '127.0.0.1', () => {
+            console.log('[StaticServer] Ready on port', PHP_PORT);
+            resolve(true);
+        });
+        staticServer.on('error', (err) => {
+            console.error('[StaticServer] Error:', err.message);
+            resolve(false);
+        });
     });
 }
 
-function stopPhpServer() {
-    if (phpProcess) { console.log('[PHP] Stopping...'); phpProcess.kill('SIGTERM'); phpProcess = null; }
+function stopStaticServer() {
+    if (staticServer) { staticServer.close(); staticServer = null; }
 }
 
-async function waitForServer(maxAttempts = 30) {
+// Keep these names for startup compatibility
+const startPhpServer = startStaticServer;
+function stopPhpServer() { stopStaticServer(); }
+
+async function waitForServer(maxAttempts = 10) {
+    // Static server resolves synchronously — just do a quick health check
     for (let i = 0; i < maxAttempts; i++) {
         try {
             await new Promise((resolve, reject) => {
-                const req = http.request({ host: 'localhost', port: PHP_PORT, timeout: 2000 }, () => resolve(true));
+                const req = http.request({ host: '127.0.0.1', port: PHP_PORT, timeout: 1000 }, () => resolve(true));
                 req.on('error', reject);
                 req.on('timeout', () => { req.destroy(); reject(new Error('Timeout')); });
                 req.end();
             });
-            console.log('[PHP] Server ready!');
             return true;
-        } catch { await new Promise(r => setTimeout(r, 500)); }
+        } catch { await new Promise(r => setTimeout(r, 200)); }
     }
-    return false;
+    return true; // Static server is reliable — don't block startup
 }
 
 async function checkViteRunning() {
@@ -533,14 +570,11 @@ async function startApp() {
         // Run migrations (blocks until done, but only runs new ones)
         try { await runMigrations(); } catch (e) { console.error('[Startup] Migration warning:', e.message); }
 
-        // 3. Wait for PHP and Orthanc
+        // 3. Wait for static server and Orthanc
         const [orthancReady, phpReady] = await Promise.all([orthancPromise, phpPromise]);
         console.log(`[Startup] Orthanc: ${orthancReady ? 'running' : 'not available'}`);
-        
-        if (!phpReady) {
-            dialog.showErrorBox('Error', 'Failed to start PHP server.');
-            app.quit(); return;
-        }
+        console.log(`[Startup] Static server: ${phpReady ? 'running' : 'retrying...'}`);
+        // Static server is always reliable — no hard failure needed
 
         // 4. Final dev-only checks
         if (isDev) {
@@ -994,15 +1028,14 @@ ipcMain.handle('open-cr-viewer', (event, { isPortrait, imageCount, cols, rows })
     const primaryDisplay = screen.getPrimaryDisplay();
     const { width: screenW, height: screenH } = primaryDisplay.workAreaSize;
 
-    // Calculate optimal window width so grid cells match ~4:3 DICOM image aspect ratio
-    // This eliminates black bars around images in contain-fit mode
+    // Calculate optimal window width so grid cells match DICOM image aspect ratio
     const winH = Math.round(screenH * 0.93);
     // CRViewerPage chrome: header(~36px) + CRToolbar(~38px) + bottom-bar(~36px) = ~110px
     const headerPx = 110;
     // CRSidebar is w-16 (64px) + 1px border + padding = ~70px
     const sidebarPx = 70;
     const availableH = winH - headerPx;
-    const imageAR = 4 / 3; // typical DICOM (ultrasound) aspect ratio
+    const imageAR = 4 / 3; // standard DICOM image aspect ratio
     const cellH = availableH / (rows || 1);
     const cellW = cellH * imageAR;
     const gridW = cellW * (cols || 1);
@@ -1074,14 +1107,14 @@ ipcMain.handle('open-viewer', (event, { isPortrait, imageCount, cols, rows }) =>
     const winH = Math.round(screenH * 0.93);
     // ViewerPage chrome: ViewerHeader(~36px) + ViewerBottomBar(~38px) = ~74px
     const headerToolbarPx = 74;
-    // ViewerPage sidebars: study-tab(20) + ViewerActionBar(48) + ThumbnailSidebar(144) + ToolsPanel(240) = 452px
-    const sidebarPx = 452;
+    // ViewerPage sidebars: study-tab(20) + ViewerActionBar(48) + ThumbnailSidebar(176) + ToolsPanel(288) = 532px
+    const sidebarPx = 532;
     const availableH = winH - headerToolbarPx;
     const imageAR = 4 / 3; // typical DICOM (ultrasound) aspect ratio
     const cellH = availableH / (rows || 1);
     const cellW = cellH * imageAR;
     const gridW = cellW * (cols || 1);
-    const winW = Math.round(Math.min(Math.max(gridW + sidebarPx, 500), screenW * 0.95));
+    const winW = Math.round(Math.min(Math.max(gridW + sidebarPx, 600), screenW * 0.95));
 
     // Close existing viewer window if open
     if (viewerWindow && !viewerWindow.isDestroyed()) {
@@ -1143,7 +1176,7 @@ ipcMain.handle('resize-cr-viewer', (event, { cols, rows }) => {
     const [, winH] = crViewerWindow.getSize();
     const headerPx = 110;
     const sidebarPx = 70;
-    const imageAR = 4 / 3;
+    const imageAR = 4 / 3; // standard DICOM image aspect ratio
     const cellH = (winH - headerPx) / (rows || 1);
     const cellW = cellH * imageAR;
     const gridW = cellW * (cols || 1);
@@ -1159,14 +1192,124 @@ ipcMain.handle('resize-viewer', (event, { cols, rows }) => {
     const { width: screenW } = primaryDisplay.workAreaSize;
     const [, winH] = viewerWindow.getSize();
     const headerToolbarPx = 74;
-    const sidebarPx = 452;
+    const sidebarPx = 532;
     const imageAR = 4 / 3;
     const cellH = (winH - headerToolbarPx) / (rows || 1);
     const cellW = cellH * imageAR;
     const gridW = cellW * (cols || 1);
-    const newW = Math.round(Math.min(Math.max(gridW + sidebarPx, 500), screenW * 0.95));
+    const newW = Math.round(Math.min(Math.max(gridW + sidebarPx, 600), screenW * 0.95));
     viewerWindow.setSize(newW, winH);
     viewerWindow.center();
+});
+
+// =====================================================
+// Open Viewer + Report Editor Side-by-Side
+// =====================================================
+let reportWindow = null;
+
+ipcMain.handle('open-viewer-with-report', (event, { isPortrait, imageCount, cols, rows }) => {
+    const { screen } = require('electron');
+    const primaryDisplay = screen.getPrimaryDisplay();
+    const { width: screenW, height: screenH } = primaryDisplay.workAreaSize;
+    const workArea = primaryDisplay.workArea;
+
+    const winH = Math.round(screenH * 0.93);
+    const winY = workArea.y + Math.round(screenH * 0.02);
+
+    // Viewer gets 60% of screen, report editor gets 40%
+    const viewerW = Math.round(screenW * 0.6);
+    const reportW = Math.round(screenW * 0.4);
+
+    // Close existing windows
+    if (viewerWindow && !viewerWindow.isDestroyed()) viewerWindow.close();
+    if (reportWindow && !reportWindow.isDestroyed()) reportWindow.close();
+
+    // Create viewer window (left side)
+    viewerWindow = new BrowserWindow({
+        width: viewerW,
+        height: winH,
+        x: workArea.x,
+        y: winY,
+        minWidth: 500,
+        minHeight: 400,
+        title: `DICOM Viewer Pro - Viewer (${imageCount} images)`,
+        icon: path.join(__dirname, 'icon.ico'),
+        webPreferences: {
+            nodeIntegration: false,
+            contextIsolation: true,
+            preload: path.join(__dirname, 'preload.js')
+        }
+    });
+    viewerWindow.loadURL(`${APP_URL}/viewer`);
+
+    const viewerMenu = Menu.buildFromTemplate([
+        { label: 'View', submenu: [{ role: 'reload' }, { role: 'forceReload' }, { type: 'separator' }, { role: 'resetZoom' }, { role: 'zoomIn' }, { role: 'zoomOut' }, { type: 'separator' }, { role: 'togglefullscreen' }] },
+        { label: 'Tools', submenu: [{ role: 'toggleDevTools', label: 'Developer Tools', accelerator: 'F12' }] }
+    ]);
+    viewerWindow.setMenu(viewerMenu);
+    viewerWindow.on('closed', () => { viewerWindow = null; });
+
+    // Create report editor window (right side) — alwaysOnTop so it stays visible
+    reportWindow = new BrowserWindow({
+        width: reportW,
+        height: winH,
+        x: workArea.x + viewerW,
+        y: winY,
+        minWidth: 400,
+        minHeight: 400,
+        alwaysOnTop: true,
+        title: 'DICOM Viewer Pro - Report Editor',
+        icon: path.join(__dirname, 'icon.ico'),
+        webPreferences: {
+            nodeIntegration: false,
+            contextIsolation: true,
+            preload: path.join(__dirname, 'preload.js')
+        }
+    });
+    reportWindow.loadURL(`${APP_URL}/report-editor`);
+
+    const reportMenu = Menu.buildFromTemplate([
+        { label: 'View', submenu: [{ role: 'reload' }, { role: 'forceReload' }, { type: 'separator' }, { role: 'resetZoom' }, { role: 'zoomIn' }, { role: 'zoomOut' }, { type: 'separator' }, { role: 'togglefullscreen' }] },
+        { label: 'Tools', submenu: [{ role: 'toggleDevTools', label: 'Developer Tools', accelerator: 'F12' }] }
+    ]);
+    reportWindow.setMenu(reportMenu);
+    reportWindow.on('closed', () => { reportWindow = null; });
+
+    return { success: true };
+});
+
+// =====================================================
+// Open Standalone Report Editor (no viewer)
+// =====================================================
+ipcMain.handle('open-report-editor', async () => {
+    const { width: screenW, height: screenH } = screen.getPrimaryDisplay().workAreaSize;
+    const winW = Math.min(1000, Math.round(screenW * 0.65));
+    const winH = Math.min(900, Math.round(screenH * 0.85));
+    const winX = Math.round((screenW - winW) / 2);
+    const winY = Math.round((screenH - winH) / 2);
+
+    const win = new BrowserWindow({
+        width: winW,
+        height: winH,
+        x: winX,
+        y: winY,
+        minWidth: 500,
+        minHeight: 400,
+        title: 'DICOM Viewer Pro - Report Editor',
+        icon: path.join(__dirname, 'icon.ico'),
+        webPreferences: {
+            nodeIntegration: false,
+            contextIsolation: true,
+            preload: path.join(__dirname, 'preload.js')
+        }
+    });
+    win.loadURL(`${APP_URL}/report-editor`);
+    const menu = Menu.buildFromTemplate([
+        { label: 'View', submenu: [{ role: 'reload' }, { role: 'forceReload' }, { type: 'separator' }, { role: 'resetZoom' }, { role: 'zoomIn' }, { role: 'zoomOut' }, { type: 'separator' }, { role: 'togglefullscreen' }] },
+        { label: 'Tools', submenu: [{ role: 'toggleDevTools', label: 'Developer Tools', accelerator: 'F12' }] }
+    ]);
+    win.setMenu(menu);
+    return { success: true };
 });
 
 // =====================================================

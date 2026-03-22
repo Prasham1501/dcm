@@ -1,259 +1,341 @@
-import { useState } from 'react';
-import { Save, Printer, FileText, X } from 'lucide-react';
-import { useReportStore } from '@/stores/reportStore';
-import { useHospitalConfigStore, getFormattedAddress } from '@/stores/hospitalConfigStore';
-import type { Report } from '@/types/study';
+import { useState, useEffect } from 'react';
+import { useReportStore, type ReportTemplate } from '@/stores/reportStore';
+import { FileText, X, Copy, Check, Save, Printer, Plus, Trash2, ChevronDown } from 'lucide-react';
 
-interface ReportEditorProps {
-  studyId: string;
-  mode: 'create' | 'edit';
-  existingReport?: Report;
-  patientName?: string;
-  studyDate?: string;
-  studyDescription?: string;
-  onClose: () => void;
-  onSave: () => void;
-}
+export function ReportEditor() {
+  const {
+    showReportEditor,
+    editingPatientId,
+    editingPatientName,
+    closeReportEditor,
+    getReport,
+    saveReport,
+    printReport,
+    templates,
+    addTemplate,
+    removeTemplate,
+  } = useReportStore();
 
-const REPORT_TEMPLATES = [
-  { id: 'ob', name: 'Obstetric Ultrasound' },
-  { id: 'abd', name: 'Abdominal Ultrasound' },
-  { id: 'thy', name: 'Thyroid Ultrasound' },
-  { id: 'vas', name: 'Vascular Ultrasound' },
-  { id: 'msk', name: 'Musculoskeletal Ultrasound' },
-  { id: 'breast', name: 'Breast Ultrasound' },
-  { id: 'custom', name: 'Custom Report' },
-];
+  const [title, setTitle] = useState('Radiology Report');
+  const [doctor, setDoctor] = useState('');
+  const [status, setStatus] = useState<'draft' | 'final'>('draft');
+  const [findings, setFindings] = useState('');
+  const [impression, setImpression] = useState('');
+  const [recommendation, setRecommendation] = useState('');
+  const [date, setDate] = useState('');
 
-export function ReportEditor({
-  studyId,
-  mode,
-  existingReport,
-  patientName = 'Unknown Patient',
-  studyDate = '',
-  studyDescription = '',
-  onClose,
-  onSave,
-}: ReportEditorProps) {
-  const reportStore = useReportStore();
-  const hospitalConfig = useHospitalConfigStore();
+  const [copied, setCopied] = useState(false);
+  const [showTemplates, setShowTemplates] = useState(false);
+  const [showSaveTemplate, setShowSaveTemplate] = useState(false);
+  const [templateName, setTemplateName] = useState('');
 
-  const [template, setTemplate] = useState(existingReport ? 'custom' : 'ob');
-  const [findings, setFindings] = useState(existingReport?.findings || '');
-  const [impression, setImpression] = useState(existingReport?.impression || '');
-  const [recommendation, setRecommendation] = useState(existingReport?.recommendation || '');
-  const [doctor, setDoctor] = useState(existingReport?.doctor || 'Dr. R. Patel');
-  const [status, setStatus] = useState<'draft' | 'final'>(
-    existingReport?.status === 'final' ? 'final' : 'draft'
-  );
-  const [title, setTitle] = useState(
-    existingReport?.title || `${studyDescription || 'Ultrasound'} Report`
-  );
+  // Load existing report when opening
+  useEffect(() => {
+    if (showReportEditor && editingPatientId) {
+      const existing = getReport(editingPatientId);
+      if (existing) {
+        setTitle(existing.title || 'Radiology Report');
+        setDoctor(existing.doctor || '');
+        setStatus(existing.status || 'draft');
+        setFindings(existing.findings || '');
+        setImpression(existing.impression || '');
+        setRecommendation(existing.recommendation || '');
+        setDate(existing.date || new Date().toLocaleDateString());
+      } else {
+        setTitle('Radiology Report');
+        setDoctor('');
+        setStatus('draft');
+        setFindings('');
+        setImpression('');
+        setRecommendation('');
+        setDate(new Date().toLocaleDateString());
+      }
+    }
+  }, [showReportEditor, editingPatientId, getReport]);
 
-  // Header fields default from hospital config
-  const [headerLine1, setHeaderLine1] = useState(hospitalConfig.hospitalName);
-  const [headerLine2, setHeaderLine2] = useState(getFormattedAddress(hospitalConfig));
-  const [headerLine3, setHeaderLine3] = useState(
-    [hospitalConfig.phone ? `Phone: ${hospitalConfig.phone}` : '', hospitalConfig.email ? `Email: ${hospitalConfig.email}` : '']
-      .filter(Boolean)
-      .join(' | ')
-  );
+  if (!showReportEditor) return null;
+
+  const handleCopyPatientInfo = async () => {
+    const text = `Patient: ${editingPatientName}\nID: ${editingPatientId}\nDate: ${date}`;
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch { /* ignore */ }
+  };
 
   const handleSave = () => {
-    const today = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' });
-    reportStore.saveReport(studyId, {
+    if (!editingPatientId) return;
+    saveReport(editingPatientId, {
       title,
-      date: existingReport?.date || today,
       doctor,
+      status,
       findings,
       impression,
       recommendation,
-      status,
+      date: date || new Date().toLocaleDateString(),
     });
-    onSave();
   };
 
   const handlePrint = () => {
-    // Save first, then print
+    if (!editingPatientId) return;
     handleSave();
-    // Small delay to ensure store is updated
-    setTimeout(() => {
-      reportStore.printReport(studyId);
-    }, 100);
+    printReport(editingPatientId);
+  };
+
+  const handleLoadTemplate = (template: ReportTemplate) => {
+    setFindings(template.findings);
+    setImpression(template.impression);
+    setRecommendation(template.recommendation);
+    setShowTemplates(false);
+  };
+
+  const handleSaveTemplate = () => {
+    if (!templateName.trim()) return;
+    addTemplate({
+      name: templateName.trim(),
+      findings,
+      impression,
+      recommendation,
+    });
+    setTemplateName('');
+    setShowSaveTemplate(false);
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-app-bg border-2 border-app-accent rounded-lg shadow-2xl w-[820px] max-h-[90vh] flex flex-col">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+      <div
+        className="bg-app-bg border border-app-border rounded-lg shadow-2xl flex flex-col"
+        style={{ width: '720px', maxHeight: '90vh' }}
+      >
         {/* Header */}
-        <div className="flex items-center justify-between px-4 py-2.5 bg-app-accent text-white">
+        <div className="flex items-center justify-between px-4 py-2.5 bg-app-header-bg border-b border-app-border rounded-t-lg">
           <div className="flex items-center gap-2">
-            <FileText className="w-4 h-4" />
-            <span className="text-sm font-bold">
-              {mode === 'edit' ? 'Edit Report' : 'Create Report'}
-            </span>
+            <FileText className="w-4 h-4 text-app-accent" />
+            <span className="font-semibold text-app-text text-sm">Report Editor</span>
+            <span className="text-xs text-app-text-secondary">&mdash; {editingPatientName}</span>
           </div>
-          <button onClick={onClose} className="text-white/80 hover:text-white text-lg font-bold">
-            <X className="w-4 h-4" />
-          </button>
+          <div className="flex items-center gap-1.5">
+            {/* Copy patient info */}
+            <button
+              onClick={handleCopyPatientInfo}
+              className="p-1.5 rounded hover:bg-app-hover text-app-text-secondary transition-colors"
+              title="Copy patient info"
+            >
+              {copied ? (
+                <Check className="w-3.5 h-3.5 text-green-500" />
+              ) : (
+                <Copy className="w-3.5 h-3.5" />
+              )}
+            </button>
+
+            {/* Templates dropdown */}
+            <div className="relative">
+              <button
+                onClick={() => setShowTemplates(!showTemplates)}
+                className="flex items-center gap-1 px-2 py-1 rounded text-xs bg-app-surface hover:bg-app-hover text-app-text border border-app-border transition-colors"
+              >
+                Templates <ChevronDown className="w-3 h-3" />
+              </button>
+              {showTemplates && (
+                <>
+                  <div
+                    className="fixed inset-0 z-40"
+                    onClick={() => setShowTemplates(false)}
+                  />
+                  <div className="absolute right-0 top-full mt-1 z-50 bg-app-surface border border-app-border rounded-lg shadow-xl min-w-[200px] max-h-[200px] overflow-y-auto">
+                    {templates.length === 0 ? (
+                      <div className="px-3 py-2 text-xs text-app-text-muted">
+                        No templates saved
+                      </div>
+                    ) : (
+                      templates.map((t) => (
+                        <div
+                          key={t.id}
+                          className="flex items-center justify-between px-3 py-1.5 hover:bg-app-hover group"
+                        >
+                          <button
+                            onClick={() => handleLoadTemplate(t)}
+                            className="text-xs text-app-text truncate flex-1 text-left"
+                          >
+                            {t.name}
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              removeTemplate(t.id);
+                            }}
+                            className="p-0.5 rounded hover:bg-red-500/20 text-app-text-muted opacity-0 group-hover:opacity-100 transition-opacity"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* Save as template */}
+            <div className="relative">
+              <button
+                onClick={() => setShowSaveTemplate(!showSaveTemplate)}
+                className="flex items-center gap-1 px-2 py-1 rounded text-xs bg-app-accent hover:bg-app-accent-hover text-white transition-colors"
+                title="Save as template"
+              >
+                <Plus className="w-3 h-3" /> Save Template
+              </button>
+              {showSaveTemplate && (
+                <>
+                  <div
+                    className="fixed inset-0 z-40"
+                    onClick={() => setShowSaveTemplate(false)}
+                  />
+                  <div className="absolute right-0 top-full mt-1 z-50 bg-app-surface border border-app-border rounded-lg shadow-xl p-3 min-w-[220px]">
+                    <div className="text-xs font-semibold text-app-text mb-2">
+                      Template Name
+                    </div>
+                    <input
+                      type="text"
+                      value={templateName}
+                      onChange={(e) => setTemplateName(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && handleSaveTemplate()}
+                      className="w-full px-2 py-1 text-xs bg-app-bg border border-app-border rounded text-app-text mb-2"
+                      placeholder="e.g. Chest X-Ray Normal"
+                      autoFocus
+                    />
+                    <button
+                      onClick={handleSaveTemplate}
+                      className="w-full px-2 py-1 rounded text-xs bg-app-accent hover:bg-app-accent-hover text-white transition-colors"
+                    >
+                      Save
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* Close */}
+            <button
+              onClick={closeReportEditor}
+              className="p-1.5 rounded hover:bg-app-hover text-app-text-secondary transition-colors"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
         </div>
 
-        <div className="flex-1 overflow-auto p-4 space-y-4">
-          {/* Patient & Template row */}
-          <div className="flex gap-4">
-            <div className="flex-1 p-3 bg-app-surface border border-app-border rounded">
-              <div className="text-[10px] font-bold text-app-text-secondary mb-1">PATIENT</div>
-              <div className="text-xs font-semibold text-app-text">{patientName}</div>
-              <div className="text-[10px] text-app-text-muted">{studyDate} | {studyDescription}</div>
+        {/* Body */}
+        <div className="flex-1 overflow-y-auto p-4 space-y-3">
+          {/* Row: Title + Doctor + Status + Date */}
+          <div className="grid grid-cols-4 gap-3">
+            <div>
+              <label className="block text-[10px] font-bold text-app-text-muted uppercase tracking-wider mb-1">
+                Title
+              </label>
+              <input
+                type="text"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                className="w-full px-2 py-1.5 text-xs bg-app-surface border border-app-border rounded text-app-text"
+              />
             </div>
-            <div className="w-56">
-              <label className="block text-[10px] font-semibold text-app-text-secondary mb-1">Report Template</label>
-              <select
-                value={template}
-                onChange={(e) => setTemplate(e.target.value)}
-                className="w-full h-7 px-2 text-xs border border-app-border bg-app-bg text-app-text rounded-sm"
-              >
-                {REPORT_TEMPLATES.map((t) => (
-                  <option key={t.id} value={t.id}>{t.name}</option>
-                ))}
-              </select>
-            </div>
-            <div className="w-40">
-              <label className="block text-[10px] font-semibold text-app-text-secondary mb-1">Reporting Doctor</label>
-              <select
+            <div>
+              <label className="block text-[10px] font-bold text-app-text-muted uppercase tracking-wider mb-1">
+                Doctor
+              </label>
+              <input
+                type="text"
                 value={doctor}
                 onChange={(e) => setDoctor(e.target.value)}
-                className="w-full h-7 px-2 text-xs border border-app-border bg-app-bg text-app-text rounded-sm"
+                className="w-full px-2 py-1.5 text-xs bg-app-surface border border-app-border rounded text-app-text"
+                placeholder="Dr. Name"
+              />
+            </div>
+            <div>
+              <label className="block text-[10px] font-bold text-app-text-muted uppercase tracking-wider mb-1">
+                Status
+              </label>
+              <select
+                value={status}
+                onChange={(e) => setStatus(e.target.value as 'draft' | 'final')}
+                className="w-full px-2 py-1.5 text-xs bg-app-surface border border-app-border rounded text-app-text"
               >
-                <option>Dr. R. Patel</option>
-                <option>Dr. S. Kumar</option>
-                <option>Dr. A. Sharma</option>
-                <option>Dr. M. Desai</option>
+                <option value="draft">Draft</option>
+                <option value="final">Final</option>
               </select>
             </div>
-          </div>
-
-          {/* Report Title */}
-          <div>
-            <label className="block text-xs font-bold text-app-accent mb-1">Report Title</label>
-            <input
-              type="text"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              className="w-full h-7 px-2 text-xs border border-app-border bg-app-bg text-app-text rounded-sm font-semibold focus:border-app-accent focus:outline-none"
-            />
-          </div>
-
-          {/* Report Header Customization */}
-          <div>
-            <h4 className="text-xs font-bold text-app-accent mb-2">Report Header</h4>
-            <div className="space-y-2">
+            <div>
+              <label className="block text-[10px] font-bold text-app-text-muted uppercase tracking-wider mb-1">
+                Date
+              </label>
               <input
                 type="text"
-                value={headerLine1}
-                onChange={(e) => setHeaderLine1(e.target.value)}
-                placeholder="Hospital/Clinic Name"
-                className="w-full h-7 px-2 text-xs border border-app-border bg-app-bg text-app-text rounded-sm font-semibold"
-              />
-              <input
-                type="text"
-                value={headerLine2}
-                onChange={(e) => setHeaderLine2(e.target.value)}
-                placeholder="Address"
-                className="w-full h-7 px-2 text-xs border border-app-border bg-app-bg text-app-text rounded-sm"
-              />
-              <input
-                type="text"
-                value={headerLine3}
-                onChange={(e) => setHeaderLine3(e.target.value)}
-                placeholder="Phone, Email, etc."
-                className="w-full h-7 px-2 text-xs border border-app-border bg-app-bg text-app-text rounded-sm"
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+                className="w-full px-2 py-1.5 text-xs bg-app-surface border border-app-border rounded text-app-text"
               />
             </div>
           </div>
 
           {/* Findings */}
           <div>
-            <label className="block text-xs font-bold text-app-accent mb-1">Findings</label>
+            <label className="block text-[10px] font-bold text-app-text-muted uppercase tracking-wider mb-1">
+              Findings
+            </label>
             <textarea
               value={findings}
               onChange={(e) => setFindings(e.target.value)}
               rows={5}
-              placeholder="Enter ultrasound findings..."
-              className="w-full px-3 py-2 text-xs border border-app-border bg-app-bg text-app-text rounded-sm resize-y focus:border-app-accent focus:outline-none leading-relaxed"
+              className="w-full px-2 py-1.5 text-xs bg-app-surface border border-app-border rounded text-app-text resize-y leading-relaxed"
+              placeholder="Enter findings..."
             />
           </div>
 
           {/* Impression */}
           <div>
-            <label className="block text-xs font-bold text-app-accent mb-1">Impression</label>
+            <label className="block text-[10px] font-bold text-app-text-muted uppercase tracking-wider mb-1">
+              Impression
+            </label>
             <textarea
               value={impression}
               onChange={(e) => setImpression(e.target.value)}
               rows={3}
+              className="w-full px-2 py-1.5 text-xs bg-app-surface border border-app-border rounded text-app-text resize-y leading-relaxed"
               placeholder="Enter impression..."
-              className="w-full px-3 py-2 text-xs border border-app-border bg-app-bg text-app-text rounded-sm resize-y focus:border-app-accent focus:outline-none leading-relaxed"
             />
           </div>
 
           {/* Recommendation */}
           <div>
-            <label className="block text-xs font-bold text-app-accent mb-1">Recommendation</label>
+            <label className="block text-[10px] font-bold text-app-text-muted uppercase tracking-wider mb-1">
+              Recommendation
+            </label>
             <textarea
               value={recommendation}
               onChange={(e) => setRecommendation(e.target.value)}
-              rows={2}
+              rows={3}
+              className="w-full px-2 py-1.5 text-xs bg-app-surface border border-app-border rounded text-app-text resize-y leading-relaxed"
               placeholder="Enter recommendation..."
-              className="w-full px-3 py-2 text-xs border border-app-border bg-app-bg text-app-text rounded-sm resize-y focus:border-app-accent focus:outline-none leading-relaxed"
             />
           </div>
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-between px-4 py-3 border-t border-app-border">
-          <div className="flex items-center gap-2">
-            <label className="flex items-center gap-1 text-xs text-app-text">
-              <input
-                type="radio"
-                checked={status === 'draft'}
-                onChange={() => setStatus('draft')}
-                className="accent-app-accent"
-              />
-              Draft
-            </label>
-            <label className="flex items-center gap-1 text-xs text-app-text">
-              <input
-                type="radio"
-                checked={status === 'final'}
-                onChange={() => setStatus('final')}
-                className="accent-app-accent"
-              />
-              Final
-            </label>
-          </div>
-          <div className="flex gap-2">
-            <button
-              onClick={onClose}
-              className="px-4 py-1.5 text-xs font-semibold border-2 border-app-border text-app-text bg-app-bg rounded hover:bg-app-hover transition-colors flex items-center gap-1"
-            >
-              <X className="w-3 h-3" />
-              Cancel
-            </button>
-            <button
-              onClick={handlePrint}
-              className="px-4 py-1.5 text-xs font-semibold border-2 border-app-accent text-app-accent bg-app-bg rounded hover:bg-app-accent hover:text-white transition-colors flex items-center gap-1"
-            >
-              <Printer className="w-3 h-3" />
-              Print
-            </button>
-            <button
-              onClick={handleSave}
-              className="px-4 py-1.5 text-xs font-semibold border-2 border-app-accent text-white bg-app-accent rounded hover:bg-app-accent-hover transition-colors flex items-center gap-1"
-            >
-              <Save className="w-3 h-3" />
-              Save Report
-            </button>
-          </div>
+        <div className="flex items-center justify-end gap-2 px-4 py-2.5 border-t border-app-border">
+          <button
+            onClick={handleSave}
+            className="flex items-center gap-1.5 px-4 py-1.5 rounded text-xs font-semibold bg-app-accent hover:bg-app-accent-hover text-white transition-colors"
+          >
+            <Save className="w-3.5 h-3.5" /> Save Report
+          </button>
+          <button
+            onClick={handlePrint}
+            className="flex items-center gap-1.5 px-4 py-1.5 rounded text-xs font-semibold bg-app-surface hover:bg-app-hover text-app-text border border-app-border transition-colors"
+          >
+            <Printer className="w-3.5 h-3.5" /> Print
+          </button>
         </div>
       </div>
     </div>

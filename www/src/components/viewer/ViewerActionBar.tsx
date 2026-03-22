@@ -183,6 +183,7 @@ export function ViewerActionBar() {
           onClick={() => {
             if (window.confirm('Reset all viewports and clear all annotations?')) {
               useCustomAnnotationStore.getState().resetAll();
+              useViewerStore.getState().clearViewportOverrides();
               clearViewports();
             }
           }}

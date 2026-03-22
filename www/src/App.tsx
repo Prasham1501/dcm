@@ -8,18 +8,25 @@ import { CRViewerPage } from '@/pages/CRViewerPage';
 import { ConfigPage } from '@/pages/ConfigPage';
 import { StudiesPage } from '@/pages/StudiesPage';
 import { PrintManagementPage } from '@/pages/PrintManagementPage';
+import { ReportEditorPage } from '@/pages/ReportEditorPage';
 
 export default function App() {
   const { mode } = useThemeStore();
   const { printCountRemaining } = usePrintStore();
   const alertShown = useRef(false);
 
-  // Apply theme class to html element
+  const darkColorId = useThemeStore((s) => s.darkColorId);
+
+  // Apply theme class to html element + dark color CSS vars
   useEffect(() => {
     const root = document.documentElement;
     root.classList.remove('dark', 'light');
-    if (mode === 'dark') root.classList.add('dark');
-  }, [mode]);
+    if (mode === 'dark') {
+      root.classList.add('dark');
+      // Apply dark color scheme
+      useThemeStore.getState().setDarkColor(darkColorId);
+    }
+  }, [mode, darkColorId]);
 
   // One-time startup alert when print count is low
   useEffect(() => {
@@ -45,6 +52,7 @@ export default function App() {
       <Route path="/cr-viewer" element={<CRViewerPage />} />
       <Route path="/studies" element={<StudiesPage />} />
       <Route path="/print" element={<PrintManagementPage />} />
+      <Route path="/report-editor" element={<ReportEditorPage />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

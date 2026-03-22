@@ -257,15 +257,38 @@ function DicomViewportInner({
         const zoomSensitivity = 0.002;
         const zoomDirection = e.deltaY > 0 ? -1 : 1;
         const zoomFactor = 1 + (zoomDirection * zoomSensitivity * Math.abs(e.deltaY));
-        viewport.scale = Math.max(0.1, Math.min(10, viewport.scale * zoomFactor));
+        const newScale = Math.max(0.1, Math.min(10, viewport.scale * zoomFactor));
+        viewport.scale = newScale;
         cornerstone.setViewport(el, viewport);
-        useViewerStore.getState().setZoom(viewport.scale);
+        useViewerStore.getState().setZoom(newScale);
+
+        // Sync zoom to all selected viewports
+        syncToSelectedViewports((vpEl) => {
+          const vp = cornerstone.getViewport(vpEl);
+          if (vp) {
+            vp.scale = newScale;
+            cornerstone.setViewport(vpEl, vp);
+          }
+        });
       } catch { /* ignore */ }
     };
 
     parent.addEventListener('wheel', handleWheel, { passive: false, capture: true });
     return () => parent.removeEventListener('wheel', handleWheel, true);
   }, []);
+
+  // ---- SYNC OPERATIONS TO ALL SELECTED VIEWPORTS ----
+  const syncToSelectedViewports = useCallback((action: (el: HTMLElement) => void) => {
+    const { selectedViewportIndices } = useViewerStore.getState();
+    if (selectedViewportIndices.length <= 1) return;
+    selectedViewportIndices.forEach((vpIdx) => {
+      if (vpIdx === viewportIndex) return; // skip self
+      const vpEl = document.querySelector(`[data-viewport-index="${vpIdx}"]`) as HTMLElement;
+      if (vpEl) {
+        try { action(vpEl); } catch { /* ignore */ }
+      }
+    });
+  }, [viewportIndex]);
 
   // ---- RIGHT-CLICK DRAG = WINDOW/LEVEL ----
   useEffect(() => {
@@ -286,6 +309,15 @@ function DicomViewportInner({
           cornerstone.setViewport(el, viewport);
           useViewerStore.getState().setWidth(Math.round(newWW));
           useViewerStore.getState().setLevel(Math.round(newWC));
+
+          // Sync W/L to all selected viewports
+          syncToSelectedViewports((vpEl) => {
+            const vp = cornerstone.getViewport(vpEl);
+            if (vp) {
+              vp.voi = { windowWidth: newWW, windowCenter: newWC };
+              cornerstone.setViewport(vpEl, vp);
+            }
+          });
         }
       } catch { /* ignore */ }
     };
@@ -613,16 +645,10 @@ function DicomViewportInner({
     if (imageUrl && onImageDrop) onImageDrop(imageUrl);
   }, [onImageDrop]);
 
-  const borderClass = isMultiSelected
-    ? 'border-yellow-400'
-    : isSelected
-    ? 'border-blue-500'
-    : 'border-gray-700';
-
   return (
     <div
       ref={containerRef}
-      className={`absolute inset-0 bg-black cursor-crosshair overflow-hidden border-2 rounded ${borderClass}`}
+      className="absolute inset-0 bg-black cursor-crosshair overflow-hidden"
       onMouseDown={handleMouseDown}
       onContextMenu={(e) => e.preventDefault()}
       onDragOver={handleDragOver}
