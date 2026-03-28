@@ -6,7 +6,7 @@ import { useCRViewerStore } from '@/stores/crViewerStore';
 import { cornerstone, cornerstoneTools } from '@/lib/cornerstoneSetup';
 import {
   ChevronUp, ChevronDown,
-  RotateCcw, Undo2, FileText, CheckSquare,
+  RotateCcw, Undo2, FileText, CheckSquare, XSquare,
 } from 'lucide-react';
 
 // All annotation tools that may be active in CR viewports
@@ -45,7 +45,7 @@ export function CRSidebar() {
     currentPage, totalPages,
     nextPage, prevPage,
     patientName, patientId, studyDate,
-    selectAllViewports, selectedViewportIndices,
+    selectAllViewports, selectedViewportIndices, currentLayout,
     undoStampPlacement, clearStampPlacements,
   } = useCRViewerStore();
 
@@ -166,14 +166,19 @@ export function CRSidebar() {
         variant="default"
       />
 
-      {/* Select All */}
-      <SidebarButton
-        onClick={selectAllViewports}
-        label="Select All"
-        title="Select all viewports (Ctrl+A)"
-        icon={CheckSquare}
-        variant={selectedViewportIndices.length > 1 ? 'accent' : 'default'}
-      />
+      {/* Select All / Deselect All */}
+      {(() => {
+        const allSelected = selectedViewportIndices.length === currentLayout.spots;
+        return (
+          <SidebarButton
+            onClick={selectAllViewports}
+            label={allSelected ? 'Desel All' : 'Select All'}
+            title={allSelected ? 'Deselect all viewports (Ctrl+A)' : 'Select all viewports (Ctrl+A)'}
+            icon={allSelected ? XSquare : CheckSquare}
+            variant={allSelected ? 'accent' : 'default'}
+          />
+        );
+      })()}
 
       {/* Undo */}
       <SidebarButton

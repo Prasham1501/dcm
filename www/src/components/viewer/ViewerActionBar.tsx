@@ -7,7 +7,7 @@ import { useViewerStore } from '@/stores/viewerStore';
 import { usePrintStore } from '@/stores/printStore';
 import { cornerstone } from '@/lib/cornerstoneSetup';
 import {
-  X, ImagePlus, PanelTop, Info, ChevronUp, ChevronDown, Printer, Undo2, RotateCcw, CheckSquare
+  X, ImagePlus, PanelTop, Info, ChevronUp, ChevronDown, Printer, Undo2, RotateCcw, CheckSquare, XSquare
 } from 'lucide-react';
 import { useCustomAnnotationStore } from '@/stores/customAnnotationStore';
 import { resetViewport } from '@/lib/viewerTools';
@@ -149,7 +149,7 @@ export function ViewerActionBar() {
   const {
     currentPage, totalPages, totalImages, images,
     nextPage, prevPage, insertAllViewports,
-    selectAllViewports,
+    selectAllViewports, selectedViewportIndices, currentLayout,
   } = useViewerStore();
   const { settings, setShowPrintPreview } = usePrintStore();
   const [showDicomInfo, setShowDicomInfo] = useState(false);
@@ -237,15 +237,24 @@ export function ViewerActionBar() {
           <ChevronDown className="w-5 h-5" />
         </button>
 
-        {/* Select All Viewports */}
-        <button
-          type="button"
-          onClick={selectAllViewports}
-          className="w-9 h-9 flex items-center justify-center rounded border border-app-border text-app-text-secondary hover:bg-blue-500/20 hover:text-blue-400 hover:border-blue-500/50 transition-colors"
-          title="Select all viewports (Ctrl+A)"
-        >
-          <CheckSquare className="w-5 h-5" />
-        </button>
+        {/* Select All / Deselect All Viewports */}
+        {(() => {
+          const allSelected = selectedViewportIndices.length === currentLayout.spots;
+          return (
+            <button
+              type="button"
+              onClick={selectAllViewports}
+              className={`w-9 h-9 flex items-center justify-center rounded border transition-colors ${
+                allSelected
+                  ? 'border-app-accent text-app-accent hover:bg-app-accent/20'
+                  : 'border-app-border text-app-text-secondary hover:bg-blue-500/20 hover:text-blue-400 hover:border-blue-500/50'
+              }`}
+              title={allSelected ? 'Deselect all viewports (Ctrl+A)' : 'Select all viewports (Ctrl+A)'}
+            >
+              {allSelected ? <XSquare className="w-5 h-5" /> : <CheckSquare className="w-5 h-5" />}
+            </button>
+          );
+        })()}
 
         {/* Spacer */}
         <div className="flex-1" />

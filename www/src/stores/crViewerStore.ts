@@ -335,9 +335,14 @@ export const useCRViewerStore = create<CRViewerState>((set, get) => ({
   },
 
   selectAllViewports: () => {
-    const { currentLayout } = get();
-    const indices = Array.from({ length: currentLayout.spots }, (_, i) => i);
-    set({ selectedViewportIndices: indices, selectedViewport: 0 });
+    const { currentLayout, selectedViewportIndices, selectedViewport } = get();
+    const totalSpots = currentLayout.spots;
+    if (selectedViewportIndices.length === totalSpots) {
+      set({ selectedViewportIndices: [selectedViewport] });
+    } else {
+      const indices = Array.from({ length: totalSpots }, (_, i) => i);
+      set({ selectedViewportIndices: indices, selectedViewport: 0 });
+    }
   },
 
   // Arrange
