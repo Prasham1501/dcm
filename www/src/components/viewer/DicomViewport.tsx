@@ -49,14 +49,6 @@ function DicomViewportInner({
     startWC: number;
   } | null>(null);
 
-  // Left-click pan drag state
-  const panDragRef = useRef<{
-    startX: number;
-    startY: number;
-    startTx: number;
-    startTy: number;
-  } | null>(null);
-
   // Text annotation UI state (pending additions)
   const [pendingInput, setPendingInput] = useState<{
     xPercent: number;
@@ -374,40 +366,12 @@ function DicomViewportInner({
         return;
       }
 
-      // Left-click pan drag
-      if (panDragRef.current) {
-        const dx = e.clientX - panDragRef.current.startX;
-        const dy = e.clientY - panDragRef.current.startY;
-
-        try {
-          const viewport = cornerstone.getViewport(el);
-          if (viewport) {
-            viewport.translation = {
-              x: panDragRef.current.startTx + dx,
-              y: panDragRef.current.startTy + dy,
-            };
-            cornerstone.setViewport(el, viewport);
-
-            // Broadcast pan so each selected viewport applies it to its own element
-            window.dispatchEvent(new CustomEvent('dicom-viewport-sync', {
-              detail: {
-                type: 'translation',
-                sourceIndex: viewportIndex,
-                translation: { x: panDragRef.current!.startTx + dx, y: panDragRef.current!.startTy + dy },
-              },
-            }));
-          }
-        } catch { /* ignore */ }
-      }
     };
 
     const handleGlobalMouseUp = (e: MouseEvent) => {
       if (e.button === 2) {
         rightDragRef.current = null;
         document.body.style.cursor = '';
-      }
-      if (e.button === 0) {
-        panDragRef.current = null;
       }
     };
 
@@ -675,24 +639,6 @@ function DicomViewportInner({
       const tool = useViewerStore.getState().activeToolId;
       if (tool !== 'stamp' && tool !== 'text' && tool !== 'draw' && tool !== 'polyline') {
         onClick(e);
-      }
-
-      // Start pan drag when pan tool is active
-      if (tool === 'pan') {
-        const el = elementRef.current;
-        if (el && enabledRef.current) {
-          try {
-            const viewport = cornerstone.getViewport(el);
-            if (viewport) {
-              panDragRef.current = {
-                startX: e.clientX,
-                startY: e.clientY,
-                startTx: viewport.translation?.x ?? 0,
-                startTy: viewport.translation?.y ?? 0,
-              };
-            }
-          } catch { /* ignore */ }
-        }
       }
     }
   }, [onClick]);

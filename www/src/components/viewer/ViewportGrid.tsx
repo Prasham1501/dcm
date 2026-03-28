@@ -1,4 +1,4 @@
-import { useCallback, useRef, useEffect } from 'react';
+import { useCallback, useRef, useEffect, useState } from 'react';
 import { useViewerStore } from '@/stores/viewerStore';
 import { DicomViewport } from './DicomViewport';
 import { useAnnotationPersistence, restoreAnnotations } from '@/hooks/useAnnotationPersistence';
@@ -9,6 +9,11 @@ import { Check } from 'lucide-react';
 function getAreaLetters(areas: string): string[] {
   return [...new Set(areas.replace(/['"]/g, '').split(/\s+/).filter(Boolean))];
 }
+
+// Module-level drag state — avoids stale React closures and dataTransfer.getData() issues in Electron
+interface _VPDrag { srcSlot: number; imageId: string; startX: number; startY: number }
+let _vpDrag: _VPDrag | null = null;
+let _vpDragging = false;
 
 export function ViewportGrid() {
   const {
@@ -21,9 +26,103 @@ export function ViewportGrid() {
 
   const gridRef = useRef<HTMLDivElement>(null);
   const shiftFirstRef = useRef<number | null>(null);
+  const isArrangeModeRef = useRef(isArrangeMode);
   const selectAllViewports = useViewerStore((s) => s.selectAllViewports);
 
-  // Ctrl+A: select all viewports (capture phase so it fires before browser's native select-all)
+  // Keep ref in sync so native event handlers always read latest value
+  useEffect(() => { isArrangeModeRef.current = isArrangeMode; }, [isArrangeMode]);
+
+  // Blue border over the slot the user is hovering during drag
+  const [dragOverSlot, setDragOverSlot] = useState<number | null>(null);
+
+  // ── Custom mouse-based drag (bypasses HTML5 DnD + Cornerstone interference) ──
+
+  // Step 1: Capture mousedown on the grid before Cornerstone gets it
+  useEffect(() => {
+    const grid = gridRef.current;
+    if (!grid) return;
+
+    const onMouseDown = (e: MouseEvent) => {
+      if (e.button !== 0 || isArrangeModeRef.current) return;
+      const wrapper = (e.target as Element).closest<HTMLElement>('[data-vp-slot]');
+      if (!wrapper) return;
+      const slot = parseInt(wrapper.dataset.vpSlot!, 10);
+      const store = useViewerStore.getState();
+      if (store.viewportsCleared || store.images.length === 0) return;
+      const overrideUrl = store.viewportImageOverrides[slot];
+      const si = (store.currentPage - 1) * store.currentLayout.spots + slot;
+      const imageId = overrideUrl || store.images[si]?.imageUrl;
+      if (!imageId) return;
+      _vpDrag = { srcSlot: slot, imageId, startX: e.clientX, startY: e.clientY };
+      _vpDragging = false;
+    };
+
+    grid.addEventListener('mousedown', onMouseDown, true); // capture — fires before Cornerstone
+    return () => grid.removeEventListener('mousedown', onMouseDown, true);
+  }, []); // stable: reads fresh state via getState() and isArrangeModeRef
+
+  // Step 2: Track movement and handle the drop on mouseup
+  useEffect(() => {
+    const onMouseMove = (e: MouseEvent) => {
+      if (!_vpDrag) return;
+      const dist = Math.hypot(e.clientX - _vpDrag.startX, e.clientY - _vpDrag.startY);
+      if (!_vpDragging) {
+        if (dist < 6) return;
+        _vpDragging = true;
+        document.body.style.cursor = 'grabbing';
+      }
+      // Highlight the slot under the cursor
+      const el = document.elementFromPoint(e.clientX, e.clientY);
+      const w = el?.closest<HTMLElement>('[data-vp-slot]');
+      const slot = w ? parseInt(w.dataset.vpSlot!, 10) : null;
+      setDragOverSlot((prev) => (prev !== slot ? slot : prev));
+    };
+
+    const onMouseUp = (e: MouseEvent) => {
+      if (!_vpDrag) return;
+      const drag = _vpDrag;
+      const wasDragging = _vpDragging;
+      _vpDrag = null;
+      _vpDragging = false;
+      document.body.style.cursor = '';
+
+      if (!wasDragging) { setDragOverSlot(null); return; }
+
+      const el = document.elementFromPoint(e.clientX, e.clientY);
+      const w = el?.closest<HTMLElement>('[data-vp-slot]');
+      const dstSlot = w ? parseInt(w.dataset.vpSlot!, 10) : null;
+      setDragOverSlot(null);
+
+      if (dstSlot === null || dstSlot === drag.srcSlot) return;
+
+      // Swap images between srcSlot and dstSlot
+      const store = useViewerStore.getState();
+      const getSlotUrl = (slot: number) => {
+        const o = store.viewportImageOverrides[slot];
+        if (o) return o;
+        const idx = (store.currentPage - 1) * store.currentLayout.spots + slot;
+        return store.images[idx]?.imageUrl || null;
+      };
+      const dstUrl = getSlotUrl(dstSlot);
+      store.setViewportImageOverride(dstSlot, drag.imageId);
+      const srcOrigIdx = store.images.findIndex((img) => img.imageUrl === drag.imageId);
+      if (srcOrigIdx >= 0) store.setViewportIndexOverride(dstSlot, srcOrigIdx);
+      if (dstUrl) {
+        store.setViewportImageOverride(drag.srcSlot, dstUrl);
+        const dstOrigIdx = store.images.findIndex((img) => img.imageUrl === dstUrl);
+        if (dstOrigIdx >= 0) store.setViewportIndexOverride(drag.srcSlot, dstOrigIdx);
+      }
+    };
+
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+    return () => {
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+    };
+  }, []); // stable: uses only module-level vars and getState()
+
+  // ── Keyboard shortcut: Ctrl+A ──
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement)?.tagName;
@@ -49,20 +148,16 @@ export function ViewportGrid() {
     return () => clearTimeout(timer);
   }, [images]);
 
-  // Determine which images to show on this page
   const startIndex = (currentPage - 1) * currentLayout.spots;
-
-  // Show empty slots when viewports are manually cleared, even if images array still has data
   const hasRealImages = images.length > 0 && !viewportsCleared;
 
-  // Build grid style - handle asymmetric layouts with grid-template-areas
   const gridStyle: React.CSSProperties = {
     display: 'grid',
     gap: '2px',
     padding: '2px',
     width: '100%',
     height: '100%',
-    backgroundColor: '#374151', // gray-700 separator lines between viewports
+    backgroundColor: '#374151',
   };
 
   if (currentLayout.areas) {
@@ -79,22 +174,16 @@ export function ViewportGrid() {
     gridStyle.gridTemplateRows = `repeat(${currentLayout.rows}, 1fr)`;
   }
 
-  // Get grid area names for asymmetric layouts
   const areaNames = currentLayout.areas ? getAreaLetters(currentLayout.areas) : [];
 
-  // Build the image stack (all imageIds) for scroll support
-  const imageStack = hasRealImages
-    ? images.map((img) => img.imageUrl || '')
-    : [];
+  const imageStack = hasRealImages ? images.map((img) => img.imageUrl || '') : [];
 
-  // Handle viewport click with multi-select (Ctrl+click adds to selection) and Shift+click swap
   const handleViewportClick = useCallback((index: number, e: React.MouseEvent) => {
     if (isArrangeMode) {
       toggleArrangeViewport(index);
       return;
     }
 
-    // Shift+click: swap two viewports
     if (e.shiftKey) {
       if (shiftFirstRef.current === null) {
         shiftFirstRef.current = index;
@@ -115,7 +204,6 @@ export function ViewportGrid() {
           if (urlA && urlB) {
             store.setViewportImageOverride(first, urlB);
             store.setViewportImageOverride(index, urlA);
-            // Also track the original image indices for reliable number display
             const idxA = store.images.findIndex((img) => img.imageUrl === urlA);
             const idxB = store.images.findIndex((img) => img.imageUrl === urlB);
             if (idxA >= 0) store.setViewportIndexOverride(index, idxA);
@@ -141,25 +229,19 @@ export function ViewportGrid() {
     toggleSingleViewport(index);
   }, [isArrangeMode, toggleSingleViewport]);
 
-  // Handle drop of a thumbnail image onto a specific viewport slot
   const handleViewportImageDrop = useCallback((slotIndex: number, imageUrl: string) => {
     setViewportImageOverride(slotIndex, imageUrl);
-    // Also update the index override so the bottom-left number label reflects the dropped image
     const store = useViewerStore.getState();
     const origIdx = store.images.findIndex((img) => img.imageUrl === imageUrl);
-    if (origIdx >= 0) {
-      setViewportIndexOverride(slotIndex, origIdx);
-    }
+    if (origIdx >= 0) setViewportIndexOverride(slotIndex, origIdx);
   }, [setViewportImageOverride, setViewportIndexOverride]);
 
-  // Handle file drop onto the grid (external DICOM files)
+  // File drop onto the grid (external DICOM files)
   const handleGridDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     if (e.dataTransfer.files.length > 0) {
       const { loadLocalFiles } = useViewerStore.getState();
-      if (loadLocalFiles) {
-        loadLocalFiles(e.dataTransfer.files);
-      }
+      if (loadLocalFiles) loadLocalFiles(e.dataTransfer.files);
     }
   }, []);
 
@@ -177,7 +259,6 @@ export function ViewportGrid() {
       <div ref={gridRef} style={gridStyle} className="flex-1">
         {Array.from({ length: currentLayout.spots }, (_, i) => {
           const imgIndex = startIndex + i;
-          // For asymmetric layouts, assign grid-area by letter
           const areaStyle: React.CSSProperties = currentLayout.areas && areaNames[i]
             ? { gridArea: areaNames[i] }
             : {};
@@ -189,22 +270,21 @@ export function ViewportGrid() {
             const defaultImg = images[imgIndex];
             const imageId = overrideUrl || defaultImg?.imageUrl || null;
 
-            // Use explicit index override first (set by swap/arrange), then URL-based lookup, then sequential
             const actualImgIndex = viewportIndexOverrides[i] !== undefined
               ? viewportIndexOverrides[i]
               : overrideUrl
                 ? images.findIndex((img) => img.imageUrl === overrideUrl)
                 : imgIndex;
 
-            // Empty slot — no DicomViewport at all so no stale cornerstone canvas can appear
             if (!imageId) {
               return (
                 <div
                   key={`empty-vp-${i}`}
+                  data-vp-slot={i}
                   style={areaStyle}
                   className="relative overflow-hidden min-h-0 bg-black"
                   onClick={(e) => handleViewportClick(i, e)}
-                  onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; }}
+                  onDragOver={(e) => e.preventDefault()}
                   onDrop={(e) => {
                     e.preventDefault();
                     const url = e.dataTransfer.getData('application/dicom-image-url');
@@ -217,12 +297,19 @@ export function ViewportGrid() {
                   {(isSelected || isMultiSelected) && (
                     <div className="absolute inset-0 z-40 pointer-events-none" style={{ boxShadow: 'inset 0 0 0 3px #ef4444' }} />
                   )}
+                  {dragOverSlot === i && (
+                    <div className="absolute inset-0 z-[45] pointer-events-none" style={{ boxShadow: 'inset 0 0 0 3px #3b82f6' }} />
+                  )}
                 </div>
               );
             }
 
             return (
-              <div key={`vp-${i}`} style={areaStyle} className={`relative overflow-hidden min-h-0 ${isArrangeMode ? 'cursor-pointer' : ''}`}
+              <div
+                key={`vp-${i}`}
+                data-vp-slot={i}
+                style={areaStyle}
+                className={`relative overflow-hidden min-h-0 ${isArrangeMode ? 'cursor-pointer' : 'hover:cursor-grab active:cursor-grabbing'}`}
                 onDoubleClick={() => handleViewportDoubleClick(i)}
               >
                 <div className={`${isArrangeMode ? 'pointer-events-none' : ''} w-full h-full`}>
@@ -238,18 +325,19 @@ export function ViewportGrid() {
                     onImageDrop={(url) => handleViewportImageDrop(i, url)}
                   />
                 </div>
-                {/* Image order label - bottom left */}
+                {/* Image order label */}
                 <div className="absolute bottom-1 left-1 z-30 text-white text-[10px] font-mono pointer-events-none select-none opacity-60 leading-none">
                   {(actualImgIndex >= 0 ? actualImgIndex : imgIndex) + 1}/{images.length}
                 </div>
-                {/* Selection border overlay - rendered ON TOP with box-shadow so it can't be clipped */}
+                {/* Selection border */}
                 {(isSelected || isMultiSelected) && (
-                  <div
-                    className="absolute inset-0 z-40 pointer-events-none"
-                    style={{ boxShadow: 'inset 0 0 0 3px #ef4444' }}
-                  />
+                  <div className="absolute inset-0 z-40 pointer-events-none" style={{ boxShadow: 'inset 0 0 0 3px #ef4444' }} />
                 )}
-                {/* Arrange Overlay */}
+                {/* Drop target indicator */}
+                {dragOverSlot === i && !isArrangeMode && (
+                  <div className="absolute inset-0 z-[45] pointer-events-none" style={{ boxShadow: 'inset 0 0 0 3px #3b82f6' }} />
+                )}
+                {/* Arrange overlay */}
                 {isArrangeMode && arrangeClickOrder.includes(i) && (
                   <div
                     className="absolute inset-0 bg-green-500/20 z-50 flex items-center justify-center cursor-pointer"
@@ -260,7 +348,6 @@ export function ViewportGrid() {
                     </div>
                   </div>
                 )}
-                {/* Arrange Click Catcher when not selected yet */}
                 {isArrangeMode && !arrangeClickOrder.includes(i) && (
                   <div
                     className="absolute inset-0 z-50 cursor-pointer hover:bg-white/10"
@@ -284,7 +371,6 @@ export function ViewportGrid() {
                   <span className="text-2xl opacity-30">&#x2B1B;</span>
                   <span className="opacity-50">No image loaded</span>
                 </div>
-                {/* Arrange Overlay */}
                 {isArrangeMode && arrangeClickOrder.includes(i) && (
                   <div className="absolute inset-0 bg-green-500/20 z-50 flex items-center justify-center">
                     <div className="w-16 h-16 rounded-full bg-green-600 border-4 border-white flex items-center justify-center text-white text-3xl font-bold shadow-2xl">

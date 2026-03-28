@@ -50,7 +50,7 @@ const TOOL_MAP: Record<string, ToolConfig> = {
   measure: { csToolName: 'Length' },
   square: { csToolName: 'RectangleRoi' },
   ellipse: { csToolName: 'EllipticalRoi' },
-  pan: { csToolName: 'Pan' },
+  pan: { customHandler: true }, // left-drag is now viewport-swap; pan removed from left button
   zoom: { csToolName: 'Zoom' },
   wl: { csToolName: 'Wwwc' },
   length: { csToolName: 'Length' },

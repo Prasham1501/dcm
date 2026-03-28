@@ -2,11 +2,17 @@
  * CRViewportGrid — Grid layout for CR viewer matching reference software layouts.
  * Supports 1, 2, 4, 6, 8, 9 spot layouts with proper image fitting.
  * Features: red border selection, Ctrl+click multi-select, Shift+click swap, Ctrl+A select-all.
+ * Drag-and-drop: custom mouse-based drag (bypasses HTML5 DnD / Cornerstone interference).
  */
-import { useCallback, useRef, useEffect } from 'react';
+import { useCallback, useRef, useEffect, useState } from 'react';
 import { useCRViewerStore } from '@/stores/crViewerStore';
 import { CRViewport } from './CRViewport';
 import { Check } from 'lucide-react';
+
+// Module-level drag state — avoids stale React closures and dataTransfer issues in Electron
+interface _CRVPDrag { srcSlot: number; imageId: string; startX: number; startY: number }
+let _crDrag: _CRVPDrag | null = null;
+let _crDragging = false;
 
 export function CRViewportGrid() {
   const {
@@ -16,21 +22,103 @@ export function CRViewportGrid() {
     swapImages, showLogo,
   } = useCRViewerStore();
 
-  // Force-deselect multi-selection on non-Ctrl left-click.
-  // Reads state directly from store to avoid stale closure issues.
+  const crGridRef = useRef<HTMLDivElement>(null);
+  const shiftFirstRef = useRef<number | null>(null);
+  const isArrangeModeRef = useRef(isArrangeMode);
+
+  // Keep ref in sync so native event handlers always read latest value
+  useEffect(() => { isArrangeModeRef.current = isArrangeMode; }, [isArrangeMode]);
+
+  // Blue border over the slot the user is hovering during drag
+  const [dragOverSlot, setDragOverSlot] = useState<number | null>(null);
+
+  const startIndex = (currentPage - 1) * currentLayout.spots;
+  const hasImages = images.length > 0;
+
+  // Force-deselect multi-selection on plain left-click
   const handleViewportMouseDown = useCallback((index: number, e: React.MouseEvent) => {
     if (e.button !== 0) return;
     if (e.ctrlKey || e.metaKey || e.shiftKey) return;
     if (isArrangeMode) return;
-    // Always collapse multi-selection on plain left-click
     useCRViewerStore.getState().setSelectedViewport(index);
   }, [isArrangeMode]);
 
-  const startIndex = (currentPage - 1) * currentLayout.spots;
-  const hasImages = images.length > 0;
-  const shiftFirstRef = useRef<number | null>(null);
+  // ── Custom mouse-based drag ──
 
-  // Ctrl+A: select all viewports (capture phase)
+  // Step 1: Capture mousedown on the grid before Cornerstone gets it
+  useEffect(() => {
+    const grid = crGridRef.current;
+    if (!grid) return;
+
+    const onMouseDown = (e: MouseEvent) => {
+      if (e.button !== 0 || isArrangeModeRef.current) return;
+      const wrapper = (e.target as Element).closest<HTMLElement>('[data-cr-vp-slot]');
+      if (!wrapper) return;
+      const slot = parseInt(wrapper.dataset.crVpSlot!, 10);
+      const { currentPage: page, currentLayout: layout, images: imgs } = useCRViewerStore.getState();
+      const globalIdx = (page - 1) * layout.spots + slot;
+      const imageId = imgs[globalIdx]?.imageUrl;
+      if (!imageId) return;
+      _crDrag = { srcSlot: slot, imageId, startX: e.clientX, startY: e.clientY };
+      _crDragging = false;
+    };
+
+    grid.addEventListener('mousedown', onMouseDown, true); // capture — fires before Cornerstone
+    return () => grid.removeEventListener('mousedown', onMouseDown, true);
+  }, []); // stable: reads fresh state via getState() and isArrangeModeRef
+
+  // Step 2: Track movement and handle the drop on mouseup
+  useEffect(() => {
+    const onMouseMove = (e: MouseEvent) => {
+      if (!_crDrag) return;
+      const dist = Math.hypot(e.clientX - _crDrag.startX, e.clientY - _crDrag.startY);
+      if (!_crDragging) {
+        if (dist < 6) return;
+        _crDragging = true;
+        document.body.style.cursor = 'grabbing';
+      }
+      const el = document.elementFromPoint(e.clientX, e.clientY);
+      const w = el?.closest<HTMLElement>('[data-cr-vp-slot]');
+      const slot = w ? parseInt(w.dataset.crVpSlot!, 10) : null;
+      setDragOverSlot((prev) => (prev !== slot ? slot : prev));
+    };
+
+    const onMouseUp = (e: MouseEvent) => {
+      if (!_crDrag) return;
+      const drag = _crDrag;
+      const wasDragging = _crDragging;
+      _crDrag = null;
+      _crDragging = false;
+      document.body.style.cursor = '';
+
+      if (!wasDragging) { setDragOverSlot(null); return; }
+
+      const el = document.elementFromPoint(e.clientX, e.clientY);
+      const w = el?.closest<HTMLElement>('[data-cr-vp-slot]');
+      const dstSlot = w ? parseInt(w.dataset.crVpSlot!, 10) : null;
+      setDragOverSlot(null);
+
+      if (dstSlot === null || dstSlot === drag.srcSlot) return;
+
+      // Swap images using global indices
+      const { currentPage: page, currentLayout: layout, images: imgs } = useCRViewerStore.getState();
+      const si = (page - 1) * layout.spots;
+      const srcGlobal = si + drag.srcSlot;
+      const dstGlobal = si + dstSlot;
+      if (srcGlobal < imgs.length && dstGlobal < imgs.length) {
+        useCRViewerStore.getState().swapImages(srcGlobal, dstGlobal);
+      }
+    };
+
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+    return () => {
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+    };
+  }, []); // stable: uses only module-level vars and getState()
+
+  // ── Ctrl+A: select all viewports ──
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement)?.tagName;
@@ -51,7 +139,6 @@ export function CRViewportGrid() {
       return;
     }
 
-    // Shift+click: swap two viewports
     if (e.shiftKey) {
       if (shiftFirstRef.current === null) {
         shiftFirstRef.current = index;
@@ -60,7 +147,6 @@ export function CRViewportGrid() {
         const first = shiftFirstRef.current;
         shiftFirstRef.current = null;
         if (first !== index) {
-          // Swap images globally
           const globalIdxA = startIndex + first;
           const globalIdxB = startIndex + index;
           swapImages(globalIdxA, globalIdxB);
@@ -72,7 +158,6 @@ export function CRViewportGrid() {
 
     shiftFirstRef.current = null;
 
-    // Ctrl+click: toggle multi-select
     if (e.ctrlKey || e.metaKey) {
       toggleViewportSelection(index);
     } else {
@@ -80,7 +165,6 @@ export function CRViewportGrid() {
     }
   }, [isArrangeMode, toggleArrangeViewport, setSelectedViewport, toggleViewportSelection, swapImages, startIndex]);
 
-  // Build grid style — gap creates visible separator lines using the container bg color
   const gridStyle: React.CSSProperties = {
     display: 'grid',
     gap: '2px',
@@ -89,23 +173,26 @@ export function CRViewportGrid() {
     height: '100%',
     gridTemplateColumns: `repeat(${currentLayout.cols}, 1fr)`,
     gridTemplateRows: `repeat(${currentLayout.rows}, 1fr)`,
-    backgroundColor: '#374151', // gray-700 separator color
+    backgroundColor: '#374151',
   };
 
   return (
-    // gray background shows through the 2px gap as visible separator lines between viewports
     <div className="flex-1 flex flex-col bg-gray-700 overflow-hidden relative">
-      <div style={gridStyle} className="flex-1">
+      <div ref={crGridRef} style={gridStyle} className="flex-1">
         {Array.from({ length: currentLayout.spots }, (_, i) => {
           const imgIndex = startIndex + i;
-          // Only show an image if the global index is within bounds
           const image = (hasImages && imgIndex < images.length) ? images[imgIndex] : null;
           const imageId = image?.imageUrl || null;
           const isSelected = selectedViewport === i;
           const isMultiSelected = selectedViewportIndices.includes(i) && selectedViewportIndices.length > 1;
 
           return (
-            <div key={`cr-vp-${i}`} className={`relative overflow-hidden min-h-0 ${isArrangeMode ? 'cursor-pointer' : ''}`} onMouseDown={(e) => handleViewportMouseDown(i, e)}>
+            <div
+              key={`cr-vp-${i}`}
+              data-cr-vp-slot={i}
+              className={`relative overflow-hidden min-h-0 ${isArrangeMode ? 'cursor-pointer' : imageId ? 'hover:cursor-grab active:cursor-grabbing' : ''}`}
+              onMouseDown={(e) => handleViewportMouseDown(i, e)}
+            >
               <div className={`${isArrangeMode ? 'pointer-events-none' : ''} w-full h-full`}>
                 <CRViewport
                   imageId={imageId}
@@ -117,11 +204,18 @@ export function CRViewportGrid() {
                 />
               </div>
 
-              {/* Red selection border overlay — inset box-shadow so it's never clipped */}
+              {/* Red selection border overlay */}
               {(isSelected || isMultiSelected) && !isArrangeMode && (
                 <div
                   className="absolute inset-0 z-40 pointer-events-none"
                   style={{ boxShadow: 'inset 0 0 0 3px #ef4444' }}
+                />
+              )}
+              {/* Drop target indicator */}
+              {dragOverSlot === i && imageId && !isArrangeMode && (
+                <div
+                  className="absolute inset-0 z-[45] pointer-events-none"
+                  style={{ boxShadow: 'inset 0 0 0 3px #3b82f6' }}
                 />
               )}
 
