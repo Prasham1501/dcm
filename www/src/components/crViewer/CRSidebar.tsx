@@ -3,17 +3,50 @@
  * Contains: Prev, Next, Reset All, Reset One, Report.
  */
 import { useCRViewerStore } from '@/stores/crViewerStore';
+import { cornerstone, cornerstoneTools } from '@/lib/cornerstoneSetup';
 import {
   ChevronUp, ChevronDown,
-  RotateCcw, Eraser, FileText,
+  RotateCcw, Undo2, FileText, CheckSquare,
 } from 'lucide-react';
+
+// All annotation tools that may be active in CR viewports
+const CR_ANNOTATION_TOOLS = [
+  'Length', 'Angle', 'ArrowAnnotate', 'EllipticalRoi', 'RectangleRoi',
+  'Probe', 'Bidirectional', 'CobbAngle', 'ScaledEllipticalRoi',
+  'FreehandRoi', 'TextMarker',
+];
+
+function clearElementAnnotations(el: HTMLDivElement) {
+  CR_ANNOTATION_TOOLS.forEach(toolName => {
+    try {
+      const state = cornerstoneTools.getToolState(el, toolName);
+      if (state && state.data) {
+        state.data.length = 0;
+      }
+    } catch { /* ignore */ }
+  });
+  try { cornerstone.updateImage(el); } catch { /* ignore */ }
+}
+
+function clearAllCRAnnotations() {
+  const elements = document.querySelectorAll('[data-cr-viewport-index]');
+  elements.forEach((el) => clearElementAnnotations(el as HTMLDivElement));
+}
+
+function clearCRAnnotationsForViewport(viewportIndex: number) {
+  const el = document.querySelector(`[data-cr-viewport-index="${viewportIndex}"]`) as HTMLDivElement;
+  if (!el) return;
+  clearElementAnnotations(el);
+}
 
 export function CRSidebar() {
   const {
-    resetAll, resetOne, selectedViewport,
+    resetAll, selectedViewport,
     currentPage, totalPages,
     nextPage, prevPage,
     patientName, patientId, studyDate,
+    selectAllViewports, selectedViewportIndices,
+    undoStampPlacement, clearStampPlacements,
   } = useCRViewerStore();
 
   const handleOpenReport = async () => {
@@ -96,24 +129,59 @@ export function CRSidebar() {
       {/* Divider */}
       <div className="w-full border-t border-app-border my-1" />
 
-      {/* Reset All */}
+      {/* Reset All — supreme command: restores original order + clears ALL annotations/stamps/zoom/WL */}
       <SidebarButton
         onClick={() => {
-          if (window.confirm('Reset all viewports?')) resetAll();
+          // 1. Restore original image order and default layout, clear stamps
+          resetAll();
+          // 2. Clear all cornerstoneTools annotations from every viewport element
+          clearAllCRAnnotations();
+          // 3. Reset zoom/pan/WL for every viewport
+          window.dispatchEvent(new CustomEvent('cr-custom-reset'));
         }}
         label="Reset All"
-        title="Reset all viewports to default"
+        title="Supreme reset: restore image order and clear ALL annotations, stamps, zoom and W/L"
         icon={RotateCcw}
-        variant="accent"
+        variant="danger"
       />
 
-      {/* Reset One */}
+      {/* Clear — clears selected viewport(s): annotations, stamps, zoom, W/L */}
       <SidebarButton
-        onClick={() => resetOne(selectedViewport)}
-        label="Reset one"
-        title="Reset selected viewport"
-        icon={Eraser}
-        variant="danger"
+        onClick={() => {
+          const indicesToClear = selectedViewportIndices.length > 1
+            ? selectedViewportIndices
+            : [selectedViewport];
+          indicesToClear.forEach(vi => {
+            // Clear stamps for this viewport
+            clearStampPlacements(vi);
+            // Clear cornerstoneTools annotations for this viewport element
+            clearCRAnnotationsForViewport(vi);
+            // Reset zoom/pan/WL for this viewport
+            window.dispatchEvent(new CustomEvent('cr-custom-reset', { detail: { viewportIndex: vi } }));
+          });
+        }}
+        label="Clear"
+        title="Clear selected viewport(s): annotations, stamps, zoom and W/L"
+        icon={RotateCcw}
+        variant="default"
+      />
+
+      {/* Select All */}
+      <SidebarButton
+        onClick={selectAllViewports}
+        label="Select All"
+        title="Select all viewports (Ctrl+A)"
+        icon={CheckSquare}
+        variant={selectedViewportIndices.length > 1 ? 'accent' : 'default'}
+      />
+
+      {/* Undo */}
+      <SidebarButton
+        onClick={undoStampPlacement}
+        label="Undo"
+        title="Undo last stamp (Ctrl+Z)"
+        icon={Undo2}
+        variant="default"
       />
 
       {/* Spacer */}
@@ -127,6 +195,13 @@ export function CRSidebar() {
         icon={FileText}
         variant="accent"
       />
+
+      {/* Counter */}
+      {selectedViewportIndices.length > 1 && (
+        <div className="text-[9px] text-yellow-400 font-bold leading-tight text-center">
+          {selectedViewportIndices.length} SELECTED
+        </div>
+      )}
     </div>
   );
 }

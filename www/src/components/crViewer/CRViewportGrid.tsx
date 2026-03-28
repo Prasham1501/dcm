@@ -13,8 +13,18 @@ export function CRViewportGrid() {
     currentLayout, currentPage, images, selectedViewport, setSelectedViewport,
     selectedViewportIndices, toggleViewportSelection, selectAllViewports,
     isArrangeMode, arrangeClickOrder, toggleArrangeViewport, toggleArrangeMode,
-    viewportImageOverrides, setViewportImageOverride, showLogo,
+    swapImages, showLogo,
   } = useCRViewerStore();
+
+  // Force-deselect multi-selection on non-Ctrl left-click.
+  // Reads state directly from store to avoid stale closure issues.
+  const handleViewportMouseDown = useCallback((index: number, e: React.MouseEvent) => {
+    if (e.button !== 0) return;
+    if (e.ctrlKey || e.metaKey || e.shiftKey) return;
+    if (isArrangeMode) return;
+    // Always collapse multi-selection on plain left-click
+    useCRViewerStore.getState().setSelectedViewport(index);
+  }, [isArrangeMode]);
 
   const startIndex = (currentPage - 1) * currentLayout.spots;
   const hasImages = images.length > 0;
@@ -50,19 +60,10 @@ export function CRViewportGrid() {
         const first = shiftFirstRef.current;
         shiftFirstRef.current = null;
         if (first !== index) {
-          const store = useCRViewerStore.getState();
-          const getImageUrl = (vpIdx: number) => {
-            const override = store.viewportImageOverrides[vpIdx];
-            if (override) return override;
-            const imgIdx = (store.currentPage - 1) * store.currentLayout.spots + vpIdx;
-            return store.images[imgIdx]?.imageUrl || null;
-          };
-          const urlA = getImageUrl(first);
-          const urlB = getImageUrl(index);
-          if (urlA && urlB) {
-            store.setViewportImageOverride(first, urlB);
-            store.setViewportImageOverride(index, urlA);
-          }
+          // Swap images globally
+          const globalIdxA = startIndex + first;
+          const globalIdxB = startIndex + index;
+          swapImages(globalIdxA, globalIdxB);
         }
         setSelectedViewport(index);
       }
@@ -77,7 +78,7 @@ export function CRViewportGrid() {
     } else {
       setSelectedViewport(index);
     }
-  }, [isArrangeMode, toggleArrangeViewport, setSelectedViewport, toggleViewportSelection, setViewportImageOverride]);
+  }, [isArrangeMode, toggleArrangeViewport, setSelectedViewport, toggleViewportSelection, swapImages, startIndex]);
 
   // Build grid style — gap creates visible separator lines using the container bg color
   const gridStyle: React.CSSProperties = {
@@ -97,21 +98,21 @@ export function CRViewportGrid() {
       <div style={gridStyle} className="flex-1">
         {Array.from({ length: currentLayout.spots }, (_, i) => {
           const imgIndex = startIndex + i;
-          const overrideUrl = viewportImageOverrides[i];
-          const defaultImg = hasImages ? images[imgIndex] : null;
-          const imageId = overrideUrl || defaultImg?.imageUrl || null;
+          // Only show an image if the global index is within bounds
+          const image = (hasImages && imgIndex < images.length) ? images[imgIndex] : null;
+          const imageId = image?.imageUrl || null;
           const isSelected = selectedViewport === i;
           const isMultiSelected = selectedViewportIndices.includes(i) && selectedViewportIndices.length > 1;
 
           return (
-            <div key={`cr-vp-${i}`} className={`relative overflow-hidden min-h-0 ${isArrangeMode ? 'cursor-pointer' : ''}`}>
+            <div key={`cr-vp-${i}`} className={`relative overflow-hidden min-h-0 ${isArrangeMode ? 'cursor-pointer' : ''}`} onMouseDown={(e) => handleViewportMouseDown(i, e)}>
               <div className={`${isArrangeMode ? 'pointer-events-none' : ''} w-full h-full`}>
                 <CRViewport
                   imageId={imageId}
                   isSelected={isSelected}
                   viewportIndex={i}
                   onClick={(e) => handleViewportClick(i, e)}
-                  spotNumber={imgIndex + 1}
+                  spotNumber={image ? image.instanceNumber : imgIndex + 1}
                   showLogo={showLogo}
                 />
               </div>

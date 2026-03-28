@@ -32,7 +32,23 @@ function CRViewportInner({
   const enabledRef = useRef(false);
   const currentImageIdRef = useRef<string | null>(null);
 
-  const { isStampMode, activeStampId, placeStamp, stampPlacements, updateStampPlacement } = useCRViewerStore();
+  const { 
+    isStampMode, activeStampId, placeStamp, stampPlacements, updateStampPlacement,
+    setViewportImage,
+  } = useCRViewerStore();
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+  }, []);
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    const imageUrl = e.dataTransfer.getData('application/dicom-image-url') || e.dataTransfer.getData('text/plain');
+    if (imageUrl) {
+      setViewportImage(imageUrl, viewportIndex);
+    }
+  }, [setViewportImage, viewportIndex]);
 
   // Right-click W/L drag state
   const rightDragRef = useRef<{
@@ -68,7 +84,14 @@ function CRViewportInner({
 
     if (!imageId) {
       currentImageIdRef.current = null;
-      currentImageIdRef.current = null;
+      // Clear the canvas so no stale image shows behind the "No image" overlay
+      try {
+        const enabledEl = cornerstone.getEnabledElement(el);
+        if (enabledEl?.canvas) {
+          const ctx = enabledEl.canvas.getContext('2d');
+          ctx?.clearRect(0, 0, enabledEl.canvas.width, enabledEl.canvas.height);
+        }
+      } catch { /* ignore */ }
       return;
     }
 
@@ -115,8 +138,14 @@ function CRViewportInner({
         if (!vp) return;
         const zoomDirection = e.deltaY > 0 ? -1 : 1;
         const zoomFactor = 1 + zoomDirection * 0.002 * Math.abs(e.deltaY);
-        vp.scale = Math.max(0.1, Math.min(10, vp.scale * zoomFactor));
+        const newScale = Math.max(0.1, Math.min(10, vp.scale * zoomFactor));
+        vp.scale = newScale;
         cornerstone.setViewport(el, vp);
+
+        // Broadcast zoom sync to other selected viewports
+        window.dispatchEvent(new CustomEvent('cr-viewport-sync', {
+          detail: { type: 'scale', sourceIndex: viewportIndex, scale: newScale },
+        }));
       } catch { /* ignore */ }
     };
 
@@ -140,6 +169,11 @@ function CRViewportInner({
           if (vp) {
             vp.voi = { windowWidth: newWW, windowCenter: newWC };
             cornerstone.setViewport(el, vp);
+
+            // Broadcast W/L sync to other selected viewports
+            window.dispatchEvent(new CustomEvent('cr-viewport-sync', {
+              detail: { type: 'voi', sourceIndex: viewportIndex, windowWidth: newWW, windowCenter: newWC },
+            }));
           }
         } catch { /* ignore */ }
         return;
@@ -174,7 +208,83 @@ function CRViewportInner({
       document.removeEventListener('mousemove', handleGlobalMouseMove);
       document.removeEventListener('mouseup', handleGlobalMouseUp);
     };
-  }, [updateStampPlacement]);
+  }, [updateStampPlacement, viewportIndex]);
+
+  // ---- RECEIVE SYNC EVENTS FROM OTHER SELECTED VIEWPORTS ----
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (!detail || detail.sourceIndex === viewportIndex) return;
+      const el = elementRef.current;
+      if (!el || !enabledRef.current) return;
+      // Only apply if this viewport is in the multi-select
+      const { selectedViewportIndices } = useCRViewerStore.getState();
+      if (!selectedViewportIndices.includes(viewportIndex)) return;
+      try {
+        const vp = cornerstone.getViewport(el);
+        if (!vp) return;
+        if (detail.type === 'scale') {
+          vp.scale = detail.scale;
+        } else if (detail.type === 'voi') {
+          vp.voi = { windowWidth: detail.windowWidth, windowCenter: detail.windowCenter };
+        } else if (detail.type === 'translation') {
+          vp.translation = detail.translation;
+        } else if (detail.type === 'full') {
+          vp.scale = detail.scale;
+          vp.translation = detail.translation;
+          if (detail.windowWidth != null && detail.windowCenter != null) {
+            vp.voi = { windowWidth: detail.windowWidth, windowCenter: detail.windowCenter };
+          }
+        }
+        cornerstone.setViewport(el, vp);
+      } catch { /* ignore */ }
+    };
+    window.addEventListener('cr-viewport-sync', handler);
+    return () => window.removeEventListener('cr-viewport-sync', handler);
+  }, [viewportIndex]);
+
+  // ---- HANDLE RESET EVENTS (restore zoom, pan, W/L) ----
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      // If viewportIndex is specified, only that one resets. Otherwise (Reset All), everyone resets.
+      if (detail?.viewportIndex !== undefined && detail.viewportIndex !== viewportIndex) return;
+
+      const el = elementRef.current;
+      if (!el || !enabledRef.current) return;
+
+      try {
+        const enabledEl = cornerstone.getEnabledElement(el);
+        const image = enabledEl?.image;
+        if (image) {
+          const wc = Array.isArray(image.windowCenter) ? image.windowCenter[0] : (image.windowCenter ?? 127);
+          const ww = Array.isArray(image.windowWidth) ? image.windowWidth[0] : (image.windowWidth ?? 255);
+          let defaultScale = 1;
+          try {
+            const defaultVp = cornerstone.getDefaultViewportForImage(el, image);
+            if (defaultVp?.scale) defaultScale = defaultVp.scale;
+          } catch { /* ignore */ }
+          // Explicitly pass a fresh viewport so cornerstone cannot reuse the modified one
+          cornerstone.displayImage(el, image, {
+            scale: defaultScale,
+            translation: { x: 0, y: 0 },
+            voi: { windowCenter: wc, windowWidth: ww },
+            rotation: 0,
+            hflip: false,
+            vflip: false,
+            invert: false,
+            pixelReplication: false,
+            labelmap: false,
+          });
+        } else {
+          cornerstone.resize(el, true);
+        }
+      } catch { /* ignore */ }
+    };
+
+    window.addEventListener('cr-custom-reset', handler);
+    return () => window.removeEventListener('cr-custom-reset', handler);
+  }, [viewportIndex]);
 
   // ---- MOUSE DOWN on container (right-click = W/L drag) ----
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
@@ -220,6 +330,8 @@ function CRViewportInner({
       onMouseDownCapture={handleMouseDown}
       onContextMenu={(e) => e.preventDefault()}
       onClickCapture={handleClick}
+      onDragOver={handleDragOver}
+      onDrop={handleDrop}
     >
       {/* Cornerstone render target */}
       <div
@@ -269,7 +381,7 @@ function CRViewportInner({
 
       {/* No image placeholder */}
       {!imageId && (
-        <div className="absolute inset-0 flex items-center justify-center text-gray-600 text-xs select-none z-10">
+        <div className="absolute inset-0 flex items-center justify-center text-gray-600 text-xs select-none pointer-events-none z-10">
           No image
         </div>
       )}

@@ -1,8 +1,9 @@
 import { useState, useCallback, useEffect } from 'react';
 import { useViewerStore } from '@/stores/viewerStore';
 import { usePrintStore } from '@/stores/printStore';
+import { useCustomAnnotationStore } from '@/stores/customAnnotationStore';
 import {
-  activateTool, applyWLPreset, applyFilter, WL_PRESETS,
+  activateTool, applyWLPreset, applyFilter, WL_PRESETS, resetViewport,
   setAnnotationToolColor, applyActionToElements, undoLastAnnotationOnSelected,
   clearAllAnnotationsOnSelected,
 } from '@/lib/viewerTools';
@@ -130,6 +131,11 @@ export function ToolsPanel() {
     'invert': false,
   });
 
+  // Activate Pan as the default tool on mount
+  useEffect(() => {
+    activateTool('pan', null);
+  }, []);
+
   // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -198,15 +204,14 @@ export function ToolsPanel() {
   }, [setActiveTool]);
 
   const handleReset = useCallback(() => {
-    const selectedEls = getSelectedViewportElements();
-    if (selectedEls.length > 0) {
-      applyActionToElements('reset', selectedEls);
-    } else {
-      const el = getSelectedViewportElement();
-      if (el) activateTool('reset', el);
-    }
-    setActiveTool('select');
-    activateTool('select', null);
+    // Clear ALL custom annotations first (before resetViewport fires dicom-clear-annotations)
+    useCustomAnnotationStore.getState().resetAll();
+    // Reset ALL viewport elements (not just selected — Reset is a full reset)
+    document.querySelectorAll('[data-viewport-index]').forEach((el) => {
+      try { resetViewport(el as HTMLDivElement); } catch { /* ignore */ }
+    });
+    setActiveTool('pan');
+    activateTool('pan', null);
     setActiveFilter('none');
     // Reset toggle states
     setToggleStates({ 'flip-h': false, 'flip-v': false, 'invert': false });
@@ -215,7 +220,10 @@ export function ToolsPanel() {
   }, [setActiveTool]);
 
   const handleClearAll = useCallback(() => {
-    clearAllAnnotationsOnSelected();
+    const selectedEls = getSelectedViewportElements();
+    selectedEls.forEach((el) => {
+      try { resetViewport(el); } catch { /* ignore */ }
+    });
   }, []);
 
   const handleCineToggle = useCallback(() => {

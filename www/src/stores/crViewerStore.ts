@@ -61,6 +61,7 @@ interface CRViewerState {
 
   // Images
   images: CRImage[];
+  originalImages: CRImage[];
   totalImages: number;
 
   // Layout
@@ -77,9 +78,6 @@ interface CRViewerState {
   selectedViewport: number;
   selectedViewportIndices: number[];
   selectedCount: number;
-
-  // Viewport overrides (for arrange mode)
-  viewportImageOverrides: Record<number, string>;
 
   // Arrange mode
   isArrangeMode: boolean;
@@ -119,7 +117,6 @@ interface CRViewerState {
   toggleArrangeMode: () => void;
   toggleArrangeViewport: (index: number) => void;
   applyArrange: () => void;
-  setViewportImageOverride: (index: number, imageUrl: string) => void;
 
   // Reset
   resetAll: () => void;
@@ -127,6 +124,7 @@ interface CRViewerState {
 
   // Resequence
   resequence: () => void;
+  swapImages: (idxA: number, idxB: number) => void;
 
   // Apply W/L to all
   applyToAll: boolean;
@@ -153,6 +151,9 @@ interface CRViewerState {
   updateStampPlacement: (id: string, xPercent: number, yPercent: number) => void;
   undoStampPlacement: () => void;
   clearStampPlacements: (viewportIndex?: number) => void;
+
+  // Manual image placement (Drag and Drop)
+  setViewportImage: (imageUrl: string, viewportIndex: number) => void;
 }
 
 function recalcPages(totalImages: number, spotsPerPage: number) {
@@ -241,6 +242,7 @@ export const useCRViewerStore = create<CRViewerState>((set, get) => ({
   patientId: '',
   studyDate: '',
   images: [],
+  originalImages: [],
   totalImages: 0,
   currentLayout: CR_LAYOUTS[2], // default 4 spots
   currentPage: 1,
@@ -251,7 +253,6 @@ export const useCRViewerStore = create<CRViewerState>((set, get) => ({
   selectedViewport: 0,
   selectedViewportIndices: [0],
   selectedCount: 0,
-  viewportImageOverrides: {},
   isArrangeMode: false,
   arrangeClickOrder: [],
   stamps: loadSavedStamps(),
@@ -279,6 +280,7 @@ export const useCRViewerStore = create<CRViewerState>((set, get) => ({
 
     set({
       images: crImages,
+      originalImages: crImages,
       currentLayout: layout,
       ...recalcPages(crImages.length, layout.spots),
       patientName: params.patientName,
@@ -287,7 +289,6 @@ export const useCRViewerStore = create<CRViewerState>((set, get) => ({
       isLoading: false,
       selectedViewport: 0,
       selectedCount: 0,
-      viewportImageOverrides: {},
       isArrangeMode: false,
       arrangeClickOrder: [],
       stampPlacements: [],
@@ -303,7 +304,6 @@ export const useCRViewerStore = create<CRViewerState>((set, get) => ({
     set({
       currentLayout: layout,
       ...recalcPages(totalImages, layout.spots),
-      viewportImageOverrides: {},
     });
     // Resize the popup window to match the new layout's aspect ratio
     const api = (window as any).electronAPI;
@@ -361,7 +361,7 @@ export const useCRViewerStore = create<CRViewerState>((set, get) => ({
   },
 
   applyArrange: () => {
-    const { arrangeClickOrder, images, currentPage, currentLayout, viewportImageOverrides } = get();
+    const { arrangeClickOrder, images, currentPage, currentLayout } = get();
     if (arrangeClickOrder.length === 0) {
       set({ isArrangeMode: false, arrangeClickOrder: [] });
       return;
@@ -371,30 +371,29 @@ export const useCRViewerStore = create<CRViewerState>((set, get) => ({
     const selectedCount = arrangeClickOrder.length;
 
     // Collect the images from the selected viewports in click order
-    const selectedImages: string[] = [];
+    const arrangedImages: CRImage[] = [];
     for (let i = 0; i < arrangeClickOrder.length; i++) {
       const vpIdx = arrangeClickOrder[i];
-      const overrideUrl = viewportImageOverrides[vpIdx];
-      const defaultImg = images[startIndex + vpIdx];
-      const imageUrl = overrideUrl || defaultImg?.imageUrl;
-      if (imageUrl) selectedImages.push(imageUrl);
+      const img = images[startIndex + vpIdx];
+      if (img) arrangedImages.push(img);
     }
+
+    // Identify all other images that weren't selected
+    const arrangedIds = new Set(arrangedImages.map(img => img.id));
+    const remainingImages = images.filter(img => !arrangedIds.has(img.id));
+
+    // New sequence: arranged ones first, then others
+    const newSequence = [...arrangedImages, ...remainingImages];
 
     // Auto-select best layout for the count of selected images
     const bestLayout = autoSelectLayout(selectedCount);
-
-    // Build new overrides: place selected images sequentially in the new layout
-    const newOverrides: Record<number, string> = {};
-    for (let i = 0; i < selectedImages.length && i < bestLayout.spots; i++) {
-      newOverrides[i] = selectedImages[i];
-    }
 
     set({
       isArrangeMode: false,
       arrangeClickOrder: [],
       currentLayout: bestLayout,
-      ...recalcPages(get().totalImages, bestLayout.spots),
-      viewportImageOverrides: newOverrides,
+      images: newSequence,
+      ...recalcPages(newSequence.length, bestLayout.spots),
     });
 
     // Resize the popup window
@@ -404,27 +403,27 @@ export const useCRViewerStore = create<CRViewerState>((set, get) => ({
     }
   },
 
-  setViewportImageOverride: (index, imageUrl) => {
-    set((state) => ({
-      viewportImageOverrides: { ...state.viewportImageOverrides, [index]: imageUrl },
-    }));
-  },
-
   // Reset
   resetAll: () => {
+    const { originalImages } = get();
+    const defaultLayout = autoSelectLayout(originalImages.length);
     set({
-      viewportImageOverrides: {},
+      images: [...originalImages],
+      currentLayout: defaultLayout,
       stampPlacements: [],
       selectedViewport: 0,
+      ...recalcPages(originalImages.length, defaultLayout.spots),
     });
+    // Resize the popup window
+    const api = (window as any).electronAPI;
+    if (api?.resizeCRViewer) {
+      api.resizeCRViewer({ cols: defaultLayout.cols, rows: defaultLayout.rows }).catch(() => {});
+    }
   },
 
   resetOne: (viewportIndex) => {
     set((state) => {
-      const overrides = { ...state.viewportImageOverrides };
-      delete overrides[viewportIndex];
       return {
-        viewportImageOverrides: overrides,
         stampPlacements: state.stampPlacements.filter(s => s.viewportIndex !== viewportIndex),
       };
     });
@@ -432,12 +431,26 @@ export const useCRViewerStore = create<CRViewerState>((set, get) => ({
 
   // Resequence: reset overrides to default sequential order
   resequence: () => {
-    set({ viewportImageOverrides: {} });
+    const { originalImages, currentLayout } = get();
+    set({
+      images: [...originalImages],
+      ...recalcPages(originalImages.length, currentLayout.spots),
+    });
+  },
+
+  swapImages: (idxA, idxB) => {
+    set((state) => {
+      const nextImages = [...state.images];
+      const temp = nextImages[idxA];
+      nextImages[idxA] = nextImages[idxB];
+      nextImages[idxB] = temp;
+      return { images: nextImages };
+    });
   },
 
   // Double-click toggle: zoom into 1x1 showing clicked image, or restore previous layout
   toggleSingleViewport: (viewportIndex) => {
-    const { preDoubleClickLayout, currentLayout, currentPage, images, viewportImageOverrides } = get();
+    const { preDoubleClickLayout, currentLayout, currentPage, images } = get();
     const singleLayout = CR_LAYOUTS[0]; // 1 Spot
 
     if (preDoubleClickLayout) {
@@ -451,7 +464,6 @@ export const useCRViewerStore = create<CRViewerState>((set, get) => ({
         preDoubleClickLayout: null,
         preDoubleClickPage: 1,
         doubleClickViewportImage: null,
-        viewportImageOverrides: {},
       });
       const api = (window as any).electronAPI;
       if (api?.resizeCRViewer) {
@@ -460,9 +472,8 @@ export const useCRViewerStore = create<CRViewerState>((set, get) => ({
     } else {
       // Zoom into 1x1 showing the clicked viewport's image
       const startIndex = (currentPage - 1) * currentLayout.spots;
-      const overrideUrl = viewportImageOverrides[viewportIndex];
-      const defaultImg = images[startIndex + viewportIndex];
-      const imageUrl = overrideUrl || defaultImg?.imageUrl || null;
+      const image = images[startIndex + viewportIndex];
+      const imageUrl = image?.imageUrl || null;
 
       if (!imageUrl) return;
 
@@ -473,7 +484,6 @@ export const useCRViewerStore = create<CRViewerState>((set, get) => ({
         currentLayout: singleLayout,
         ...recalcPages(get().totalImages, singleLayout.spots),
         currentPage: 1,
-        viewportImageOverrides: { 0: imageUrl },
       });
       const api = (window as any).electronAPI;
       if (api?.resizeCRViewer) {
@@ -538,6 +548,9 @@ export const useCRViewerStore = create<CRViewerState>((set, get) => ({
 
     set((state) => ({
       stampPlacements: [...state.stampPlacements, placement],
+      // Auto-exit stamp mode so user can drag/move the placed stamp immediately
+      isStampMode: false,
+      activeStampId: null,
     }));
   },
 
@@ -569,5 +582,28 @@ export const useCRViewerStore = create<CRViewerState>((set, get) => ({
     } else {
       set({ stampPlacements: [] });
     }
+  },
+
+  setViewportImage: (imageUrl, viewportIndex) => {
+    const { images, currentPage, currentLayout } = get();
+    const targetGlobalIdx = (currentPage - 1) * currentLayout.spots + viewportIndex;
+    const sourceIdx = images.findIndex(img => img.imageUrl === imageUrl);
+    if (sourceIdx === -1) return;
+
+    const nextImages = [...images];
+
+    if (targetGlobalIdx < nextImages.length) {
+      // Filled slot: swap the two images
+      [nextImages[targetGlobalIdx], nextImages[sourceIdx]] = [nextImages[sourceIdx], nextImages[targetGlobalIdx]];
+    } else {
+      // Empty slot: swap dragged image to the last position so it lands on the last page
+      // without disturbing other pages' ordering
+      const lastIdx = nextImages.length - 1;
+      if (sourceIdx !== lastIdx) {
+        [nextImages[lastIdx], nextImages[sourceIdx]] = [nextImages[sourceIdx], nextImages[lastIdx]];
+      }
+    }
+
+    set({ images: nextImages });
   },
 }));

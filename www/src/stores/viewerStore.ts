@@ -81,6 +81,7 @@ interface ViewerState {
   arrangeSelectedImages: string[];
   arrangeClickOrder: number[];
   viewportImageOverrides: Record<number, string>;
+  viewportIndexOverrides: Record<number, number>; // slot → original image index, for reliable number display
 
   // Cine playback
   isPlaying: boolean;
@@ -132,6 +133,7 @@ interface ViewerState {
   toggleArrangeImageSelection: (imageUrl: string) => void;
   toggleArrangeViewport: (viewportIndex: number) => void;
   setViewportImageOverride: (viewportIndex: number, imageUrl: string) => void;
+  setViewportIndexOverride: (viewportIndex: number, imageIndex: number) => void;
   clearViewportOverrides: () => void;
 
   // Double-click toggle
@@ -290,7 +292,7 @@ export const useViewerStore = create<ViewerState>((set, get) => ({
 
   selectedViewport: 0,
   selectedViewportIndices: [0],
-  activeToolId: 'select',
+  activeToolId: 'pan',
 
   preDoubleClickLayout: null,
   preDoubleClickPage: 1,
@@ -323,6 +325,7 @@ export const useViewerStore = create<ViewerState>((set, get) => ({
   arrangeSelectedImages: [],
   arrangeClickOrder: [],
   viewportImageOverrides: {},
+  viewportIndexOverrides: {},
 
   setLayout: (layout) => {
     const { totalImages } = get();
@@ -417,7 +420,21 @@ export const useViewerStore = create<ViewerState>((set, get) => ({
     const { currentPage } = get();
     if (currentPage > 1) set({ currentPage: currentPage - 1 });
   },
-  setSelectedViewport: (v) => set({ selectedViewport: v, selectedViewportIndices: [v] }),
+  setSelectedViewport: (v) => {
+    const { selectedViewportIndices, activeToolId } = get();
+    // When select tool is active, clicking any viewport collapses multi-selection to just that viewport.
+    if (activeToolId === 'select' && selectedViewportIndices.length > 1) {
+      set({ selectedViewport: v, selectedViewportIndices: [v] });
+      return;
+    }
+    // If viewport is already in multi-select, just update primary without clearing the selection.
+    // This lets pan/tool interactions work on any selected viewport without losing multi-select.
+    if (selectedViewportIndices.includes(v) && selectedViewportIndices.length > 1) {
+      set({ selectedViewport: v });
+    } else {
+      set({ selectedViewport: v, selectedViewportIndices: [v] });
+    }
+  },
   toggleViewportSelection: (v) => {
     const { selectedViewportIndices } = get();
     const exists = selectedViewportIndices.includes(v);
@@ -427,9 +444,15 @@ export const useViewerStore = create<ViewerState>((set, get) => ({
     set({ selectedViewportIndices: next.length > 0 ? next : [v], selectedViewport: v });
   },
   selectAllViewports: () => {
-    const { currentLayout } = get();
-    const all = Array.from({ length: currentLayout.spots }, (_, i) => i);
-    set({ selectedViewportIndices: all });
+    const { currentLayout, selectedViewportIndices, selectedViewport } = get();
+    const totalSpots = currentLayout.spots;
+    // Toggle: if all viewports are already selected, collapse to just the active one
+    if (selectedViewportIndices.length === totalSpots) {
+      set({ selectedViewportIndices: [selectedViewport] });
+    } else {
+      const all = Array.from({ length: totalSpots }, (_, i) => i);
+      set({ selectedViewportIndices: all });
+    }
   },
   clearViewportSelection: () => set({ selectedViewportIndices: [get().selectedViewport] }),
   setActiveTool: (toolId) => set({ activeToolId: toolId }),
@@ -520,7 +543,8 @@ export const useViewerStore = create<ViewerState>((set, get) => ({
       currentPage: 1,
       totalPages,
       totalImages: images.length,
-      viewportImageOverrides: {}, // Clear any per-slot overrides so images fill sequentially
+      viewportImageOverrides: {},
+      viewportIndexOverrides: {},
     });
 
     // Fire event for any components still listening
@@ -560,8 +584,11 @@ export const useViewerStore = create<ViewerState>((set, get) => ({
 
       // Build new overrides: place selected images sequentially in the new layout
       const newOverrides: Record<number, string> = {};
+      const newIndexOverrides: Record<number, number> = {};
       for (let i = 0; i < selectedImages.length && i < bestLayout.spots; i++) {
         newOverrides[i] = selectedImages[i];
+        const origIdx = images.findIndex((img) => img.imageUrl === selectedImages[i]);
+        if (origIdx >= 0) newIndexOverrides[i] = origIdx;
       }
 
       set({
@@ -571,6 +598,7 @@ export const useViewerStore = create<ViewerState>((set, get) => ({
         currentLayout: bestLayout,
         ...recalcPages(get().totalImages, bestLayout.spots),
         viewportImageOverrides: newOverrides,
+        viewportIndexOverrides: newIndexOverrides,
       });
 
       // Resize the popup window
@@ -617,7 +645,16 @@ export const useViewerStore = create<ViewerState>((set, get) => ({
     }));
   },
 
-  clearViewportOverrides: () => set({ viewportImageOverrides: {} }),
+  setViewportIndexOverride: (viewportIndex, imageIndex) => {
+    set((state) => ({
+      viewportIndexOverrides: {
+        ...state.viewportIndexOverrides,
+        [viewportIndex]: imageIndex,
+      }
+    }));
+  },
+
+  clearViewportOverrides: () => set({ viewportImageOverrides: {}, viewportIndexOverrides: {} }),
 
   // Double-click toggle: zoom into 1x1 showing clicked image, or restore previous layout
   toggleSingleViewport: (viewportIndex) => {
@@ -637,6 +674,7 @@ export const useViewerStore = create<ViewerState>((set, get) => ({
         preDoubleClickPage: 1,
         doubleClickViewportImage: null,
         viewportImageOverrides: {},
+        viewportIndexOverrides: {},
       });
       const api = (window as any).electronAPI;
       if (api?.resizeViewer) {
@@ -651,6 +689,7 @@ export const useViewerStore = create<ViewerState>((set, get) => ({
 
       if (!imageUrl) return;
 
+      const origIdx = images.findIndex((img) => img.imageUrl === imageUrl);
       set({
         preDoubleClickLayout: currentLayout,
         preDoubleClickPage: currentPage,
@@ -659,6 +698,7 @@ export const useViewerStore = create<ViewerState>((set, get) => ({
         ...recalcPages(get().totalImages, singleLayout.spots),
         currentPage: 1,
         viewportImageOverrides: { 0: imageUrl },
+        viewportIndexOverrides: origIdx >= 0 ? { 0: origIdx } : {},
       });
       const api = (window as any).electronAPI;
       if (api?.resizeViewer) {

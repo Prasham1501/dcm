@@ -7,9 +7,10 @@ import { useViewerStore } from '@/stores/viewerStore';
 import { usePrintStore } from '@/stores/printStore';
 import { cornerstone } from '@/lib/cornerstoneSetup';
 import {
-  X, ImagePlus, PanelTop, Info, ChevronUp, ChevronDown, Printer, ListOrdered, Undo2, RotateCcw
+  X, ImagePlus, PanelTop, Info, ChevronUp, ChevronDown, Printer, Undo2, RotateCcw, CheckSquare
 } from 'lucide-react';
 import { useCustomAnnotationStore } from '@/stores/customAnnotationStore';
+import { resetViewport } from '@/lib/viewerTools';
 import { HeaderFooterModal } from './HeaderFooterModal';
 
 /** Get DICOM metadata tags from the currently displayed image in the selected viewport */
@@ -147,8 +148,8 @@ function getDicomTagNames(): Record<string, string> {
 export function ViewerActionBar() {
   const {
     currentPage, totalPages, totalImages, images,
-    nextPage, prevPage, clearViewports, insertAllViewports,
-    isArrangeMode, toggleArrangeMode,
+    nextPage, prevPage, insertAllViewports,
+    selectAllViewports,
   } = useViewerStore();
   const { settings, setShowPrintPreview } = usePrintStore();
   const [showDicomInfo, setShowDicomInfo] = useState(false);
@@ -181,11 +182,15 @@ export function ViewerActionBar() {
         <button
           type="button"
           onClick={() => {
-            if (window.confirm('Reset all viewports and clear all annotations?')) {
-              useCustomAnnotationStore.getState().resetAll();
-              useViewerStore.getState().clearViewportOverrides();
-              clearViewports();
-            }
+            // Clear custom annotation store FIRST so the dicom-clear-annotations
+            // event (fired inside resetViewport) reads an already-empty store
+            useCustomAnnotationStore.getState().resetAll();
+            // Reset each viewport's cornerstone state (W/L, zoom, rotation, annotations)
+            const viewportEls = document.querySelectorAll('[data-viewport-index]');
+            viewportEls.forEach((el) => {
+              try { resetViewport(el as HTMLDivElement); } catch { /* ignore */ }
+            });
+            useViewerStore.getState().clearViewportOverrides();
           }}
           className="w-9 h-9 flex items-center justify-center rounded border border-app-border text-app-text-secondary hover:bg-red-500/20 hover:text-red-400 hover:border-red-500/50 transition-colors"
           title="Reset All"
@@ -230,6 +235,16 @@ export function ViewerActionBar() {
           title="Next page"
         >
           <ChevronDown className="w-5 h-5" />
+        </button>
+
+        {/* Select All Viewports */}
+        <button
+          type="button"
+          onClick={selectAllViewports}
+          className="w-9 h-9 flex items-center justify-center rounded border border-app-border text-app-text-secondary hover:bg-blue-500/20 hover:text-blue-400 hover:border-blue-500/50 transition-colors"
+          title="Select all viewports (Ctrl+A)"
+        >
+          <CheckSquare className="w-5 h-5" />
         </button>
 
         {/* Spacer */}

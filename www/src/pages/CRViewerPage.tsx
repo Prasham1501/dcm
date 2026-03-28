@@ -10,6 +10,7 @@ import { useCRViewerStore } from '@/stores/crViewerStore';
 import { CRToolbar } from '@/components/crViewer/CRToolbar';
 import { CRViewportGrid } from '@/components/crViewer/CRViewportGrid';
 import { CRSidebar } from '@/components/crViewer/CRSidebar';
+import { CRThumbnailSidebar } from '@/components/crViewer/CRThumbnailSidebar';
 import { ChevronLeft, X } from 'lucide-react';
 import { useThemeStore } from '@/stores/themeStore';
 import { Sun, Moon } from 'lucide-react';
@@ -109,8 +110,11 @@ export function CRViewerPage() {
         {/* Viewport grid */}
         <CRViewportGrid />
 
-        {/* Right sidebar */}
-        <CRSidebar />
+        {/* Right sidebars */}
+        <div className="flex h-full border-l border-app-border">
+          <CRThumbnailSidebar />
+          <CRSidebar />
+        </div>
       </div>
 
       {/* Bottom bar: patient name + study date */}

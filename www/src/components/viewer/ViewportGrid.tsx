@@ -15,7 +15,7 @@ export function ViewportGrid() {
     currentLayout, currentPage, selectedViewport, setSelectedViewport,
     selectedViewportIndices, toggleViewportSelection,
     patientName, studyDate, images, activeToolId, viewportsCleared,
-    isArrangeMode, arrangeClickOrder, toggleArrangeViewport, viewportImageOverrides, setViewportImageOverride, toggleArrangeMode,
+    isArrangeMode, arrangeClickOrder, toggleArrangeViewport, viewportImageOverrides, viewportIndexOverrides, setViewportImageOverride, setViewportIndexOverride, toggleArrangeMode,
     toggleSingleViewport
   } = useViewerStore();
 
@@ -115,6 +115,11 @@ export function ViewportGrid() {
           if (urlA && urlB) {
             store.setViewportImageOverride(first, urlB);
             store.setViewportImageOverride(index, urlA);
+            // Also track the original image indices for reliable number display
+            const idxA = store.images.findIndex((img) => img.imageUrl === urlA);
+            const idxB = store.images.findIndex((img) => img.imageUrl === urlB);
+            if (idxA >= 0) store.setViewportIndexOverride(index, idxA);
+            if (idxB >= 0) store.setViewportIndexOverride(first, idxB);
           }
         }
         setSelectedViewport(index);
@@ -139,7 +144,13 @@ export function ViewportGrid() {
   // Handle drop of a thumbnail image onto a specific viewport slot
   const handleViewportImageDrop = useCallback((slotIndex: number, imageUrl: string) => {
     setViewportImageOverride(slotIndex, imageUrl);
-  }, [setViewportImageOverride]);
+    // Also update the index override so the bottom-left number label reflects the dropped image
+    const store = useViewerStore.getState();
+    const origIdx = store.images.findIndex((img) => img.imageUrl === imageUrl);
+    if (origIdx >= 0) {
+      setViewportIndexOverride(slotIndex, origIdx);
+    }
+  }, [setViewportImageOverride, setViewportIndexOverride]);
 
   // Handle file drop onto the grid (external DICOM files)
   const handleGridDrop = useCallback((e: React.DragEvent) => {
@@ -178,9 +189,37 @@ export function ViewportGrid() {
             const defaultImg = images[imgIndex];
             const imageId = overrideUrl || defaultImg?.imageUrl || null;
 
-            const actualImgIndex = overrideUrl
-              ? images.findIndex((img) => img.imageUrl === overrideUrl)
-              : imgIndex;
+            // Use explicit index override first (set by swap/arrange), then URL-based lookup, then sequential
+            const actualImgIndex = viewportIndexOverrides[i] !== undefined
+              ? viewportIndexOverrides[i]
+              : overrideUrl
+                ? images.findIndex((img) => img.imageUrl === overrideUrl)
+                : imgIndex;
+
+            // Empty slot — no DicomViewport at all so no stale cornerstone canvas can appear
+            if (!imageId) {
+              return (
+                <div
+                  key={`empty-vp-${i}`}
+                  style={areaStyle}
+                  className="relative overflow-hidden min-h-0 bg-black"
+                  onClick={(e) => handleViewportClick(i, e)}
+                  onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    const url = e.dataTransfer.getData('application/dicom-image-url');
+                    if (url) handleViewportImageDrop(i, url);
+                  }}
+                >
+                  <div className="absolute inset-0 flex items-center justify-center text-gray-500 text-xs select-none pointer-events-none">
+                    Empty
+                  </div>
+                  {(isSelected || isMultiSelected) && (
+                    <div className="absolute inset-0 z-40 pointer-events-none" style={{ boxShadow: 'inset 0 0 0 3px #ef4444' }} />
+                  )}
+                </div>
+              );
+            }
 
             return (
               <div key={`vp-${i}`} style={areaStyle} className={`relative overflow-hidden min-h-0 ${isArrangeMode ? 'cursor-pointer' : ''}`}
@@ -199,6 +238,10 @@ export function ViewportGrid() {
                     onImageDrop={(url) => handleViewportImageDrop(i, url)}
                   />
                 </div>
+                {/* Image order label - bottom left */}
+                <div className="absolute bottom-1 left-1 z-30 text-white text-[10px] font-mono pointer-events-none select-none opacity-60 leading-none">
+                  {(actualImgIndex >= 0 ? actualImgIndex : imgIndex) + 1}/{images.length}
+                </div>
                 {/* Selection border overlay - rendered ON TOP with box-shadow so it can't be clipped */}
                 {(isSelected || isMultiSelected) && (
                   <div
@@ -208,7 +251,7 @@ export function ViewportGrid() {
                 )}
                 {/* Arrange Overlay */}
                 {isArrangeMode && arrangeClickOrder.includes(i) && (
-                  <div 
+                  <div
                     className="absolute inset-0 bg-green-500/20 z-50 flex items-center justify-center cursor-pointer"
                     onClick={(e) => handleViewportClick(i, e)}
                   >
@@ -219,7 +262,7 @@ export function ViewportGrid() {
                 )}
                 {/* Arrange Click Catcher when not selected yet */}
                 {isArrangeMode && !arrangeClickOrder.includes(i) && (
-                  <div 
+                  <div
                     className="absolute inset-0 z-50 cursor-pointer hover:bg-white/10"
                     onClick={(e) => handleViewportClick(i, e)}
                   />

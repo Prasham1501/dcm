@@ -41,7 +41,8 @@ interface CustomAnnotationState {
   
   undo: () => void;
   resetAll: () => void;
-  
+  clearForImageId: (imageId: string) => void;
+
   getAnnotations: (imageId: string) => TextAnnotation[];
   getDrawPaths: (imageId: string) => DrawPath[];
 }
@@ -165,6 +166,13 @@ export const useCustomAnnotationStore = create<CustomAnnotationState>((set, get)
         get().addPath(imageId, data, false);
         break;
     }
+  },
+
+  clearForImageId: (imageId: string) => {
+    set((state) => ({
+      annotations: { ...state.annotations, [imageId]: [] },
+      drawPaths: { ...state.drawPaths, [imageId]: [] },
+    }));
   },
 
   resetAll: () => {

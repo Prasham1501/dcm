@@ -31,6 +31,7 @@ function DicomViewportInner({
   isMultiSelected = false,
   onClick,
   viewportIndex,
+  activeTool,
   imageStack,
   stackIndex,
   onImageDrop,
@@ -46,6 +47,14 @@ function DicomViewportInner({
     startY: number;
     startWW: number;
     startWC: number;
+  } | null>(null);
+
+  // Left-click pan drag state
+  const panDragRef = useRef<{
+    startX: number;
+    startY: number;
+    startTx: number;
+    startTy: number;
   } | null>(null);
 
   // Text annotation UI state (pending additions)
@@ -152,22 +161,18 @@ function DicomViewportInner({
           if (vp.scale) {
             setZoom(vp.scale);
           }
-          // Sync pan (translation) to all other selected viewports in real-time
-          if (vp.translation && selectedViewportIndices.length > 1) {
-            const tx = vp.translation.x;
-            const ty = vp.translation.y;
-            selectedViewportIndices.forEach((vpIdx) => {
-              if (vpIdx === viewportIndex) return;
-              const vpEl = document.querySelector(`[data-viewport-index="${vpIdx}"]`) as HTMLElement;
-              if (!vpEl) return;
-              try {
-                const otherVp = cornerstone.getViewport(vpEl);
-                if (otherVp) {
-                  otherVp.translation = { x: tx, y: ty };
-                  cornerstone.setViewport(vpEl, otherVp);
-                }
-              } catch { /* ignore */ }
-            });
+          // Dispatch full sync event so other selected viewports apply same zoom/pan/W-L to their own element
+          if (selectedViewportIndices.length > 1) {
+            window.dispatchEvent(new CustomEvent('dicom-viewport-sync', {
+              detail: {
+                type: 'full',
+                sourceIndex: viewportIndex,
+                scale: vp.scale,
+                translation: { x: vp.translation?.x ?? 0, y: vp.translation?.y ?? 0 },
+                windowWidth: vp.voi?.windowWidth,
+                windowCenter: vp.voi?.windowCenter,
+              },
+            }));
           }
         }
       } catch { /* ignore */ }
@@ -177,26 +182,38 @@ function DicomViewportInner({
     return () => el.removeEventListener('cornerstoneimagerendered', handleImageRendered);
   }, [viewportIndex]);
 
-  // Listen for clear-annotations event (Reset handled by store, but we local-sync)
+  // Listen for clear-annotations event — directly wipe local state
   useEffect(() => {
     const handler = (e: Event) => {
       const detail = (e as CustomEvent).detail;
       const targetEl = detail?.element;
       if (!targetEl || targetEl === elementRef.current) {
-        if (imageId) {
-          setAnnotations([...getAnnotations(imageId)]);
-          setDrawPaths([...getDrawPaths(imageId)]);
+        setAnnotations([]);
+        setDrawPaths([]);
+        // Also cancel any in-progress drawing
+        isDrawingRef.current = false;
+        currentDrawPathRef.current = [];
+        const canvas = drawCanvasRef.current;
+        if (canvas) {
+          const ctx = canvas.getContext('2d');
+          ctx?.clearRect(0, 0, canvas.width, canvas.height);
         }
       }
     };
     window.addEventListener('dicom-clear-annotations', handler);
     return () => window.removeEventListener('dicom-clear-annotations', handler);
-  }, [imageId, getAnnotations, getDrawPaths]);
+  }, []);
 
   // Load image when imageId changes
   useEffect(() => {
     const el = elementRef.current;
-    if (!el || !imageId || !enabledRef.current) return;
+    if (!el || !enabledRef.current) return;
+
+    if (!imageId) {
+      currentImageIdRef.current = null;
+      return;
+    }
+
     if (currentImageIdRef.current === imageId) return;
     let cancelled = false;
 
@@ -279,14 +296,10 @@ function DicomViewportInner({
         cornerstone.setViewport(el, viewport);
         useViewerStore.getState().setZoom(newScale);
 
-        // Sync zoom to all selected viewports
-        syncToSelectedViewports((vpEl) => {
-          const vp = cornerstone.getViewport(vpEl);
-          if (vp) {
-            vp.scale = newScale;
-            cornerstone.setViewport(vpEl, vp);
-          }
-        });
+        // Broadcast zoom so each selected viewport applies it to its own element
+        window.dispatchEvent(new CustomEvent('dicom-viewport-sync', {
+          detail: { type: 'scale', sourceIndex: viewportIndex, scale: newScale },
+        }));
       } catch { /* ignore */ }
     };
 
@@ -294,55 +307,107 @@ function DicomViewportInner({
     return () => parent.removeEventListener('wheel', handleWheel, true);
   }, []);
 
-  // ---- SYNC OPERATIONS TO ALL SELECTED VIEWPORTS ----
-  const syncToSelectedViewports = useCallback((action: (el: HTMLElement) => void) => {
-    const { selectedViewportIndices } = useViewerStore.getState();
-    if (selectedViewportIndices.length <= 1) return;
-    selectedViewportIndices.forEach((vpIdx) => {
-      if (vpIdx === viewportIndex) return; // skip self
-      const vpEl = document.querySelector(`[data-viewport-index="${vpIdx}"]`) as HTMLElement;
-      if (vpEl) {
-        try { action(vpEl); } catch { /* ignore */ }
-      }
-    });
+  // ---- RECEIVE SYNC EVENTS FROM OTHER SELECTED VIEWPORTS ----
+  // Each viewport handles its OWN cornerstone element — no cross-component DOM queries needed.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (!detail || detail.sourceIndex === viewportIndex) return;
+      const el = elementRef.current;
+      if (!el || !enabledRef.current) return;
+      // Only apply if this viewport is in the multi-select
+      const { selectedViewportIndices } = useViewerStore.getState();
+      if (!selectedViewportIndices.includes(viewportIndex)) return;
+      try {
+        const vp = cornerstone.getViewport(el);
+        if (!vp) return;
+        if (detail.type === 'scale') {
+          vp.scale = detail.scale;
+        } else if (detail.type === 'voi') {
+          vp.voi = { windowWidth: detail.windowWidth, windowCenter: detail.windowCenter };
+        } else if (detail.type === 'translation') {
+          vp.translation = detail.translation;
+        } else if (detail.type === 'scale+translation') {
+          vp.scale = detail.scale;
+          vp.translation = detail.translation;
+        } else if (detail.type === 'full') {
+          vp.scale = detail.scale;
+          vp.translation = detail.translation;
+          if (detail.windowWidth != null && detail.windowCenter != null) {
+            vp.voi = { windowWidth: detail.windowWidth, windowCenter: detail.windowCenter };
+          }
+        }
+        cornerstone.setViewport(el, vp);
+      } catch { /* ignore */ }
+    };
+    window.addEventListener('dicom-viewport-sync', handler);
+    return () => window.removeEventListener('dicom-viewport-sync', handler);
   }, [viewportIndex]);
 
-  // ---- RIGHT-CLICK DRAG = WINDOW/LEVEL ----
+  // ---- RIGHT-CLICK DRAG = WINDOW/LEVEL, LEFT-DRAG = PAN ----
   useEffect(() => {
     const handleGlobalMouseMove = (e: MouseEvent) => {
-      if (!rightDragRef.current) return;
       const el = elementRef.current;
       if (!el || !enabledRef.current) return;
 
-      const dx = e.clientX - rightDragRef.current.startX;
-      const dy = e.clientY - rightDragRef.current.startY;
-      const newWW = Math.max(1, rightDragRef.current.startWW + dx * 3.0);
-      const newWC = rightDragRef.current.startWC + dy * 2.0;
+      // Right-click W/L drag
+      if (rightDragRef.current) {
+        const dx = e.clientX - rightDragRef.current.startX;
+        const dy = e.clientY - rightDragRef.current.startY;
+        const newWW = Math.max(1, rightDragRef.current.startWW + dx * 3.0);
+        const newWC = rightDragRef.current.startWC + dy * 2.0;
 
-      try {
-        const viewport = cornerstone.getViewport(el);
-        if (viewport) {
-          viewport.voi = { windowWidth: newWW, windowCenter: newWC };
-          cornerstone.setViewport(el, viewport);
-          useViewerStore.getState().setWidth(Math.round(newWW));
-          useViewerStore.getState().setLevel(Math.round(newWC));
+        try {
+          const viewport = cornerstone.getViewport(el);
+          if (viewport) {
+            viewport.voi = { windowWidth: newWW, windowCenter: newWC };
+            cornerstone.setViewport(el, viewport);
+            useViewerStore.getState().setWidth(Math.round(newWW));
+            useViewerStore.getState().setLevel(Math.round(newWC));
 
-          // Sync W/L to all selected viewports
-          syncToSelectedViewports((vpEl) => {
-            const vp = cornerstone.getViewport(vpEl);
-            if (vp) {
-              vp.voi = { windowWidth: newWW, windowCenter: newWC };
-              cornerstone.setViewport(vpEl, vp);
-            }
-          });
-        }
-      } catch { /* ignore */ }
+            // Broadcast W/L so each selected viewport applies it to its own element
+            window.dispatchEvent(new CustomEvent('dicom-viewport-sync', {
+              detail: { type: 'voi', sourceIndex: viewportIndex, windowWidth: newWW, windowCenter: newWC },
+            }));
+          }
+        } catch { /* ignore */ }
+        return;
+      }
+
+      // Left-click pan drag
+      if (panDragRef.current) {
+        const dx = e.clientX - panDragRef.current.startX;
+        const dy = e.clientY - panDragRef.current.startY;
+
+        try {
+          const viewport = cornerstone.getViewport(el);
+          if (viewport) {
+            viewport.translation = {
+              x: panDragRef.current.startTx + dx,
+              y: panDragRef.current.startTy + dy,
+            };
+            cornerstone.setViewport(el, viewport);
+
+            // Broadcast pan so each selected viewport applies it to its own element
+            window.dispatchEvent(new CustomEvent('dicom-viewport-sync', {
+              detail: {
+                type: 'translation',
+                sourceIndex: viewportIndex,
+                translation: { x: panDragRef.current!.startTx + dx, y: panDragRef.current!.startTy + dy },
+              },
+            }));
+          }
+        } catch { /* ignore */ }
+      }
     };
 
     const handleGlobalMouseUp = (e: MouseEvent) => {
       if (e.button === 2) {
         rightDragRef.current = null;
         document.body.style.cursor = '';
+      }
+      if (e.button === 0) {
+        panDragRef.current = null;
       }
     };
 
@@ -611,6 +676,24 @@ function DicomViewportInner({
       if (tool !== 'stamp' && tool !== 'text' && tool !== 'draw' && tool !== 'polyline') {
         onClick(e);
       }
+
+      // Start pan drag when pan tool is active
+      if (tool === 'pan') {
+        const el = elementRef.current;
+        if (el && enabledRef.current) {
+          try {
+            const viewport = cornerstone.getViewport(el);
+            if (viewport) {
+              panDragRef.current = {
+                startX: e.clientX,
+                startY: e.clientY,
+                startTx: viewport.translation?.x ?? 0,
+                startTy: viewport.translation?.y ?? 0,
+              };
+            }
+          } catch { /* ignore */ }
+        }
+      }
     }
   }, [onClick]);
 
@@ -662,10 +745,16 @@ function DicomViewportInner({
     if (imageUrl && onImageDrop) onImageDrop(imageUrl);
   }, [onImageDrop]);
 
+  // Cursor reflects the active tool
+  const cursorClass = activeTool === 'pan' ? 'cursor-grab active:cursor-grabbing'
+    : activeTool === 'zoom' ? 'cursor-zoom-in'
+    : activeTool === 'wl' || activeTool === 'wwwc' ? 'cursor-col-resize'
+    : 'cursor-crosshair';
+
   return (
     <div
       ref={containerRef}
-      className="absolute inset-0 bg-black cursor-crosshair overflow-hidden"
+      className={`absolute inset-0 bg-black overflow-hidden ${cursorClass}`}
       onMouseDown={handleMouseDown}
       onContextMenu={(e) => e.preventDefault()}
       onDragOver={handleDragOver}
@@ -687,9 +776,9 @@ function DicomViewportInner({
         style={{ width: '100%', height: '100%' }}
       />
 
-      {/* Empty state */}
+      {/* Empty state — black overlay covers stale cornerstone canvas */}
       {!imageId && (
-        <div className="absolute inset-0 flex items-center justify-center text-gray-500 text-xs z-10 pointer-events-none">
+        <div className="absolute inset-0 bg-black flex items-center justify-center text-gray-500 text-xs z-10 pointer-events-none">
           Empty
         </div>
       )}

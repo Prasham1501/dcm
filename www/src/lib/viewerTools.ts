@@ -4,6 +4,8 @@
  * Thumbnails are NOT cornerstone-enabled, so global tool changes don't affect them.
  */
 import { cornerstone, cornerstoneTools } from './cornerstoneSetup';
+import { useCustomAnnotationStore } from '@/stores/customAnnotationStore';
+import { useViewerStore } from '@/stores/viewerStore';
 
 /** Active tool info */
 export interface ToolConfig {
@@ -214,25 +216,53 @@ export function invertViewport(element: HTMLDivElement): void {
 }
 
 /**
- * Reset viewport to default (fit to window, no rotation/flip/invert) and clear all annotations.
+ * Reset viewport to default (fit to window, original W/L, no rotation/flip/invert) and clear all annotations.
  */
 export function resetViewport(element: HTMLDivElement): void {
   try {
-    const viewport = cornerstone.getViewport(element);
-    if (viewport) {
-      viewport.rotation = 0;
-      viewport.hflip = false;
-      viewport.vflip = false;
-      viewport.invert = false;
-      cornerstone.setViewport(element, viewport);
-      cornerstone.fitToWindow(element);
+    const enabledElement = cornerstone.getEnabledElement(element);
+    const image = enabledElement?.image;
+    if (image) {
+      // Clear custom annotation store for this image BEFORE dispatching the sync event
+      useCustomAnnotationStore.getState().clearForImageId(image.imageId);
+
+      const wc = Array.isArray(image.windowCenter) ? image.windowCenter[0] : (image.windowCenter ?? 127);
+      const ww = Array.isArray(image.windowWidth) ? image.windowWidth[0] : (image.windowWidth ?? 255);
+
+      // Get the default fitted scale from cornerstone — this accounts for element dimensions
+      let defaultScale = 1;
+      try {
+        const defaultVp = cornerstone.getDefaultViewportForImage(element, image);
+        if (defaultVp?.scale) defaultScale = defaultVp.scale;
+      } catch { /* ignore — fall back to scale 1 */ }
+
+      // Explicitly pass a completely fresh viewport so cornerstone cannot reuse the modified one
+      cornerstone.displayImage(element, image, {
+        scale: defaultScale,
+        translation: { x: 0, y: 0 },
+        voi: { windowCenter: wc, windowWidth: ww },
+        rotation: 0,
+        hflip: false,
+        vflip: false,
+        invert: false,
+        pixelReplication: false,
+        labelmap: false,
+      });
+
+      // Update store W/L / zoom sliders
+      try {
+        const { setLevel, setWidth, setZoom } = useViewerStore.getState();
+        setLevel(Math.round(wc));
+        setWidth(Math.round(ww));
+        setZoom(defaultScale);
+      } catch { /* ignore */ }
     }
   } catch (err) {
     console.warn('[Tools] resetViewport error:', err);
   }
-  // Also clear all annotations
+  // Clear cornerstone tool annotations (Length, Angle, ROI, etc.)
   clearAnnotations(element);
-  // Dispatch event so DicomViewport clears its custom annotations (text/stamp/draw)
+  // Dispatch event so DicomViewport re-syncs its custom annotation display (now cleared above)
   window.dispatchEvent(new CustomEvent('dicom-clear-annotations', { detail: { element } }));
 }
 
@@ -403,9 +433,19 @@ export function captureViewportAsDataUrl(element: HTMLDivElement): string | null
  * Capture all viewport canvases on the page as data URLs.
  */
 export function captureAllViewports(): string[] {
+  const { images, currentPage, currentLayout, viewportImageOverrides } = useViewerStore.getState();
+  const startIndex = (currentPage - 1) * currentLayout.spots;
   const result: string[] = [];
   const viewports = document.querySelectorAll('[data-viewport-index]');
   viewports.forEach((el) => {
+    const vpIndex = parseInt((el as HTMLElement).getAttribute('data-viewport-index') || '0');
+    const imgIndex = startIndex + vpIndex;
+    const overrideUrl = viewportImageOverrides[vpIndex];
+    const hasImage = !!(overrideUrl || images[imgIndex]?.imageUrl);
+    if (!hasImage) {
+      result.push('');
+      return;
+    }
     const canvas = el.querySelector('canvas');
     if (canvas) {
       try {
@@ -413,6 +453,8 @@ export function captureAllViewports(): string[] {
       } catch {
         result.push('');
       }
+    } else {
+      result.push('');
     }
   });
   return result;
@@ -422,7 +464,6 @@ export function captureAllViewports(): string[] {
  * Clear all annotations from the currently selected viewport(s).
  */
 export function clearAllAnnotationsOnSelected(): void {
-  const { useViewerStore } = require('@/stores/viewerStore');
   const { selectedViewportIndices } = useViewerStore.getState();
   const elements = selectedViewportIndices
     .map((i: number) => document.querySelector(`[data-viewport-index="${i}"]`) as HTMLDivElement)
@@ -432,6 +473,16 @@ export function clearAllAnnotationsOnSelected(): void {
     const el = getActiveViewportElement();
     if (el) elements.push(el);
   }
+
+  // Clear custom annotation store for each selected viewport's image FIRST
+  // (must happen before dicom-clear-annotations is dispatched so the re-sync reads empty state)
+  elements.forEach((el: HTMLDivElement) => {
+    try {
+      const enabledEl = cornerstone.getEnabledElement(el);
+      const imageId = enabledEl?.image?.imageId;
+      if (imageId) useCustomAnnotationStore.getState().clearForImageId(imageId);
+    } catch { /* ignore */ }
+  });
 
   elements.forEach((el: HTMLDivElement) => {
     clearAnnotations(el);
@@ -496,7 +547,6 @@ export function undoLastAnnotationOnSelected(): void {
  */
 function startCineAction(_element: HTMLDivElement): void {
   try {
-    const { useViewerStore } = require('@/stores/viewerStore');
     const store = useViewerStore.getState();
     store.setShowCine(true);
     store.startCine();
@@ -510,7 +560,6 @@ function startCineAction(_element: HTMLDivElement): void {
  */
 function stopCineAction(_element: HTMLDivElement): void {
   try {
-    const { useViewerStore } = require('@/stores/viewerStore');
     const store = useViewerStore.getState();
     store.stopCine();
   } catch (err) {
