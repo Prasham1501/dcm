@@ -58,9 +58,13 @@ export function PatientTable() {
 
   const handleContextMenu = useCallback((e: React.MouseEvent, patient: Patient) => {
     e.preventDefault();
-    selectPatient(patient);
+    // If the right-clicked patient is already part of a multi-selection, keep it intact.
+    // Only switch selection if right-clicking an unselected patient.
+    if (!selectedPatients.has(patient.id)) {
+      selectPatient(patient);
+    }
     setContextMenu({ x: e.clientX, y: e.clientY, patient });
-  }, [selectPatient]);
+  }, [selectPatient, selectedPatients]);
 
   // Close context menu on click outside
   useEffect(() => {

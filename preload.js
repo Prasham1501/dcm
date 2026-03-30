@@ -31,6 +31,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     // CR Viewer popup
     openCRViewer: (params) => ipcRenderer.invoke('open-cr-viewer', params),
 
+    // Dual Viewer popup
+    openDualViewer: () => ipcRenderer.invoke('open-dual-viewer'),
+
     // Main Viewer popup
     openViewer: (params) => ipcRenderer.invoke('open-viewer', params),
 

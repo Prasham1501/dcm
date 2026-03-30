@@ -1093,6 +1093,68 @@ ipcMain.handle('open-cr-viewer', (event, { isPortrait, imageCount, cols, rows })
 });
 
 // =====================================================
+// Dual Viewer Popup Window
+// =====================================================
+let dualViewerWindow = null;
+
+ipcMain.handle('open-dual-viewer', (event) => {
+    const { screen } = require('electron');
+    const primaryDisplay = screen.getPrimaryDisplay();
+    const { width: screenW, height: screenH } = primaryDisplay.workAreaSize;
+
+    const winW = Math.round(screenW * 0.93);
+    const winH = Math.round(screenH * 0.93);
+
+    if (dualViewerWindow && !dualViewerWindow.isDestroyed()) {
+        dualViewerWindow.close();
+    }
+
+    dualViewerWindow = new BrowserWindow({
+        width: winW,
+        height: winH,
+        minWidth: 800,
+        minHeight: 500,
+        title: 'DICOM Viewer Pro - Dual Comparison',
+        icon: path.join(__dirname, 'icon.ico'),
+        webPreferences: {
+            nodeIntegration: false,
+            contextIsolation: true,
+            preload: path.join(__dirname, 'preload.js')
+        }
+    });
+
+    dualViewerWindow.center();
+    dualViewerWindow.loadURL(`${APP_URL}/dual-viewer`);
+
+    const dualMenu = Menu.buildFromTemplate([
+        {
+            label: 'View',
+            submenu: [
+                { role: 'reload' },
+                { role: 'forceReload' },
+                { type: 'separator' },
+                { role: 'resetZoom' },
+                { role: 'zoomIn' },
+                { role: 'zoomOut' },
+                { type: 'separator' },
+                { role: 'togglefullscreen' }
+            ]
+        },
+        {
+            label: 'Tools',
+            submenu: [
+                { role: 'toggleDevTools', label: 'Developer Tools', accelerator: 'F12' }
+            ]
+        }
+    ]);
+    dualViewerWindow.setMenu(dualMenu);
+
+    dualViewerWindow.on('closed', () => { dualViewerWindow = null; });
+
+    return { success: true, width: winW, height: winH };
+});
+
+// =====================================================
 // Main Viewer Popup Window
 // =====================================================
 let viewerWindow = null;

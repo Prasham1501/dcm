@@ -4,15 +4,16 @@ import { usePrintStore } from '@/stores/printStore';
 import { useCustomAnnotationStore } from '@/stores/customAnnotationStore';
 import {
   activateTool, applyWLPreset, applyFilter, WL_PRESETS, resetViewport,
-  setAnnotationToolColor, applyActionToElements, undoLastAnnotationOnSelected,
+  applyActionToElements, undoLastAnnotationOnSelected,
   clearAllAnnotationsOnSelected,
 } from '@/lib/viewerTools';
+import { ViewerStampCreatorModal } from './ViewerStampCreatorModal';
 import {
   Stamp, Type, Minus, ArrowLeft, Spline, Ruler,
   Square, Circle, RotateCw, FlipHorizontal,
   CircleDot, Mouse, SlidersHorizontal,
   RotateCcwIcon, Move, ZoomIn, Triangle, Pipette,
-  FlipVertical, Play, StopCircle, Undo2, X, Pencil, Eraser, ListOrdered,
+  FlipVertical, Play, StopCircle, Undo2, X, Pencil, Eraser, ListOrdered, ChevronDown,
 } from 'lucide-react';
 
 interface ToolDef {
@@ -116,13 +117,16 @@ export function ToolsPanel() {
     isPlaying, startCine, stopCine, setShowCine,
     selectAllViewports, selectedViewportIndices,
     isArrangeMode, toggleArrangeMode,
+    stamps, activeStampId, isStampMode, setActiveStamp, setStampMode,
+    annotationColor, setAnnotationColor,
   } = useViewerStore();
   // Print store kept for future use
   const _printStore = usePrintStore(); void _printStore;
   const [showFilters, setShowFilters] = useState(false);
   const [showWLPresets, setShowWLPresets] = useState(false);
   const [activeFilter, setActiveFilter] = useState('none');
-  const [annotationColor, setAnnotationColor] = useState('#00ff00');
+  const [showStampDropdown, setShowStampDropdown] = useState(false);
+  const [showStampCreator, setShowStampCreator] = useState(false);
 
   // Track toggle states for invert/flip per viewport
   const [toggleStates, setToggleStates] = useState<Record<string, boolean>>({
@@ -184,6 +188,15 @@ export function ToolsPanel() {
       return;
     }
 
+    if (tool.id === 'stamp') {
+      if (stamps.length === 0) {
+        setShowStampCreator(true);
+      } else {
+        setShowStampDropdown(prev => !prev);
+      }
+      return;
+    }
+
     if (tool.isAction) {
       // Toggle state tracking for flip/invert
       if (tool.isToggle) {
@@ -201,7 +214,7 @@ export function ToolsPanel() {
       setActiveTool(tool.id);
       activateTool(csToolId, null);
     }
-  }, [setActiveTool]);
+  }, [setActiveTool, stamps.length]);
 
   const handleReset = useCallback(() => {
     // Clear ALL custom annotations first (before resetViewport fires dicom-clear-annotations)
@@ -292,22 +305,21 @@ export function ToolsPanel() {
 
       {/* Annotation color picker */}
       {(activeToolId === 'text' || activeToolId === 'arrow' || activeToolId === 'line'
-        || activeToolId === 'draw' || activeToolId === 'measure' || activeToolId === 'polyline') && (
+        || activeToolId === 'draw' || activeToolId === 'measure' || activeToolId === 'polyline'
+        || activeToolId === 'angle' || activeToolId === 'square' || activeToolId === 'ellipse'
+        || activeToolId === 'probe') && (
         <div className="p-2 border-b border-app-border">
           <div className="text-[10px] font-semibold text-app-text-muted mb-1">COLOR</div>
           <div className="flex items-center gap-1 flex-wrap">
-            {['#00ff00', '#ff0000', '#ffff00', '#00ffff', '#ff00ff', '#ffffff', '#ff8800'].map((color) => (
+            {['#00ff00', '#ff0000', '#ffff00', '#00ffff', '#ff00ff', '#ffffff', '#ff8800'].map((c) => (
               <button
-                key={color}
-                onClick={() => {
-                  setAnnotationColor(color);
-                  setAnnotationToolColor(color);
-                }}
+                key={c}
+                onClick={() => setAnnotationColor(c)}
                 className={`w-5 h-5 rounded-sm border-2 transition-colors ${
-                  annotationColor === color ? 'border-white scale-110' : 'border-gray-600'
+                  annotationColor === c ? 'border-white scale-110' : 'border-gray-600'
                 }`}
-                style={{ backgroundColor: color }}
-                title={color}
+                style={{ backgroundColor: c }}
+                title={c}
               />
             ))}
           </div>
@@ -374,6 +386,61 @@ export function ToolsPanel() {
         </div>
       </div>
 
+      {/* Stamp dropdown (shown when stamp tool is active) */}
+      {showStampDropdown && (
+        <div className="p-2 border-b border-app-border">
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-[10px] font-semibold text-app-text-muted uppercase">Select Stamp</span>
+            <button onClick={() => setShowStampDropdown(false)} className="text-app-text-muted hover:text-app-text">
+              <X className="w-3 h-3" />
+            </button>
+          </div>
+          <div className="space-y-0.5 max-h-40 overflow-y-auto">
+            {stamps.map((stamp) => (
+              <button
+                key={stamp.id}
+                onClick={() => {
+                  setActiveStamp(stamp.id);
+                  setStampMode(true);
+                  setActiveTool('stamp');
+                  activateTool('stamp', null);
+                  setShowStampDropdown(false);
+                }}
+                className={`w-full text-left px-2 py-1.5 text-xs rounded flex items-center gap-2 transition-colors ${
+                  activeStampId === stamp.id && isStampMode
+                    ? 'bg-app-accent/20 text-app-accent border border-app-accent/40'
+                    : 'hover:bg-app-hover text-app-text border border-transparent'
+                }`}
+              >
+                <span
+                  className="font-bold border border-current px-1 rounded uppercase flex-shrink-0"
+                  style={{ color: stamp.color, fontSize: '10px' }}
+                >
+                  {stamp.text}
+                </span>
+                <span className="truncate">{stamp.name}</span>
+              </button>
+            ))}
+          </div>
+          <div className="mt-1 pt-1 border-t border-app-border flex gap-1">
+            <button
+              onClick={() => { setShowStampCreator(true); setShowStampDropdown(false); }}
+              className="flex-1 text-[10px] text-app-accent hover:bg-app-hover px-2 py-1 rounded font-semibold"
+            >
+              + Create Stamp
+            </button>
+            {isStampMode && (
+              <button
+                onClick={() => { setStampMode(false); setActiveTool('select'); setShowStampDropdown(false); }}
+                className="text-[10px] text-red-400 hover:bg-app-hover px-2 py-1 rounded font-semibold"
+              >
+                Exit
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Reset + Clear All buttons */}
       <div className="p-2 border-b border-app-border flex gap-1">
         <button
@@ -422,6 +489,9 @@ export function ToolsPanel() {
           <div>Double-click — close polygon</div>
         </div>
       </div>
+
+      {/* Stamp Creator Modal */}
+      {showStampCreator && <ViewerStampCreatorModal onClose={() => setShowStampCreator(false)} />}
 
       {/* Filters popup */}
       {showFilters && (

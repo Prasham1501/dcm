@@ -149,6 +149,7 @@ interface CRViewerState {
   placeStamp: (viewportIndex: number, xPercent: number, yPercent: number) => void;
   removeStampPlacement: (id: string) => void;
   updateStampPlacement: (id: string, xPercent: number, yPercent: number) => void;
+  updateStampPlacementProps: (id: string, props: { text?: string; color?: string; fontSize?: number }) => void;
   undoStampPlacement: () => void;
   clearStampPlacements: (viewportIndex?: number) => void;
 
@@ -569,6 +570,14 @@ export const useCRViewerStore = create<CRViewerState>((set, get) => ({
     set((state) => ({
       stampPlacements: state.stampPlacements.map(s =>
         s.id === id ? { ...s, xPercent, yPercent } : s
+      ),
+    }));
+  },
+
+  updateStampPlacementProps: (id, props) => {
+    set((state) => ({
+      stampPlacements: state.stampPlacements.map(s =>
+        s.id === id ? { ...s, ...props } : s
       ),
     }));
   },

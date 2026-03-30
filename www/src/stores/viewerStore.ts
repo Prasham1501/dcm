@@ -12,6 +12,15 @@ import {
 
 const USE_API = import.meta.env.VITE_USE_API === 'true';
 
+export interface ViewerStamp {
+  id: string;
+  name: string;
+  text: string;
+  color: string;
+  fontSize: number;
+  createdAt: number;
+}
+
 export interface DicomImage {
   id: string;
   instanceUID: string;
@@ -75,6 +84,19 @@ interface ViewerState {
   loadingStudy: boolean;
   studyError: string | null;
   loadProgress: number; // 0-100
+
+  // Annotation color (shared between ToolsPanel and DicomViewport)
+  annotationColor: string;
+  setAnnotationColor: (color: string) => void;
+
+  // Stamps (independent from CR viewer stamps)
+  stamps: ViewerStamp[];
+  activeStampId: string | null;
+  isStampMode: boolean;
+  addStamp: (stamp: ViewerStamp) => void;
+  removeStamp: (stampId: string) => void;
+  setActiveStamp: (stampId: string | null) => void;
+  setStampMode: (enabled: boolean) => void;
 
   // Arrange mode
   isArrangeMode: boolean;
@@ -320,6 +342,17 @@ export const useViewerStore = create<ViewerState>((set, get) => ({
   loadingStudy: false,
   studyError: null,
   loadProgress: 0,
+
+  annotationColor: '#ffff00',
+  setAnnotationColor: (color) => set({ annotationColor: color }),
+
+  stamps: [],
+  activeStampId: null,
+  isStampMode: false,
+  addStamp: (stamp) => set((s) => ({ stamps: [...s.stamps, stamp] })),
+  removeStamp: (stampId) => set((s) => ({ stamps: s.stamps.filter(st => st.id !== stampId) })),
+  setActiveStamp: (stampId) => set({ activeStampId: stampId }),
+  setStampMode: (enabled) => set({ isStampMode: enabled }),
 
   isArrangeMode: false,
   arrangeSelectedImages: [],

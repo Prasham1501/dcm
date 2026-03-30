@@ -1,32 +1,28 @@
 /**
- * CRViewport — Single DICOM viewport for the CR viewer.
- * - containerRef (w-full h-full relative): handles mouse events
- * - elementRef (absolute inset-0): Cornerstone render target
- * - COVER scale: image fills viewport with no black bars
- * - Draggable stamps
+ * DualViewport — Single Cornerstone viewport for the Dual comparison viewer.
+ * Adapted from CRViewport with panel-scoped sync events.
+ * - Right-drag: W/L adjustment
+ * - Scroll: zoom
+ * - Stamp placement + draggable stamps
+ * - Panel-scoped CustomEvents to prevent cross-panel sync
  */
-import { useEffect, useRef, useCallback, memo, useState } from 'react';
+import { useEffect, useRef, useCallback, memo } from 'react';
 import { cornerstone } from '@/lib/cornerstoneSetup';
-import { useCRViewerStore } from '@/stores/crViewerStore';
+import { useDualViewerStore, type PanelId } from '@/stores/dualViewerStore';
 
-
-interface CRViewportProps {
+interface DualViewportProps {
   imageId: string | null;
   isSelected: boolean;
   viewportIndex: number;
+  panelId: PanelId;
   onClick: (e: React.MouseEvent) => void;
   spotNumber: number;
   showLogo: boolean;
 }
 
-function CRViewportInner({
-  imageId,
-  isSelected,
-  viewportIndex,
-  onClick,
-  spotNumber,
-  showLogo,
-}: CRViewportProps) {
+function DualViewportInner({
+  imageId, isSelected, viewportIndex, panelId, onClick, spotNumber, showLogo,
+}: DualViewportProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const elementRef = useRef<HTMLDivElement>(null);
   const enabledRef = useRef(false);
@@ -34,14 +30,8 @@ function CRViewportInner({
 
   const {
     isStampMode, activeStampId, placeStamp, stampPlacements, updateStampPlacement,
-    updateStampPlacementProps, setViewportImage,
-  } = useCRViewerStore();
-
-  // Edit popup state for double-clicking an existing stamp
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editText, setEditText] = useState('');
-  const [editColor, setEditColor] = useState('#ff0000');
-  const [editFontSize, setEditFontSize] = useState(20);
+    setPanelViewportImage,
+  } = useDualViewerStore();
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -51,10 +41,8 @@ function CRViewportInner({
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     const imageUrl = e.dataTransfer.getData('application/dicom-image-url') || e.dataTransfer.getData('text/plain');
-    if (imageUrl) {
-      setViewportImage(imageUrl, viewportIndex);
-    }
-  }, [setViewportImage, viewportIndex]);
+    if (imageUrl) setPanelViewportImage(panelId, imageUrl, viewportIndex);
+  }, [setPanelViewportImage, panelId, viewportIndex]);
 
   // Right-click W/L drag state
   const rightDragRef = useRef<{
@@ -71,10 +59,7 @@ function CRViewportInner({
   useEffect(() => {
     const el = elementRef.current;
     if (!el) return;
-    try {
-      cornerstone.enable(el);
-      enabledRef.current = true;
-    } catch { /* may already be enabled */ }
+    try { cornerstone.enable(el); enabledRef.current = true; } catch { /* may already be enabled */ }
     return () => {
       if (enabledRef.current && el) {
         try { cornerstone.disable(el); } catch { /* ignore */ }
@@ -90,7 +75,6 @@ function CRViewportInner({
 
     if (!imageId) {
       currentImageIdRef.current = null;
-      // Clear the canvas so no stale image shows behind the "No image" overlay
       try {
         const enabledEl = cornerstone.getEnabledElement(el);
         if (enabledEl?.canvas) {
@@ -111,12 +95,12 @@ function CRViewportInner({
         cornerstone.resize(el, true);
         currentImageIdRef.current = imageId;
       } catch { /* ignore */ }
-    }).catch(() => { /* ignore load failures */ });
+    }).catch(() => { /* ignore */ });
 
     return () => { cancelled = true; };
   }, [imageId]);
 
-  // Resize: refit image to window
+  // Resize observer
   useEffect(() => {
     const el = elementRef.current;
     if (!el) return;
@@ -129,7 +113,7 @@ function CRViewportInner({
     return () => observer.disconnect();
   }, []);
 
-  // ---- MOUSE WHEEL = ZOOM (native, on container) ----
+  // Scroll wheel = zoom
   useEffect(() => {
     const container = containerRef.current;
     const el = elementRef.current;
@@ -148,8 +132,7 @@ function CRViewportInner({
         vp.scale = newScale;
         cornerstone.setViewport(el, vp);
 
-        // Broadcast zoom sync to other selected viewports
-        window.dispatchEvent(new CustomEvent('cr-viewport-sync', {
+        window.dispatchEvent(new CustomEvent(`dual-viewport-sync-${panelId}`, {
           detail: { type: 'scale', sourceIndex: viewportIndex, scale: newScale },
         }));
       } catch { /* ignore */ }
@@ -157,12 +140,11 @@ function CRViewportInner({
 
     container.addEventListener('wheel', handleWheel, { passive: false, capture: true });
     return () => container.removeEventListener('wheel', handleWheel, true);
-  }, []);
+  }, [panelId, viewportIndex]);
 
-  // ---- GLOBAL MOUSE: W/L drag + stamp drag ----
+  // Global mouse: W/L drag + stamp drag
   useEffect(() => {
     const handleGlobalMouseMove = (e: MouseEvent) => {
-      // W/L drag
       if (rightDragRef.current) {
         const el = elementRef.current;
         if (!el || !enabledRef.current) return;
@@ -175,9 +157,7 @@ function CRViewportInner({
           if (vp) {
             vp.voi = { windowWidth: newWW, windowCenter: newWC };
             cornerstone.setViewport(el, vp);
-
-            // Broadcast W/L sync to other selected viewports
-            window.dispatchEvent(new CustomEvent('cr-viewport-sync', {
+            window.dispatchEvent(new CustomEvent(`dual-viewport-sync-${panelId}`, {
               detail: { type: 'voi', sourceIndex: viewportIndex, windowWidth: newWW, windowCenter: newWC },
             }));
           }
@@ -185,7 +165,6 @@ function CRViewportInner({
         return;
       }
 
-      // Stamp drag
       if (stampDragRef.current) {
         const container = containerRef.current;
         if (!container) return;
@@ -199,13 +178,8 @@ function CRViewportInner({
     };
 
     const handleGlobalMouseUp = (e: MouseEvent) => {
-      if (e.button === 2) {
-        rightDragRef.current = null;
-        document.body.style.cursor = '';
-      }
-      if (e.button === 0) {
-        stampDragRef.current = null;
-      }
+      if (e.button === 2) { rightDragRef.current = null; document.body.style.cursor = ''; }
+      if (e.button === 0) { stampDragRef.current = null; }
     };
 
     document.addEventListener('mousemove', handleGlobalMouseMove);
@@ -214,28 +188,25 @@ function CRViewportInner({
       document.removeEventListener('mousemove', handleGlobalMouseMove);
       document.removeEventListener('mouseup', handleGlobalMouseUp);
     };
-  }, [updateStampPlacement, viewportIndex]);
+  }, [updateStampPlacement, panelId, viewportIndex]);
 
-  // ---- RECEIVE SYNC EVENTS FROM OTHER SELECTED VIEWPORTS ----
+  // Receive sync events from other selected viewports in the SAME panel
   useEffect(() => {
     const handler = (e: Event) => {
       const detail = (e as CustomEvent).detail;
       if (!detail || detail.sourceIndex === viewportIndex) return;
       const el = elementRef.current;
       if (!el || !enabledRef.current) return;
-      // Only apply if this viewport is in the multi-select
-      const { selectedViewportIndices } = useCRViewerStore.getState();
-      if (!selectedViewportIndices.includes(viewportIndex)) return;
+      const { panels } = useDualViewerStore.getState();
+      const panel = panels[panelId];
+      if (!panel.selectedViewportIndices.includes(viewportIndex)) return;
       try {
         const vp = cornerstone.getViewport(el);
         if (!vp) return;
-        if (detail.type === 'scale') {
-          vp.scale = detail.scale;
-        } else if (detail.type === 'voi') {
-          vp.voi = { windowWidth: detail.windowWidth, windowCenter: detail.windowCenter };
-        } else if (detail.type === 'translation') {
-          vp.translation = detail.translation;
-        } else if (detail.type === 'full') {
+        if (detail.type === 'scale') vp.scale = detail.scale;
+        else if (detail.type === 'voi') vp.voi = { windowWidth: detail.windowWidth, windowCenter: detail.windowCenter };
+        else if (detail.type === 'translation') vp.translation = detail.translation;
+        else if (detail.type === 'full') {
           vp.scale = detail.scale;
           vp.translation = detail.translation;
           if (detail.windowWidth != null && detail.windowCenter != null) {
@@ -245,20 +216,17 @@ function CRViewportInner({
         cornerstone.setViewport(el, vp);
       } catch { /* ignore */ }
     };
-    window.addEventListener('cr-viewport-sync', handler);
-    return () => window.removeEventListener('cr-viewport-sync', handler);
-  }, [viewportIndex]);
+    window.addEventListener(`dual-viewport-sync-${panelId}`, handler);
+    return () => window.removeEventListener(`dual-viewport-sync-${panelId}`, handler);
+  }, [panelId, viewportIndex]);
 
-  // ---- HANDLE RESET EVENTS (restore zoom, pan, W/L) ----
+  // Handle reset events
   useEffect(() => {
     const handler = (e: Event) => {
       const detail = (e as CustomEvent).detail;
-      // If viewportIndex is specified, only that one resets. Otherwise (Reset All), everyone resets.
       if (detail?.viewportIndex !== undefined && detail.viewportIndex !== viewportIndex) return;
-
       const el = elementRef.current;
       if (!el || !enabledRef.current) return;
-
       try {
         const enabledEl = cornerstone.getEnabledElement(el);
         const image = enabledEl?.image;
@@ -270,29 +238,23 @@ function CRViewportInner({
             const defaultVp = cornerstone.getDefaultViewportForImage(el, image);
             if (defaultVp?.scale) defaultScale = defaultVp.scale;
           } catch { /* ignore */ }
-          // Explicitly pass a fresh viewport so cornerstone cannot reuse the modified one
           cornerstone.displayImage(el, image, {
             scale: defaultScale,
             translation: { x: 0, y: 0 },
             voi: { windowCenter: wc, windowWidth: ww },
-            rotation: 0,
-            hflip: false,
-            vflip: false,
-            invert: false,
-            pixelReplication: false,
-            labelmap: false,
+            rotation: 0, hflip: false, vflip: false, invert: false,
+            pixelReplication: false, labelmap: false,
           });
         } else {
           cornerstone.resize(el, true);
         }
       } catch { /* ignore */ }
     };
+    window.addEventListener(`dual-custom-reset-${panelId}`, handler);
+    return () => window.removeEventListener(`dual-custom-reset-${panelId}`, handler);
+  }, [panelId, viewportIndex]);
 
-    window.addEventListener('cr-custom-reset', handler);
-    return () => window.removeEventListener('cr-custom-reset', handler);
-  }, [viewportIndex]);
-
-  // ---- MOUSE DOWN on container (right-click = W/L drag) ----
+  // Right-click = W/L drag
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     if (e.button !== 2) return;
     const el = elementRef.current;
@@ -310,24 +272,25 @@ function CRViewportInner({
     } catch { /* ignore */ }
   }, []);
 
-  // Handle click — stamp placement or viewport selection
+  // Click — stamp placement or viewport selection
   const handleClick = useCallback((e: React.MouseEvent) => {
-    // If a stamp drag just happened, don't treat as click
     if (stampDragRef.current) return;
     if (isStampMode && activeStampId) {
       const rect = containerRef.current?.getBoundingClientRect();
       if (rect) {
         const xPercent = ((e.clientX - rect.left) / rect.width) * 100;
         const yPercent = ((e.clientY - rect.top) / rect.height) * 100;
-        placeStamp(viewportIndex, xPercent, yPercent);
+        placeStamp(panelId, viewportIndex, xPercent, yPercent);
       }
       return;
     }
     onClick(e);
-  }, [isStampMode, activeStampId, placeStamp, viewportIndex, onClick]);
+  }, [isStampMode, activeStampId, placeStamp, panelId, viewportIndex, onClick]);
 
-  // Filter stamp placements for this viewport
-  const viewportStamps = stampPlacements.filter(s => s.viewportIndex === viewportIndex);
+  // Filter stamp placements for this viewport in this panel
+  const viewportStamps = stampPlacements.filter(
+    s => s.panelId === panelId && s.viewportIndex === viewportIndex
+  );
 
   return (
     <div
@@ -342,126 +305,37 @@ function CRViewportInner({
       {/* Cornerstone render target */}
       <div
         ref={elementRef}
-        data-cr-viewport-index={viewportIndex}
+        data-dual-viewport-index={`${panelId}-${viewportIndex}`}
         className="absolute inset-0"
         style={{ width: '100%', height: '100%' }}
       />
 
-      {/* Stamp overlays — draggable, double-click to edit */}
+      {/* Stamp overlays — draggable */}
       {viewportStamps.map((sp) => (
         <div
           key={sp.id}
-          className="absolute z-10 select-none group"
+          className="absolute z-10 select-none"
           style={{
-            left: `${sp.xPercent}%`,
-            top: `${sp.yPercent}%`,
+            left: `${sp.xPercent}%`, top: `${sp.yPercent}%`,
             transform: 'translate(-50%, -50%)',
+            color: sp.color, fontSize: `${sp.fontSize}px`, fontWeight: 'bold',
+            textShadow: '1px 1px 2px rgba(0,0,0,0.8)', whiteSpace: 'nowrap', cursor: 'grab',
           }}
           onMouseDown={(e) => {
             if (e.button !== 0) return;
-            if (editingId === sp.id) return; // don't drag while editing
             e.stopPropagation();
             stampDragRef.current = {
-              id: sp.id,
-              startX: e.clientX,
-              startY: e.clientY,
-              startXPct: sp.xPercent,
-              startYPct: sp.yPercent,
+              id: sp.id, startX: e.clientX, startY: e.clientY,
+              startXPct: sp.xPercent, startYPct: sp.yPercent,
             };
-          }}
-          onDoubleClick={(e) => {
-            e.stopPropagation();
-            e.preventDefault();
-            setEditingId(sp.id);
-            setEditText(sp.text);
-            setEditColor(sp.color);
-            setEditFontSize(sp.fontSize);
           }}
           onClick={(e) => e.stopPropagation()}
         >
-          {/* Stamp text — live preview while editing */}
-          <span
-            className="font-bold border-2 border-current uppercase tracking-wider px-1 rounded"
-            style={{
-              color: editingId === sp.id ? editColor : sp.color,
-              fontSize: `${editingId === sp.id ? editFontSize : sp.fontSize}px`,
-              textShadow: '1px 1px 2px rgba(0,0,0,0.8)',
-              whiteSpace: 'nowrap',
-              cursor: editingId === sp.id ? 'default' : 'grab',
-              backgroundColor: 'rgba(0,0,0,0.5)',
-            }}
-          >
-            {editingId === sp.id ? editText : sp.text}
-          </span>
-
-          {/* Edit popup — appears below stamp on double-click */}
-          {editingId === sp.id && (
-            <div
-              className="absolute left-1/2 -translate-x-1/2 mt-2 z-50 bg-gray-800 border border-yellow-500 rounded-lg p-2 shadow-xl min-w-[210px]"
-              style={{ top: '100%' }}
-              onMouseDown={(e) => e.stopPropagation()}
-              onDoubleClick={(e) => e.stopPropagation()}
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="text-[10px] text-yellow-400 font-bold mb-1.5 uppercase">Edit Stamp</div>
-              <input
-                type="text"
-                value={editText}
-                onChange={(e) => setEditText(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Escape') setEditingId(null); }}
-                className="w-full px-2 py-1 mb-1.5 text-xs bg-gray-900 text-white border border-gray-600 rounded focus:outline-none focus:border-yellow-500"
-                autoFocus
-              />
-              <div className="flex items-center justify-between mb-1.5">
-                <span className="text-[8px] text-gray-400 uppercase">Size</span>
-                <input
-                  type="range" min="10" max="48" value={editFontSize}
-                  onChange={(e) => setEditFontSize(parseInt(e.target.value))}
-                  className="w-24 h-1 bg-gray-700 rounded-lg appearance-none cursor-pointer"
-                />
-                <span className="text-[8px] text-white">{editFontSize}px</span>
-              </div>
-              <div className="flex items-center gap-1.5 mb-2">
-                <span className="text-[8px] text-gray-400 uppercase">Color</span>
-                <div className="flex gap-1">
-                  {['#ff0000', '#ffff00', '#00ff00', '#00ffff', '#ff00ff', '#ffffff', '#ff8800'].map(c => (
-                    <button
-                      key={c}
-                      onClick={() => setEditColor(c)}
-                      className={`w-4 h-4 rounded-full border ${editColor === c ? 'border-white scale-110' : 'border-transparent'}`}
-                      style={{ backgroundColor: c }}
-                    />
-                  ))}
-                </div>
-              </div>
-              <div className="flex gap-1">
-                <button
-                  onClick={() => {
-                    if (!editText.trim()) return;
-                    updateStampPlacementProps(sp.id, {
-                      text: editText.trim(),
-                      color: editColor,
-                      fontSize: editFontSize,
-                    });
-                    setEditingId(null);
-                  }}
-                  className="flex-1 px-2 py-1 text-[10px] bg-yellow-600 text-white rounded font-bold hover:bg-yellow-500"
-                >
-                  Save
-                </button>
-                <button
-                  onClick={() => setEditingId(null)}
-                  className="px-2 py-1 text-[10px] bg-gray-700 text-gray-300 rounded hover:bg-gray-600"
-                >
-                  ×
-                </button>
-              </div>
-            </div>
-          )}
+          {sp.text}
         </div>
       ))}
 
-      {/* Spot number indicator */}
+      {/* Spot number */}
       <div className="absolute bottom-1 left-1 text-white text-xs font-bold opacity-60 select-none pointer-events-none z-10">
         {spotNumber}
       </div>
@@ -476,4 +350,4 @@ function CRViewportInner({
   );
 }
 
-export const CRViewport = memo(CRViewportInner);
+export const DualViewport = memo(DualViewportInner);

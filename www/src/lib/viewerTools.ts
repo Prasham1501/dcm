@@ -7,6 +7,46 @@ import { cornerstone, cornerstoneTools } from './cornerstoneSetup';
 import { useCustomAnnotationStore } from '@/stores/customAnnotationStore';
 import { useViewerStore } from '@/stores/viewerStore';
 
+/**
+ * Patch cornerstoneTools.toolColors.getColorIfActive once so that per-annotation
+ * colors (stored as data._color) are used instead of the global tool color.
+ * This allows each annotation to keep its own color independently.
+ */
+let _colorPatchApplied = false;
+function setupPerAnnotationColors(): void {
+  if (_colorPatchApplied) return;
+  _colorPatchApplied = true;
+  try {
+    const tc = cornerstoneTools.toolColors;
+    if (!tc || typeof tc.getColorIfActive !== 'function') return;
+    const original = tc.getColorIfActive.bind(tc);
+    tc.getColorIfActive = function (data: any) {
+      // For passive (completed) annotations that carry a stored _color, use it
+      if (data && !data.active && data._color) {
+        return data._color;
+      }
+      return original(data);
+    };
+  } catch { /* ignore */ }
+}
+
+/**
+ * Apply the currently selected annotation color to cornerstone tools.
+ * Called when activating a cornerstone tool so existing annotations aren't
+ * retroactively changed just by picking a color in the panel.
+ */
+function applyStoredAnnotationColor(): void {
+  try {
+    setupPerAnnotationColors(); // ensure per-annotation rendering patch is in place
+    const color = useViewerStore.getState().annotationColor;
+    if (color && cornerstoneTools.toolColors) {
+      // Only set active color (controls the in-progress draw color).
+      // Do NOT call setToolColor() — that would retroactively recolor ALL passive annotations.
+      cornerstoneTools.toolColors.setActiveColor(color);
+    }
+  } catch { /* ignore */ }
+}
+
 /** Active tool info */
 export interface ToolConfig {
   /** cornerstoneTools tool name */
@@ -143,6 +183,10 @@ export function activateTool(toolId: string, element?: HTMLDivElement | null): v
   if (config.csToolName) {
     // First deactivate all CS tools
     deactivateAllCsTools();
+
+    // Apply the stored annotation color now (not on every color-pick, to avoid
+    // retroactively changing existing annotation colors)
+    applyStoredAnnotationColor();
 
     // Then activate the requested one
     try {

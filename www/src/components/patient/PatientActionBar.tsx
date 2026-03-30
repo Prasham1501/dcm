@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import JSZip from 'jszip';
 import { usePatientStore } from '@/stores/patientStore';
 import { openCRViewerPopup } from '@/stores/crViewerStore';
+import { openDualViewerPopup } from '@/stores/dualViewerStore';
 import { localFileToImageId } from '@/lib/dicomLoader';
 import { EditPatientModal } from './EditPatientModal';
 import { CreatePatientModal } from './CreatePatientModal';
@@ -210,6 +211,27 @@ export function PatientActionBar() {
           } else {
             alert('No DICOM data found for this patient');
           }
+        }} />
+        <ActionButton label="Dual View" onClick={() => {
+          const selected = filteredPatients.filter(p => selectedPatients.has(p.id) && p.filePaths?.length);
+          if (selected.length < 2) {
+            alert('Select 2 patients for dual view');
+            return;
+          }
+          openDualViewerPopup({
+            leftStudy: {
+              patientName: selected[0].patientName,
+              patientId: selected[0].patientId,
+              studyDate: selected[0].studyDate,
+              filePaths: selected[0].filePaths!,
+            },
+            rightStudy: {
+              patientName: selected[1].patientName,
+              patientId: selected[1].patientId,
+              studyDate: selected[1].studyDate,
+              filePaths: selected[1].filePaths!,
+            },
+          }, navigate);
         }} />
         <ActionButton
           label="Edit"

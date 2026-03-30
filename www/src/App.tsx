@@ -9,6 +9,7 @@ import { ConfigPage } from '@/pages/ConfigPage';
 import { StudiesPage } from '@/pages/StudiesPage';
 import { PrintManagementPage } from '@/pages/PrintManagementPage';
 import { ReportEditorPage } from '@/pages/ReportEditorPage';
+import { DualViewerPage } from '@/pages/DualViewerPage';
 
 export default function App() {
   const { mode } = useThemeStore();
@@ -50,6 +51,7 @@ export default function App() {
       </Route>
       <Route path="/viewer" element={<ViewerPage />} />
       <Route path="/cr-viewer" element={<CRViewerPage />} />
+      <Route path="/dual-viewer" element={<DualViewerPage />} />
       <Route path="/studies" element={<StudiesPage />} />
       <Route path="/print" element={<PrintManagementPage />} />
       <Route path="/report-editor" element={<ReportEditorPage />} />
