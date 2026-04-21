@@ -3,6 +3,7 @@
  * Contains: Prev, Next, Reset All, Reset One, Report.
  */
 import { useCRViewerStore } from '@/stores/crViewerStore';
+import { useReportStore } from '@/stores/reportStore';
 import { cornerstone, cornerstoneTools } from '@/lib/cornerstoneSetup';
 import {
   ChevronUp, ChevronDown,
@@ -49,15 +50,9 @@ export function CRSidebar() {
     undoStampPlacement, clearStampPlacements,
   } = useCRViewerStore();
 
-  const handleOpenReport = async () => {
-    localStorage.setItem('report-launch', JSON.stringify({
-      patientName, patientId, studyDate, timestamp: Date.now(),
-    }));
-    const api = (window as any).electronAPI;
-    if (api?.openReportEditor) {
-      try { await api.openReportEditor(); return; } catch { /* fallback */ }
-    }
-    window.open('/report-editor', '_blank');
+  const handleOpenReport = () => {
+    useReportStore.getState().openReportEditor(patientId, patientName, studyDate);
+    useReportStore.getState().setShowInlineReport(true);
   };
 
   const SidebarButton = ({

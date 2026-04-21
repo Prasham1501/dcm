@@ -5,10 +5,12 @@
 import { useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useDualViewerStore } from '@/stores/dualViewerStore';
+import { useReportStore } from '@/stores/reportStore';
 import { DualToolbar } from '@/components/dualViewer/DualToolbar';
 import { DualViewportPanel } from '@/components/dualViewer/DualViewportPanel';
 import { DualSidebar } from '@/components/dualViewer/DualSidebar';
 import { DualThumbnailSidebar } from '@/components/dualViewer/DualThumbnailSidebar';
+import { InlineReportPanel } from '@/components/report/InlineReportPanel';
 import { ChevronLeft, X } from 'lucide-react';
 import { useThemeStore } from '@/stores/themeStore';
 import { Sun, Moon } from 'lucide-react';
@@ -17,6 +19,7 @@ export function DualViewerPage() {
   const navigate = useNavigate();
   const { panels, activePanel, loadPanelStudy } = useDualViewerStore();
   const { mode, toggleTheme } = useThemeStore();
+  const showInlineReport = useReportStore((s) => s.showInlineReport);
   const launchChecked = useRef(false);
 
   const leftP = panels.left;
@@ -115,20 +118,30 @@ export function DualViewerPage() {
       {/* Toolbar */}
       <DualToolbar />
 
-      {/* Main content: two panels + sidebars */}
+      {/* Main content: two panels + sidebars (+ optional inline report) */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Left thumbnail — always shows left panel images */}
-        <DualThumbnailSidebar panelId="left" />
+        {/* Viewport area — shrinks to 70% when report panel is open */}
+        <div className={`flex overflow-hidden ${showInlineReport ? 'w-[70%]' : 'flex-1'}`}>
+          {/* Left thumbnail — always shows left panel images */}
+          <DualThumbnailSidebar panelId="left" />
 
-        <DualViewportPanel panelId="left" />
-        <div className="w-1 bg-gray-600 flex-shrink-0" />
-        <DualViewportPanel panelId="right" />
+          <DualViewportPanel panelId="left" />
+          <div className="w-1 bg-gray-600 flex-shrink-0" />
+          <DualViewportPanel panelId="right" />
 
-        {/* Right sidebars — right thumbnail + controls */}
-        <div className="flex h-full border-l border-app-border">
-          <DualThumbnailSidebar panelId="right" />
-          <DualSidebar />
+          {/* Right sidebars — right thumbnail + controls */}
+          <div className="flex h-full border-l border-app-border">
+            <DualThumbnailSidebar panelId="right" />
+            <DualSidebar />
+          </div>
         </div>
+
+        {/* Inline report panel — 30% width */}
+        {showInlineReport && (
+          <div className="w-[30%] flex-shrink-0 overflow-hidden">
+            <InlineReportPanel />
+          </div>
+        )}
       </div>
 
       {/* Bottom bar */}

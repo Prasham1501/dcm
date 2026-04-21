@@ -4,6 +4,7 @@ import { DicomViewport } from './DicomViewport';
 import { useAnnotationPersistence, restoreAnnotations } from '@/hooks/useAnnotationPersistence';
 import { getStudyKey } from '@/stores/annotationStore';
 import { Check } from 'lucide-react';
+import { shouldTranspose, transposeGridTemplate, displayToLogicalSlot } from './gridTranspose';
 
 /** Extract unique area letters from a CSS grid-template-areas string */
 function getAreaLetters(areas: string): string[] {
@@ -34,6 +35,19 @@ export function ViewportGrid() {
 
   // Blue border over the slot the user is hovering during drag
   const [dragOverSlot, setDragOverSlot] = useState<number | null>(null);
+
+  // Track the grid container size so we can decide whether to visually transpose
+  // the layout (portrait layout on landscape window, or vice versa).
+  const [containerSize, setContainerSize] = useState<{ w: number; h: number }>({ w: 0, h: 0 });
+  useEffect(() => {
+    const el = gridRef.current;
+    if (!el) return;
+    const update = () => setContainerSize({ w: el.clientWidth, h: el.clientHeight });
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
 
   // ── Custom mouse-based drag (bypasses HTML5 DnD + Cornerstone interference) ──
 
@@ -151,6 +165,11 @@ export function ViewportGrid() {
   const startIndex = (currentPage - 1) * currentLayout.spots;
   const hasRealImages = images.length > 0 && !viewportsCleared;
 
+  // Display-only transpose: when the window aspect fights the layout's
+  // orientation, swap cols↔rows visually. The store's currentLayout is NOT
+  // mutated, so print preview and thumbnails continue to use the original.
+  const transposed = shouldTranspose(containerSize.w, containerSize.h, currentLayout);
+
   const gridStyle: React.CSSProperties = {
     display: 'grid',
     gap: '2px',
@@ -161,6 +180,8 @@ export function ViewportGrid() {
   };
 
   if (currentLayout.areas) {
+    // `areas` layouts are not transposed in v1 — rotating a grid-template-areas
+    // letter matrix is non-trivial. shouldTranspose() already returns false here.
     gridStyle.gridTemplateAreas = currentLayout.areas;
     if (currentLayout.gridTemplate) {
       gridStyle.gridTemplateColumns = currentLayout.gridTemplate.columns;
@@ -168,6 +189,15 @@ export function ViewportGrid() {
     } else {
       gridStyle.gridTemplateColumns = `repeat(${currentLayout.cols}, 1fr)`;
       gridStyle.gridTemplateRows = `repeat(${currentLayout.rows}, 1fr)`;
+    }
+  } else if (transposed) {
+    const tpl = transposeGridTemplate(currentLayout.gridTemplate);
+    if (tpl) {
+      gridStyle.gridTemplateColumns = tpl.columns;
+      gridStyle.gridTemplateRows = tpl.rows;
+    } else {
+      gridStyle.gridTemplateColumns = `repeat(${currentLayout.rows}, 1fr)`;
+      gridStyle.gridTemplateRows = `repeat(${currentLayout.cols}, 1fr)`;
     }
   } else {
     gridStyle.gridTemplateColumns = `repeat(${currentLayout.cols}, 1fr)`;
@@ -257,7 +287,12 @@ export function ViewportGrid() {
       onDragOver={handleDragOver}
     >
       <div ref={gridRef} style={gridStyle} className="flex-1">
-        {Array.from({ length: currentLayout.spots }, (_, i) => {
+        {Array.from({ length: currentLayout.spots }, (_, displayIndex) => {
+          // When transposed, resolve the visual position back to the store's
+          // logical slot so overrides/selection/drag all keep working.
+          const i = transposed
+            ? displayToLogicalSlot(displayIndex, currentLayout.cols, currentLayout.rows)
+            : displayIndex;
           const imgIndex = startIndex + i;
           const areaStyle: React.CSSProperties = currentLayout.areas && areaNames[i]
             ? { gridArea: areaNames[i] }

@@ -79,6 +79,9 @@ interface HospitalConfig {
   customFooterCenter: string;
   customFooterRight: string;
 
+  // AI / Vision settings
+  huggingFaceToken: string;
+
   // Configured printers
   printers: PrinterConfig[];
 
@@ -141,6 +144,8 @@ export const useHospitalConfigStore = create<HospitalConfig>()(
       customFooterLeft: '',
       customFooterCenter: 'Printed by: ADMIN',
       customFooterRight: '',
+
+      huggingFaceToken: '',
 
       printers: [
         { name: 'HP LaserJet Pro M404dn', displayName: 'HP LaserJet Pro', type: 'Laser', isDefault: true, isActive: true },

@@ -298,6 +298,33 @@ export const useCRViewerStore = create<CRViewerState>((set, get) => ({
     // Prefetch first page
     const firstPageIds = crImages.slice(0, layout.spots).map(img => img.imageUrl);
     prefetchImages(firstPageIds, 4).catch(() => {});
+
+    // Trigger USG readings extraction in background (2s delay for cornerstone to render)
+    // Uses filePath-based studyUID since CR viewer doesn't have DICOM UIDs
+    const studyUID = params.patientId + '_' + params.studyDate;
+    setTimeout(async () => {
+      try {
+        const { useReportStore } = await import('@/stores/reportStore');
+        const { extractReadings } = await import('@/lib/usgExtraction/extractReadings');
+        const { useHospitalConfigStore } = await import('@/stores/hospitalConfigStore');
+        const hfToken = useHospitalConfigStore.getState().huggingFaceToken ?? '';
+        useReportStore.getState().setExtractionStatus('running');
+        const result = await extractReadings({
+          studyUID,
+          orthancStudyId: '',
+          orthancInstanceIds: [],
+          imageUrls: crImages.map(img => img.imageUrl),
+          filePaths: crImages.map(img => img.filePath).filter(Boolean),
+          hfToken,
+        });
+        useReportStore.getState().setActiveReadingSet(result);
+        useReportStore.getState().setExtractionStatus('done');
+      } catch (err) {
+        console.warn('[CR USG extraction] failed:', err);
+        const { useReportStore } = await import('@/stores/reportStore');
+        useReportStore.getState().setExtractionStatus('failed');
+      }
+    }, 2000);
   },
 
   setLayout: (layout) => {

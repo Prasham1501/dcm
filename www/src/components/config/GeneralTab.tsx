@@ -165,6 +165,31 @@ export function GeneralTab() {
         </div>
       </div>
 
+      {/* AI / Vision Settings */}
+      <div>
+        <h3 className="text-sm font-bold text-app-accent mb-3 pb-1 border-b border-app-border">
+          AI Vision (USG Auto-fill Fallback)
+        </h3>
+        <p className="text-xs text-app-text-secondary mb-2">
+          Optional: HuggingFace free-tier token used when DICOM tags and OCR both return no readings.
+          Get one at <span className="text-app-accent">huggingface.co/settings/tokens</span> (no billing required).
+        </p>
+        <div className="max-w-md">
+          <label className="block text-xs font-semibold text-app-text-secondary mb-1">HuggingFace API Token</label>
+          <input
+            type="password"
+            value={config.huggingFaceToken}
+            onChange={(e) => config.updateField('huggingFaceToken', e.target.value)}
+            placeholder="hf_xxxxxxxxxxxxxxxxxxxx"
+            className="w-full h-7 px-2 text-xs border border-app-border bg-app-bg text-app-text rounded-sm focus:border-app-accent focus:outline-none font-mono"
+            autoComplete="off"
+          />
+          {config.huggingFaceToken && (
+            <p className="text-xs text-green-600 dark:text-green-400 mt-1">Token configured — AI vision fallback enabled</p>
+          )}
+        </div>
+      </div>
+
       {/* Configured Printers */}
       <div>
         <h3 className="text-sm font-bold text-app-accent mb-3 pb-1 border-b border-app-border flex items-center justify-between">

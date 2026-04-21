@@ -7,10 +7,12 @@
 import { useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useCRViewerStore } from '@/stores/crViewerStore';
+import { useReportStore } from '@/stores/reportStore';
 import { CRToolbar } from '@/components/crViewer/CRToolbar';
 import { CRViewportGrid } from '@/components/crViewer/CRViewportGrid';
 import { CRSidebar } from '@/components/crViewer/CRSidebar';
 import { CRThumbnailSidebar } from '@/components/crViewer/CRThumbnailSidebar';
+import { InlineReportPanel } from '@/components/report/InlineReportPanel';
 import { ChevronLeft, X } from 'lucide-react';
 import { useThemeStore } from '@/stores/themeStore';
 import { Sun, Moon } from 'lucide-react';
@@ -19,6 +21,7 @@ export function CRViewerPage() {
   const navigate = useNavigate();
   const { patientName, patientId, studyDate, totalImages, currentPage, totalPages, loadStudy } = useCRViewerStore();
   const { mode, toggleTheme } = useThemeStore();
+  const showInlineReport = useReportStore((s) => s.showInlineReport);
   const launchChecked = useRef(false);
 
   // Check for launch data in localStorage (when opened as popup window)
@@ -105,16 +108,23 @@ export function CRViewerPage() {
       {/* Toolbar */}
       <CRToolbar />
 
-      {/* Main content: viewport grid + sidebar */}
+      {/* Main content: viewport grid + sidebar (+ optional inline report) */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Viewport grid */}
-        <CRViewportGrid />
-
-        {/* Right sidebars */}
-        <div className="flex h-full border-l border-app-border">
-          <CRThumbnailSidebar />
-          <CRSidebar />
+        {/* Viewport area — shrinks to 70% when report panel is open */}
+        <div className={`flex overflow-hidden ${showInlineReport ? 'w-[70%]' : 'flex-1'}`}>
+          <CRViewportGrid />
+          <div className="flex h-full border-l border-app-border">
+            <CRThumbnailSidebar />
+            <CRSidebar />
+          </div>
         </div>
+
+        {/* Inline report panel — 30% width */}
+        {showInlineReport && (
+          <div className="w-[30%] flex-shrink-0 overflow-hidden">
+            <InlineReportPanel />
+          </div>
+        )}
       </div>
 
       {/* Bottom bar: patient name + study date */}

@@ -5,9 +5,10 @@
 import { useState } from 'react';
 import { useViewerStore } from '@/stores/viewerStore';
 import { usePrintStore } from '@/stores/printStore';
+import { useReportStore } from '@/stores/reportStore';
 import { cornerstone } from '@/lib/cornerstoneSetup';
 import {
-  X, ImagePlus, PanelTop, Info, ChevronUp, ChevronDown, Printer, Undo2, RotateCcw, CheckSquare, XSquare
+  X, ImagePlus, PanelTop, Info, ChevronUp, ChevronDown, Printer, Undo2, RotateCcw, CheckSquare, XSquare, FileText,
 } from 'lucide-react';
 import { useCustomAnnotationStore } from '@/stores/customAnnotationStore';
 import { resetViewport } from '@/lib/viewerTools';
@@ -152,6 +153,7 @@ export function ViewerActionBar() {
     selectAllViewports, selectedViewportIndices, currentLayout,
   } = useViewerStore();
   const { settings, setShowPrintPreview } = usePrintStore();
+  const { showInlineReport, setShowInlineReport } = useReportStore();
   const [showDicomInfo, setShowDicomInfo] = useState(false);
   const [showHeaderFooter, setShowHeaderFooter] = useState(false);
   const [dicomTags, setDicomTags] = useState<Record<string, { tag: string; name: string; value: string }> | null>(null);
@@ -296,6 +298,20 @@ export function ViewerActionBar() {
           title="Show DICOM image information"
         >
           <Info className="w-5 h-5" />
+        </button>
+
+        {/* Report toggle */}
+        <button
+          type="button"
+          onClick={() => setShowInlineReport(!showInlineReport)}
+          className={`w-9 h-9 flex items-center justify-center rounded border transition-colors ${
+            showInlineReport
+              ? 'border-app-accent bg-app-accent/20 text-app-accent'
+              : 'border-app-border text-app-text-secondary hover:bg-app-accent/20 hover:text-app-accent hover:border-app-accent/50'
+          }`}
+          title={showInlineReport ? 'Close report panel' : 'Open report panel'}
+        >
+          <FileText className="w-5 h-5" />
         </button>
 
         {/* Print shortcut */}

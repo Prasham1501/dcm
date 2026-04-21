@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useReportStore, type ReportTemplate } from '@/stores/reportStore';
-import { FileText, X, Copy, Check, Save, Printer, Plus, Trash2, ChevronDown } from 'lucide-react';
+import { useViewerStore } from '@/stores/viewerStore';
+import { FileText, X, Copy, Check, Save, Printer, Plus, Trash2, ChevronDown, Sparkles } from 'lucide-react';
 
 export function ReportEditor() {
   const {
@@ -28,6 +29,13 @@ export function ReportEditor() {
   const [showTemplates, setShowTemplates] = useState(false);
   const [showSaveTemplate, setShowSaveTemplate] = useState(false);
   const [templateName, setTemplateName] = useState('');
+  const [autoFillDone, setAutoFillDone] = useState(false);
+
+  const studyUID = useViewerStore((s) => s.studyUID);
+  const extractedReadings = useViewerStore((s) => s.extractedReadings);
+  const extractionStatus = useViewerStore((s) => s.extractionStatus);
+  const readingSet = studyUID ? extractedReadings[studyUID] : undefined;
+  const extractStatus = studyUID ? extractionStatus[studyUID] : undefined;
 
   // Load existing report when opening
   useEffect(() => {
@@ -50,8 +58,19 @@ export function ReportEditor() {
         setRecommendation('');
         setDate(new Date().toLocaleDateString());
       }
+      setAutoFillDone(false);
     }
   }, [showReportEditor, editingPatientId, getReport]);
+
+  const handleAutoFill = () => {
+    if (!readingSet?.readings?.length) return;
+    const lines = readingSet.readings.map((r) =>
+      `${r.label}: ${r.value}${r.unit ? ' ' + r.unit : ''}`
+    );
+    const block = `\n--- Extracted Measurements (${readingSet.source}) ---\n${lines.join('\n')}\n`;
+    setFindings((prev) => prev + block);
+    setAutoFillDone(true);
+  };
 
   if (!showReportEditor) return null;
 
@@ -116,6 +135,29 @@ export function ReportEditor() {
             <span className="text-xs text-app-text-secondary">&mdash; {editingPatientName}</span>
           </div>
           <div className="flex items-center gap-1.5">
+            {/* Auto-fill from USG images */}
+            {(readingSet?.readings?.length || extractStatus === 'running') && (
+              <button
+                onClick={handleAutoFill}
+                disabled={autoFillDone || extractStatus === 'running'}
+                title={
+                  extractStatus === 'running' ? 'Extracting readings…'
+                  : autoFillDone ? 'Already inserted'
+                  : `Insert ${readingSet!.readings.length} measurements (${readingSet!.source})`
+                }
+                className={`flex items-center gap-1 px-2 py-1 text-xs font-semibold rounded border transition-colors ${
+                  autoFillDone
+                    ? 'border-green-500/40 text-green-600 bg-green-50 dark:bg-green-900/20 opacity-70'
+                    : extractStatus === 'running'
+                    ? 'border-app-border text-app-text-secondary opacity-60 cursor-wait'
+                    : 'border-app-accent text-app-accent hover:bg-app-accent hover:text-white'
+                }`}
+              >
+                <Sparkles className="w-3 h-3" />
+                {extractStatus === 'running' ? 'Extracting…' : autoFillDone ? 'Inserted' : 'Auto-fill'}
+              </button>
+            )}
+
             {/* Copy patient info */}
             <button
               onClick={handleCopyPatientInfo}

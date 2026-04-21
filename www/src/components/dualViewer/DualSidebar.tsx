@@ -4,6 +4,7 @@
  * Prev/Next, Reset All, Clear, Select All/Deselect All, Undo stamp, Report.
  */
 import { useDualViewerStore } from '@/stores/dualViewerStore';
+import { useReportStore } from '@/stores/reportStore';
 import { cornerstone, cornerstoneTools } from '@/lib/cornerstoneSetup';
 import {
   ChevronUp, ChevronDown, RotateCcw, Undo2, FileText, CheckSquare, XSquare,
@@ -48,15 +49,9 @@ export function DualSidebar() {
 
   const store = useDualViewerStore;
 
-  const handleOpenReport = async () => {
-    localStorage.setItem('report-launch', JSON.stringify({
-      patientName, patientId, studyDate, timestamp: Date.now(),
-    }));
-    const api = (window as any).electronAPI;
-    if (api?.openReportEditor) {
-      try { await api.openReportEditor(); return; } catch { /* fallback */ }
-    }
-    window.open('/report-editor', '_blank');
+  const handleOpenReport = () => {
+    useReportStore.getState().openReportEditor(patientId, patientName, studyDate);
+    useReportStore.getState().setShowInlineReport(true);
   };
 
   const SidebarButton = ({

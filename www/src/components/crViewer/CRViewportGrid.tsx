@@ -8,6 +8,7 @@ import { useCallback, useRef, useEffect, useState } from 'react';
 import { useCRViewerStore } from '@/stores/crViewerStore';
 import { CRViewport } from './CRViewport';
 import { Check } from 'lucide-react';
+import { shouldTranspose, displayToLogicalSlot } from '@/components/viewer/gridTranspose';
 
 // Module-level drag state — avoids stale React closures and dataTransfer issues in Electron
 interface _CRVPDrag { srcSlot: number; imageId: string; startX: number; startY: number }
@@ -31,6 +32,18 @@ export function CRViewportGrid() {
 
   // Blue border over the slot the user is hovering during drag
   const [dragOverSlot, setDragOverSlot] = useState<number | null>(null);
+
+  // Track grid container size for display-only transpose (see gridTranspose.ts)
+  const [containerSize, setContainerSize] = useState<{ w: number; h: number }>({ w: 0, h: 0 });
+  useEffect(() => {
+    const el = crGridRef.current;
+    if (!el) return;
+    const update = () => setContainerSize({ w: el.clientWidth, h: el.clientHeight });
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
 
   const startIndex = (currentPage - 1) * currentLayout.spots;
   const hasImages = images.length > 0;
@@ -165,21 +178,29 @@ export function CRViewportGrid() {
     }
   }, [isArrangeMode, toggleArrangeViewport, setSelectedViewport, toggleViewportSelection, swapImages, startIndex]);
 
+  // Display-only transpose: swap cols↔rows visually when window aspect
+  // fights the layout's orientation. Store is NOT mutated.
+  const transposed = shouldTranspose(containerSize.w, containerSize.h, currentLayout);
+
   const gridStyle: React.CSSProperties = {
     display: 'grid',
     gap: '2px',
     padding: '2px',
     width: '100%',
     height: '100%',
-    gridTemplateColumns: `repeat(${currentLayout.cols}, 1fr)`,
-    gridTemplateRows: `repeat(${currentLayout.rows}, 1fr)`,
+    gridTemplateColumns: `repeat(${transposed ? currentLayout.rows : currentLayout.cols}, 1fr)`,
+    gridTemplateRows: `repeat(${transposed ? currentLayout.cols : currentLayout.rows}, 1fr)`,
     backgroundColor: '#374151',
   };
 
   return (
     <div className="flex-1 flex flex-col bg-gray-700 overflow-hidden relative">
       <div ref={crGridRef} style={gridStyle} className="flex-1">
-        {Array.from({ length: currentLayout.spots }, (_, i) => {
+        {Array.from({ length: currentLayout.spots }, (_, displayIndex) => {
+          // When transposed, remap visual position back to the store's logical slot
+          const i = transposed
+            ? displayToLogicalSlot(displayIndex, currentLayout.cols, currentLayout.rows)
+            : displayIndex;
           const imgIndex = startIndex + i;
           const image = (hasImages && imgIndex < images.length) ? images[imgIndex] : null;
           const imageId = image?.imageUrl || null;

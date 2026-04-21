@@ -13,11 +13,14 @@ import { PrintPreview } from '@/components/print/PrintPreview';
 import { PrinterModal } from '@/components/print/PrinterModal';
 import { usePrintStore } from '@/stores/printStore';
 import { useViewerStore } from '@/stores/viewerStore';
+import { useReportStore } from '@/stores/reportStore';
 import { useCustomAnnotationStore } from '@/stores/customAnnotationStore';
+import { InlineReportPanel } from '@/components/report/InlineReportPanel';
 
 export function ViewerPage() {
   const { showPrintPreview, showPrinterModal } = usePrintStore();
   const { showCine, setShowCine, stopCine, loadStudyFiles } = useViewerStore();
+  const showInlineReport = useReportStore((s) => s.showInlineReport);
   const [searchParams] = useSearchParams();
   const undo = useCustomAnnotationStore((s) => s.undo);
   const launchChecked = useRef(false);
@@ -89,19 +92,29 @@ export function ViewerPage() {
           ))}
         </div>
 
-        {/* Viewport grid (center) */}
-        <ViewportGrid />
+        {/* Viewport area — shrinks to 70% when report panel is open */}
+        <div className={`flex overflow-hidden ${showInlineReport ? 'w-[70%]' : 'flex-1'}`}>
+          {/* Viewport grid (center) */}
+          <ViewportGrid />
 
-        {/* Action bar (between viewports and thumbnails) */}
-        <ViewerActionBar />
+          {/* Action bar (between viewports and thumbnails) */}
+          <ViewerActionBar />
 
-        {/* Thumbnail sidebar (right of viewports) */}
-        <div className="relative">
-          <ThumbnailSidebar />
+          {/* Thumbnail sidebar (right of viewports) */}
+          <div className="relative">
+            <ThumbnailSidebar />
+          </div>
+
+          {/* Tools panel (far right) */}
+          <ToolsPanel />
         </div>
 
-        {/* Tools panel (far right) */}
-        <ToolsPanel />
+        {/* Inline report panel — 30% width */}
+        {showInlineReport && (
+          <div className="w-[30%] flex-shrink-0 overflow-hidden">
+            <InlineReportPanel />
+          </div>
+        )}
       </div>
 
       {/* Cine controls (togglable) */}

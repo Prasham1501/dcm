@@ -53,7 +53,7 @@ export function ViewerHeader() {
             Patients
           </button>
         )}
-        <span className="text-xs font-bold text-app-accent uppercase tracking-wide">CR Viewer</span>
+        <span className="text-xs font-bold text-app-accent uppercase tracking-wide">DICOM Viewer</span>
 
         <button
           onClick={prevPage}

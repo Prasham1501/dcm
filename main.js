@@ -188,13 +188,22 @@ function createMainWindow() {
 // =====================================================
 // MySQL/MariaDB Management
 // =====================================================
+const mariadbInstallDbPath = path.join(mysqlDir, 'bin', 'mariadb-install-db.exe');
+
 async function initMySQLData() {
     if (fs.existsSync(mysqlDataSubDir) && fs.readdirSync(mysqlDataSubDir).length > 0) return false;
     console.log('[MySQL] First run - initializing...');
-    if (!fs.existsSync(mysqlDataDir)) fs.mkdirSync(mysqlDataDir, { recursive: true });
-    execSync(`"${mysqldPath}" --initialize-insecure --datadir="${mysqlDataSubDir}" --basedir="${mysqlDir}"`, {
-        timeout: 120000, stdio: 'pipe'
-    });
+    if (!fs.existsSync(mysqlDataSubDir)) fs.mkdirSync(mysqlDataSubDir, { recursive: true });
+    // Use mariadb-install-db.exe (preferred for MariaDB) if available, else fall back to mysqld --initialize-insecure
+    if (fs.existsSync(mariadbInstallDbPath)) {
+        execSync(`"${mariadbInstallDbPath}" --datadir="${mysqlDataSubDir}" --password=""`, {
+            timeout: 120000, stdio: 'pipe'
+        });
+    } else {
+        execSync(`"${mysqldPath}" --initialize-insecure --datadir="${mysqlDataSubDir}" --basedir="${mysqlDir}"`, {
+            timeout: 120000, stdio: 'pipe'
+        });
+    }
     console.log('[MySQL] Data directory initialized');
     return true;
 }
@@ -266,8 +275,8 @@ async function waitForMySQL(maxAttempts = 30) {
 async function runMigrations() {
     const dbName = 'dicom_viewer_pro';
     const cmd = isDev && !fs.existsSync(mysqlClientPath)
-        ? 'C:\\xampp\\mysql\\bin\\mysql.exe -u root --ssl-mode=DISABLED'
-        : `"${mysqlClientPath}" -u root --port=${MYSQL_PORT} --ssl-mode=DISABLED`;
+        ? 'C:\\xampp\\mysql\\bin\\mysql.exe -u root'
+        : `"${mysqlClientPath}" -u root --port=${MYSQL_PORT}`;
 
     // Create database
     try {
@@ -1581,6 +1590,85 @@ ipcMain.handle('get-received-dicom-files', async () => {
     } catch (e) {
         return { success: false, error: e.message, files: [] };
     }
+});
+
+// ── Node.js Tesseract OCR (reliable, uses local WASM not CDN) ──
+ipcMain.handle('ocr-image-base64', async (event, { base64, langPath }) => {
+    try {
+        const os = require('os');
+        const { createWorker } = require(path.join(__dirname, 'www', 'node_modules', 'tesseract.js'));
+
+        // Save base64 PNG to temp file
+        const tmpFile = path.join(os.tmpdir(), `dicom-ocr-${Date.now()}.png`);
+        const imgBuffer = Buffer.from(base64, 'base64');
+        fs.writeFileSync(tmpFile, imgBuffer);
+
+        const worker = await createWorker('eng', 1, {
+            logger: () => {},
+            // Use local lang data if provided, otherwise Tesseract downloads it
+            langPath: langPath || undefined,
+        });
+        await worker.setParameters({ tessedit_pageseg_mode: '11' }); // sparse text
+        const { data } = await worker.recognize(tmpFile);
+        await worker.terminate();
+        fs.unlinkSync(tmpFile); // cleanup
+
+        return { text: data.text || '', success: true };
+    } catch (err) {
+        console.warn('[OCR] Node.js Tesseract failed:', err.message);
+        return { text: '', success: false, error: err.message };
+    }
+});
+
+// ── DICOM measurement text extraction (Node.js side — no browser OCR needed) ──
+ipcMain.handle('extract-dicom-text', async (event, { filePaths }) => {
+    const dicomParserLib = require('dicom-parser');
+    const textStrings = [];
+
+    // VRs that can hold text/measurement data in DICOM
+    const TEXT_VRS = new Set(['ST', 'LO', 'LT', 'SH', 'UN', 'CS', 'UT', 'PN', 'DS', 'IS']);
+
+    for (const filePath of (filePaths || []).slice(0, 10)) {
+        try {
+            const buffer = fs.readFileSync(filePath);
+            const byteArray = new Uint8Array(buffer);
+            // Stop before pixel data to keep parsing fast
+            const dataset = dicomParserLib.parseDicom(byteArray, { untilTag: '7fe00010' });
+
+            // Walk all parsed elements looking for text
+            for (const tag of Object.keys(dataset.elements)) {
+                try {
+                    const el = dataset.elements[tag];
+                    if (!el || !TEXT_VRS.has(el.vr)) continue;
+                    const val = dataset.string(tag);
+                    if (val && val.trim().length > 0) {
+                        textStrings.push(val.trim());
+                    }
+                } catch { /* skip unreadable element */ }
+            }
+
+            // Also check specific measurement-bearing tags explicitly
+            const measureTags = [
+                '00204000', // Image Comments
+                '00402400', // Imaging Service Request Comments
+                '00181030', // Protocol Name
+                '00400254', // Performed Procedure Step Description
+                '00400007', // Scheduled Procedure Step Description
+                '00102000', // Medical Alerts
+                '00181400', // Acquisition Device Processing Description
+            ];
+            for (const tag of measureTags) {
+                try {
+                    const val = dataset.string(tag);
+                    if (val && val.trim().length > 1) textStrings.push(val.trim());
+                } catch { /* tag absent */ }
+            }
+        } catch (err) {
+            console.warn(`[DICOM text] Failed to parse ${filePath}:`, err.message);
+        }
+    }
+
+    return { textStrings: [...new Set(textStrings)] }; // deduplicate
 });
 
 // Start network receiver on app startup

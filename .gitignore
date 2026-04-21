@@ -12,3 +12,13 @@ orthanc/
 data/
 config/*.env
 !config/.env.example
+
+# Claude AI session files
+.claude/worktrees/
+.claude/settings.local.json
+
+# Large binary/OCR data files
+eng.traineddata
+
+# TypeScript build info
+www/tsconfig.tsbuildinfo

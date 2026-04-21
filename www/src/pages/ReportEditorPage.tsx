@@ -28,7 +28,11 @@ import {
   Moon,
   X,
   ChevronLeft,
+  Sparkles,
+  Loader2,
 } from 'lucide-react';
+import type { ReadingSet } from '@/lib/usgExtraction/types';
+import { buildReportHtml } from '@/lib/usgExtraction/templates/buildReportHtml';
 
 interface LaunchData {
   patientName: string;
@@ -67,6 +71,8 @@ export function ReportEditorPage() {
   const [showColorPicker, setShowColorPicker] = useState(false);
   const [showTemplateNameInput, setShowTemplateNameInput] = useState(false);
   const [templateNameInput, setTemplateNameInput] = useState('');
+  const [readingSet, setReadingSet] = useState<ReadingSet | null>(null);
+  const [autoFillDone, setAutoFillDone] = useState(false);
 
   const { mode, toggleTheme } = useThemeStore();
   const {
@@ -116,6 +122,38 @@ export function ReportEditorPage() {
       /* ignore parse errors */
     }
   }, []);
+
+  // Load USG readings from localStorage bridge (written by viewerStore.runReadingsExtraction)
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('usg-readings-latest');
+      if (raw) {
+        const rs: ReadingSet = JSON.parse(raw);
+        // Only use if extracted within last 30 minutes and has readings
+        if (rs.readings?.length > 0 && Date.now() - rs.extractedAt < 30 * 60 * 1000) {
+          setReadingSet(rs);
+        }
+      }
+    } catch { /* ignore */ }
+  }, []);
+
+  const handleAutoFill = useCallback(() => {
+    if (!readingSet || !editorRef.current) return;
+    const html = buildReportHtml(readingSet, studyDate);
+    if (!html) return;
+    // Insert at cursor or append
+    editorRef.current.focus();
+    const sel = window.getSelection();
+    if (sel && sel.rangeCount > 0 && editorRef.current.contains(sel.anchorNode)) {
+      const range = sel.getRangeAt(0);
+      range.collapse(false);
+      const frag = range.createContextualFragment(html);
+      range.insertNode(frag);
+    } else {
+      editorRef.current.innerHTML += html;
+    }
+    setAutoFillDone(true);
+  }, [readingSet, studyDate]);
 
   const patientReports = patientId ? getReportsForPatient(patientId) : [];
 
@@ -411,6 +449,34 @@ export function ReportEditorPage() {
         <ToolbarButton onClick={() => exec('removeFormat')} title="Clear formatting">
           <span className="text-xs">Clear</span>
         </ToolbarButton>
+
+        {readingSet && (
+          <>
+            <ToolbarDivider />
+            <button
+              onClick={handleAutoFill}
+              disabled={autoFillDone}
+              title={
+                autoFillDone
+                  ? 'Readings already inserted — edit directly in the report'
+                  : `Auto-fill measurements from images (source: ${readingSet.source})`
+              }
+              className={`flex items-center gap-1 px-2.5 h-7 text-xs font-semibold rounded transition-colors border ${
+                autoFillDone
+                  ? 'border-green-500/40 text-green-600 bg-green-50 dark:bg-green-900/20 cursor-default opacity-70'
+                  : 'border-app-accent text-app-accent hover:bg-app-accent hover:text-white'
+              }`}
+            >
+              {autoFillDone
+                ? <><Sparkles className="w-3.5 h-3.5" /> Inserted</>
+                : <><Sparkles className="w-3.5 h-3.5" /> Auto-fill from images</>
+              }
+            </button>
+            <span className="text-xs text-app-text/40 ml-1">
+              {readingSet.readings.length} reading{readingSet.readings.length !== 1 ? 's' : ''} · {readingSet.source}
+            </span>
+          </>
+        )}
       </div>
 
       {/* ===== MAIN CONTENT AREA ===== */}

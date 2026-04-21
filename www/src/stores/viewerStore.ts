@@ -9,6 +9,8 @@ import {
   scanLocalDirectory,
   prefetchImages,
 } from '@/lib/dicomLoader';
+import type { ReadingSet } from '@/lib/usgExtraction/types';
+import { extractReadings } from '@/lib/usgExtraction/extractReadings';
 
 const USE_API = import.meta.env.VITE_USE_API === 'true';
 
@@ -172,6 +174,11 @@ interface ViewerState {
     studyDate: string;
     filePaths: string[];
   }) => void;
+
+  // USG reading extraction
+  extractedReadings: Record<string, ReadingSet>;
+  extractionStatus: Record<string, 'idle' | 'running' | 'done' | 'failed'>;
+  runReadingsExtraction: (studyUID: string) => Promise<void>;
 }
 
 const defaultLayout = LAYOUT_CATEGORIES[3].layouts[0]; // 5-spot 2t3b
@@ -342,6 +349,48 @@ export const useViewerStore = create<ViewerState>((set, get) => ({
   loadingStudy: false,
   studyError: null,
   loadProgress: 0,
+
+  extractedReadings: {},
+  extractionStatus: {},
+
+  runReadingsExtraction: async (studyUID: string) => {
+    const { images, orthancStudyId } = get();
+    set((s) => ({ extractionStatus: { ...s.extractionStatus, [studyUID]: 'running' } }));
+    // Immediately signal reportStore so InlineReportPanel shows a loading state
+    try {
+      const { useReportStore } = await import('@/stores/reportStore');
+      useReportStore.getState().setExtractionStatus('running');
+    } catch { /* non-fatal */ }
+    try {
+      const { useHospitalConfigStore } = await import('@/stores/hospitalConfigStore');
+      const hfToken = useHospitalConfigStore.getState().huggingFaceToken ?? '';
+      const result = await extractReadings({
+        studyUID,
+        orthancStudyId,
+        orthancInstanceIds: images.map((img) => img.orthancId).filter(Boolean),
+        imageUrls: images.map((img) => img.imageUrl),
+        hfToken,
+      });
+      set((s) => ({
+        extractedReadings: { ...s.extractedReadings, [studyUID]: result },
+        extractionStatus: { ...s.extractionStatus, [studyUID]: 'done' },
+      }));
+      // Write to shared reportStore so InlineReportPanel can read it in any viewer
+      const { useReportStore } = await import('@/stores/reportStore');
+      useReportStore.getState().setActiveReadingSet(result);
+      useReportStore.getState().setExtractionStatus('done');
+      // Bridge to popup window via localStorage
+      try {
+        localStorage.setItem(`usg-readings-${studyUID}`, JSON.stringify(result));
+        localStorage.setItem('usg-readings-latest', JSON.stringify(result));
+      } catch { /* storage full — non-fatal */ }
+    } catch (err: any) {
+      console.error('[USG extraction] unexpected error:', err);
+      set((s) => ({ extractionStatus: { ...s.extractionStatus, [studyUID]: 'failed' } }));
+      const { useReportStore } = await import('@/stores/reportStore');
+      useReportStore.getState().setExtractionStatus('failed');
+    }
+  },
 
   annotationColor: '#ffff00',
   setAnnotationColor: (color) => set({ annotationColor: color }),
@@ -817,6 +866,13 @@ export const useViewerStore = create<ViewerState>((set, get) => ({
       prefetchImages(firstPageIds, 4).catch(() => {});
 
       studyService.markRead(params.studyUID).catch(() => {});
+
+      // Fire USG extraction in background if any series is ultrasound
+      const hasUS = seriesList.some((s) => s.modality === 'US');
+      if (hasUS && params.studyUID) {
+        // Small delay so cornerstone can render the first image before OCR tries to grab canvases
+        setTimeout(() => get().runReadingsExtraction(params.studyUID!), 1500);
+      }
     } catch (err: any) {
       set({
         ...recalcPages(mockImages.length, layout.spots),
@@ -854,6 +910,9 @@ export const useViewerStore = create<ViewerState>((set, get) => ({
       loadingStudy: false,
       studyError: null,
     });
+
+    // Fire USG reading extraction via OCR after cornerstone renders
+    setTimeout(() => get().runReadingsExtraction('local'), 1500);
   },
 
   loadLocalDirectory: async (dirPath: string) => {
@@ -891,6 +950,9 @@ export const useViewerStore = create<ViewerState>((set, get) => ({
       prefetchImages(firstPageIds, 4, (loaded, total) => {
         set({ loadProgress: Math.round((loaded / total) * 100) });
       }).catch(() => {});
+
+      // Fire USG reading extraction via OCR after cornerstone renders
+      setTimeout(() => get().runReadingsExtraction('local-dir'), 1500);
     } catch (err: any) {
       set({
         loadingStudy: false,
@@ -932,5 +994,14 @@ export const useViewerStore = create<ViewerState>((set, get) => ({
     // Prefetch first page
     const firstPageIds = dicomImages.slice(0, layout.spots).map(img => img.imageUrl);
     prefetchImages(firstPageIds, 4).catch(() => {});
+
+    // Clear previous patient's readings immediately, then run fresh extraction
+    import('@/stores/reportStore').then(({ useReportStore }) => {
+      useReportStore.getState().setActiveReadingSet(null);
+      useReportStore.getState().setExtractionStatus('idle');
+    }).catch(() => {});
+
+    // Fire USG reading extraction — OCR on rendered viewports after cornerstone has had time to render
+    setTimeout(() => get().runReadingsExtraction('synced'), 1500);
   },
 }));
