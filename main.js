@@ -69,6 +69,24 @@ function ensureDirectories() {
 }
 
 // =====================================================
+// Frontend Build Check (auto-build on fresh clone)
+// =====================================================
+async function ensureFrontendBuild() {
+    const distIndex = path.join(wwwPath, 'dist', 'index.html');
+    if (fs.existsSync(distIndex)) return; // already built
+
+    console.log('[Frontend] www/dist missing — building React app...');
+    const wwwNodeModules = path.join(wwwPath, 'node_modules');
+    if (!fs.existsSync(wwwNodeModules)) {
+        console.log('[Frontend] Installing www dependencies...');
+        execSync('npm install', { cwd: wwwPath, stdio: 'inherit', shell: true });
+    }
+    console.log('[Frontend] Running npm run build...');
+    execSync('npm run build', { cwd: wwwPath, stdio: 'inherit', shell: true });
+    console.log('[Frontend] Build complete.');
+}
+
+// =====================================================
 // Splash Screen
 // =====================================================
 function createSplashWindow() {
@@ -537,6 +555,7 @@ async function checkViteRunning() {
 async function startApp() {
     try {
         ensureDirectories();
+        await ensureFrontendBuild();
         createSplashWindow();
 
         const usePortableMySQL = fs.existsSync(mysqldPath);
