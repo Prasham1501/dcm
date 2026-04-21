@@ -13,7 +13,7 @@ export function CRViewportGrid() {
     currentLayout, currentPage, images, selectedViewport, setSelectedViewport,
     selectedViewportIndices, toggleViewportSelection, selectAllViewports,
     isArrangeMode, arrangeClickOrder, toggleArrangeViewport, toggleArrangeMode,
-    swapImages, showLogo,
+    swapImages, showLogo, toggleSingleViewport,
   } = useCRViewerStore();
 
   // Force-deselect multi-selection on non-Ctrl left-click.
@@ -25,6 +25,12 @@ export function CRViewportGrid() {
     // Always collapse multi-selection on plain left-click
     useCRViewerStore.getState().setSelectedViewport(index);
   }, [isArrangeMode]);
+
+  // Double-click: toggle single viewport (zoom in/out)
+  const handleViewportDoubleClick = useCallback((index: number) => {
+    if (isArrangeMode) return;
+    toggleSingleViewport(index);
+  }, [isArrangeMode, toggleSingleViewport]);
 
   const startIndex = (currentPage - 1) * currentLayout.spots;
   const hasImages = images.length > 0;
@@ -105,7 +111,7 @@ export function CRViewportGrid() {
           const isMultiSelected = selectedViewportIndices.includes(i) && selectedViewportIndices.length > 1;
 
           return (
-            <div key={`cr-vp-${i}`} className={`relative overflow-hidden min-h-0 ${isArrangeMode ? 'cursor-pointer' : ''}`} onMouseDown={(e) => handleViewportMouseDown(i, e)}>
+            <div key={`cr-vp-${i}`} className={`relative overflow-hidden min-h-0 ${isArrangeMode ? 'cursor-pointer' : ''}`} onMouseDown={(e) => handleViewportMouseDown(i, e)} onDoubleClick={() => handleViewportDoubleClick(i)}>
               <div className={`${isArrangeMode ? 'pointer-events-none' : ''} w-full h-full`}>
                 <CRViewport
                   imageId={imageId}

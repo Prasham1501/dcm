@@ -54,18 +54,19 @@ www/src/
 ### Page Naming Convention (use these names when requesting changes)
 | User-facing name | Page component | Route | Key components |
 |---|---|---|---|
-| **CR Viewer** | `CRViewerPage` | `/cr-viewer` | `CRSidebar` (tools: draw, ellipse, length, angle…), `CRToolbar`, `CRViewportGrid`, `CRThumbnailSidebar` |
-| **Viewer** | `ViewerPage` | `/viewer` | `ToolsPanel`, `ViewportGrid`, `DicomViewport`, `ThumbnailSidebar` |
-| **Dual Viewer** | `DualViewerPage` | `/dual-viewer` | shares viewer components |
+| **Viewer** | `CRViewerPage` | `/cr-viewer` | `CRSidebar` (tools: draw, ellipse, length, angle…), `CRToolbar`, `CRViewportGrid`, `CRThumbnailSidebar` |
+| **CR Viewer** | `ViewerPage` | `/viewer` | `ToolsPanel`, `ViewportGrid`, `DicomViewport`, `ThumbnailSidebar` |
+| **Dual Viewer** | `DualViewerPage` | `/dual-viewer` | shares CR Viewer components |
 
-> **"CR Viewer"** = the page opened via right-click → "Open in CR format". It has the full measurement/drawing tools sidebar (ellipse, draw, length, angle, etc.) in `components/crViewer/CRSidebar.tsx`.
+> **"Viewer"** = the page opened via right-click → "Open in CR format". It has the full measurement/drawing tools sidebar (ellipse, draw, length, angle, etc.) in `components/crViewer/CRSidebar.tsx`.
+> **"CR Viewer"** = the main DICOM viewer page (no drawing tools sidebar).
 
 ### Routing
 ```
 /                → PatientListPage
 /patients        → PatientListPage
-/viewer          → ViewerPage (main DICOM viewer)
-/cr-viewer       → CRViewerPage (CR Viewer — has draw/ellipse/measurement tools in CRSidebar)
+/viewer          → ViewerPage (CR Viewer)
+/cr-viewer       → CRViewerPage (Viewer — has draw/ellipse/measurement tools in CRSidebar)
 /dual-viewer     → DualViewerPage
 /studies         → StudiesPage
 /print           → PrintManagementPage

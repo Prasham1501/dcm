@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { Report } from '@/types/study';
+import type { ReadingSet } from '@/lib/usgExtraction/types';
 
 export interface ReportTemplate {
   id: string;
@@ -32,17 +33,34 @@ interface ReportStore {
   showReportEditor: boolean;
   editingPatientId: string | null;
   editingPatientName: string;
+  showInlineReport: boolean;
+  setShowInlineReport: (v: boolean) => void;
+  editingStudyDate: string;
   getReport: (studyId: string) => Report | undefined;
   saveReport: (studyId: string, data: Omit<Report, 'id' | 'studyId'>) => void;
   deleteReport: (studyId: string) => void;
   printReport: (studyId: string) => void;
-  openReportEditor: (patientId: string, patientName: string) => void;
+  openReportEditor: (patientId: string, patientName: string, studyDate?: string) => void;
   closeReportEditor: () => void;
   addTemplate: (template: Omit<ReportTemplate, 'id' | 'createdAt'>) => void;
   removeTemplate: (id: string) => void;
   saveFullReport: (report: Omit<SavedReport, 'id' | 'createdAt' | 'updatedAt'> & { id?: string }) => void;
   getReportsForPatient: (patientId: string) => SavedReport[];
   addRichTemplate: (template: { name: string; content: string }) => void;
+  appendReadingsToReport: (params: {
+    patientId: string;
+    patientName: string;
+    studyDate: string;
+    html: string;
+  }) => void;
+  // Shared extraction state — written by any viewer, read by InlineReportPanel
+  activeReadingSet: ReadingSet | null;
+  extractionStatus: 'idle' | 'running' | 'done' | 'failed';
+  setActiveReadingSet: (rs: ReadingSet | null) => void;
+  setExtractionStatus: (status: 'idle' | 'running' | 'done' | 'failed') => void;
+  // DICOM metadata (patient/study/machine info extracted from tags)
+  dicomMetadata: Record<string, string> | null;
+  setDicomMetadata: (m: Record<string, string> | null) => void;
 }
 
 export const useReportStore = create<ReportStore>()(
@@ -54,6 +72,15 @@ export const useReportStore = create<ReportStore>()(
       showReportEditor: false,
       editingPatientId: null,
       editingPatientName: '',
+      showInlineReport: false,
+      setShowInlineReport: (v) => set({ showInlineReport: v }),
+      editingStudyDate: '',
+      activeReadingSet: null,
+      extractionStatus: 'idle',
+      setActiveReadingSet: (rs) => set({ activeReadingSet: rs }),
+      setExtractionStatus: (status) => set({ extractionStatus: status }),
+      dicomMetadata: null,
+      setDicomMetadata: (m) => set({ dicomMetadata: m }),
 
       getReport: (studyId: string) => {
         return get().reports[studyId];
@@ -121,8 +148,8 @@ export const useReportStore = create<ReportStore>()(
         printWindow.focus();
         printWindow.print();
       },
-      openReportEditor: (patientId, patientName) => {
-        set({ showReportEditor: true, editingPatientId: patientId, editingPatientName: patientName });
+      openReportEditor: (patientId, patientName, studyDate) => {
+        set({ showReportEditor: true, editingPatientId: patientId, editingPatientName: patientName, editingStudyDate: studyDate ?? '' });
       },
 
       closeReportEditor: () => {
@@ -177,6 +204,33 @@ export const useReportStore = create<ReportStore>()(
             createdAt: Date.now(),
           }],
         }));
+      },
+
+      appendReadingsToReport: ({ patientId, patientName, studyDate, html }) => {
+        const existing = get().savedReports
+          .filter((r) => r.patientId === patientId)
+          .sort((a, b) => b.updatedAt - a.updatedAt)[0];
+
+        if (existing) {
+          const updated: SavedReport = {
+            ...existing,
+            content: existing.content + html,
+            updatedAt: Date.now(),
+          };
+          set((s) => ({
+            savedReports: [...s.savedReports.filter((r) => r.id !== existing.id), updated],
+          }));
+        } else {
+          get().saveFullReport({
+            patientId,
+            patientName,
+            studyDate,
+            content: html,
+            title: `USG Report — ${patientName}`,
+            doctor: '',
+            status: 'draft',
+          });
+        }
       },
     }),
     {

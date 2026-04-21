@@ -1547,6 +1547,481 @@ ipcMain.handle('get-received-dicom-files', async () => {
     }
 });
 
+// ── Node.js Tesseract OCR (reliable, uses local WASM not CDN) ──
+ipcMain.handle('ocr-image-base64', async (event, { base64, langPath }) => {
+    try {
+        const os = require('os');
+        const { createWorker } = require(path.join(__dirname, 'www', 'node_modules', 'tesseract.js'));
+
+        // Save base64 PNG to temp file
+        const tmpFile = path.join(os.tmpdir(), `dicom-ocr-${Date.now()}.png`);
+        const imgBuffer = Buffer.from(base64, 'base64');
+        fs.writeFileSync(tmpFile, imgBuffer);
+
+        // Save debug crops to a folder for inspection
+        const debugDir = path.join(__dirname, 'ocr-debug');
+        if (!fs.existsSync(debugDir)) fs.mkdirSync(debugDir, { recursive: true });
+        const debugFile = path.join(debugDir, `crop-${Date.now()}-${Math.random().toString(36).slice(2, 6)}.png`);
+        fs.writeFileSync(debugFile, imgBuffer);
+
+        const worker = await createWorker('eng', 1, {
+            logger: () => {},
+            langPath: langPath || undefined,
+        });
+        await worker.setParameters({
+            tessedit_pageseg_mode: '6',       // assume single uniform block of text
+        });
+        const { data } = await worker.recognize(tmpFile);
+        await worker.terminate();
+        fs.unlinkSync(tmpFile); // cleanup
+
+        const ocrText = data.text || '';
+        if (ocrText.trim()) {
+            console.log('[OCR] Extracted text:', JSON.stringify(ocrText.substring(0, 500)));
+        }
+        return { text: ocrText, success: true };
+    } catch (err) {
+        console.warn('[OCR] Node.js Tesseract failed:', err.message);
+        return { text: '', success: false, error: err.message };
+    }
+});
+
+// ── Comprehensive DICOM reading extraction (ALL tag sources in one call) ──
+// Reads: SR sequences, graphic annotations, overlay text, private tags, all text-bearing tags.
+// Returns structured measurements (100% confidence) + text fragments (need regex parsing).
+ipcMain.handle('extract-dicom-all-readings', async (event, { filePaths }) => {
+    const dicomParserLib = require('dicom-parser');
+    const structured = [];    // Typed SR measurements (name + value + unit)
+    const textFragments = []; // Free text from tags that needs regex parsing
+
+    function safeString(ds, tag) {
+        try { return ds.string(tag); } catch { return ''; }
+    }
+
+    /**
+     * Recursively walk DICOM SR Content Sequence (0040,A730).
+     * Handles: NUM (numeric), TEXT (text), CODE (coded), CONTAINER (nested).
+     */
+    function walkSRContent(dataSet, depth = 0) {
+        if (depth > 20) return;
+        const contentSeq = dataSet.elements['x0040a730'];
+        if (!contentSeq || !contentSeq.items) return;
+
+        for (const item of contentSeq.items) {
+            if (!item.dataSet) continue;
+            const ds = item.dataSet;
+            const valueType = safeString(ds, 'x0040a040');
+
+            // Get concept name from Concept Name Code Sequence (0040,A043)
+            let conceptMeaning = '';
+            let conceptCode = '';
+            const conceptSeq = ds.elements['x0040a043'];
+            if (conceptSeq && conceptSeq.items && conceptSeq.items[0]?.dataSet) {
+                conceptMeaning = safeString(conceptSeq.items[0].dataSet, 'x00080104') || '';
+                conceptCode = safeString(conceptSeq.items[0].dataSet, 'x00080100') || '';
+            }
+
+            if (valueType === 'NUM') {
+                const measSeq = ds.elements['x0040a300'];
+                if (measSeq && measSeq.items && measSeq.items[0]?.dataSet) {
+                    const measDS = measSeq.items[0].dataSet;
+                    const numericValue = safeString(measDS, 'x0040a30a');
+                    let unitMeaning = '';
+                    const unitSeq = measDS.elements['x004008ea'];
+                    if (unitSeq && unitSeq.items && unitSeq.items[0]?.dataSet) {
+                        unitMeaning = safeString(unitSeq.items[0].dataSet, 'x00080100') ||
+                                      safeString(unitSeq.items[0].dataSet, 'x00080104') || '';
+                    }
+                    if (numericValue) {
+                        structured.push({
+                            source: 'sr', name: conceptMeaning || conceptCode,
+                            value: numericValue.trim(), unit: unitMeaning.trim(),
+                        });
+                    }
+                }
+            } else if (valueType === 'TEXT') {
+                const textValue = safeString(ds, 'x0040a160');
+                if (textValue && (conceptMeaning || textValue.length > 3)) {
+                    structured.push({
+                        source: 'sr-text', name: conceptMeaning || 'Observation',
+                        value: textValue.trim(), unit: '',
+                    });
+                }
+            } else if (valueType === 'CODE') {
+                const codeSeq = ds.elements['x0040a168'];
+                if (codeSeq && codeSeq.items && codeSeq.items[0]?.dataSet) {
+                    const codeMeaning = safeString(codeSeq.items[0].dataSet, 'x00080104');
+                    if (codeMeaning && conceptMeaning) {
+                        structured.push({
+                            source: 'sr-code', name: conceptMeaning,
+                            value: codeMeaning.trim(), unit: '',
+                        });
+                    }
+                }
+            }
+
+            // Recurse into nested content
+            if (ds.elements['x0040a730']) {
+                walkSRContent(ds, depth + 1);
+            }
+        }
+    }
+
+    /**
+     * Recursively extract text from any DICOM sequence items.
+     * Catches text nested inside vendor-specific / unknown sequences.
+     */
+    function walkSequenceForText(dataSet, TEXT_VRS, depth = 0) {
+        if (depth > 10) return;
+        for (const tag of Object.keys(dataSet.elements)) {
+            try {
+                const el = dataSet.elements[tag];
+                if (!el) continue;
+                if (el.items && el.items.length > 0) {
+                    for (const item of el.items) {
+                        if (item.dataSet) walkSequenceForText(item.dataSet, TEXT_VRS, depth + 1);
+                    }
+                } else if (TEXT_VRS.has(el.vr)) {
+                    const val = dataSet.string(tag);
+                    if (val && val.trim().length > 2) {
+                        textFragments.push(val.trim());
+                    }
+                } else if (el.vr === 'UN' && el.length > 3 && el.length < 2000) {
+                    // Try to decode Unknown VR as text (many private tags use this)
+                    try {
+                        const val = dataSet.string(tag);
+                        if (val && /^[\x20-\x7E\r\n\t]+$/.test(val) && val.trim().length > 2) {
+                            textFragments.push(val.trim());
+                        }
+                    } catch { /* not text */ }
+                }
+            } catch { /* skip */ }
+        }
+    }
+
+    const TEXT_VRS = new Set(['ST', 'LO', 'LT', 'SH', 'UT', 'DS', 'IS']);
+
+    for (const filePath of (filePaths || []).slice(0, 15)) {
+        try {
+            const buffer = fs.readFileSync(filePath);
+            const byteArray = new Uint8Array(buffer);
+            // Parse FULL file — don't stop at pixel data (tags can follow pixels)
+            const dataset = dicomParserLib.parseDicom(byteArray);
+
+            // ── 1. DICOM SR Content Sequence (0040,A730) — the gold standard ──
+            walkSRContent(dataset);
+
+            // ── 2. Graphic Annotation Sequence (0070,0001) — text overlays ──
+            const graphicAnnotSeq = dataset.elements['x00700001'];
+            if (graphicAnnotSeq && graphicAnnotSeq.items) {
+                for (const item of graphicAnnotSeq.items) {
+                    if (!item.dataSet) continue;
+                    const textObjSeq = item.dataSet.elements['x00700008'];
+                    if (textObjSeq && textObjSeq.items) {
+                        for (const textItem of textObjSeq.items) {
+                            if (!textItem.dataSet) continue;
+                            const unformatted = safeString(textItem.dataSet, 'x00700006');
+                            if (unformatted && unformatted.trim().length > 1) {
+                                textFragments.push(unformatted.trim());
+                            }
+                        }
+                    }
+                    const directText = safeString(item.dataSet, 'x00700006');
+                    if (directText && directText.trim().length > 1) {
+                        textFragments.push(directText.trim());
+                    }
+                }
+            }
+
+            // ── 3. Overlay text (60xx groups) — up to 16 overlay planes ──
+            for (let g = 0x6000; g <= 0x601E; g += 2) {
+                const prefix = g.toString(16).padStart(4, '0');
+                const overlayDesc = safeString(dataset, 'x' + prefix + '0022');
+                if (overlayDesc && overlayDesc.trim().length > 1) textFragments.push(overlayDesc.trim());
+                const overlayLabel = safeString(dataset, 'x' + prefix + '1500');
+                if (overlayLabel && overlayLabel.trim().length > 1) textFragments.push(overlayLabel.trim());
+            }
+
+            // ── 4. Known text tags with measurement summaries ──
+            const knownTextTags = [
+                'x00204000', // Image Comments
+                'x00402400', // Imaging Service Request Comments
+                'x00400254', // Performed Procedure Step Description
+                'x00400007', // Scheduled Procedure Step Description
+                'x00102000', // Medical Alerts
+                'x00181400', // Acquisition Device Processing Description
+                'x00700081', // Content Description (Presentation State)
+                'x00081030', // Study Description
+                'x0008103e', // Series Description
+                'x00181030', // Protocol Name
+            ];
+            for (const tag of knownTextTags) {
+                const val = safeString(dataset, tag);
+                if (val && val.trim().length > 2) textFragments.push(val.trim());
+            }
+
+            // ── 5. Recursive text from ALL sequences (vendor private data) ──
+            walkSequenceForText(dataset, TEXT_VRS);
+
+        } catch (err) {
+            console.warn(`[DICOM all-readings] Failed to parse ${filePath}:`, err.message);
+        }
+    }
+
+    const uniqueText = [...new Set(textFragments)];
+    console.log(`[DICOM all-readings] ${structured.length} structured, ${uniqueText.length} text fragments`);
+    if (structured.length > 0) console.log('[DICOM all-readings] Structured:', JSON.stringify(structured.slice(0, 10)));
+
+    return { structured, textFragments: uniqueText };
+});
+
+// ── DICOM measurement text extraction (Node.js side — no browser OCR needed) ──
+ipcMain.handle('extract-dicom-text', async (event, { filePaths }) => {
+    const dicomParserLib = require('dicom-parser');
+    const textStrings = [];
+
+    const TEXT_VRS = new Set(['ST', 'LO', 'LT', 'SH', 'UN', 'CS', 'UT', 'PN', 'DS', 'IS']);
+
+    for (const filePath of (filePaths || []).slice(0, 10)) {
+        try {
+            const buffer = fs.readFileSync(filePath);
+            const byteArray = new Uint8Array(buffer);
+            const dataset = dicomParserLib.parseDicom(byteArray, { untilTag: '7fe00010' });
+
+            for (const tag of Object.keys(dataset.elements)) {
+                try {
+                    const el = dataset.elements[tag];
+                    if (!el || !TEXT_VRS.has(el.vr)) continue;
+                    const val = dataset.string(tag);
+                    if (val && val.trim().length > 0) {
+                        textStrings.push(val.trim());
+                    }
+                } catch { /* skip unreadable element */ }
+            }
+
+            const measureTags = [
+                '00204000', '00402400', '00181030', '00400254',
+                '00400007', '00102000', '00181400',
+            ];
+            for (const tag of measureTags) {
+                try {
+                    const val = dataset.string(tag);
+                    if (val && val.trim().length > 1) textStrings.push(val.trim());
+                } catch { /* tag absent */ }
+            }
+        } catch (err) {
+            console.warn(`[DICOM text] Failed to parse ${filePath}:`, err.message);
+        }
+    }
+
+    return { textStrings: [...new Set(textStrings)] };
+});
+
+// ── DICOM metadata extraction (patient/study/machine info) ──
+ipcMain.handle('extract-dicom-metadata', async (event, { filePaths }) => {
+    const dicomParserLib = require('dicom-parser');
+    const metadata = {};
+
+    // Standard DICOM tags for important clinical info
+    const TAG_MAP = {
+        patientName:       'x00100010',
+        patientId:         'x00100020',
+        patientBirthDate:  'x00100030',
+        patientSex:        'x00100040',
+        patientAge:        'x00101010',
+        studyDate:         'x00080020',
+        studyTime:         'x00080030',
+        studyDescription:  'x00081030',
+        seriesDescription: 'x0008103e',
+        modality:          'x00080060',
+        manufacturer:      'x00080070',
+        modelName:         'x00081090',
+        institutionName:   'x00080080',
+        stationName:       'x00081010',
+        referringPhysician:'x00080090',
+        performingPhysician:'x00081050',
+        bodyPart:          'x00180015',
+        protocolName:      'x00181030',
+        accessionNumber:   'x00080050',
+    };
+
+    for (const filePath of (filePaths || []).slice(0, 1)) {
+        try {
+            const buffer = fs.readFileSync(filePath);
+            const byteArray = new Uint8Array(buffer);
+            const dataset = dicomParserLib.parseDicom(byteArray, { untilTag: '7fe00010' });
+
+            for (const [key, tag] of Object.entries(TAG_MAP)) {
+                try {
+                    const val = dataset.string(tag);
+                    if (val && val.trim()) metadata[key] = val.trim();
+                } catch { /* tag absent */ }
+            }
+        } catch (err) {
+            console.warn(`[DICOM metadata] Failed:`, err.message);
+        }
+    }
+
+    console.log('[DICOM metadata]', JSON.stringify(metadata));
+    return metadata;
+});
+
+// ── Full-resolution DICOM pixel OCR (reads file → extracts pixels → BMP → Tesseract) ──
+ipcMain.handle('ocr-dicom-file', async (event, { filePath }) => {
+    try {
+        const os = require('os');
+        const dicomParserLib = require('dicom-parser');
+        const { createWorker } = require(path.join(__dirname, 'www', 'node_modules', 'tesseract.js'));
+
+        const buffer = fs.readFileSync(filePath);
+        const byteArray = new Uint8Array(buffer);
+        const dataset = dicomParserLib.parseDicom(byteArray);
+
+        const rows = dataset.uint16('x00280010');
+        const cols = dataset.uint16('x00280011');
+        const bitsAllocated = dataset.uint16('x00280100') || 8;
+        const bitsStored = dataset.uint16('x00280101') || bitsAllocated;
+        const samplesPerPixel = dataset.uint16('x00280002') || 1;
+        const photometric = (dataset.string('x00280004') || '').trim();
+        const pixelRepresentation = dataset.uint16('x00280103') || 0;
+        const windowCenter = parseFloat(dataset.string('x00281050') || '127');
+        const windowWidth = parseFloat(dataset.string('x00281051') || '255');
+
+        console.log(`[OCR-file] ${filePath}: ${cols}x${rows}, ${bitsAllocated}bit, ${samplesPerPixel}spp, ${photometric}`);
+
+        if (!rows || !cols) {
+            return { text: '', success: false, error: 'No pixel dimensions in DICOM' };
+        }
+
+        const pixelDataElement = dataset.elements['x7fe00010'];
+        if (!pixelDataElement) {
+            return { text: '', success: false, error: 'No pixel data in DICOM' };
+        }
+
+        const pixelData = new Uint8Array(buffer.buffer, pixelDataElement.dataOffset, pixelDataElement.length);
+
+        // Convert DICOM pixels to 8-bit RGB for BMP
+        const rgbPixels = new Uint8Array(rows * cols * 3);
+
+        if (samplesPerPixel === 3) {
+            // RGB or YBR — direct copy (most USG color images)
+            const isYBR = photometric.startsWith('YBR');
+            for (let i = 0; i < rows * cols; i++) {
+                let r, g, b;
+                if (bitsAllocated === 8) {
+                    r = pixelData[i * 3];
+                    g = pixelData[i * 3 + 1];
+                    b = pixelData[i * 3 + 2];
+                } else {
+                    // 16-bit per channel
+                    r = pixelData[i * 6] | (pixelData[i * 6 + 1] << 8);
+                    g = pixelData[i * 6 + 2] | (pixelData[i * 6 + 3] << 8);
+                    b = pixelData[i * 6 + 4] | (pixelData[i * 6 + 5] << 8);
+                    const shift = bitsStored - 8;
+                    r = r >> shift; g = g >> shift; b = b >> shift;
+                }
+                if (isYBR) {
+                    // YBR_FULL to RGB
+                    const y = r, cb = g, cr = b;
+                    r = Math.max(0, Math.min(255, Math.round(y + 1.402 * (cr - 128))));
+                    g = Math.max(0, Math.min(255, Math.round(y - 0.344136 * (cb - 128) - 0.714136 * (cr - 128))));
+                    b = Math.max(0, Math.min(255, Math.round(y + 1.772 * (cb - 128))));
+                }
+                rgbPixels[i * 3] = r;
+                rgbPixels[i * 3 + 1] = g;
+                rgbPixels[i * 3 + 2] = b;
+            }
+        } else {
+            // Monochrome — apply window level
+            const isInverted = photometric === 'MONOCHROME1';
+            const wLow = windowCenter - windowWidth / 2;
+            const wHigh = windowCenter + windowWidth / 2;
+
+            for (let i = 0; i < rows * cols; i++) {
+                let raw;
+                if (bitsAllocated === 16) {
+                    raw = pixelData[i * 2] | (pixelData[i * 2 + 1] << 8);
+                    if (pixelRepresentation === 1 && raw > 32767) raw -= 65536;
+                } else {
+                    raw = pixelData[i];
+                }
+
+                // Window level transform
+                let gray;
+                if (raw <= wLow) gray = 0;
+                else if (raw >= wHigh) gray = 255;
+                else gray = Math.round(((raw - wLow) / windowWidth) * 255);
+
+                if (isInverted) gray = 255 - gray;
+
+                rgbPixels[i * 3] = gray;
+                rgbPixels[i * 3 + 1] = gray;
+                rgbPixels[i * 3 + 2] = gray;
+            }
+        }
+
+        // Write BMP file (24-bit, top-down)
+        const rowBytes = cols * 3;
+        const paddedRowBytes = Math.ceil(rowBytes / 4) * 4;
+        const padding = paddedRowBytes - rowBytes;
+        const dataSize = paddedRowBytes * rows;
+        const fileSize = 54 + dataSize;
+        const bmp = Buffer.alloc(fileSize);
+
+        // BMP header
+        bmp.write('BM', 0);
+        bmp.writeUInt32LE(fileSize, 2);
+        bmp.writeUInt32LE(0, 6);
+        bmp.writeUInt32LE(54, 10);
+        // DIB header
+        bmp.writeUInt32LE(40, 14);
+        bmp.writeInt32LE(cols, 18);
+        bmp.writeInt32LE(-rows, 22); // negative = top-down
+        bmp.writeUInt16LE(1, 26);
+        bmp.writeUInt16LE(24, 28);
+        bmp.writeUInt32LE(0, 30);
+        bmp.writeUInt32LE(dataSize, 34);
+        bmp.writeInt32LE(2835, 38);
+        bmp.writeInt32LE(2835, 42);
+        bmp.writeUInt32LE(0, 46);
+        bmp.writeUInt32LE(0, 50);
+
+        let offset = 54;
+        for (let y = 0; y < rows; y++) {
+            for (let x = 0; x < cols; x++) {
+                const srcIdx = (y * cols + x) * 3;
+                // BMP is BGR order
+                bmp[offset++] = rgbPixels[srcIdx + 2]; // B
+                bmp[offset++] = rgbPixels[srcIdx + 1]; // G
+                bmp[offset++] = rgbPixels[srcIdx];     // R
+            }
+            for (let p = 0; p < padding; p++) bmp[offset++] = 0;
+        }
+
+        const tmpFile = path.join(os.tmpdir(), `dicom-full-${Date.now()}.bmp`);
+        fs.writeFileSync(tmpFile, bmp);
+        console.log(`[OCR-file] BMP written: ${tmpFile} (${cols}x${rows})`);
+
+        // Also save for debugging
+        const debugDir = path.join(__dirname, 'ocr-debug');
+        if (!fs.existsSync(debugDir)) fs.mkdirSync(debugDir, { recursive: true });
+        fs.writeFileSync(path.join(debugDir, `full-${Date.now()}.bmp`), bmp);
+
+        const worker = await createWorker('eng', 1, { logger: () => {} });
+        await worker.setParameters({ tessedit_pageseg_mode: '6' });
+        const { data } = await worker.recognize(tmpFile);
+        await worker.terminate();
+        fs.unlinkSync(tmpFile);
+
+        const ocrText = data.text || '';
+        console.log(`[OCR-file] Extracted text (${ocrText.length} chars):`, JSON.stringify(ocrText.substring(0, 1000)));
+        return { text: ocrText, success: true };
+    } catch (err) {
+        console.warn('[OCR-file] Failed:', err.message);
+        return { text: '', success: false, error: err.message };
+    }
+});
+
 // Start network receiver on app startup
 // NOTE: Port 3458 is now owned by Orthanc (DICOM SCP with AE=MEDIVIEW).
 // The custom TCP receiver is disabled to avoid port conflict.
