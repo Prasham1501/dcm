@@ -65,7 +65,7 @@ define('DB_NAME', getenv('DB_NAME') ?: 'dicom_viewer_pro');
 // =====================================================
 // Orthanc Configuration
 // =====================================================
-define('ORTHANC_URL', getenv('ORTHANC_URL') ?: 'http://localhost:8042');
+define('ORTHANC_URL', getenv('ORTHANC_URL') ?: 'http://localhost:8043');
 define('ORTHANC_USERNAME', getenv('ORTHANC_USERNAME') ?: 'orthanc');
 define('ORTHANC_PASSWORD', getenv('ORTHANC_PASSWORD') ?: 'orthanc');
 define('ORTHANC_DICOMWEB_ROOT', getenv('ORTHANC_DICOMWEB_ROOT') ?: '/dicom-web');

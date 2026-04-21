@@ -57,7 +57,7 @@ try {
     $orthancPassword = $input['orthanc_password'] ?? ORTHANC_PASSWORD;
     $dicomAet = $input['dicom_aet'] ?? 'ORTHANC';
     $dicomPort = (int)($input['dicom_port'] ?? 4242);
-    $httpPort = (int)($input['http_port'] ?? 8042);
+    $httpPort = (int)($input['http_port'] ?? 8043);
     
     // Try to find Orthanc configuration file
     $possiblePaths = [

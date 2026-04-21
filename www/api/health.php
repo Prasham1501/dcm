@@ -47,7 +47,7 @@ try {
 }
 
 // Check Orthanc
-$orthancUrl = 'http://localhost:8042/system';
+$orthancUrl = 'http://localhost:8043/system';
 $ch = curl_init($orthancUrl);
 curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
 curl_setopt($ch, CURLOPT_TIMEOUT, 3);

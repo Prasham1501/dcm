@@ -156,7 +156,7 @@ export function ServerTab() {
               value={editServer.port}
               onChange={(e) => setEditServer({ ...editServer, port: e.target.value })}
               className="w-full h-7 px-2 text-xs border border-app-border bg-app-bg text-app-text rounded-sm focus:border-app-accent focus:outline-none"
-              placeholder="e.g. 8042"
+              placeholder="e.g. 8043"
               disabled={saving}
             />
           </div>

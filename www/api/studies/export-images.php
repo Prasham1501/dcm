@@ -23,7 +23,7 @@ try {
     }
 
     // Get Orthanc configuration
-    $orthancUrl = $_ENV['ORTHANC_URL'] ?? 'http://localhost:8042';
+    $orthancUrl = $_ENV['ORTHANC_URL'] ?? 'http://localhost:8043';
     $orthancUser = $_ENV['ORTHANC_USERNAME'] ?? 'orthanc';
     $orthancPass = $_ENV['ORTHANC_PASSWORD'] ?? 'orthanc';
 

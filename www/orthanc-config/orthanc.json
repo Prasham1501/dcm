@@ -1,6 +1,6 @@
 {
   "Name": "Hospital_DICOM_Server",
-  "HttpPort": 8042,
+  "HttpPort": 8043,
   "RemoteAccessAllowed": true,
   "DicomPort": 4242,
   "DicomServerEnabled": true,

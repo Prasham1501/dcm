@@ -21,7 +21,7 @@ const fs = require('fs');
 const PHP_PORT = 8080;
 const VITE_PORT = 5173;
 const MYSQL_PORT = 3307;
-const ORTHANC_PORT = 8042;
+const ORTHANC_PORT = 8043;
 const DICOM_PORT = 3457; // Local DICOM file server
 let APP_URL = `http://localhost:${PHP_PORT}`;
 

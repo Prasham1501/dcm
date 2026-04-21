@@ -77,7 +77,7 @@ if (isset($_GET['orthanc_id'])) {
         exit;
     }
 
-    $orthancUrl = 'http://localhost:8042/instances/' . $instanceId . '/file';
+    $orthancUrl = 'http://localhost:8043/instances/' . $instanceId . '/file';
     $authHeader = 'Authorization: Basic ' . base64_encode('orthanc:orthanc');
 
     $ch = curl_init($orthancUrl);

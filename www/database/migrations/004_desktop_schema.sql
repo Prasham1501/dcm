@@ -209,7 +209,7 @@ INSERT INTO `hospital_settings` (`setting_key`, `setting_value`, `setting_group`
 ('hospital_phone', '', 'general'),
 ('hospital_email', '', 'general'),
 ('hospital_logo', '', 'general'),
-('orthanc_url', 'http://localhost:8042', 'orthanc'),
+('orthanc_url', 'http://localhost:8043', 'orthanc'),
 ('orthanc_username', 'orthanc', 'orthanc'),
 ('orthanc_password', 'orthanc', 'orthanc'),
 ('auto_sync_enabled', 'true', 'sync'),
