@@ -48,4 +48,12 @@ php/
 data/
 backups/
 setup/*.exe
+
+# Test scripts and test data
+test-*.js
+test-dicom-usg/
+ocr-debug/
+
+# Tesseract training data (large binary, not needed in repo)
+*.traineddata
 bin/*.exe
