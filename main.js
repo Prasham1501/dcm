@@ -253,12 +253,19 @@ function stopMySQL() {
 }
 
 async function waitForMySQL(maxAttempts = 30) {
-    const cmd = isDev && !fs.existsSync(mysqlClientPath)
-        ? 'C:\\xampp\\mysql\\bin\\mysql.exe -u root -e "SELECT 1"'
-        : `"${mysqlClientPath}" -u root --port=${MYSQL_PORT} -e "SELECT 1"`;
+    const net = require('net');
+    const port = (isDev && !fs.existsSync(mysqldPath)) ? 3306 : MYSQL_PORT;
     for (let i = 0; i < maxAttempts; i++) {
-        try { execSync(cmd, { timeout: 5000, stdio: 'pipe', shell: true }); console.log('[MySQL] Ready!'); return true; }
-        catch { console.log(`[MySQL] Waiting... (${i + 1}/${maxAttempts})`); await new Promise(r => setTimeout(r, 1000)); }
+        try {
+            await new Promise((resolve, reject) => {
+                const socket = net.createConnection({ host: '127.0.0.1', port });
+                socket.on('connect', () => { socket.destroy(); resolve(); });
+                socket.on('error', (err) => { socket.destroy(); reject(err); });
+                setTimeout(() => { socket.destroy(); reject(new Error('timeout')); }, 2000);
+            });
+            console.log('[MySQL] Ready!');
+            return true;
+        } catch { console.log(`[MySQL] Waiting... (${i + 1}/${maxAttempts})`); await new Promise(r => setTimeout(r, 1000)); }
     }
     return false;
 }
@@ -266,7 +273,7 @@ async function waitForMySQL(maxAttempts = 30) {
 async function runMigrations() {
     const dbName = 'dicom_viewer_pro';
     const cmd = isDev && !fs.existsSync(mysqlClientPath)
-        ? 'C:\\xampp\\mysql\\bin\\mysql.exe -u root --ssl-mode=DISABLED'
+        ? 'C:\\xampp\\mysql\\bin\\mysql.exe -u root -h 127.0.0.1 -P 3306'
         : `"${mysqlClientPath}" -u root --port=${MYSQL_PORT} --ssl-mode=DISABLED`;
 
     // Create database
@@ -532,7 +539,7 @@ async function startApp() {
         ensureDirectories();
         createSplashWindow();
 
-        const usePortableMySQL = true; // This was fs.existsSync(mysqldPath) in original, now hardcoded to true
+        const usePortableMySQL = fs.existsSync(mysqldPath);
 
         // 1. Kick off all services in parallel
         console.log('[Startup] Initializing services in parallel...');
