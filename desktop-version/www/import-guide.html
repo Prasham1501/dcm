@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DICOM Import Guide - Visual Instructions</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
+    <style>
+        :root {
+            --bg-primary: #1a1d2e;
+            --bg-secondary: #22252f;
+            --bg-tertiary: #2a2d3a;
+            --accent: #00d9ff;
+            --text-primary: #ffffff;
+            --text-secondary: #b0b3c1;
+            --success: #28a745;
+            --warning: #ffc107;
+        }
+        body {
+            background-color: var(--bg-primary);
+            color: var(--text-primary);
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            padding: 30px;
+        }
+        .guide-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: var(--bg-secondary);
+            border-radius: 15px;
+            padding: 40px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        }
+        .guide-header {
+            text-align: center;
+            margin-bottom: 40px;
+            padding-bottom: 20px;
+            border-bottom: 2px solid var(--accent);
+        }
+        .guide-header h1 {
+            color: var(--accent);
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+        }
+        .guide-header p {
+            color: var(--text-secondary);
+            font-size: 1.1rem;
+        }
+        .step-card {
+            background: var(--bg-tertiary);
+            border-radius: 12px;
+            padding: 25px;
+            margin-bottom: 30px;
+            border-left: 4px solid var(--accent);
+            transition: transform 0.2s ease;
+        }
+        .step-card:hover {
+            transform: translateX(5px);
+        }
+        .step-number {
+            background: var(--accent);
+            color: #000;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 1.2rem;
+            margin-right: 15px;
+        }
+        .step-title {
+            color: var(--accent);
+            font-size: 1.4rem;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+        }
+        .directory-structure {
+            background: #000;
+            padding: 20px;
+            border-radius: 8px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9rem;
+            color: var(--success);
+            overflow-x: auto;
+            margin: 20px 0;
+        }
+        .directory-structure .folder {
+            color: var(--accent);
+            font-weight: bold;
+        }
+        .directory-structure .file {
+            color: var(--text-primary);
+        }
+        .example-paths {
+            background: var(--bg-primary);
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+        .path-example {
+            background: var(--bg-tertiary);
+            padding: 12px 15px;
+            border-radius: 6px;
+            margin: 10px 0;
+            font-family: 'Courier New', monospace;
+            border-left: 3px solid var(--success);
+        }
+        .path-example.wrong {
+            border-left-color: #dc3545;
+            opacity: 0.7;
+        }
+        .path-example .icon {
+            margin-right: 10px;
+        }
+        .alert-custom {
+            background: var(--bg-primary);
+            border-left: 4px solid var(--warning);
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+        .feature-box {
+            background: var(--bg-primary);
+            padding: 20px;
+            border-radius: 8px;
+            margin: 15px 0;
+            display: flex;
+            align-items: flex-start;
+            gap: 15px;
+        }
+        .feature-box i {
+            font-size: 2rem;
+            color: var(--accent);
+        }
+        .quick-links {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-top: 30px;
+        }
+        .quick-link-card {
+            background: var(--bg-tertiary);
+            padding: 25px;
+            border-radius: 12px;
+            text-align: center;
+            text-decoration: none;
+            color: var(--text-primary);
+            transition: all 0.3s ease;
+            border: 2px solid transparent;
+        }
+        .quick-link-card:hover {
+            border-color: var(--accent);
+            transform: translateY(-5px);
+            color: var(--accent);
+        }
+        .quick-link-card i {
+            font-size: 3rem;
+            color: var(--accent);
+            margin-bottom: 15px;
+            display: block;
+        }
+        .quick-link-card h5 {
+            margin: 15px 0 10px 0;
+        }
+        .btn-test {
+            background: var(--accent);
+            color: #000;
+            padding: 12px 30px;
+            border-radius: 8px;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            border: 2px solid var(--accent);
+        }
+        .btn-test:hover {
+            background: transparent;
+            color: var(--accent);
+        }
+    </style>
+</head>
+<body>
+    <div class="guide-container">
+        <div class="guide-header">
+            <h1><i class="bi bi-folder-symlink"></i> DICOM Recursive Import Guide</h1>
+            <p>Learn how to import DICOM files from multiple subdirectories</p>
+        </div>
+
+        <!-- Key Features -->
+        <div class="step-card">
+            <div class="step-title">
+                <span class="step-number"><i class="bi bi-check-circle"></i></span>
+                <span>Key Features</span>
+            </div>
+            <div class="feature-box">
+                <i class="bi bi-folder-check"></i>
+                <div>
+                    <h5>Recursive Scanning</h5>
+                    <p>Automatically scans all subdirectories and nested folders</p>
+                </div>
+            </div>
+            <div class="feature-box">
+                <i class="bi bi-file-earmark-medical"></i>
+                <div>
+                    <h5>Smart Detection</h5>
+                    <p>Identifies DICOM files by DICM marker or .dcm extension</p>
+                </div>
+            </div>
+            <div class="feature-box">
+                <i class="bi bi-hdd-stack"></i>
+                <div>
+                    <h5>Any Structure Supported</h5>
+                    <p>Works with any directory organization - flat or deeply nested</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Directory Structure Example -->
+        <div class="step-card">
+            <div class="step-title">
+                <span class="step-number">1</span>
+                <span>Understanding Directory Structures</span>
+            </div>
+            <p>The system supports ANY directory structure. Here are examples:</p>
+
+            <h6 style="color: var(--accent); margin-top: 20px;"><i class="bi bi-check-circle-fill text-success"></i> Single Series (Works)</h6>
+            <div class="directory-structure">
+<span class="folder">C:\Users\prash\Downloads\dicom\series-000001\</span>
+├── <span class="file">image-00001.dcm</span>
+├── <span class="file">image-00002.dcm</span>
+└── <span class="file">image-00003.dcm</span>
+            </div>
+
+            <h6 style="color: var(--accent); margin-top: 20px;"><i class="bi bi-check-circle-fill text-success"></i> Multiple Series (Works)</h6>
+            <div class="directory-structure">
+<span class="folder">C:\Users\prash\Downloads\dicom\</span>
+├── <span class="folder">series-000001\</span>
+│   ├── <span class="file">image-00001.dcm</span>
+│   ├── <span class="file">image-00002.dcm</span>
+│   └── <span class="file">image-00003.dcm</span>
+├── <span class="folder">series-000002\</span>
+│   ├── <span class="file">image-00001.dcm</span>
+│   └── <span class="file">image-00002.dcm</span>
+├── <span class="folder">patient-john-doe\</span>
+│   ├── <span class="folder">ct-chest\</span>
+│   │   └── <span class="file">scan.dcm</span>
+│   └── <span class="folder">mri-brain\</span>
+│       └── <span class="file">scan.dcm</span>
+└── <span class="folder">deeply\</span>
+    └── <span class="folder">nested\</span>
+        └── <span class="folder">folder\</span>
+            └── <span class="file">study.dcm</span>
+            </div>
+        </div>
+
+        <!-- Path Examples -->
+        <div class="step-card">
+            <div class="step-title">
+                <span class="step-number">2</span>
+                <span>Correct Path Format</span>
+            </div>
+
+            <h6 style="color: var(--success); margin-top: 20px;"><i class="bi bi-check-circle-fill"></i> Correct Paths (Use These)</h6>
+            <div class="example-paths">
+                <div class="path-example">
+                    <i class="bi bi-check-circle-fill text-success icon"></i>
+                    <code>C:\Users\prash\Downloads\dicom\</code>
+                    <small style="display: block; margin-top: 5px; color: var(--text-secondary);">✓ Parent folder with multiple series</small>
+                </div>
+                <div class="path-example">
+                    <i class="bi bi-check-circle-fill text-success icon"></i>
+                    <code>C:/Users/prash/Downloads/dicom/</code>
+                    <small style="display: block; margin-top: 5px; color: var(--text-secondary);">✓ Forward slashes also work</small>
+                </div>
+                <div class="path-example">
+                    <i class="bi bi-check-circle-fill text-success icon"></i>
+                    <code>C:\Users\prash\Downloads\dicom\series-000001\</code>
+                    <small style="display: block; margin-top: 5px; color: var(--text-secondary);">✓ Single series folder</small>
+                </div>
+            </div>
+
+            <h6 style="color: #dc3545; margin-top: 20px;"><i class="bi bi-x-circle-fill"></i> Common Mistakes</h6>
+            <div class="example-paths">
+                <div class="path-example wrong">
+                    <i class="bi bi-x-circle-fill text-danger icon"></i>
+                    <code>\\server\share\dicom</code>
+                    <small style="display: block; margin-top: 5px; color: var(--text-secondary);">✗ UNC paths may be slow - map network drive first</small>
+                </div>
+                <div class="path-example wrong">
+                    <i class="bi bi-x-circle-fill text-danger icon"></i>
+                    <code>dicom\</code>
+                    <small style="display: block; margin-top: 5px; color: var(--text-secondary);">✗ Must be absolute path, not relative</small>
+                </div>
+            </div>
+        </div>
+
+        <!-- Step-by-Step Instructions -->
+        <div class="step-card">
+            <div class="step-title">
+                <span class="step-number">3</span>
+                <span>Step-by-Step Import Process</span>
+            </div>
+
+            <ol style="line-height: 2.2;">
+                <li><strong>Login as Admin</strong> and navigate to Patients page</li>
+                <li>Click <strong>"Hospital Config"</strong> button</li>
+                <li>Scroll to <strong>"Import Existing Studies"</strong> section</li>
+                <li>Enter the <strong>parent directory</strong> path:
+                    <div class="directory-structure" style="margin-top: 10px;">C:\Users\prash\Downloads\dicom\</div>
+                </li>
+                <li>Click <strong>"Scan Directory"</strong> button</li>
+                <li>System will display all DICOM files found in all subdirectories</li>
+                <li>Review the list and click <strong>"Start Import"</strong></li>
+                <li>Monitor progress bar</li>
+                <li>Go to <strong>Patients page</strong> to see imported studies</li>
+            </ol>
+        </div>
+
+        <!-- Troubleshooting -->
+        <div class="step-card">
+            <div class="step-title">
+                <span class="step-number"><i class="bi bi-tools"></i></span>
+                <span>Troubleshooting</span>
+            </div>
+
+            <div class="alert-custom">
+                <h6 style="color: var(--warning); margin-bottom: 15px;"><i class="bi bi-exclamation-triangle"></i> "No DICOM files found"</h6>
+                <ul style="margin: 0;">
+                    <li>Verify directory path is correct</li>
+                    <li>Check files have .dcm extension or DICM marker</li>
+                    <li>Ensure PHP has read permissions</li>
+                    <li>Run the test script to diagnose the issue</li>
+                </ul>
+            </div>
+
+            <div class="alert-custom">
+                <h6 style="color: var(--warning); margin-bottom: 15px;"><i class="bi bi-exclamation-triangle"></i> "Files imported but not showing"</h6>
+                <ul style="margin: 0;">
+                    <li>Check Orthanc is running: <code>http://localhost:8042</code></li>
+                    <li>Click "Refresh" button on Patients page</li>
+                    <li>Check database tables: cached_patients, cached_studies</li>
+                </ul>
+            </div>
+        </div>
+
+        <!-- Test Script Notice -->
+        <div class="step-card" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border: none;">
+            <div style="text-align: center;">
+                <h4 style="color: white; margin-bottom: 20px;">
+                    <i class="bi bi-flask"></i> Test Your Directory Before Importing
+                </h4>
+                <p style="color: rgba(255,255,255,0.9); margin-bottom: 25px;">
+                    Run our test script to verify the scanner can detect your DICOM files
+                </p>
+                <a href="test-recursive-scan.php" class="btn-test" target="_blank">
+                    <i class="bi bi-play-circle"></i> Run Test Script
+                </a>
+            </div>
+        </div>
+
+        <!-- Quick Links -->
+        <h3 style="color: var(--accent); margin-top: 50px; margin-bottom: 20px; text-align: center;">
+            <i class="bi bi-link-45deg"></i> Quick Links
+        </h3>
+        <div class="quick-links">
+            <a href="pages/patients.html" class="quick-link-card">
+                <i class="bi bi-people"></i>
+                <h5>Patients Page</h5>
+                <p style="color: var(--text-secondary); margin: 0; font-size: 0.9rem;">View imported patients and studies</p>
+            </a>
+            <a href="test-recursive-scan.php" class="quick-link-card">
+                <i class="bi bi-search"></i>
+                <h5>Test Scanner</h5>
+                <p style="color: var(--text-secondary); margin: 0; font-size: 0.9rem;">Test directory scanning</p>
+            </a>
+            <a href="HOW_TO_IMPORT_DICOM_FILES.md" class="quick-link-card" target="_blank">
+                <i class="bi bi-file-text"></i>
+                <h5>Documentation</h5>
+                <p style="color: var(--text-secondary); margin: 0; font-size: 0.9rem;">Complete import guide</p>
+            </a>
+            <a href="http://localhost:8042" class="quick-link-card" target="_blank">
+                <i class="bi bi-server"></i>
+                <h5>Orthanc PACS</h5>
+                <p style="color: var(--text-secondary); margin: 0; font-size: 0.9rem;">Check Orthanc status</p>
+            </a>
+        </div>
+
+        <!-- Footer -->
+        <div style="text-align: center; margin-top: 50px; padding-top: 30px; border-top: 1px solid #444;">
+            <p style="color: var(--text-secondary); margin: 0;">
+                <i class="bi bi-info-circle"></i> The recursive scanning feature is <strong style="color: var(--success);">already implemented</strong> in your system.
+                <br>Just provide the parent directory path and the system will handle the rest!
+            </p>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

@@ -1,0 +1,46 @@
+{
+    "name": "hospital/dicom-viewer-pro",
+    "description": "Hospital DICOM Viewer Pro v2.0 - Production-ready medical imaging system",
+    "type": "project",
+    "version": "2.0.0",
+    "require": {
+        "php": ">=8.2",
+        "ext-mysqli": "*",
+        "ext-pdo": "*",
+        "ext-zip": "*",
+        "ext-ftp": "*",
+        "ext-json": "*",
+        "ext-mbstring": "*",
+        "ext-curl": "*",
+        "ext-gd": "*",
+        "google/apiclient": "^2.15",
+        "vlucas/phpdotenv": "^5.5"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^10.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "DicomViewer\\": "includes/classes/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "DicomViewer\\Tests\\": "tests/"
+        }
+    },
+    "config": {
+        "optimize-autoloader": true,
+        "preferred-install": "dist",
+        "sort-packages": true,
+        "allow-plugins": {
+            "php-http/discovery": true
+        }
+    },
+    "scripts": {
+        "post-install-cmd": [
+            "@php -r \"file_exists('config/.env') || copy('config/.env.example', 'config/.env');\""
+        ],
+        "test": "phpunit"
+    }
+}

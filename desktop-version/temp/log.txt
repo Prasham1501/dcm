@@ -1,0 +1,99 @@
+﻿
+> dicom-viewer-pro@1.0.0 start
+> electron .
+
+
+[Electron] Starting DICOM Viewer Pro...
+[Electron] isDev: true
+[Electron] appPath: C:\xampp\htdocs\papa\dicom_again\claude\desktop-version\temp
+[Electron] wwwPath: C:\xampp\htdocs\papa\dicom_again\claude\desktop-version\temp\www
+[Startup] Initializing services in parallel...
+[MySQL] Starting MariaDB...
+[Startup] Killing process 7060 on port 8042...
+[Orthanc] Starting...
+[StaticServer] Starting on port 8080 ΓåÆ C:\xampp\htdocs\papa\dicom_again\claude\desktop-version\temp\www\dist
+[DICOM Network] Orthanc handles DICOM receives on port 3458 (AE: MEDIVIEW) ΓÇö custom TCP receiver disabled.
+[StaticServer] Ready on port 8080
+[Electron] DICOM file server running on port 3457
+[MySQL] Ready!
+[MySQL] Running 18 new migrations...
+[MySQL] Running 001_create_ai_tables.sql...
+[MySQL] Running 002_hospital_settings.sql...
+[MySQL] Running 003_print_settings.sql...
+[MySQL] Running 004_desktop_schema.sql...
+[MySQL] Running 005_multi_clinic_fix.sql...
+[MySQL] Running 005_multi_clinic_system.sql...
+[MySQL] Running 006_hospital_isolation_system.sql...
+[MySQL] Running 007_address_and_security_settings.sql...
+[MySQL] Running 008_two_factor_auth.sql...
+[MySQL] Running 009_license_system.sql...
+[MySQL] Running 010_super_admin_setup.sql...
+[MySQL] Running 011_setup_wizard_fix.sql...
+[MySQL] Running 012_print_tracking_system.sql...
+[MySQL] Running 012_print_tracking_system_safe.sql...
+[MySQL] Running 013_add_print_type.sql...
+[MySQL] Running 014_add_pcpndt_print_type.sql...
+[MySQL] Running 015_auto_login_token.sql...
+[MySQL] Running 015_hospital_printers.sql...
+[Orthanc] W0421 21:57:38.297033             MAIN main.cpp:2128] Orthanc version: 1.12.9
+W0421 21:57:38.298535             MAIN OrthancConfiguration.cpp:59] Reading the configuration from: "C:\Users\prash\AppData\Roaming\dicom-viewer-pro\orthanc.json"
+W0421 21:57:38.559751             MAIN OrthancInitialization.cpp:445] SQLite index directory: "C:/Users/prash/AppData/Roaming/dicom-viewer-pro/orthanc-db"
+W0421 21:57:38.563288             MAIN OrthancInitialization.cpp:531] Storage directory: "C:/Users/prash/AppData/Roaming/dicom-viewer-pro/orthanc-storage"
+W0421 21:57:38.567470             MAIN HttpClient.cpp:1201] No certificates are provided to validate peers.  Orthanc will use the native CA store. Set "HttpsCACertificates" if you need to do HTTPS requests and use custom CAs.
+W0421 21:57:38.568499             MAIN LuaContext.cpp:95] Lua says: Lua toolbox installed
+W0421 21:57:38.569528             MAIN LuaContext.cpp:95] Lua says: ========================================
+W0421 21:57:38.569528             MAIN LuaContext.cpp:95] Lua says: [DICOM Callback] Script loaded successfully
+W0421 21:57:38.569528             MAIN LuaContext.cpp:95] Lua says: [DICOM Callback] Activity API: http://localhost:8080/api/dicom/activity.php
+W0421 21:57:38.569528             MAIN LuaContext.cpp:95] Lua says: ========================================
+W0421 21:57:38.569528             MAIN LuaContext.cpp:95] Lua says: Lua toolbox installed
+W0421 21:57:38.570554             MAIN LuaContext.cpp:95] Lua says: ========================================
+W0421 21:57:38.570554             MAIN LuaContext.cpp:95] Lua says: [DICOM Callback] Script loaded successfully
+W0421 21:57:38.570554             MAIN LuaContext.cpp:95] Lua says: [DICOM Callback] Activity API: http://localhost:8080/api/dicom/activity.php
+W0421 21:57:38.570554             MAIN LuaContext.cpp:95] Lua says: ========================================
+W0421 21:57:38.572080             MAIN ServerContext.cpp:609] Disk compression is disabled
+W0421 21:57:38.572080             MAIN ServerIndex.cpp:402] No limit on the number of stored patients
+W0421 21:57:38.572080             MAIN ServerIndex.cpp:422] No limit on the size of the storage area
+W0421 21:57:38.573761             MAIN ServerContext.cpp:284] Reloading the jobs from the last execution of Orthanc
+W0421 21:57:38.574307             MAIN JobsEngine.cpp:276] The jobs engine has started with 2 threads
+W0421 21:57:38.575336             MAIN main.cpp:1372] DICOM server listening with AET MEDIVIEW on port: 3458
+W0421 21:57:38.575336             MAIN HttpServer.cpp:2122] HTTP compression is enabled
+W0421 21:57:38.575336             MAIN main.cpp:1220] Remote LUA script execution is disabled
+W0421 21:57:38.575336             MAIN main.cpp:1232] REST API cannot write to the file system because the "RestApiWriteToFileSystemEnabled" configuration is set to false.  The URI /instances/../export is disabled.  This is the most secure configuration.
+E0421 21:57:38.576378             MAIN OrthancException.cpp:62] The TCP port of the HTTP server is privileged or already in use:  (port = 8042)
+W0421 21:57:39.662422             MAIN main.cpp:1388]     DICOM server has stopped
+E0421 21:57:39.663427             MAIN ServerContext.cpp:552] INTERNAL ERROR: ServerContext::Stop() should be invoked manually to avoid mess in the destruction order!
+W0421 21:57:39.798831             MAIN JobsEngine.cpp:317] The jobs engine has stopped
+E0421 21:57:40.095942             MAIN main.cpp:2185] Uncaught exception, stopping now: [The TCP port of the HTTP server is privileged or already in use] (code 2003)
+W0421 21:57:40.095942             MAIN main.cpp:2216] Orthanc has stopped
+[MySQL] 2026-04-21 21:57:39 0 [Note] Starting MariaDB 11.4.4-MariaDB source revision e9a502df08bad16aa8a354e854f3c014b1380e32 server_uid Wm8IQiB8hRwf6QqgQkw+LXM2HLI= as process 20064
+2026-04-21 21:57:39 0 [Note] InnoDB: Compressed tables use zlib 1.3.1
+2026-04-21 21:57:39 0 [Note] InnoDB: Number of transaction pools: 1
+2026-04-21 21:57:39 0 [Note] InnoDB: Using crc32 + pclmulqdq instructions
+2026-04-21 21:57:39 0 [Note] InnoDB: Initializing buffer pool, total size = 128.000MiB, chunk size = 2.000MiB
+2026-04-21 21:57:39 0 [Note] InnoDB: Completed initialization of buffer pool
+2026-04-21 21:57:39 0 [Note] InnoDB: File system buffers for log disabled (block size=512 bytes)
+2026-04-21 21:57:39 0 [Note] InnoDB: End of log at LSN=382487
+2026-04-21 21:57:39 0 [Note] InnoDB: Opened 3 undo tablespaces
+2026-04-21 21:57:39 0 [Note] InnoDB: 128 rollback segments in 3 undo tablespaces are active.
+2026-04-21 21:57:39 0 [Note] InnoDB: Removed temporary tablespace data file: "./ibtmp1"
+2026-04-21 21:57:39 0 [Note] InnoDB: Setting file './ibtmp1' size to 12.000MiB. Physically writing the file full; Please wait ...
+2026-04-21 21:57:39 0 [Note] InnoDB: File './ibtmp1' size is now 12.000MiB.
+2026-04-21 21:57:39 0 [Note] InnoDB: log sequence number 382487; transaction id 325
+2026-04-21 21:57:39 0 [Note] InnoDB: Loading buffer pool(s) from C:\Users\prash\AppData\Roaming\dicom-viewer-pro\mysql-data\data\ib_buffer_pool
+2026-04-21 21:57:39 0 [Note] Plugin 'FEEDBACK' is disabled.
+2026-04-21 21:57:39 0 [Note] mysqld.exe: SSPI: using principal name 'localhost', mech 'Negotiate'
+2026-04-21 21:57:39 0 [Note] InnoDB: Buffer pool(s) load completed at 260421 21:57:39
+2026-04-21 21:57:39 0 [Note] Recovering after a crash using tc.log
+2026-04-21 21:57:39 0 [Note] Starting table crash recovery...
+2026-04-21 21:57:39 0 [Note] Crash table recovery finished.
+2026-04-21 21:57:39 0 [ERROR] Can't open and lock privilege tables: Table 'mysql.servers' doesn't exist
+2026-04-21 21:57:39 0 [Note] Server socket created on IP: '127.0.0.1'.
+2026-04-21 21:57:39 0 [Warning] Can't open and lock time zone table: Table 'mysql.time_zone_leap_second' doesn't exist trying to live without them
+2026-04-21 21:57:39 1 [Warning] Failed to load slave replication state from table mysql.gtid_slave_pos: 1017: Can't find file: '.\mysql\' (errno: 2 "No such file or directory")
+2026-04-21 21:57:39 0 [Note] C:\xampp\htdocs\papa\dicom_again\claude\desktop-version\temp\mysql\bin\mysqld.exe: ready for connections.
+Version: '11.4.4-MariaDB'  socket: ''  port: 3307  mariadb.org binary distribution
+[Orthanc] Exited: 2003
+[Startup] Orthanc: not available
+[Startup] Static server: running
+[Startup] Loading application from: http://localhost:8080
+[MySQL] Exited: 1

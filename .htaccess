@@ -1,0 +1,113 @@
+# Hospital DICOM Viewer Pro v2.0 - Apache Configuration
+
+# Enable Rewrite Engine
+RewriteEngine On
+
+# Force HTTPS in production (uncomment for production)
+# RewriteCond %{HTTPS} off
+# RewriteRule ^(.*)$ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+
+# Prevent Directory Browsing
+Options -Indexes
+
+# Follow Symbolic Links
+Options +FollowSymLinks
+
+# Default Charset
+AddDefaultCharset UTF-8
+
+# PHP Configuration
+php_value upload_max_filesize 500M
+php_value post_max_size 500M
+php_value max_execution_time 300
+php_value max_input_time 300
+php_value memory_limit 512M
+php_flag display_errors Off
+php_flag log_errors On
+
+# Security Headers
+<IfModule mod_headers.c>
+    # XSS Protection
+    Header set X-XSS-Protection "1; mode=block"
+
+    # Prevent MIME sniffing
+    Header set X-Content-Type-Options "nosniff"
+
+    # Clickjacking protection
+    Header set X-Frame-Options "SAMEORIGIN"
+
+    # Referrer Policy
+    Header set Referrer-Policy "strict-origin-when-cross-origin"
+
+    # Content Security Policy (adjust as needed)
+    # Header set Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline';"
+
+    # CORS Headers (for DICOM image loading)
+    Header set Access-Control-Allow-Origin "*"
+    Header set Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS"
+    Header set Access-Control-Allow-Headers "Content-Type, Authorization, X-Requested-With"
+</IfModule>
+
+# Protect Sensitive Files
+<FilesMatch "\.(env|log|sql|md|gitignore|htaccess|htpasswd)$">
+    Order allow,deny
+    Deny from all
+</FilesMatch>
+
+# Protect Configuration Directory
+<Files "config/*">
+    Order allow,deny
+    Deny from all
+</Files>
+
+# Protect Logs Directory
+<Files "logs/*">
+    Order allow,deny
+    Deny from all
+</Files>
+
+# Note: DirectoryMatch is not allowed in .htaccess
+# Directory-level protection should be configured in Apache's main config or use Files directive
+
+# Enable Compression
+<IfModule mod_deflate.c>
+    AddOutputFilterByType DEFLATE text/html text/plain text/xml text/css text/javascript application/javascript application/json
+</IfModule>
+
+# Browser Caching
+<IfModule mod_expires.c>
+    ExpiresActive On
+
+    # Images
+    ExpiresByType image/jpeg "access plus 1 year"
+    ExpiresByType image/png "access plus 1 year"
+    ExpiresByType image/gif "access plus 1 year"
+    ExpiresByType image/webp "access plus 1 year"
+    ExpiresByType image/svg+xml "access plus 1 year"
+
+    # CSS and JavaScript
+    ExpiresByType text/css "access plus 1 month"
+    ExpiresByType application/javascript "access plus 1 month"
+
+    # Fonts
+    ExpiresByType font/woff "access plus 1 year"
+    ExpiresByType font/woff2 "access plus 1 year"
+    ExpiresByType font/ttf "access plus 1 year"
+    ExpiresByType font/otf "access plus 1 year"
+
+    # HTML
+    ExpiresByType text/html "access plus 0 seconds"
+
+    # JSON
+    ExpiresByType application/json "access plus 0 seconds"
+</IfModule>
+
+# Rewrite Rules (if using clean URLs)
+# RewriteCond %{REQUEST_FILENAME} !-f
+# RewriteCond %{REQUEST_FILENAME} !-d
+# RewriteRule ^(.*)$ index.php?url=$1 [QSA,L]
+
+# Error Pages (optional - create custom error pages)
+# ErrorDocument 404 /errors/404.php
+# ErrorDocument 403 /errors/403.php
+# ErrorDocument 500 /errors/500.php

@@ -1,0 +1,16 @@
+node_modules/
+dist/
+www/node_modules/
+www/dist/
+www/vendor/
+*.log
+# .env is now allowed
+# .env
+*.exe
+php/
+mysql/
+orthanc/
+data/
+# config/*.env is now allowed
+# config/*.env
+!config/.env.example

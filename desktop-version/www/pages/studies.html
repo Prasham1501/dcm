@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Studies - Accurate Viewer</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
+    <style>
+        :root {
+            --bg-primary: #1a1d2e;
+            --bg-secondary: #22252f;
+            --bg-tertiary: #2a2d3a;
+            --accent: #00d9ff;
+            --text-primary: #ffffff;
+            --text-secondary: #b0b3c1;
+        }
+        body {
+            background-color: var(--bg-primary);
+            color: var(--text-primary);
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+        }
+        .main-container {
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+        }
+        .studies-panel {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+            transition: all 0.3s ease;
+        }
+        .studies-panel.hidden {
+            display: none;
+        }
+        .reports-panel {
+            width: 0;
+            overflow: hidden;
+            background: var(--bg-secondary);
+            border-left: 2px solid var(--accent);
+            transition: all 0.3s ease;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+        }
+        .reports-panel.active {
+            width: 50%;
+        }
+        .reports-panel.full {
+            width: 100%;
+        }
+        .page-header {
+            background: var(--bg-secondary);
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+        
+        /* Table Layout Styles */
+        .studies-table {
+            width: 100%;
+            background: var(--bg-secondary);
+            border-radius: 12px;
+            overflow: hidden;
+            border: 1px solid #444;
+        }
+        .studies-table thead {
+            background: var(--bg-tertiary);
+        }
+        .studies-table thead th {
+            padding: 15px;
+            color: var(--accent);
+            font-weight: 600;
+            border-bottom: 2px solid #444;
+            text-transform: uppercase;
+            font-size: 0.85rem;
+            letter-spacing: 0.5px;
+        }
+        .studies-table tbody tr {
+            border-bottom: 1px solid #333;
+            transition: all 0.2s ease;
+        }
+        .studies-table tbody tr:hover {
+            background: var(--bg-tertiary);
+        }
+        .studies-table tbody td {
+            padding: 18px 15px;
+            color: var(--text-primary);
+            vertical-align: middle;
+        }
+        .studies-table tbody td strong {
+            color: var(--accent);
+            font-size: 1.05rem;
+        }
+        .badge {
+            padding: 5px 12px;
+            border-radius: 15px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            margin-right: 5px;
+            display: inline-block;
+        }
+        .badge-info {
+            background: var(--accent);
+            color: #000;
+        }
+        .btn-group {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+        .btn-sm {
+            padding: 8px 14px;
+            border-radius: 6px;
+            border: 1px solid #444;
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+            cursor: pointer;
+            transition: all 0.2s ease;
+            font-size: 0.85rem;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-weight: 500;
+            white-space: nowrap;
+        }
+        .btn-sm:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 217, 255, 0.2);
+        }
+        .btn-sm:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+        .btn-primary {
+            background: #0d6efd;
+            border-color: #0d6efd;
+            color: white;
+        }
+        .btn-primary:hover:not(:disabled) {
+            background: #0b5ed7;
+            border-color: #0b5ed7;
+        }
+        .btn-success {
+            background: #28a745;
+            border-color: #28a745;
+            color: white;
+        }
+        .btn-success:hover:not(:disabled) {
+            background: #218838;
+            border-color: #218838;
+        }
+        .btn-warning {
+            background: #ffc107;
+            border-color: #ffc107;
+            color: #000;
+        }
+        .btn-warning:hover:not(:disabled) {
+            background: #e0a800;
+            border-color: #e0a800;
+        }
+        
+        .status-badge {
+            padding: 6px 14px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .badge-success {
+            background: #28a745;
+            color: white;
+        }
+        .badge-warning {
+            background: #ffc107;
+            color: #000;
+        }
+        .badge-info {
+            background: var(--accent);
+            color: #000;
+        }
+        
+        /* Report panel styles */
+        .report-controls {
+            padding: 15px 20px;
+            background: var(--bg-tertiary);
+            border-bottom: 1px solid #444;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+        .report-content {
+            flex: 1;
+            padding: 30px;
+            overflow-y: auto;
+        }
+        .report-card {
+            background: var(--bg-tertiary);
+            border-radius: 12px;
+            padding: 30px;
+            margin-bottom: 20px;
+            border: 1px solid #444;
+        }
+        .report-header {
+            border-bottom: 2px solid var(--accent);
+            padding-bottom: 20px;
+            margin-bottom: 25px;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+        }
+        .report-header h4 {
+            color: var(--accent);
+            margin: 0;
+            font-size: 1.5rem;
+        }
+        .report-actions {
+            display: flex;
+            gap: 10px;
+        }
+        .report-section {
+            margin: 25px 0;
+        }
+        .report-section h6 {
+            color: var(--accent);
+            margin-bottom: 12px;
+            font-weight: 600;
+            font-size: 1.1rem;
+        }
+        .report-section p {
+            line-height: 1.6;
+            color: var(--text-primary);
+        }
+        
+        .report-tabs {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            max-width: 65%;
+        }
+        .report-tab {
+            padding: 10px 18px;
+            border-radius: 8px;
+            background: var(--bg-primary);
+            border: 1px solid #444;
+            color: var(--text-primary);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transition: all 0.2s ease;
+            font-size: 0.9rem;
+        }
+        .report-tab:hover {
+            border-color: var(--accent);
+            background: var(--bg-secondary);
+        }
+        .report-tab.active {
+            background: var(--accent);
+            color: #000;
+            border-color: var(--accent);
+        }
+        .report-tab .close-tab {
+            margin-left: 8px;
+            opacity: 0.7;
+            cursor: pointer;
+        }
+        .report-tab .close-tab:hover {
+            opacity: 1;
+        }
+        
+        .control-btn {
+            background: var(--bg-primary);
+            border: 1px solid #444;
+            color: var(--text-primary);
+            padding: 10px 18px;
+            border-radius: 8px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transition: all 0.2s ease;
+            font-weight: 500;
+        }
+        .control-btn:hover {
+            background: var(--accent);
+            color: #000;
+            border-color: var(--accent);
+        }
+        
+        .no-report-message {
+            text-align: center;
+            padding: 100px 20px;
+            color: var(--text-secondary);
+        }
+        .no-report-message i {
+            font-size: 5rem;
+            margin-bottom: 25px;
+            opacity: 0.3;
+        }
+        
+        .open-reports-count {
+            background: var(--accent);
+            color: #000;
+            padding: 6px 14px;
+            border-radius: 20px;
+            font-size: 0.95rem;
+            font-weight: 600;
+        }
+        
+        ::-webkit-scrollbar {
+            width: 10px;
+            height: 10px;
+        }
+        ::-webkit-scrollbar-track {
+            background: var(--bg-primary);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: var(--accent);
+            border-radius: 5px;
+        }
+        .spinner-container {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 50px;
+        }
+        .spinner-border {
+            border-color: var(--accent);
+            border-right-color: transparent;
+        }
+        
+        @media print {
+            body * {
+                visibility: hidden;
+            }
+            .report-content, .report-content * {
+                visibility: visible;
+            }
+            .report-content {
+                position: absolute;
+                left: 0;
+                top: 0;
+                width: 100%;
+            }
+            .report-controls, .report-actions {
+                display: none !important;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="main-container">
+        <div class="studies-panel" id="studiesPanel">
+            <div class="page-header">
+                <div>
+                    <h2 id="patientName">Loading Patient...</h2>
+                    <p class="mb-0 text-secondary" id="patientInfo"></p>
+                </div>
+                <div class="d-flex align-items-center gap-3">
+                    <span class="open-reports-count" id="openReportsCount" style="display: none;">
+                        <i class="bi bi-window-stack"></i> <span id="reportCountText">0</span> Open
+                    </span>
+                    <button class="btn btn-outline-light" onclick="window.history.back()">
+                        <i class="bi bi-arrow-left"></i> Back to Patients
+                    </button>
+                </div>
+            </div>
+            <div id="studiesList">
+                <div class="spinner-container">
+                    <div class="spinner-border" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="reports-panel" id="reportsPanel">
+            <div class="report-controls">
+                <div class="report-tabs" id="reportTabs"></div>
+                <div class="d-flex gap-2">
+                    <button class="control-btn" onclick="toggleFullScreen()" title="Toggle full screen">
+                        <i class="bi bi-arrows-angle-expand" id="toggleIcon"></i>
+                    </button>
+                    <button class="control-btn" onclick="closeAllReports()" title="Close all">
+                        <i class="bi bi-x-lg"></i> Close All
+                    </button>
+                </div>
+            </div>
+            <div class="report-content" id="reportContent">
+                <div class="no-report-message">
+                    <i class="bi bi-file-earmark-text"></i>
+                    <h5>No Report Selected</h5>
+                    <p>Click "View Report", "Prescription", or "Doctor" button on any study</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Remark Modal -->
+    <div class="modal fade" id="remarkModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content" style="background: var(--bg-secondary); border: 1px solid #444;">
+                <div class="modal-header" style="border-bottom: 1px solid #444;">
+                    <h5 class="modal-title" style="color: var(--accent);">
+                        <i class="bi bi-chat-square-text me-2"></i>
+                        Study Remarks: <span id="remarkStudyName"></span>
+                    </h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <!-- Add New Remark Form -->
+                    <div class="mb-4">
+                        <label class="form-label fw-bold" style="color: var(--text-primary);">Add New Remark</label>
+                        <textarea id="newRemarkText" class="form-control" rows="3" placeholder="Enter your remark here..." style="background: var(--bg-tertiary); border-color: #444; color: var(--text-primary);"></textarea>
+                        <button class="btn btn-primary mt-2" onclick="saveRemark()">
+                            <i class="bi bi-plus-circle me-1"></i> Add Remark
+                        </button>
+                    </div>
+
+                    <!-- Existing Remarks -->
+                    <div>
+                        <label class="form-label fw-bold" style="color: var(--text-primary);">Previous Remarks</label>
+                        <div id="remarksList">
+                            <div class="text-center text-muted py-3">
+                                <i class="bi bi-hourglass-split"></i> Loading remarks...
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer" style="border-top: 1px solid #444;">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="../js/studies.js?v=<?php echo time(); ?>"></script>
+</body>
+</html>

@@ -1,0 +1,51 @@
+# Vendor dependencies
+node_modules/
+www/node_modules/
+www/vendor/
+vendor/
+
+# Build artifacts
+dist/
+www/dist/
+
+# Logs
+*.log
+
+# Environment configuration
+# .env and config files are NOW ALLOWED as per user request
+#!.env
+#!config/*.env
+#!www/config/.env
+#!www/.env
+
+# IDE and editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Logs
+*.log
+
+# Claude Code personal settings
+.claude/settings.local.json
+
+# Temporary files
+*.tmp
+*.bak
+.cache/
+
+# OS files
+Thumbs.db
+Desktop.ini
+
+# Output and runtime data
+mysql/
+orthanc/
+php/
+data/
+backups/
+setup/*.exe
+bin/*.exe

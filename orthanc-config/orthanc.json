@@ -1,0 +1,163 @@
+{
+  /**
+   * Hospital DICOM Viewer Pro v2.0 - Orthanc Configuration
+   *
+   * This configuration enables DICOMweb plugin for web-based DICOM access
+   * Copy this file to your Orthanc configuration directory
+   */
+
+  // Server identification
+  "Name": "Hospital_DICOM_Server",
+
+  // HTTP server
+  "HttpPort": 8042,
+  "RemoteAccessAllowed": true,
+
+  // DICOM server
+  "DicomPort": 4242,
+  "DicomServerEnabled": true,
+  "DicomAet": "HOSPITAL_ORTHANC",
+  "DicomCheckCalledAet": false,
+
+  // Authentication (change these credentials!)
+  "AuthenticationEnabled": true,
+  "RegisteredUsers": {
+    "orthanc": "orthanc",
+    "admin": "admin123"
+  },
+
+  // Storage
+  "StorageDirectory": "C:\\Orthanc\\OrthancStorage",
+  "IndexDirectory": "C:\\Orthanc\\OrthancDatabase",
+
+  // Database (PostgreSQL recommended for production)
+  // Uncomment and configure for production:
+  // "PostgreSQL": {
+  //   "EnableIndex": true,
+  //   "EnableStorage": false,
+  //   "Host": "localhost",
+  //   "Port": 5432,
+  //   "Database": "orthanc",
+  //   "Username": "orthanc",
+  //   "Password": "orthanc"
+  // },
+
+  // CORS configuration (CRITICAL for web viewer)
+  "HttpsCertificate": "",
+  "SslEnabled": false,
+  "SslCertificate": "",
+  "HttpsPort": 8043,
+
+  // CORS headers
+  "HttpHeaders": {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Requested-With",
+    "Access-Control-Allow-Credentials": "true",
+    "Access-Control-Max-Age": "86400"
+  },
+
+  // Compression
+  "HttpCompressionEnabled": true,
+
+  // DICOMweb plugin configuration
+  "DicomWeb": {
+    "Enable": true,
+    "Root": "/dicom-web/",
+    "EnableWado": true,
+    "WadoRoot": "/wado/",
+    "Ssl": false,
+    "QidoCaseSensitive": false,
+    "Host": "0.0.0.0",
+    "StowMaxInstances": 100,
+    "StowMaxPatients": 100
+  },
+
+  // Plugins (ensure DICOMweb plugin is loaded)
+  "Plugins": [
+    "C:\\Orthanc\\Plugins"
+  ],
+
+  // Verbose logging for debugging
+  "HttpVerbose": false,
+  "DicomVerbose": false,
+  "SaveJobs": true,
+  "JobsHistorySize": 1000,
+
+  // Limit resources (adjust based on server)
+  "MaximumStorageSize": 0,
+  "MaximumPatientCount": 0,
+  "MaximumStorageMode": "Recycle",
+
+  // Concurrent jobs
+  "ConcurrentJobs": 4,
+
+  // Timeouts
+  "HttpTimeout": 60,
+  "DicomScuTimeout": 10,
+  "DicomScpTimeout": 30,
+
+  // Metadata
+  "StableAge": 60,
+  "StrictAetComparison": false,
+
+  // Archive
+  "MediaArchiveSize": 1,
+  "EnableMediaArchive": true,
+
+  // Unknown tags
+  "UnknownSopClassAccepted": true,
+
+  // Performance optimization
+  "MemoryBufferSize": 128,
+  "MaximumPduLength": 131072,
+  "DicomThreadsCount": 4,
+
+  // Query/Retrieve
+  "QueryRetrieveSize": 100,
+
+  // Ingestion
+  "IngestTranscodingOfUncompressed": true,
+  "IngestTranscodingOfCompressed": true,
+
+  // DICOM Modality Worklists
+  "WorklistsServer": false,
+
+  // Overwrite instances
+  "OverwriteInstances": false,
+
+  // Execute Lua scripts
+  "ExecuteLuaEnabled": true,
+  "LuaScripts": [],
+
+  // Python scripts
+  "PythonScript": "",
+  "PythonVerbose": false,
+
+  // Email alerts (configure if needed)
+  // "SmtpHost": "smtp.gmail.com",
+  // "SmtpPort": 587,
+  // "SmtpUsername": "your-email@gmail.com",
+  // "SmtpPassword": "your-password",
+  // "SmtpFrom": "orthanc@hospital.com",
+
+  // Logging
+  "LogExportedResources": true,
+  "LogLevel": "default",
+
+  // Keep-alive
+  "KeepAlive": true,
+  "TcpNoDelay": true,
+
+  // SQLite (default database)
+  "SaveJobs": true,
+  "JobsHistorySize": 1000,
+
+  // Warnings
+  "StorageAccessOnFind": "Always",
+  "MetadataStorageType": "Default",
+
+  // Advanced features
+  "SynchronousC-Move": false,
+  "TranscodeDicomProtocol": true
+}

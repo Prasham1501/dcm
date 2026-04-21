@@ -1,0 +1,136 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ===== Light Theme (Default) - Accurate Red Style ===== */
+:root {
+  /* App-specific colors (Accurate style) */
+  --app-bg: #ffffff;
+  --app-surface: #f5f5f5;
+  --app-header-bg: #f8f8f8;
+  --app-hover: #e8e8e8;
+  --app-border: #c0c0c0;
+  --app-accent: #B22222;
+  --app-accent-hover: #8B1A1A;
+  --app-text: #1a1a1a;
+  --app-text-secondary: #555555;
+  --app-text-muted: #999999;
+  --app-thumbnail-bg: #e0e0e0;
+  --app-statusbar-bg: #eeeeee;
+  --app-viewer-bg: #f0f0f0;
+
+  /* Legacy semantic colors */
+  --bg-primary: #ffffff;
+  --bg-secondary: #f8fafc;
+  --bg-tertiary: #f1f5f9;
+  --bg-hover: #e2e8f0;
+  --bg-active: #cbd5e1;
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --text-muted: #94a3b8;
+  --border-primary: #e2e8f0;
+  --border-secondary: #cbd5e1;
+  --accent: #B22222;
+  --accent-hover: #8B1A1A;
+  --accent-light: #fde8e8;
+  --danger: #dc2626;
+  --danger-hover: #b91c1c;
+  --success: #16a34a;
+  --warning: #d97706;
+  --sidebar-bg: #1e293b;
+  --sidebar-text: #e2e8f0;
+  --sidebar-hover: #334155;
+  --sidebar-active: #3b82f6;
+  --viewer-bg: #000000;
+  --toolbar-bg: #1e293b;
+  --toolbar-text: #e2e8f0;
+}
+
+/* ===== Dark Theme ===== */
+.dark {
+  /* App-specific colors (Dark Accurate) — overridden by JS via CSS vars */
+  --app-bg: var(--app-bg-dark, #1a1a2e);
+  --app-surface: var(--app-surface-dark, #16213e);
+  --app-header-bg: var(--app-header-bg-dark, #0f3460);
+  --app-hover: var(--app-hover-dark, #1a3a5c);
+  --app-border: var(--app-border-dark, #2a4a6b);
+  --app-accent: var(--app-accent-dark, #e94560);
+  --app-accent-hover: var(--app-accent-hover-dark, #c73851);
+  --app-text: #e8e8e8;
+  --app-text-secondary: #aaaaaa;
+  --app-text-muted: #666666;
+  --app-thumbnail-bg: #0a0a1a;
+  --app-statusbar-bg: #0f172a;
+  --app-viewer-bg: #0a0a1a;
+
+  /* Legacy semantic colors */
+  --bg-primary: #0f172a;
+  --bg-secondary: #1e293b;
+  --bg-tertiary: #334155;
+  --bg-hover: #475569;
+  --bg-active: #64748b;
+  --text-primary: #f1f5f9;
+  --text-secondary: #cbd5e1;
+  --text-muted: #64748b;
+  --border-primary: #334155;
+  --border-secondary: #475569;
+  --accent: var(--app-accent-dark, #e94560);
+  --accent-hover: var(--app-accent-hover-dark, #c73851);
+  --accent-light: #3d1a2a;
+  --danger: #ef4444;
+  --danger-hover: #f87171;
+  --success: #22c55e;
+  --warning: #f59e0b;
+  --sidebar-bg: #0f172a;
+  --sidebar-text: #e2e8f0;
+  --sidebar-hover: #1e293b;
+  --sidebar-active: #3b82f6;
+}
+
+/* ===== Base Styles ===== */
+@layer base {
+  html {
+    font-family: 'Segoe UI', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    height: 100vh;
+    background-color: var(--app-bg);
+    color: var(--app-text);
+  }
+
+  #root {
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* Custom scrollbar */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: var(--app-surface);
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: var(--app-border);
+    border-radius: 4px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--app-text-muted);
+  }
+}
+
+/* ===== Print styles ===== */
+@media print {
+  .no-print { display: none !important; }
+}

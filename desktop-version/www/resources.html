@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DICOM Viewer Pro - Resources</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
+    <style>
+        :root {
+            --bg-primary: #0a0e27;
+            --bg-secondary: #1a1d2e;
+            --bg-tertiary: #22252f;
+            --accent: #00d9ff;
+            --accent-hover: #00b8d9;
+            --text-primary: #ffffff;
+            --text-secondary: #b0b3c1;
+        }
+
+        body {
+            background: linear-gradient(135deg, #0a0e27 0%, #1a1d2e 50%, #22252f 100%);
+            color: var(--text-primary);
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            min-height: 100vh;
+            padding: 50px 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+        }
+
+        .hero-section {
+            text-align: center;
+            margin-bottom: 60px;
+            padding: 40px;
+            background: var(--bg-secondary);
+            border-radius: 20px;
+            border: 2px solid rgba(0, 217, 255, 0.2);
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+        }
+
+        .hero-section h1 {
+            font-size: 3rem;
+            background: linear-gradient(135deg, var(--accent) 0%, #667eea 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 20px;
+            font-weight: 700;
+        }
+
+        .hero-section p {
+            font-size: 1.3rem;
+            color: var(--text-secondary);
+            margin: 0;
+        }
+
+        .section-title {
+            font-size: 2rem;
+            color: var(--accent);
+            margin-bottom: 30px;
+            padding-bottom: 15px;
+            border-bottom: 3px solid var(--accent);
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .section-title i {
+            font-size: 2.5rem;
+        }
+
+        .resource-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 25px;
+            margin-bottom: 50px;
+        }
+
+        .resource-card {
+            background: var(--bg-secondary);
+            border-radius: 15px;
+            padding: 30px;
+            border: 2px solid rgba(0, 217, 255, 0.1);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            cursor: pointer;
+            text-decoration: none;
+            color: var(--text-primary);
+            display: block;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .resource-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: linear-gradient(135deg, rgba(0, 217, 255, 0.1) 0%, rgba(102, 126, 234, 0.1) 100%);
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .resource-card:hover {
+            transform: translateY(-10px);
+            border-color: var(--accent);
+            box-shadow: 0 15px 50px rgba(0, 217, 255, 0.3);
+        }
+
+        .resource-card:hover::before {
+            opacity: 1;
+        }
+
+        .resource-card-content {
+            position: relative;
+            z-index: 1;
+        }
+
+        .resource-icon {
+            font-size: 4rem;
+            color: var(--accent);
+            margin-bottom: 20px;
+            display: block;
+        }
+
+        .resource-title {
+            font-size: 1.5rem;
+            font-weight: 600;
+            margin-bottom: 15px;
+            color: var(--text-primary);
+        }
+
+        .resource-description {
+            color: var(--text-secondary);
+            font-size: 1rem;
+            line-height: 1.6;
+            margin-bottom: 20px;
+        }
+
+        .resource-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 16px;
+            background: rgba(0, 217, 255, 0.2);
+            border-radius: 20px;
+            font-size: 0.9rem;
+            color: var(--accent);
+            font-weight: 500;
+        }
+
+        .feature-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-top: 30px;
+        }
+
+        .feature-item {
+            background: var(--bg-tertiary);
+            padding: 20px;
+            border-radius: 10px;
+            border-left: 4px solid var(--accent);
+            display: flex;
+            align-items: flex-start;
+            gap: 15px;
+        }
+
+        .feature-item i {
+            font-size: 1.8rem;
+            color: var(--accent);
+            margin-top: 5px;
+        }
+
+        .feature-item h6 {
+            margin: 0 0 8px 0;
+            color: var(--text-primary);
+            font-size: 1.1rem;
+        }
+
+        .feature-item p {
+            margin: 0;
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+            line-height: 1.5;
+        }
+
+        @keyframes float {
+            0%, 100% { transform: translateY(0px); }
+            50% { transform: translateY(-20px); }
+        }
+
+        .floating {
+            animation: float 6s ease-in-out infinite;
+        }
+
+        @media (max-width: 768px) {
+            .hero-section h1 {
+                font-size: 2rem;
+            }
+            .resource-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="hero-section">
+            <i class="bi bi-heart-pulse-fill floating" style="font-size: 5rem; color: var(--accent); margin-bottom: 20px;"></i>
+            <h1>DICOM Viewer Pro</h1>
+            <p>Resources & Documentation Center</p>
+        </div>
+
+        <!-- Main Application -->
+        <h2 class="section-title">
+            <i class="bi bi-window"></i>
+            Main Application
+        </h2>
+        <div class="resource-grid">
+            <a href="pages/patients.html" class="resource-card">
+                <div class="resource-card-content">
+                    <i class="bi bi-people-fill resource-icon"></i>
+                    <h3 class="resource-title">Patients</h3>
+                    <p class="resource-description">
+                        View and manage all patients with their medical imaging studies. Professional table layout with advanced filtering.
+                    </p>
+                    <span class="resource-badge">
+                        <i class="bi bi-box-arrow-up-right"></i> Open Application
+                    </span>
+                </div>
+            </a>
+
+            <a href="index.php" class="resource-card">
+                <div class="resource-card-content">
+                    <i class="bi bi-eye-fill resource-icon"></i>
+                    <h3 class="resource-title">DICOM Viewer</h3>
+                    <p class="resource-description">
+                        Advanced medical imaging viewer with MPR, 3D rendering, measurements, and export capabilities.
+                    </p>
+                    <span class="resource-badge">
+                        <i class="bi bi-box-arrow-up-right"></i> Open Viewer
+                    </span>
+                </div>
+            </a>
+
+            <a href="http://localhost:8042" target="_blank" class="resource-card">
+                <div class="resource-card-content">
+                    <i class="bi bi-server resource-icon"></i>
+                    <h3 class="resource-title">Orthanc PACS</h3>
+                    <p class="resource-description">
+                        Orthanc DICOM server interface. View raw DICOM data, studies, and server configuration.
+                    </p>
+                    <span class="resource-badge">
+                        <i class="bi bi-box-arrow-up-right"></i> Open Orthanc
+                    </span>
+                </div>
+            </a>
+        </div>
+
+        <!-- Documentation -->
+        <h2 class="section-title">
+            <i class="bi bi-book"></i>
+            Documentation & Guides
+        </h2>
+        <div class="resource-grid">
+            <a href="import-guide.html" class="resource-card">
+                <div class="resource-card-content">
+                    <i class="bi bi-folder-symlink resource-icon"></i>
+                    <h3 class="resource-title">Import Guide (Visual)</h3>
+                    <p class="resource-description">
+                        Beautiful visual guide with step-by-step instructions for importing DICOM files from multiple directories.
+                    </p>
+                    <span class="resource-badge">
+                        <i class="bi bi-eye"></i> View Guide
+                    </span>
+                </div>
+            </a>
+
+            <a href="HOW_TO_IMPORT_DICOM_FILES.md" target="_blank" class="resource-card">
+                <div class="resource-card-content">
+                    <i class="bi bi-file-text resource-icon"></i>
+                    <h3 class="resource-title">Import Documentation</h3>
+                    <p class="resource-description">
+                        Comprehensive technical documentation covering recursive import, API endpoints, and troubleshooting.
+                    </p>
+                    <span class="resource-badge">
+                        <i class="bi bi-file-earmark-code"></i> Read Docs
+                    </span>
+                </div>
+            </a>
+
+            <a href="IMPLEMENTATION_COMPLETE.md" target="_blank" class="resource-card">
+                <div class="resource-card-content">
+                    <i class="bi bi-clipboard-check resource-icon"></i>
+                    <h3 class="resource-title">Implementation Report</h3>
+                    <p class="resource-description">
+                        Complete summary of all implemented features, testing checklist, and technical specifications.
+                    </p>
+                    <span class="resource-badge">
+                        <i class="bi bi-file-earmark-check"></i> View Report
+                    </span>
+                </div>
+            </a>
+        </div>
+
+        <!-- Testing & Diagnostics -->
+        <h2 class="section-title">
+            <i class="bi bi-tools"></i>
+            Testing & Diagnostics
+        </h2>
+        <div class="resource-grid">
+            <a href="test-recursive-scan.php" class="resource-card">
+                <div class="resource-card-content">
+                    <i class="bi bi-search resource-icon"></i>
+                    <h3 class="resource-title">Test Scanner</h3>
+                    <p class="resource-description">
+                        Test the recursive DICOM file scanner. Verify that your directory structure is detected correctly.
+                    </p>
+                    <span class="resource-badge">
+                        <i class="bi bi-play-circle"></i> Run Test
+                    </span>
+                </div>
+            </a>
+        </div>
+
+        <!-- Features Overview -->
+        <h2 class="section-title" style="margin-top: 60px;">
+            <i class="bi bi-star"></i>
+            Recently Implemented Features
+        </h2>
+        <div class="feature-grid">
+            <div class="feature-item">
+                <i class="bi bi-table"></i>
+                <div>
+                    <h6>Table Layouts</h6>
+                    <p>Professional table format for both Patients and Studies pages with hover effects</p>
+                </div>
+            </div>
+
+            <div class="feature-item">
+                <i class="bi bi-download"></i>
+                <div>
+                    <h6>Export to JPG</h6>
+                    <p>Download all study images as individual JPG files in a ZIP archive</p>
+                </div>
+            </div>
+
+            <div class="feature-item">
+                <i class="bi bi-chat-square-text"></i>
+                <div>
+                    <h6>Study Remarks</h6>
+                    <p>Add, view, and manage comments on any study with user attribution</p>
+                </div>
+            </div>
+
+            <div class="feature-item">
+                <i class="bi bi-file-pdf"></i>
+                <div>
+                    <h6>PDF Export</h6>
+                    <p>Export current viewport as high-quality PDF with patient metadata</p>
+                </div>
+            </div>
+
+            <div class="feature-item">
+                <i class="bi bi-printer"></i>
+                <div>
+                    <h6>Printer Detection</h6>
+                    <p>Automatically detect and add both DICOM and regular system printers</p>
+                </div>
+            </div>
+
+            <div class="feature-item">
+                <i class="bi bi-folder-symlink"></i>
+                <div>
+                    <h6>Recursive Import</h6>
+                    <p>Import DICOM files from nested directory structures automatically</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <div style="text-align: center; margin-top: 80px; padding: 40px; background: var(--bg-secondary); border-radius: 15px;">
+            <p style="color: var(--text-secondary); margin: 0; font-size: 1rem;">
+                <i class="bi bi-info-circle"></i> DICOM Viewer Pro v2 - Production Ready
+            </p>
+            <p style="color: var(--text-secondary); margin: 10px 0 0 0; font-size: 0.9rem;">
+                All features tested and validated • Last updated: 2025-11-25
+            </p>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

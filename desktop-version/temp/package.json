@@ -1,0 +1,92 @@
+{
+    "name": "dicom-viewer-pro",
+    "version": "1.0.0",
+    "description": "Hospital DICOM Viewer Pro - Modern Desktop Edition",
+    "main": "main.js",
+    "scripts": {
+        "start": "electron .",
+        "dev": "concurrently \"cd www && npm run dev\" \"electron .\"",
+        "build:react": "cd www && npm run build",
+        "build:win": "npm run build:react && electron-builder --win",
+        "build:quick": "electron-builder --win",
+        "pack": "electron-builder --dir"
+    },
+    "author": "Hospital DICOM Team",
+    "license": "MIT",
+    "devDependencies": {
+        "concurrently": "^8.2.2",
+        "electron": "^28.0.0",
+        "electron-builder": "^24.9.1"
+    },
+    "build": {
+        "appId": "com.hospital.dicom-viewer-pro",
+        "productName": "DICOM Viewer Pro",
+        "icon": "icon.ico",
+        "directories": {
+            "output": "dist",
+            "app": "."
+        },
+        "files": [
+            "main.js",
+            "preload.js",
+            "splash.html",
+            "icon.ico",
+            "package.json"
+        ],
+        "extraResources": [
+            {
+                "from": "mysql",
+                "to": "mysql",
+                "filter": [
+                    "bin/mysqld.exe",
+                    "bin/mysql.exe",
+                    "bin/mysql_install_db.exe",
+                    "bin/my_print_defaults.exe",
+                    "bin/resolveip.exe",
+                    "bin/mysqladmin.exe",
+                    "bin/*.dll",
+                    "share/**/*",
+                    "lib/**/*",
+                    "data/**/*"
+                ]
+            },
+            {
+                "from": "orthanc",
+                "to": "orthanc",
+                "filter": [
+                    "**/*"
+                ]
+            },
+            {
+                "from": "www/dist",
+                "to": "www/dist",
+                "filter": [
+                    "**/*"
+                ]
+            }
+        ],
+        "win": {
+            "icon": "icon.ico",
+            "target": [
+                {
+                    "target": "nsis",
+                    "arch": [
+                        "x64"
+                    ]
+                }
+            ]
+        },
+        "nsis": {
+            "oneClick": false,
+            "perMachine": true,
+            "allowToChangeInstallationDirectory": true,
+            "createDesktopShortcut": true,
+            "createStartMenuShortcut": true,
+            "shortcutName": "DICOM Viewer Pro"
+        },
+        "compression": "normal"
+    },
+    "dependencies": {
+        "dicom-parser": "^1.8.21"
+    }
+}

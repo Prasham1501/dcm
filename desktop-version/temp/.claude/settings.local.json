@@ -1,0 +1,28 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__plugin_claude-mem_mcp-search__smart_outline",
+      "Bash(npx tsc:*)",
+      "Bash(npx vite:*)",
+      "Bash(agent-browser open:*)",
+      "Bash(agent-browser wait:*)",
+      "Bash(agent-browser screenshot:*)",
+      "Bash(npx agent-browser:*)",
+      "Bash(npm list:*)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:8080/)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" \"http://localhost:8080/dicom/php/dicom_files/47/47739cb2-3e5416ff-981ea238-36b30063-4722ce98.dcm\")",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" \"http://localhost:8080/dicom/serve-file.php?path=c%3A%2Fxampp%2Fhtdocs%2Fdicom%2Fphp%2Fdicom_files%2F47%2F47739cb2-3e5416ff-981ea238-36b30063-4722ce98.dcm\")",
+      "Bash(npm run:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Skill(commit-commands:commit-push-pr)",
+      "Skill(commit-commands:commit-push-pr:*)",
+      "Bash(grep -l \"ViewportGrid\\\\|viewport-container\" c:xampphtdocspapadicom_againclaudedesktop-versionwww/*.php)",
+      "Bash(xargs grep:*)",
+      "Bash(npm install:*)",
+      "Bash(./node_modules/.bin/tsc --noEmit)",
+      "Bash(cmd /c \"cd c:\\\\xampp\\\\htdocs\\\\papa\\\\dicom_again\\\\claude\\\\desktop-version\\\\dicom-viewer-pro\\\\www && npx tsc --noEmit 2>&1\")"
+    ]
+  }
+}

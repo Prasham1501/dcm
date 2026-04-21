@@ -1,0 +1,215 @@
+/* Medical Report Generator Styles */
+/* Supplements ai-styles.css */
+
+/* Image Selection Grid */
+.image-selection-grid {
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.image-selection-item {
+    transition: all 0.2s ease;
+}
+
+.image-selection-item:hover {
+    border-color: #0d6efd !important;
+    background: rgba(13, 110, 253, 0.05) !important;
+}
+
+.image-selection-item.selected {
+    border-color: #0d6efd !important;
+    background: rgba(13, 110, 253, 0.1) !important;
+}
+
+/* Form Styles */
+#reportForm .form-label {
+    font-weight: 500;
+    color: #adb5bd;
+    margin-bottom: 4px;
+}
+
+#reportForm .form-control:focus,
+#reportForm .form-select:focus {
+    border-color: #0d6efd;
+    box-shadow: 0 0 0 0.2rem rgba(13, 110, 253, 0.25);
+}
+
+#reportForm .form-control.biometry-input {
+    font-weight: bold;
+    color: #0d6efd !important;
+}
+
+/* Preview Pane */
+#reportPreviewPane {
+    background: #fff;
+    transform-origin: top left;
+}
+
+#reportPreviewPane .report-container {
+    transform: scale(0.65);
+    transform-origin: top left;
+    width: 153.8%;
+}
+
+/* AI Extracted Data Box */
+.ai-extracted-data {
+    background: #000;
+    border: 1px solid #333;
+    color: #0f0;
+}
+
+/* Card Improvements */
+#medicalReportModal .card {
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+#medicalReportModal .card-header {
+    border-bottom: none;
+}
+
+#medicalReportModal .card-body {
+    padding: 1rem;
+}
+
+/* Button Styles */
+#medicalReportModal .btn-outline-info {
+    border-color: #17a2b8;
+    color: #17a2b8;
+}
+
+#medicalReportModal .btn-outline-info:hover {
+    background-color: #17a2b8;
+    color: #fff;
+}
+
+/* Print-ready Report Styles (for preview) */
+#reportPreviewPane .hospital-name {
+    font-size: 16pt;
+}
+
+#reportPreviewPane .report-title {
+    font-size: 12pt;
+    padding: 8px;
+}
+
+#reportPreviewPane .biometry-table th,
+#reportPreviewPane .biometry-table td {
+    padding: 6px 8px;
+    font-size: 9pt;
+}
+
+#reportPreviewPane .finding-label,
+#reportPreviewPane .finding-value,
+#reportPreviewPane .info-label,
+#reportPreviewPane .info-value {
+    font-size: 9pt;
+}
+
+/* Responsive */
+@media (max-width: 1200px) {
+    #reportPreviewPane .report-container {
+        transform: scale(0.5);
+        width: 200%;
+    }
+}
+
+/* Scrollbar in form area */
+#medicalReportBody .overflow-auto::-webkit-scrollbar {
+    width: 6px;
+}
+
+#medicalReportBody .overflow-auto::-webkit-scrollbar-track {
+    background: #1a1a1a;
+}
+
+#medicalReportBody .overflow-auto::-webkit-scrollbar-thumb {
+    background: #444;
+    border-radius: 3px;
+}
+
+#medicalReportBody .overflow-auto::-webkit-scrollbar-thumb:hover {
+    background: #555;
+}
+
+/* Generate Report Button in AI Modal */
+#generateReportFromAI {
+    padding: 12px 32px;
+    font-size: 1.1rem;
+    border-radius: 8px;
+    background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+    border: none;
+    box-shadow: 0 4px 15px rgba(40, 167, 69, 0.3);
+    transition: all 0.3s ease;
+}
+
+#generateReportFromAI:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(40, 167, 69, 0.4);
+}
+
+/* Print Styles */
+@media print {
+    #medicalReportModal .modal-header,
+    #medicalReportModal .col-md-3 {
+        display: none !important;
+    }
+
+    #medicalReportModal .col-md-6 {
+        width: 100% !important;
+        max-width: 100% !important;
+    }
+}
+
+/* OCR Measurement Extraction Styles */
+.measurements-section.ocr-extracted {
+    background: rgba(255, 193, 7, 0.1);
+    border: 1px solid rgba(255, 193, 7, 0.3);
+    border-radius: 8px;
+}
+
+.measurements-section.ocr-extracted .measurements-header {
+    background: rgba(255, 193, 7, 0.15);
+    border-bottom: 1px solid rgba(255, 193, 7, 0.2);
+}
+
+.measurements-section .measurement-source {
+    font-size: 9px;
+    padding: 2px 6px;
+    margin-left: 5px;
+}
+
+.measurements-section .measurement-source.ocr {
+    background: rgba(255, 193, 7, 0.3) !important;
+    color: #ffc107;
+}
+
+/* OCR Progress Overlay Animation */
+#ocr-progress-overlay .spinner-border {
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+/* OCR Measurements editable inputs */
+.measurements-section.ocr-extracted .measurement-input {
+    border-color: rgba(255, 193, 7, 0.5);
+}
+
+.measurements-section.ocr-extracted .measurement-input:focus {
+    border-color: #ffc107;
+    box-shadow: 0 0 0 0.2rem rgba(255, 193, 7, 0.25);
+}
+
+/* OCR Warning badge pulse */
+.measurements-section.ocr-extracted .badge.bg-warning {
+    animation: pulse-warning 2s infinite;
+}
+
+@keyframes pulse-warning {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.7; }
+}

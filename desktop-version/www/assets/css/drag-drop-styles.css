@@ -1,0 +1,299 @@
+/**
+ * Drag and Drop Styles - Production Ready v3.0
+ * Enhanced visual feedback for drag operations
+ * Supports both series-to-viewport and viewport-to-viewport drag
+ * Includes drag handle for viewport-to-viewport transfers
+ */
+
+/* ===========================================
+   SERIES ITEM DRAG STYLES
+   =========================================== */
+.series-item {
+    transition: all 0.2s ease;
+    user-select: none;
+    position: relative;
+}
+
+.series-item[draggable="true"] {
+    cursor: grab !important;
+}
+
+.series-item[draggable="true"]:active {
+    cursor: grabbing !important;
+}
+
+.series-item.dragging {
+    opacity: 0.5 !important;
+    transform: scale(0.98);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    border: 2px dashed #0d6efd !important;
+}
+
+.series-item:hover {
+    background: rgba(13, 110, 253, 0.1);
+    border-color: #0d6efd !important;
+}
+
+/* Drag handle visual indicator */
+.series-item::before {
+    content: '⋮⋮';
+    position: absolute;
+    left: 4px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: rgba(255, 255, 255, 0.3);
+    font-size: 10px;
+    letter-spacing: -2px;
+    pointer-events: none;
+    transition: color 0.2s;
+}
+
+.series-item:hover::before {
+    color: rgba(13, 110, 253, 0.8);
+}
+
+/* ===========================================
+   VIEWPORT DRAG STYLES
+   =========================================== */
+.viewport {
+    transition: border 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+    position: relative;
+}
+
+/* Viewport being dragged */
+.viewport.viewport-dragging {
+    opacity: 0.6 !important;
+    border: 3px solid #ffc107 !important;
+    box-shadow: 0 0 20px rgba(255, 193, 7, 0.6) !important;
+}
+
+/* ===========================================
+   VIEWPORT DRAG HANDLE - THE KEY FEATURE
+   =========================================== */
+.viewport-drag-handle {
+    position: absolute !important;
+    top: 5px !important;
+    left: 5px !important;
+    width: 28px !important;
+    height: 28px !important;
+    background: rgba(13, 110, 253, 0.85) !important;
+    border-radius: 4px !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    cursor: grab !important;
+    z-index: 200 !important;
+    color: white !important;
+    font-size: 14px !important;
+    opacity: 0;
+    transition: opacity 0.2s, background 0.2s, transform 0.2s !important;
+    pointer-events: auto !important;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+}
+
+.viewport:hover .viewport-drag-handle {
+    opacity: 1 !important;
+}
+
+.viewport-drag-handle:hover {
+    background: rgba(13, 110, 253, 1) !important;
+    transform: scale(1.15) !important;
+    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.4);
+}
+
+.viewport-drag-handle:active,
+.viewport-drag-handle[draggable="true"]:active {
+    cursor: grabbing !important;
+    background: rgba(255, 193, 7, 0.95) !important;
+    transform: scale(1.05) !important;
+}
+
+.viewport-drag-handle i {
+    pointer-events: none !important;
+}
+
+/* ===========================================
+   DROP TARGET STYLES
+   =========================================== */
+.viewport.drag-over {
+    border: 3px dashed #0d6efd !important;
+    box-shadow: 0 0 30px rgba(13, 110, 253, 0.9), inset 0 0 50px rgba(13, 110, 253, 0.2) !important;
+    animation: dropPulse 1s ease-in-out infinite;
+}
+
+@keyframes dropPulse {
+    0%, 100% {
+        box-shadow: 0 0 20px rgba(13, 110, 253, 0.6), inset 0 0 40px rgba(13, 110, 253, 0.15);
+    }
+    50% {
+        box-shadow: 0 0 35px rgba(13, 110, 253, 0.9), inset 0 0 60px rgba(13, 110, 253, 0.25);
+    }
+}
+
+/* Drop zone text hint */
+.viewport.drag-over::after {
+    content: 'Drop image here';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    color: rgba(13, 110, 253, 0.9);
+    font-size: 16px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    pointer-events: none;
+    z-index: 50;
+    text-shadow: 0 0 15px rgba(0, 0, 0, 0.9), 0 0 30px rgba(13, 110, 253, 0.5);
+    background: rgba(0, 0, 0, 0.6);
+    padding: 10px 20px;
+    border-radius: 8px;
+}
+
+/* ===========================================
+   DROP SUCCESS ANIMATION
+   =========================================== */
+.viewport.drop-success {
+    border: 3px solid #28a745 !important;
+    box-shadow: 0 0 25px rgba(40, 167, 69, 0.8) !important;
+    animation: dropSuccess 0.5s ease;
+}
+
+@keyframes dropSuccess {
+    0% {
+        transform: scale(1.02);
+        box-shadow: 0 0 40px rgba(40, 167, 69, 1);
+    }
+    50% {
+        transform: scale(1.01);
+    }
+    100% {
+        transform: scale(1);
+        box-shadow: 0 0 25px rgba(40, 167, 69, 0.8);
+    }
+}
+
+/* ===========================================
+   VIEWPORT LOADING INDICATOR
+   =========================================== */
+.viewport-loading-indicator {
+    backdrop-filter: blur(3px);
+    border-radius: 8px;
+}
+
+.viewport-loading-indicator .spinner-border {
+    width: 2.5rem;
+    height: 2.5rem;
+    border-width: 3px;
+    color: #0d6efd;
+}
+
+/* ===========================================
+   CROSSHAIR OVERLAY DURING DRAG
+   =========================================== */
+.viewport.drag-over::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: 
+        linear-gradient(to right, transparent 49.5%, rgba(13, 110, 253, 0.3) 49.5%, rgba(13, 110, 253, 0.3) 50.5%, transparent 50.5%),
+        linear-gradient(to bottom, transparent 49.5%, rgba(13, 110, 253, 0.3) 49.5%, rgba(13, 110, 253, 0.3) 50.5%, transparent 50.5%);
+    pointer-events: none;
+    z-index: 40;
+}
+
+/* ===========================================
+   DISABLED/UNAVAILABLE STATES
+   =========================================== */
+.viewport.drop-disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.viewport.drop-disabled.drag-over {
+    border: 3px dashed #dc3545 !important;
+    box-shadow: 0 0 20px rgba(220, 53, 69, 0.5) !important;
+}
+
+/* ===========================================
+   SERIES THUMBNAIL HOVER EFFECT
+   =========================================== */
+.series-thumbnail {
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.series-item:hover .series-thumbnail {
+    transform: scale(1.05);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+/* ===========================================
+   MOBILE TOUCH DRAG SUPPORT
+   =========================================== */
+@media (max-width: 768px) {
+    .series-item {
+        touch-action: none;
+        -webkit-touch-callout: none;
+    }
+    
+    .series-item[draggable="true"] {
+        -webkit-user-drag: element;
+    }
+    
+    .viewport {
+        touch-action: pan-x pan-y;
+    }
+    
+    /* Show drag handle always on mobile */
+    .viewport-drag-handle {
+        opacity: 0.7 !important;
+    }
+}
+
+/* ===========================================
+   ANIMATION KEYFRAMES
+   =========================================== */
+
+/* Subtle bounce on successful drop */
+@keyframes dropBounce {
+    0%, 100% { transform: scale(1); }
+    25% { transform: scale(1.02); }
+    50% { transform: scale(0.98); }
+    75% { transform: scale(1.01); }
+}
+
+.viewport.drop-bounce {
+    animation: dropBounce 0.4s ease;
+}
+
+/* Glow effect */
+@keyframes glowPulse {
+    0%, 100% {
+        box-shadow: 0 0 5px rgba(13, 110, 253, 0.3);
+    }
+    50% {
+        box-shadow: 0 0 20px rgba(13, 110, 253, 0.6);
+    }
+}
+
+.series-item.glow {
+    animation: glowPulse 2s ease-in-out infinite;
+}
+
+/* Handle pulse animation */
+@keyframes handlePulse {
+    0%, 100% {
+        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+    }
+    50% {
+        box-shadow: 0 2px 12px rgba(13, 110, 253, 0.6);
+    }
+}
+
+.viewport:hover .viewport-drag-handle {
+    animation: handlePulse 2s ease-in-out infinite;
+}

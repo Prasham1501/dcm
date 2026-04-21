@@ -1,0 +1,41 @@
+{
+    "Name": "DICOM_Desktop",
+    "HttpPort": 8042,
+    "RemoteAccessAllowed": true,
+    "DicomPort": 4242,
+    "DicomServerEnabled": true,
+    "DicomAet": "DICOM_DESKTOP",
+    "DicomCheckCalledAet": false,
+    "AuthenticationEnabled": true,
+    "RegisteredUsers": {
+        "orthanc": "orthanc",
+        "admin": "admin123"
+    },
+    "StorageDirectory": "./data/orthanc/storage",
+    "IndexDirectory": "./data/orthanc/index",
+    "HttpHeaders": {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Requested-With",
+        "Access-Control-Allow-Credentials": "true"
+    },
+    "HttpCompressionEnabled": true,
+    "DicomWeb": {
+        "Enable": true,
+        "Root": "/dicom-web/",
+        "EnableWado": true,
+        "WadoRoot": "/wado/",
+        "Ssl": false
+    },
+    "HttpVerbose": false,
+    "DicomVerbose": false,
+    "SaveJobs": true,
+    "JobsHistorySize": 100,
+    "MaximumStorageSize": 0,
+    "MaximumPatientCount": 0,
+    "ConcurrentJobs": 4,
+    "HttpTimeout": 60,
+    "StableAge": 60,
+    "UnknownSopClassAccepted": true,
+    "OverwriteInstances": false
+}

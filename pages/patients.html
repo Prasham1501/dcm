@@ -1,0 +1,680 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Patients - Accurate Viewer</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+    <style>
+        :root {
+            --primary-gradient-start: #0a0e27;
+            --primary-gradient-end: #1a1f3a;
+            --card-bg: rgba(255, 255, 255, 0.05);
+            --card-border: rgba(255, 255, 255, 0.1);
+            --hover-bg: rgba(255, 255, 255, 0.08);
+            --primary-color: #0d6efd;
+        }
+
+        body {
+            background: linear-gradient(135deg, var(--primary-gradient-start) 0%, var(--primary-gradient-end) 100%);
+            min-height: 100vh;
+            font-family: 'Inter', -apple-system, system-ui, sans-serif;
+        }
+
+        .navbar-custom {
+            background: var(--card-bg);
+            backdrop-filter: blur(10px);
+            border-bottom: 1px solid var(--card-border);
+            padding: 1rem 0;
+        }
+
+        .search-section {
+            background: var(--card-bg);
+            border: 1px solid var(--card-border);
+            border-radius: 15px;
+            padding: 20px;
+            margin-bottom: 20px;
+            backdrop-filter: blur(10px);
+            transition: all 0.3s;
+        }
+
+        .search-section:hover {
+            border-color: var(--primary-color);
+            box-shadow: 0 0 20px rgba(13, 110, 253, 0.15);
+        }
+
+        .search-input {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 25px;
+            padding: 12px 20px 12px 45px;
+            color: #fff;
+            transition: all 0.3s;
+        }
+
+        .search-input:focus {
+            background: rgba(255, 255, 255, 0.08);
+            border-color: var(--primary-color);
+            box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.15);
+            color: #fff;
+        }
+
+        .search-wrapper {
+            position: relative;
+        }
+
+        .search-icon {
+            position: absolute;
+            left: 18px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #adb5bd;
+            z-index: 10;
+        }
+
+        /* Table Layout Styles */
+        .patients-table-container {
+            background: var(--card-bg);
+            border: 1px solid var(--card-border);
+            border-radius: 15px;
+            overflow: hidden;
+            margin-top: 20px;
+            backdrop-filter: blur(10px);
+        }
+
+        .patients-table {
+            width: 100%;
+            margin: 0;
+        }
+
+        .patients-table thead {
+            background: rgba(13, 110, 253, 0.15);
+            border-bottom: 2px solid var(--primary-color);
+        }
+
+        .patients-table thead th {
+            padding: 18px 20px;
+            color: var(--primary-color);
+            font-weight: 700;
+            text-transform: uppercase;
+            font-size: 0.85rem;
+            letter-spacing: 1px;
+            border: none;
+        }
+
+        .patients-table tbody tr {
+            border-bottom: 1px solid var(--card-border);
+            transition: all 0.2s ease;
+            cursor: pointer;
+        }
+
+        .patients-table tbody tr:hover {
+            background: var(--hover-bg);
+            transform: scale(1.01);
+            box-shadow: 0 4px 20px rgba(13, 110, 253, 0.1);
+        }
+
+        .patients-table tbody td {
+            padding: 20px;
+            color: #fff;
+            vertical-align: middle;
+            border: none;
+        }
+
+        .patient-avatar-sm {
+            width: 45px;
+            height: 45px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 16px;
+            font-weight: 600;
+            color: #fff;
+            margin-right: 12px;
+        }
+
+        .patient-name-cell {
+            display: flex;
+            align-items: center;
+        }
+
+        .patient-name {
+            font-size: 1.05rem;
+            font-weight: 600;
+            color: #fff;
+        }
+
+        .patient-id-text {
+            color: #adb5bd;
+            font-size: 0.85rem;
+        }
+
+        .badge-custom {
+            background: rgba(13, 110, 253, 0.15);
+            border: 1px solid rgba(13, 110, 253, 0.3);
+            color: #6ea8fe;
+            padding: 6px 12px;
+            border-radius: 12px;
+            font-size: 0.8rem;
+            font-weight: 600;
+        }
+
+        .modality-badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            margin-right: 4px;
+            margin-bottom: 4px;
+        }
+
+        .modality-CT {
+            background: #0dcaf0;
+            color: #000;
+        }
+
+        .modality-MR {
+            background: #198754;
+            color: #fff;
+        }
+
+        .modality-CR {
+            background: #ffc107;
+            color: #000;
+        }
+
+        .modality-DR {
+            background: #fd7e14;
+            color: #fff;
+        }
+
+        .modality-US {
+            background: #6610f2;
+            color: #fff;
+        }
+
+        .modality-XR {
+            background: #d63384;
+            color: #fff;
+        }
+
+        .modality-default {
+            background: #6c757d;
+            color: #fff;
+        }
+
+        .gender-badge {
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 0.8rem;
+            font-weight: 600;
+        }
+
+        .gender-male {
+            background: rgba(13, 110, 253, 0.2);
+            color: #6ea8fe;
+        }
+
+        .gender-female {
+            background: rgba(214, 51, 132, 0.2);
+            color: #ea868f;
+        }
+
+        .gender-other {
+            background: rgba(108, 117, 125, 0.2);
+            color: #adb5bd;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #adb5bd;
+        }
+
+        .empty-state i {
+            font-size: 4rem;
+            margin-bottom: 20px;
+            color: rgba(255, 255, 255, 0.1);
+        }
+
+        .stats-bar {
+            background: var(--card-bg);
+            border: 1px solid var(--card-border);
+            border-radius: 10px;
+            padding: 15px 20px;
+            margin-top: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        @media (max-width: 768px) {
+            .navbar-custom .d-flex {
+                flex-direction: column;
+                gap: 10px;
+            }
+
+            .patients-table thead th {
+                padding: 12px 10px;
+                font-size: 0.75rem;
+            }
+
+            .patients-table tbody td {
+                padding: 15px 10px;
+                font-size: 0.9rem;
+            }
+
+            .patient-avatar-sm {
+                width: 35px;
+                height: 35px;
+                font-size: 14px;
+            }
+
+            .modality-badge {
+                font-size: 0.7rem;
+                padding: 3px 6px;
+            }
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .patients-table tbody tr {
+            animation: fadeIn 0.3s ease-out backwards;
+        }
+
+        .patients-table tbody tr:nth-child(odd) {
+            animation-delay: 0.05s;
+        }
+
+        .patients-table tbody tr:nth-child(even) {
+            animation-delay: 0.1s;
+        }
+    </style>
+</head>
+
+<body>
+    <!-- Navigation -->
+    <nav class="navbar navbar-expand-lg navbar-custom mb-4">
+        <div class="container-fluid">
+            <a class="navbar-brand text-white d-flex align-items-center gap-2" href="patients.html">
+                <i class="bi bi-heart-pulse-fill text-primary fs-4"></i>
+                <span class="fw-bold">Accurate Viewer</span>
+            </a>
+            <div class="d-flex align-items-center gap-3">
+                <!-- Admin Menu (will be shown only for admins) -->
+                <div id="adminMenu" style="display: none;">
+                    <a href="../admin/settings.php" class="btn btn-sm btn-outline-primary me-2">
+                        <i class="bi bi-gear"></i> Settings
+                    </a>
+                    <a href="../admin/hospital-config.php" class="btn btn-sm btn-outline-info me-2">
+                        <i class="bi bi-hospital"></i> Hospital Config
+                    </a>
+                </div>
+                <span class="text-light">
+                    <i class="bi bi-person-circle"></i>
+                    <span id="userName">Loading...</span>
+                    <span class="badge bg-secondary ms-2" id="userRole"></span>
+                </span>
+                <button class="btn btn-outline-danger btn-sm" id="logoutBtn">
+                    <i class="bi bi-box-arrow-right"></i> Logout
+                </button>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container">
+        <!-- Header -->
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h2 class="text-white mb-0">
+                <i class="bi bi-people-fill text-primary"></i>
+                Patient List
+            </h2>
+            <button class="btn btn-primary" id="refreshBtn">
+                <i class="bi bi-arrow-clockwise"></i> Refresh
+            </button>
+        </div>
+
+        <!-- Search Section -->
+        <div class="search-section">
+            <div class="row align-items-end g-3">
+                <div class="col-md-8">
+                    <label class="form-label text-light mb-2">
+                        <i class="bi bi-search"></i> Quick Search
+                    </label>
+                    <div class="search-wrapper">
+                        <i class="bi bi-search search-icon"></i>
+                        <input type="text" id="searchInput" class="form-control search-input"
+                            placeholder="Search by patient name or ID..." autofocus>
+                    </div>
+                </div>
+
+                <div class="col-md-4">
+                    <button type="button" class="btn btn-secondary w-100" id="clearFilters">
+                        <i class="bi bi-x-circle"></i> Clear Search
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Patient Grid -->
+        <div id="patientContainer">
+            <div class="text-center py-5">
+                <div class="spinner-border text-primary" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                <div class="text-light mt-2">Loading patients...</div>
+            </div>
+        </div>
+
+        <!-- Stats Bar -->
+        <div class="stats-bar" id="statsBar" style="display:none;">
+            <div class="text-light">
+                <i class="bi bi-people"></i>
+                <strong id="totalPatientsCount">0</strong> Patient<span id="pluralS">s</span> Found
+            </div>
+            <div class="text-muted small">
+                Last updated: <span id="lastUpdated">Never</span>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        let currentFilters = {};
+        let searchTimeout = null;
+        let allPatients = [];
+
+        // Check authentication on load
+        window.addEventListener('DOMContentLoaded', async () => {
+            const authenticated = await checkAuth();
+            if (!authenticated) {
+                window.location.href = '../login.php';
+                return;
+            }
+
+            loadPatients();
+            setupEventListeners();
+        });
+
+        function setupEventListeners() {
+            // Quick search with debounce
+            document.getElementById('searchInput').addEventListener('input', (e) => {
+                clearTimeout(searchTimeout);
+                searchTimeout = setTimeout(() => {
+                    currentFilters.search = e.target.value;
+                    filterAndDisplayPatients();
+                }, 300);
+            });
+
+            // Clear filters
+            document.getElementById('clearFilters').addEventListener('click', () => {
+                document.getElementById('searchInput').value = '';
+                currentFilters = {};
+                filterAndDisplayPatients();
+            });
+
+            // Refresh button
+            document.getElementById('refreshBtn').addEventListener('click', async () => {
+                await syncAndLoad();
+            });
+
+            // Logout
+            document.getElementById('logoutBtn').addEventListener('click', async () => {
+                try {
+                    await fetch('../logout.php');
+                    window.location.href = '../login.php';
+                } catch (error) {
+                    window.location.href = '../login.php';
+                }
+            });
+        }
+
+        async function checkAuth() {
+            try {
+                const response = await fetch('../auth/check_session.php');
+                const data = await response.json();
+
+                if (data.authenticated) {
+                    document.getElementById('userName').textContent = data.user.full_name;
+                    document.getElementById('userRole').textContent = data.user.role || 'User';
+
+                    // Show admin menu if user is admin
+                    if (data.user.role === 'admin') {
+                        document.getElementById('adminMenu').style.display = 'block';
+                    }
+
+                    return true;
+                }
+                return false;
+            } catch (error) {
+                return false;
+            }
+        }
+
+        async function syncAndLoad() {
+            const btn = document.getElementById('refreshBtn');
+            const originalHTML = btn.innerHTML;
+
+            try {
+                btn.disabled = true;
+                btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Syncing...';
+
+                const response = await fetch('../api/sync_orthanc_api.php');
+                const data = await response.json();
+
+                if (data.success) {
+                    btn.innerHTML = '<i class="bi bi-check-circle me-2"></i>Synced!';
+                    setTimeout(async () => {
+                        await loadPatients();
+                        btn.innerHTML = originalHTML;
+                        btn.disabled = false;
+                    }, 1500);
+                } else {
+                    throw new Error(data.error || 'Sync failed');
+                }
+            } catch (error) {
+                console.error('Sync error:', error);
+                btn.innerHTML = '<i class="bi bi-exclamation-triangle me-2"></i>Failed';
+                setTimeout(() => {
+                    btn.innerHTML = originalHTML;
+                    btn.disabled = false;
+                }, 2000);
+            }
+        }
+
+        async function loadPatients() {
+            try {
+                const response = await fetch('../api/patient_list_api.php?per_page=1000');
+                const data = await response.json();
+
+                if (data.success) {
+                    allPatients = data.data;
+                    filterAndDisplayPatients();
+                } else {
+                    throw new Error('Failed to load patients');
+                }
+            } catch (error) {
+                document.getElementById('patientContainer').innerHTML = `
+                    <div class="empty-state">
+                        <i class="bi bi-exclamation-triangle"></i>
+                        <h4 class="text-white mb-3">Error Loading Patients</h4>
+                        <p class="text-muted">Please try refreshing the page</p>
+                    </div>
+                `;
+            }
+        }
+
+        function filterAndDisplayPatients() {
+            let filtered = allPatients;
+
+            // Apply search filter
+            if (currentFilters.search) {
+                const search = currentFilters.search.toLowerCase();
+                filtered = filtered.filter(p =>
+                    (p.patient_name && p.patient_name.toLowerCase().includes(search)) ||
+                    (p.patient_id && p.patient_id.toLowerCase().includes(search))
+                );
+            }
+
+            renderPatients(filtered);
+            updateStats(filtered.length);
+        }
+
+        function renderPatients(patients) {
+            const container = document.getElementById('patientContainer');
+
+            if (patients.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <i class="bi bi-inbox"></i>
+                        <h4 class="text-white mb-3">No Patients Found</h4>
+                        <p class="text-muted">
+                            ${currentFilters.search ? 'Try adjusting your search query' : 'Send DICOM data from your MRI/CT machine to start viewing patients'}
+                        </p>
+                    </div>
+                `;
+                return;
+            }
+
+            // Create table
+            const tableHtml = `
+                <div class="patients-table-container">
+                    <table class="patients-table">
+                        <thead>
+                            <tr>
+                                <th>Patient</th>
+                                <th>Patient ID</th>
+                                <th>Gender</th>
+                                <th>Age</th>
+                                <th>Studies</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${patients.map(patient => createPatientRow(patient)).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+
+            container.innerHTML = tableHtml;
+        }
+
+        function createPatientRow(patient) {
+            const initials = getInitials(patient.patient_name);
+            
+            // Fix gender display - handle both 'patient_sex' and 'sex' field names
+            const sex = patient.patient_sex || patient.sex || '';
+            const gender = sex === 'M' ? 'Male' : sex === 'F' ? 'Female' : sex ? 'Other' : '';
+            const genderClass = sex === 'M' ? 'gender-male' : sex === 'F' ? 'gender-female' : 'gender-other';
+            const genderIcon = sex === 'M' ? 'bi-gender-male' : sex === 'F' ? 'bi-gender-female' : 'bi-gender-ambiguous';
+            
+            // Calculate age - use age from API or calculate from birth_date
+            let ageDisplay = 'N/A';
+            if (patient.age !== null && patient.age !== undefined) {
+                ageDisplay = patient.age + ' yrs';
+            } else if (patient.birth_date) {
+                // Calculate from birth_date if age not provided
+                const birthDate = patient.birth_date.length === 8 
+                    ? new Date(patient.birth_date.substr(0, 4), parseInt(patient.birth_date.substr(4, 2)) - 1, patient.birth_date.substr(6, 2))
+                    : new Date(patient.birth_date);
+                if (!isNaN(birthDate.getTime())) {
+                    const ageDiff = Date.now() - birthDate.getTime();
+                    const ageDate = new Date(ageDiff);
+                    const calculatedAge = Math.abs(ageDate.getUTCFullYear() - 1970);
+                    ageDisplay = calculatedAge + ' yrs';
+                }
+            }
+
+            return `
+                <tr onclick="viewPatientStudies('${patient.patient_id}')">
+                    <td>
+                        <div class="patient-name-cell">
+                            <div class="patient-avatar-sm">${initials}</div>
+                            <div>
+                                <div class="patient-name">${patient.patient_name || 'Unknown'}</div>
+                            </div>
+                        </div>
+                    </td>
+                    <td>
+                        <span class="patient-id-text">${patient.patient_id || 'N/A'}</span>
+                    </td>
+                    <td>
+                        ${sex ? `
+                            <span class="gender-badge ${genderClass}">
+                                <i class="bi ${genderIcon}"></i> ${gender}
+                            </span>
+                        ` : '<span class="text-muted">N/A</span>'}
+                    </td>
+                    <td>
+                        <span class="badge-custom">
+                            <i class="bi bi-calendar-heart"></i> ${ageDisplay}
+                        </span>
+                    </td>
+                    <td>
+                        <span class="badge-custom">
+                            <i class="bi bi-folder"></i> ${patient.study_count || 0}
+                        </span>
+                    </td>
+                </tr>
+            `;
+        }
+
+        function getInitials(name) {
+            if (!name) return '??';
+            const parts = name.replace(/[^a-zA-Z ]/g, ' ').split(/\s+/).filter(p => p);
+            if (parts.length === 0) return '??';
+            if (parts.length === 1) return parts[0].substr(0, 2).toUpperCase();
+            return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+        }
+
+        function updateStats(count) {
+            document.getElementById('statsBar').style.display = 'flex';
+            document.getElementById('totalPatientsCount').textContent = count;
+            document.getElementById('pluralS').textContent = count !== 1 ? 's' : '';
+            document.getElementById('lastUpdated').textContent = new Date().toLocaleTimeString();
+        }
+
+        function viewPatientStudies(patientId) {
+            window.location.href = `studies.html?patient_id=${encodeURIComponent(patientId)}`;
+        }
+
+        // Auto-trigger backup check (runs silently in background)
+        function autoTriggerBackup() {
+            fetch('../api/backup/auto-trigger.php', {
+                method: 'GET',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success && data.data.triggered) {
+                    console.log('Auto-backup triggered:', data.data.message);
+                }
+            })
+            .catch(error => {
+                console.log('Auto-backup check (silent):', error.message);
+            });
+        }
+
+        // Check backup status every 30 minutes (1800000 ms)
+        autoTriggerBackup(); // Run immediately on page load
+        setInterval(autoTriggerBackup, 1800000); // Then every 30 minutes
+    </script>
+</body>
+
+</html>
