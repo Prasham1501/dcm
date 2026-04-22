@@ -760,8 +760,13 @@ function startDicomServer() {
                                 referringPhysician: (readTag(dataSet, 'x00080090') || '').replace(/\^/g, ' '),
                                 studyInstanceUID: studyUID,
                                 files: [],
+                                sopInstanceUIDs: new Set(),
                             };
                         }
+                        // Deduplicate by SOP Instance UID — skip if same image already added
+                        const sopInstanceUID = readTag(dataSet, 'x00080018');
+                        if (sopInstanceUID && studies[studyUID].sopInstanceUIDs.has(sopInstanceUID)) continue;
+                        if (sopInstanceUID) studies[studyUID].sopInstanceUIDs.add(sopInstanceUID);
                         studies[studyUID].files.push(filePath.replace(/\\/g, '/'));
                     } catch { /* skip unparseable files */ }
                 }

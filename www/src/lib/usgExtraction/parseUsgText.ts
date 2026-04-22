@@ -120,7 +120,7 @@ export function parseLine(line: string): Reading | null {
     // Remove leading "1" before known measurement prefixes (OCR misread)
     .replace(/1(AC|HC|FL|BPD)(?=\d|\s|$)/gi, '$1')
     // Insert space between label and number when concatenated: "AC31.04" → "AC 31.04"
-    .replace(/(AC|HC|FL|BPD|CRL|EFW|AFI|HL)(\d)/gi, '$1 $2')
+    .replace(/(AC|HC|FL|BPD|CRL|EFW|AFI|HL|PSV|EDV|Vel|TAMV|IMT)(\d)/gi, '$1 $2')
     // "31.04m75%" → "31.04cm 75%" (garbled 'c' before 'm')
     .replace(/(\d+\.\d+)m(\d+%)/g, '$1cm $2')
     // GA OCR: "35wo0d" → "35w0d" (OCR misread '0' as 'o' before digit+d)
@@ -168,6 +168,23 @@ export function parseLine(line: string): Reading | null {
     const value = parseInt(efwMatch[1]);
     const unit = normalizeUnit(efwMatch[2]);
     return { key: 'EFW', label: 'Estimated Fetal Weight', value, unit, confidence: 0.85, category: 'obstetric', rawText: line };
+  }
+
+  // ── Dimensionless vascular ratios (RI, PI, S/D) — no unit suffix ──
+  // RI: "RI 0.72" / "RI: 0.72" / "RI=0.72"
+  const riMatch = cleaned.match(/\bRI\s*[=:]\s*(\d+\.\d+)/i);
+  if (riMatch) {
+    return { key: 'RI', label: 'Resistive Index', value: parseFloat(riMatch[1]), unit: '', confidence: 0.88, category: 'vascular', rawText: line };
+  }
+  // PI: "PI 1.50" / "PI: 1.50" / "PI=1.50"
+  const piMatch = cleaned.match(/\bPI\s*[=:]\s*(\d+\.\d+)/i);
+  if (piMatch) {
+    return { key: 'PI', label: 'Pulsatility Index', value: parseFloat(piMatch[1]), unit: '', confidence: 0.88, category: 'vascular', rawText: line };
+  }
+  // S/D ratio: "S/D 4.5" or "SD 4.5"
+  const sdMatch = cleaned.match(/\bS\s*\/?\s*D\s*[=:]?\s*(\d+\.\d+)/i);
+  if (sdMatch) {
+    return { key: 'SD', label: 'S/D Ratio', value: parseFloat(sdMatch[1]), unit: '', confidence: 0.85, category: 'vascular', rawText: line };
   }
 
   // ── Generic measurement: "BPD 5.2 cm" / "Vel 63.61 cm/s" ──
