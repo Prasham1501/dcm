@@ -1871,7 +1871,44 @@ ipcMain.handle('extract-dicom-metadata', async (event, { filePaths }) => {
     return metadata;
 });
 
+// ── Helper: write a 24-bit BMP from an RGB Uint8Array ──
+function makeBmp24(rgbBuf, cols, rows) {
+    const rowBytes = cols * 3;
+    const paddedRowBytes = Math.ceil(rowBytes / 4) * 4;
+    const padding = paddedRowBytes - rowBytes;
+    const dataSize = paddedRowBytes * rows;
+    const fileSize = 54 + dataSize;
+    const bmp = Buffer.alloc(fileSize);
+    bmp.write('BM', 0);
+    bmp.writeUInt32LE(fileSize, 2);
+    bmp.writeUInt32LE(0, 6);
+    bmp.writeUInt32LE(54, 10);
+    bmp.writeUInt32LE(40, 14);
+    bmp.writeInt32LE(cols, 18);
+    bmp.writeInt32LE(-rows, 22);
+    bmp.writeUInt16LE(1, 26);
+    bmp.writeUInt16LE(24, 28);
+    bmp.writeUInt32LE(0, 30);
+    bmp.writeUInt32LE(dataSize, 34);
+    bmp.writeInt32LE(2835, 38);
+    bmp.writeInt32LE(2835, 42);
+    bmp.writeUInt32LE(0, 46);
+    bmp.writeUInt32LE(0, 50);
+    let offset = 54;
+    for (let y = 0; y < rows; y++) {
+        for (let x = 0; x < cols; x++) {
+            const si = (y * cols + x) * 3;
+            bmp[offset++] = rgbBuf[si + 2]; // B
+            bmp[offset++] = rgbBuf[si + 1]; // G
+            bmp[offset++] = rgbBuf[si];     // R
+        }
+        for (let p = 0; p < padding; p++) bmp[offset++] = 0;
+    }
+    return bmp;
+}
+
 // ── Full-resolution DICOM pixel OCR (reads file → extracts pixels → BMP → Tesseract) ──
+// Multi-pass approach: full grayscale (PSM 11) + right-crop (PSM 6) for universal coverage
 ipcMain.handle('ocr-dicom-file', async (event, { filePath }) => {
     try {
         const os = require('os');
@@ -1965,61 +2002,76 @@ ipcMain.handle('ocr-dicom-file', async (event, { filePath }) => {
             }
         }
 
-        // Write BMP file (24-bit, top-down)
-        const rowBytes = cols * 3;
-        const paddedRowBytes = Math.ceil(rowBytes / 4) * 4;
-        const padding = paddedRowBytes - rowBytes;
-        const dataSize = paddedRowBytes * rows;
-        const fileSize = 54 + dataSize;
-        const bmp = Buffer.alloc(fileSize);
-
-        // BMP header
-        bmp.write('BM', 0);
-        bmp.writeUInt32LE(fileSize, 2);
-        bmp.writeUInt32LE(0, 6);
-        bmp.writeUInt32LE(54, 10);
-        // DIB header
-        bmp.writeUInt32LE(40, 14);
-        bmp.writeInt32LE(cols, 18);
-        bmp.writeInt32LE(-rows, 22); // negative = top-down
-        bmp.writeUInt16LE(1, 26);
-        bmp.writeUInt16LE(24, 28);
-        bmp.writeUInt32LE(0, 30);
-        bmp.writeUInt32LE(dataSize, 34);
-        bmp.writeInt32LE(2835, 38);
-        bmp.writeInt32LE(2835, 42);
-        bmp.writeUInt32LE(0, 46);
-        bmp.writeUInt32LE(0, 50);
-
-        let offset = 54;
-        for (let y = 0; y < rows; y++) {
-            for (let x = 0; x < cols; x++) {
-                const srcIdx = (y * cols + x) * 3;
-                // BMP is BGR order
-                bmp[offset++] = rgbPixels[srcIdx + 2]; // B
-                bmp[offset++] = rgbPixels[srcIdx + 1]; // G
-                bmp[offset++] = rgbPixels[srcIdx];     // R
-            }
-            for (let p = 0; p < padding; p++) bmp[offset++] = 0;
+        // ── Preprocessing: grayscale + contrast stretch ──
+        // Produces cleaner text separation from background (critical for Doppler images)
+        const grayBuf = new Uint8Array(rows * cols);
+        let gMin = 255, gMax = 0;
+        for (let i = 0; i < rows * cols; i++) {
+            const g = Math.round(0.299 * rgbPixels[i*3] + 0.587 * rgbPixels[i*3+1] + 0.114 * rgbPixels[i*3+2]);
+            grayBuf[i] = g;
+            if (g < gMin) gMin = g;
+            if (g > gMax) gMax = g;
+        }
+        const gRange = gMax - gMin || 1;
+        const grayRgb = new Uint8Array(rows * cols * 3);
+        for (let i = 0; i < rows * cols; i++) {
+            const s = Math.min(255, Math.round((grayBuf[i] - gMin) / gRange * 255));
+            grayRgb[i*3] = s; grayRgb[i*3+1] = s; grayRgb[i*3+2] = s;
         }
 
-        const tmpFile = path.join(os.tmpdir(), `dicom-full-${Date.now()}.bmp`);
-        fs.writeFileSync(tmpFile, bmp);
-        console.log(`[OCR-file] BMP written: ${tmpFile} (${cols}x${rows})`);
+        // Right 45% crop — where Mindray/GE/Philips put measurement panels on Doppler images
+        const cropX = Math.floor(cols * 0.55);
+        const cropW = cols - cropX;
+        const cropRgb = new Uint8Array(rows * cropW * 3);
+        for (let y = 0; y < rows; y++) {
+            for (let x = 0; x < cropW; x++) {
+                const g = grayBuf[y * cols + cropX + x];
+                const di = (y * cropW + x) * 3;
+                cropRgb[di] = g; cropRgb[di+1] = g; cropRgb[di+2] = g;
+            }
+        }
 
-        // Also save for debugging
-        const debugDir = path.join(__dirname, 'ocr-debug');
-        if (!fs.existsSync(debugDir)) fs.mkdirSync(debugDir, { recursive: true });
-        fs.writeFileSync(path.join(debugDir, `full-${Date.now()}.bmp`), bmp);
+        // Bottom 25% crop — for machines that put measurements at the bottom
+        const cropTopY = Math.floor(rows * 0.75);
+        const cropH = rows - cropTopY;
+        const btmRgb = new Uint8Array(cropH * cols * 3);
+        for (let y = 0; y < cropH; y++) {
+            for (let x = 0; x < cols; x++) {
+                const g = grayBuf[(cropTopY + y) * cols + x];
+                const di = (y * cols + x) * 3;
+                btmRgb[di] = g; btmRgb[di+1] = g; btmRgb[di+2] = g;
+            }
+        }
 
+        const ts = Date.now();
+        const grayFile = path.join(os.tmpdir(), `dicom-gray-${ts}.bmp`);
+        const cropFile = path.join(os.tmpdir(), `dicom-crop-${ts}.bmp`);
+        const btmFile  = path.join(os.tmpdir(), `dicom-btm-${ts}.bmp`);
+        fs.writeFileSync(grayFile, makeBmp24(grayRgb, cols, rows));
+        fs.writeFileSync(cropFile, makeBmp24(cropRgb, cropW, rows));
+        fs.writeFileSync(btmFile,  makeBmp24(btmRgb, cols, cropH));
+        console.log(`[OCR-file] BMPs written: full ${cols}x${rows}, right-crop ${cropW}x${rows}, bottom ${cols}x${cropH}`);
+
+        // Single Tesseract worker, 3 passes:
+        //   PSM 11 on full grayscale — sparse text, best for Doppler waveform images
+        //   PSM 6  on right crop     — block mode for structured measurement panels
+        //   PSM 6  on bottom crop    — block mode for bottom measurement strips
         const worker = await createWorker('eng', 1, { logger: () => {} });
-        await worker.setParameters({ tessedit_pageseg_mode: '6' });
-        const { data } = await worker.recognize(tmpFile);
-        await worker.terminate();
-        fs.unlinkSync(tmpFile);
 
-        const ocrText = data.text || '';
-        console.log(`[OCR-file] Extracted text (${ocrText.length} chars):`, JSON.stringify(ocrText.substring(0, 1000)));
+        await worker.setParameters({ tessedit_pageseg_mode: '11' });
+        const { data: d1 } = await worker.recognize(grayFile);
+
+        await worker.setParameters({ tessedit_pageseg_mode: '6' });
+        const { data: d2 } = await worker.recognize(cropFile);
+
+        await worker.setParameters({ tessedit_pageseg_mode: '6' });
+        const { data: d3 } = await worker.recognize(btmFile);
+
+        await worker.terminate();
+        for (const f of [grayFile, cropFile, btmFile]) { try { fs.unlinkSync(f); } catch {} }
+
+        const ocrText = [d1.text, d2.text, d3.text].filter(t => t?.trim()).join('\n');
+        console.log(`[OCR-file] Combined text (${ocrText.length} chars):`, JSON.stringify(ocrText.substring(0, 1200)));
         return { text: ocrText, success: true };
     } catch (err) {
         console.warn('[OCR-file] Failed:', err.message);

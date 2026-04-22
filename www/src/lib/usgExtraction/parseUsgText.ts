@@ -103,8 +103,9 @@ function identifyKey(text: string): { key: string; label: string; category: Temp
   return { key: 'measurement', label: 'Measurement', category: 'generic' };
 }
 
-/** Parse a single line of text for a measurement value + unit */
-export function parseLine(line: string): Reading | null {
+/** Parse a single line of text for a measurement value + unit.
+ * @param labelHint - Optional pre-identified label from a preceding label-only line (multi-line format). */
+export function parseLine(line: string, labelHint?: { key: string; label: string; category: TemplateKey }): Reading | null {
   line = line.trim();
   if (!line) return null;
 
@@ -171,17 +172,17 @@ export function parseLine(line: string): Reading | null {
   }
 
   // ── Dimensionless vascular ratios (RI, PI, S/D) — no unit suffix ──
-  // RI: "RI 0.72" / "RI: 0.72" / "RI=0.72"
-  const riMatch = cleaned.match(/\bRI\s*[=:]\s*(\d+\.\d+)/i);
+  // RI: "RI 0.72" / "RI: 0.72" / "RI=0.72" / "RI0.72"
+  const riMatch = cleaned.match(/\bRI\s*[=:]?\s*(\d+\.\d+)/i);
   if (riMatch) {
     return { key: 'RI', label: 'Resistive Index', value: parseFloat(riMatch[1]), unit: '', confidence: 0.88, category: 'vascular', rawText: line };
   }
-  // PI: "PI 1.50" / "PI: 1.50" / "PI=1.50"
-  const piMatch = cleaned.match(/\bPI\s*[=:]\s*(\d+\.\d+)/i);
+  // PI: "PI 1.50" / "PI: 1.50" / "PI=1.50" / "PI1.50"
+  const piMatch = cleaned.match(/\bPI\s*[=:]?\s*(\d+\.\d+)/i);
   if (piMatch) {
     return { key: 'PI', label: 'Pulsatility Index', value: parseFloat(piMatch[1]), unit: '', confidence: 0.88, category: 'vascular', rawText: line };
   }
-  // S/D ratio: "S/D 4.5" or "SD 4.5"
+  // S/D ratio: "S/D 4.5" or "SD 4.5" or "S/D: 4.5"
   const sdMatch = cleaned.match(/\bS\s*\/?\s*D\s*[=:]?\s*(\d+\.\d+)/i);
   if (sdMatch) {
     return { key: 'SD', label: 'S/D Ratio', value: parseFloat(sdMatch[1]), unit: '', confidence: 0.85, category: 'vascular', rawText: line };
@@ -196,9 +197,22 @@ export function parseLine(line: string): Reading | null {
     const value = parseFloat(numMatch[1]);
     const unit = normalizeUnit(numMatch[2]);
     const { key, label, category } = identifyKey(cleaned);
-    // Skip generic (unidentified) single measurements — too noisy from OCR
-    if (key === 'measurement') return null;
+    if (key === 'measurement') {
+      // If we have a label hint from the preceding line (multi-line Doppler format), use it
+      if (labelHint) {
+        return { key: labelHint.key, label: labelHint.label, value, unit, confidence: 0.8, category: labelHint.category, rawText: line };
+      }
+      return null; // Still skip truly generic measurements — too noisy from OCR
+    }
     return { key, label, value, unit, confidence: 0.85, category, rawText: line };
+  }
+
+  // Standalone dimensionless number with labelHint (e.g. RI/PI with no unit: "0.78")
+  if (labelHint) {
+    const bareNum = cleaned.match(/^(-?\d+\.\d+)\s*$/);
+    if (bareNum) {
+      return { key: labelHint.key, label: labelHint.label, value: parseFloat(bareNum[1]), unit: '', confidence: 0.75, category: labelHint.category, rawText: line };
+    }
   }
 
   return null;
@@ -263,6 +277,8 @@ export function parseTextBlock(text: string): { readings: Reading[]; warnings: s
   const seen = new Map<string, Reading>();
   const keyCount = new Map<string, number>();
   let currentVessel: string | null = null;
+  // For multi-line format: label on one line, value on the next (common on Doppler/Mindray DC-7)
+  let pendingLabel: { key: string; label: string; category: TemplateKey } | null = null;
 
   const lines = text.split(/[\n\r,;]+/);
   console.log(`[parseTextBlock] Parsing ${lines.length} lines...`);
@@ -271,11 +287,13 @@ export function parseTextBlock(text: string): { readings: Reading[]; warnings: s
     const vessel = detectVesselName(line);
     if (vessel) {
       currentVessel = vessel;
+      pendingLabel = null;
       console.log(`  [VESSEL] "${line.trim()}" → context: ${vessel}`);
     }
 
-    const r = parseLine(line);
+    const r = parseLine(line, pendingLabel ?? undefined);
     if (r) {
+      pendingLabel = null; // consumed
       // Apply vessel context: prefix label with vessel name for generic measurement types
       if (currentVessel && (r.key === 'Vel' || r.key === 'angle' || r.key === 'PSV' || r.key === 'EDV' || r.key === 'RI' || r.key === 'PI' || r.key === 'TAMV')) {
         r.label = `${currentVessel} — ${r.label}`;
@@ -283,7 +301,23 @@ export function parseTextBlock(text: string): { readings: Reading[]; warnings: s
       }
       console.log(`  [MATCH] "${line.trim()}" → ${r.key}=${r.value} ${r.unit}`);
     }
-    if (!r) continue;
+    if (!r) {
+      // Detect a standalone label line (e.g. "PSV", "RI", "EDV") for multi-line format.
+      // Save it so the NEXT line's numeric value can be paired with it.
+      const trimmed = line.trim().replace(/^[©®*#\[\]]+\s*/g, '').replace(/[\s:=]+$/, '');
+      if (trimmed.length >= 2 && trimmed.length <= 10 && !/\d/.test(trimmed) && /^[A-Za-z/]+$/.test(trimmed)) {
+        const identified = identifyKey(trimmed);
+        if (identified.key !== 'measurement') {
+          pendingLabel = identified;
+          console.log(`  [PENDING] "${trimmed}" → waiting for value`);
+        } else {
+          pendingLabel = null;
+        }
+      } else {
+        pendingLabel = null;
+      }
+      continue;
+    }
 
     // Number duplicate keys: Vel → Vel, Vel_2, Vel_3, etc.
     const count = (keyCount.get(r.key) || 0) + 1;
