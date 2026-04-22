@@ -34,21 +34,7 @@ function CRViewportInner({
 
   const { 
     isStampMode, activeStampId, placeStamp, stampPlacements, updateStampPlacement,
-    setViewportImage,
   } = useCRViewerStore();
-
-  const handleDragOver = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'copy';
-  }, []);
-
-  const handleDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    const imageUrl = e.dataTransfer.getData('application/dicom-image-url') || e.dataTransfer.getData('text/plain');
-    if (imageUrl) {
-      setViewportImage(imageUrl, viewportIndex);
-    }
-  }, [setViewportImage, viewportIndex]);
 
   // Right-click W/L drag state
   const rightDragRef = useRef<{
@@ -330,8 +316,6 @@ function CRViewportInner({
       onMouseDownCapture={handleMouseDown}
       onContextMenu={(e) => e.preventDefault()}
       onClickCapture={handleClick}
-      onDragOver={handleDragOver}
-      onDrop={handleDrop}
     >
       {/* Cornerstone render target */}
       <div

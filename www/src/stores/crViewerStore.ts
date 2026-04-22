@@ -153,7 +153,10 @@ interface CRViewerState {
   clearStampPlacements: (viewportIndex?: number) => void;
 
   // Manual image placement (Drag and Drop)
+  viewportImageOverrides: Record<number, string>;
   setViewportImage: (imageUrl: string, viewportIndex: number) => void;
+  clearViewportOverride: (globalIndex: number) => void;
+  clearAllViewportOverrides: () => void;
 }
 
 function recalcPages(totalImages: number, spotsPerPage: number) {
@@ -412,6 +415,7 @@ export const useCRViewerStore = create<CRViewerState>((set, get) => ({
       currentLayout: defaultLayout,
       stampPlacements: [],
       selectedViewport: 0,
+      viewportImageOverrides: {},
       ...recalcPages(originalImages.length, defaultLayout.spots),
     });
     // Resize the popup window
@@ -434,6 +438,7 @@ export const useCRViewerStore = create<CRViewerState>((set, get) => ({
     const { originalImages, currentLayout } = get();
     set({
       images: [...originalImages],
+      viewportImageOverrides: {},
       ...recalcPages(originalImages.length, currentLayout.spots),
     });
   },
@@ -584,26 +589,24 @@ export const useCRViewerStore = create<CRViewerState>((set, get) => ({
     }
   },
 
+  viewportImageOverrides: {},
+
   setViewportImage: (imageUrl, viewportIndex) => {
-    const { images, currentPage, currentLayout } = get();
-    const targetGlobalIdx = (currentPage - 1) * currentLayout.spots + viewportIndex;
-    const sourceIdx = images.findIndex(img => img.imageUrl === imageUrl);
-    if (sourceIdx === -1) return;
+    const { currentPage, currentLayout, viewportImageOverrides } = get();
+    const globalIdx = (currentPage - 1) * currentLayout.spots + viewportIndex;
+    set({
+      viewportImageOverrides: { ...viewportImageOverrides, [globalIdx]: imageUrl },
+    });
+  },
 
-    const nextImages = [...images];
+  clearViewportOverride: (globalIndex) => {
+    const { viewportImageOverrides } = get();
+    const next = { ...viewportImageOverrides };
+    delete next[globalIndex];
+    set({ viewportImageOverrides: next });
+  },
 
-    if (targetGlobalIdx < nextImages.length) {
-      // Filled slot: swap the two images
-      [nextImages[targetGlobalIdx], nextImages[sourceIdx]] = [nextImages[sourceIdx], nextImages[targetGlobalIdx]];
-    } else {
-      // Empty slot: swap dragged image to the last position so it lands on the last page
-      // without disturbing other pages' ordering
-      const lastIdx = nextImages.length - 1;
-      if (sourceIdx !== lastIdx) {
-        [nextImages[lastIdx], nextImages[sourceIdx]] = [nextImages[sourceIdx], nextImages[lastIdx]];
-      }
-    }
-
-    set({ images: nextImages });
+  clearAllViewportOverrides: () => {
+    set({ viewportImageOverrides: {} });
   },
 }));

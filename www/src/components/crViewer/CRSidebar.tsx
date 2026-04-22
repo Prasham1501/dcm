@@ -5,9 +5,10 @@
 import { useCRViewerStore } from '@/stores/crViewerStore';
 import { useReportStore } from '@/stores/reportStore';
 import { cornerstone, cornerstoneTools } from '@/lib/cornerstoneSetup';
+import { useState } from 'react';
 import {
   ChevronUp, ChevronDown,
-  RotateCcw, Undo2, FileText, CheckSquare,
+  RotateCcw, Undo2, FileText, CheckSquare, Move,
 } from 'lucide-react';
 
 // All annotation tools that may be active in CR viewports
@@ -50,6 +51,24 @@ export function CRSidebar() {
     undoStampPlacement, clearStampPlacements,
   } = useCRViewerStore();
 
+  const [panActive, setPanActive] = useState(false);
+
+  const togglePan = () => {
+    if (panActive) {
+      // Deactivate Pan — disable it on all mouse buttons
+      try {
+        cornerstoneTools.setToolPassive('Pan');
+      } catch { /* ignore */ }
+      setPanActive(false);
+    } else {
+      // Activate Pan for left mouse button
+      try {
+        cornerstoneTools.setToolActive('Pan', { mouseButtonMask: 1 });
+      } catch { /* ignore */ }
+      setPanActive(true);
+    }
+  };
+
   const handleOpenReport = () => {
     useReportStore.getState().openReportEditor(patientId, patientName, studyDate);
     useReportStore.getState().setShowInlineReport(true);
@@ -88,6 +107,15 @@ export function CRSidebar() {
 
   return (
     <div className="w-16 flex flex-col items-center bg-app-surface border-l border-app-border py-2 gap-1.5 px-1 overflow-y-auto">
+      {/* Pan toggle */}
+      <SidebarButton
+        onClick={togglePan}
+        label="Pan"
+        title={panActive ? 'Disable pan (drag to move)' : 'Enable pan (drag to move)'}
+        icon={Move}
+        variant={panActive ? 'accent' : 'default'}
+      />
+
       {/* Prev */}
       <SidebarButton
         onClick={prevPage}

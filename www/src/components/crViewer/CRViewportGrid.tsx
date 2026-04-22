@@ -13,7 +13,8 @@ export function CRViewportGrid() {
     currentLayout, currentPage, images, selectedViewport, setSelectedViewport,
     selectedViewportIndices, toggleViewportSelection, selectAllViewports,
     isArrangeMode, arrangeClickOrder, toggleArrangeViewport, toggleArrangeMode,
-    swapImages, showLogo, toggleSingleViewport,
+    swapImages, showLogo, toggleSingleViewport, setViewportImage,
+    viewportImageOverrides,
   } = useCRViewerStore();
 
   // Force-deselect multi-selection on non-Ctrl left-click.
@@ -104,15 +105,24 @@ export function CRViewportGrid() {
       <div style={gridStyle} className="flex-1">
         {Array.from({ length: currentLayout.spots }, (_, i) => {
           const imgIndex = startIndex + i;
-          // Only show an image if the global index is within bounds
-          const image = (hasImages && imgIndex < images.length) ? images[imgIndex] : null;
+          // Check for viewport override (drag-and-drop placement)
+          const overrideUrl = viewportImageOverrides[imgIndex];
+          const overrideImage = overrideUrl ? images.find(img => img.imageUrl === overrideUrl) : null;
+          // Use override if present, otherwise default to sequential
+          const image = overrideImage || ((hasImages && imgIndex < images.length) ? images[imgIndex] : null);
           const imageId = image?.imageUrl || null;
           const isSelected = selectedViewport === i;
           const isMultiSelected = selectedViewportIndices.includes(i) && selectedViewportIndices.length > 1;
 
           return (
-            <div key={`cr-vp-${i}`} className={`relative overflow-hidden min-h-0 ${isArrangeMode ? 'cursor-pointer' : ''}`} onMouseDown={(e) => handleViewportMouseDown(i, e)} onDoubleClick={() => handleViewportDoubleClick(i)}>
-              <div className={`${isArrangeMode ? 'pointer-events-none' : ''} w-full h-full`}>
+            <div key={`cr-vp-${i}`} className={`relative overflow-hidden min-h-0 ${isArrangeMode ? 'cursor-pointer' : ''}`} onMouseDown={(e) => handleViewportMouseDown(i, e)} onDoubleClick={() => handleViewportDoubleClick(i)}
+              onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; }}
+              onDrop={(e) => {
+                e.preventDefault();
+                const imageUrl = e.dataTransfer.getData('application/dicom-image-url') || e.dataTransfer.getData('text/plain');
+                if (imageUrl) setViewportImage(imageUrl, i);
+              }}
+            >              <div className={`${isArrangeMode ? 'pointer-events-none' : ''} w-full h-full`}>
                 <CRViewport
                   imageId={imageId}
                   isSelected={isSelected}
