@@ -5,7 +5,7 @@ import { openCRViewerPopup } from '@/stores/crViewerStore';
 import { useReportStore } from '@/stores/reportStore';
 import type { Patient } from '@/types/patient';
 import { PatientContextMenu } from './PatientContextMenu';
-import { FileText } from 'lucide-react';
+import { FileText, Printer } from 'lucide-react';
 
 export function PatientTable() {
   const navigate = useNavigate();
@@ -140,13 +140,26 @@ export function PatientTable() {
                     const pid = patient.patientId || patient.id;
                     const reports = getReportsForPatient(pid);
                     if (reports.length === 0) return null;
+                    const anyPrinted = reports.some(r => (r.printCount || 0) > 0);
+                    const anyFinal = reports.some(r => r.status === 'final');
+                    // Color: green if printed, blue if finalised, amber if draft only
+                    const colorCls = anyPrinted
+                      ? 'bg-green-500/15 text-green-600 hover:bg-green-600 hover:text-white'
+                      : anyFinal
+                        ? 'bg-blue-500/15 text-blue-500 hover:bg-blue-500 hover:text-white'
+                        : 'bg-app-accent/15 text-app-accent hover:bg-app-accent hover:text-white';
+                    const tip = anyPrinted
+                      ? `Printed — ${reports.length} report${reports.length > 1 ? 's' : ''}`
+                      : anyFinal
+                        ? `Final — ${reports.length} report${reports.length > 1 ? 's' : ''}`
+                        : `Draft — ${reports.length} report${reports.length > 1 ? 's' : ''}`;
                     return (
                       <button
                         onClick={(e) => handleOpenReport(e, patient)}
-                        title={`${reports.length} report${reports.length > 1 ? 's' : ''} — click to open`}
-                        className="inline-flex items-center justify-center w-6 h-6 rounded bg-app-accent/15 text-app-accent hover:bg-app-accent hover:text-white transition-colors"
+                        title={tip}
+                        className={`inline-flex items-center justify-center w-6 h-6 rounded transition-colors ${colorCls}`}
                       >
-                        <FileText className="w-3.5 h-3.5" />
+                        {anyPrinted ? <Printer className="w-3.5 h-3.5" /> : <FileText className="w-3.5 h-3.5" />}
                       </button>
                     );
                   })()}

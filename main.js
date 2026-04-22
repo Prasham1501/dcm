@@ -948,6 +948,56 @@ ipcMain.handle('get-system-printers', async () => {
     } catch (e) { return { success: false, error: e.message, printers: [] }; }
 });
 
+// Print report with Chromium print dialog (has built-in preview + all options)
+ipcMain.handle('print-report-dialog', async (event, options) => {
+    let tempHtml = null;
+    let printWindow = null;
+    try {
+        const { htmlContent, paperSize } = options;
+        const os = require('os');
+        tempHtml = path.join(os.tmpdir(), `report_print_${Date.now()}.html`);
+        fs.writeFileSync(tempHtml, htmlContent, 'utf8');
+
+        printWindow = new BrowserWindow({
+            show: false, width: 800, height: 600,
+            webPreferences: { nodeIntegration: false, contextIsolation: true }
+        });
+
+        await printWindow.loadFile(tempHtml);
+        // Wait for fonts/images to settle
+        await new Promise(r => setTimeout(r, 500));
+
+        // Map paper size for printToPDF
+        const sizeMap = { A4: { width: 8.27, height: 11.69 }, A5: { width: 5.83, height: 8.27 }, Letter: { width: 8.5, height: 11 } };
+        const dims = sizeMap[paperSize] || sizeMap.A4;
+
+        // Generate PDF from the rendered HTML
+        const pdfBuffer = await printWindow.webContents.printToPDF({
+            pageSize: { width: dims.width, height: dims.height },
+            printBackground: true,
+            margins: { top: 0, bottom: 0, left: 0, right: 0 },
+        });
+
+        printWindow.close();
+        printWindow = null;
+
+        // Save PDF and open in system viewer (Edge, Adobe, etc.) for printing with full preview
+        const pdfPath = path.join(os.tmpdir(), `report_${Date.now()}.pdf`);
+        fs.writeFileSync(pdfPath, pdfBuffer);
+        await shell.openPath(pdfPath);
+
+        // Clean up HTML temp file immediately, PDF cleaned up on next print
+        if (tempHtml && fs.existsSync(tempHtml)) try { fs.unlinkSync(tempHtml); } catch {}
+
+        return { success: true, pdfPath };
+    } catch (e) {
+        console.error('[Print] PDF generation failed:', e);
+        if (printWindow && !printWindow.isDestroyed()) printWindow.close();
+        if (tempHtml && fs.existsSync(tempHtml)) try { fs.unlinkSync(tempHtml); } catch {}
+        return { success: false, error: e.message };
+    }
+});
+
 // Print HTML content to printer
 ipcMain.handle('print-to-printer', async (event, options) => {
     return new Promise(async resolve => {
@@ -2043,19 +2093,44 @@ ipcMain.handle('ocr-dicom-file', async (event, { filePath }) => {
             }
         }
 
-        const ts = Date.now();
-        const grayFile = path.join(os.tmpdir(), `dicom-gray-${ts}.bmp`);
-        const cropFile = path.join(os.tmpdir(), `dicom-crop-${ts}.bmp`);
-        const btmFile  = path.join(os.tmpdir(), `dicom-btm-${ts}.bmp`);
-        fs.writeFileSync(grayFile, makeBmp24(grayRgb, cols, rows));
-        fs.writeFileSync(cropFile, makeBmp24(cropRgb, cropW, rows));
-        fs.writeFileSync(btmFile,  makeBmp24(btmRgb, cols, cropH));
-        console.log(`[OCR-file] BMPs written: full ${cols}x${rows}, right-crop ${cropW}x${rows}, bottom ${cols}x${cropH}`);
+        // ── Binary threshold image — isolates bright text from dark ultrasound background ──
+        // This dramatically improves OCR accuracy for measurement overlays on Doppler images.
+        // Uses adaptive threshold based on image brightness distribution.
+        const histogram = new Uint32Array(256);
+        for (let i = 0; i < rows * cols; i++) histogram[grayBuf[i]]++;
+        // Find threshold: text is typically in top 15-20% brightness
+        let totalPixels = rows * cols;
+        let cumul = 0;
+        let threshVal = 160;
+        for (let i = 255; i >= 0; i--) {
+            cumul += histogram[i];
+            if (cumul / totalPixels > 0.15) { // top 15% of brightness
+                threshVal = Math.max(i, 120); // never go below 120
+                break;
+            }
+        }
+        const threshRgb = new Uint8Array(rows * cols * 3);
+        for (let i = 0; i < rows * cols; i++) {
+            const v = grayBuf[i] >= threshVal ? 255 : 0;
+            threshRgb[i*3] = v; threshRgb[i*3+1] = v; threshRgb[i*3+2] = v;
+        }
 
-        // Single Tesseract worker, 3 passes:
-        //   PSM 11 on full grayscale — sparse text, best for Doppler waveform images
-        //   PSM 6  on right crop     — block mode for structured measurement panels
-        //   PSM 6  on bottom crop    — block mode for bottom measurement strips
+        const ts = Date.now();
+        const grayFile   = path.join(os.tmpdir(), `dicom-gray-${ts}.bmp`);
+        const cropFile   = path.join(os.tmpdir(), `dicom-crop-${ts}.bmp`);
+        const btmFile    = path.join(os.tmpdir(), `dicom-btm-${ts}.bmp`);
+        const threshFile = path.join(os.tmpdir(), `dicom-thresh-${ts}.bmp`);
+        fs.writeFileSync(grayFile,   makeBmp24(grayRgb, cols, rows));
+        fs.writeFileSync(cropFile,   makeBmp24(cropRgb, cropW, rows));
+        fs.writeFileSync(btmFile,    makeBmp24(btmRgb, cols, cropH));
+        fs.writeFileSync(threshFile, makeBmp24(threshRgb, cols, rows));
+        console.log(`[OCR-file] BMPs: full ${cols}×${rows}, right ${cropW}×${rows}, bottom ${cols}×${cropH}, thresh(${threshVal})`);
+
+        // Single Tesseract worker, 4 passes:
+        //   PSM 11 on full grayscale   — sparse text, catches scattered labels
+        //   PSM 6  on right crop       — block mode for structured measurement panels
+        //   PSM 6  on bottom crop      — block mode for bottom measurement strips
+        //   PSM 11 on thresholded full — isolates bright text overlays from dark bg
         const worker = await createWorker('eng', 1, { logger: () => {} });
 
         await worker.setParameters({ tessedit_pageseg_mode: '11' });
@@ -2067,10 +2142,13 @@ ipcMain.handle('ocr-dicom-file', async (event, { filePath }) => {
         await worker.setParameters({ tessedit_pageseg_mode: '6' });
         const { data: d3 } = await worker.recognize(btmFile);
 
-        await worker.terminate();
-        for (const f of [grayFile, cropFile, btmFile]) { try { fs.unlinkSync(f); } catch {} }
+        await worker.setParameters({ tessedit_pageseg_mode: '11' });
+        const { data: d4 } = await worker.recognize(threshFile);
 
-        const ocrText = [d1.text, d2.text, d3.text].filter(t => t?.trim()).join('\n');
+        await worker.terminate();
+        for (const f of [grayFile, cropFile, btmFile, threshFile]) { try { fs.unlinkSync(f); } catch {} }
+
+        const ocrText = [d1.text, d2.text, d3.text, d4.text].filter(t => t?.trim()).join('\n');
         console.log(`[OCR-file] Combined text (${ocrText.length} chars):`, JSON.stringify(ocrText.substring(0, 1200)));
         return { text: ocrText, success: true };
     } catch (err) {

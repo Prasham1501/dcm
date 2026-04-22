@@ -137,12 +137,112 @@ function build(
   readings: ReadingSet['readings'],
   warnings: string[]
 ): ReadingSet {
+  const deduped = deduplicateReadings(readings);
+  if (deduped.length < readings.length) {
+    console.log(`[extractReadings] Dedup: ${readings.length} → ${deduped.length} readings`);
+  }
   return {
     studyUID,
     source,
-    templateKey: detectTemplate(readings),
-    readings,
+    templateKey: detectTemplate(deduped),
+    readings: deduped,
     extractedAt: Date.now(),
     warnings,
   };
+}
+
+/**
+ * Deduplicate readings across multiple images.
+ * Same base key + same value → keep one.
+ * Same base key + different values → keep all (legitimate repeat measurements).
+ * Context keys (GA, EDD) that repeat across images with different values
+ * are capped to 1 — the per-measurement GA is already computed by Hadlock.
+ * Generic vessel duplicates (e.g. "Lower Ext. Artery_Vel 63.61" when
+ * "Ant. Tibial A._Vel 63.61" already exists) are removed.
+ * Re-numbers keys sequentially after dedup.
+ */
+function deduplicateReadings(readings: Reading[]): Reading[] {
+  // Context keys: appear on every image as machine context, not independent measurements.
+  const CONTEXT_KEYS = new Set(['GA', 'EDD']);
+
+  // Generic vessel prefixes — these are category headers, not specific vessels.
+  // Readings attributed to them are duplicates of readings under specific vessels.
+  const GENERIC_VESSELS = ['Lower Ext. Artery', 'Upper Ext. Artery'];
+
+  // Measurement suffixes used in vessel-prefixed keys
+  const MEASUREMENT_SUFFIXES = ['_Vel', '_angle', '_PSV', '_EDV', '_RI', '_PI', '_TAMV', '_SD', '_IMT'];
+
+  const seen = new Set<string>();
+  const baseKeyCounts = new Map<string, number>();
+  const kept: Reading[] = [];
+
+  for (const r of readings) {
+    const baseKey = r.key.replace(/_\d+$/, '');
+    const normValue = String(r.value).trim().toLowerCase();
+    const dedupKey = `${baseKey}::${normValue}`;
+
+    if (seen.has(dedupKey)) continue; // Exact duplicate (same key + same value) — skip
+    seen.add(dedupKey);
+
+    // Cap context keys to 1 unique value
+    if (CONTEXT_KEYS.has(baseKey)) {
+      const count = baseKeyCounts.get(baseKey) || 0;
+      if (count >= 1) continue;
+    }
+
+    baseKeyCounts.set(baseKey, (baseKeyCounts.get(baseKey) || 0) + 1);
+    kept.push(r);
+  }
+
+  // Second pass: remove generic vessel duplicates.
+  // If "Lower Ext. Artery_Vel = 63.61" exists AND "Ant. Tibial A._Vel = 63.61" also exists,
+  // drop the generic one.
+  const specificValues = new Set<string>();
+  for (const r of kept) {
+    const baseKey = r.key.replace(/_\d+$/, '');
+    const isGeneric = GENERIC_VESSELS.some(gv => baseKey.startsWith(gv + '_'));
+    if (!isGeneric) {
+      // Extract measurement suffix to build a lookup key
+      for (const suf of MEASUREMENT_SUFFIXES) {
+        if (baseKey.endsWith(suf)) {
+          const measType = suf;
+          const normValue = String(r.value).trim().toLowerCase();
+          specificValues.add(`${measType}::${normValue}`);
+          break;
+        }
+      }
+    }
+  }
+
+  const filtered = kept.filter(r => {
+    const baseKey = r.key.replace(/_\d+$/, '');
+    const isGeneric = GENERIC_VESSELS.some(gv => baseKey.startsWith(gv + '_'));
+    if (!isGeneric) return true;
+
+    // Check if a specific vessel already has this measurement+value
+    for (const suf of MEASUREMENT_SUFFIXES) {
+      if (baseKey.endsWith(suf)) {
+        const normValue = String(r.value).trim().toLowerCase();
+        if (specificValues.has(`${suf}::${normValue}`)) {
+          console.log(`[dedup] Dropping generic: ${r.key}=${r.value} (specific vessel has same)`);
+          return false;
+        }
+        break;
+      }
+    }
+    return true;
+  });
+
+  // Re-number keys sequentially
+  const keyCount = new Map<string, number>();
+  for (const r of filtered) {
+    const baseKey = r.key.replace(/_\d+$/, '');
+    const baseLabel = r.label.replace(/\s*\(\d+\)$/, '');
+    const count = (keyCount.get(baseKey) || 0) + 1;
+    keyCount.set(baseKey, count);
+    r.key = count === 1 ? baseKey : `${baseKey}_${count}`;
+    r.label = count === 1 ? baseLabel : `${baseLabel} (${count})`;
+  }
+
+  return filtered;
 }

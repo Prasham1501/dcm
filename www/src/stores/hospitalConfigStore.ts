@@ -69,6 +69,7 @@ interface HospitalConfig {
   // Header/Footer layout
   headerLayout: HeaderFooterLayout;
   footerLayout: HeaderFooterLayout;
+  enableFooter: boolean;
   customHeaderText: string;   // legacy shared field
   customFooterText: string;   // legacy shared field
   // Per-slot custom texts
@@ -133,6 +134,7 @@ export const useHospitalConfigStore = create<HospitalConfig>()(
 
       headerLayout: { left: 'logo', center: 'name', right: 'address' },
       footerLayout: { left: 'custom', center: 'none', right: 'custom' },
+      enableFooter: false,
       customHeaderText: '',
       customFooterText: 'Printed by: ADMIN',
       customHeaderLeft: '',

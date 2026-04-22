@@ -24,6 +24,10 @@ export interface SavedReport {
   status: 'draft' | 'final';
   createdAt: number;
   updatedAt: number;
+  /** Timestamp when last printed */
+  printedAt?: number;
+  /** How many times printed */
+  printCount?: number;
 }
 
 interface ReportStore {
@@ -46,6 +50,8 @@ interface ReportStore {
   removeTemplate: (id: string) => void;
   saveFullReport: (report: Omit<SavedReport, 'id' | 'createdAt' | 'updatedAt'> & { id?: string }) => void;
   getReportsForPatient: (patientId: string) => SavedReport[];
+  markReportPrinted: (reportId: string) => void;
+  getReportPrintCount: (reportId: string) => number;
   addRichTemplate: (template: { name: string; content: string }) => void;
   appendReadingsToReport: (params: {
     patientId: string;
@@ -185,10 +191,39 @@ export const useReportStore = create<ReportStore>()(
             savedReport,
           ],
         }));
+
+        // Best-effort MySQL sync
+        import('@/services/reportService').then(({ reportService }) => {
+          reportService.create({
+            study_uid: report.patientId,
+            patient_id: report.patientId,
+            patient_name: report.patientName,
+            template_name: 'usg',
+            title: report.title || 'Untitled',
+            findings: report.content,
+            impression: '',
+            status: report.status === 'final' ? 'final' : 'draft',
+          }).catch(() => { /* localStorage is primary, MySQL is secondary */ });
+        }).catch(() => {});
       },
 
       getReportsForPatient: (patientId) => {
         return get().savedReports.filter(r => r.patientId === patientId);
+      },
+
+      markReportPrinted: (reportId) => {
+        set((s) => ({
+          savedReports: s.savedReports.map(r =>
+            r.id === reportId
+              ? { ...r, printedAt: Date.now(), printCount: (r.printCount || 0) + 1 }
+              : r
+          ),
+        }));
+      },
+
+      getReportPrintCount: (reportId) => {
+        const report = get().savedReports.find(r => r.id === reportId);
+        return report?.printCount || 0;
       },
 
       addRichTemplate: (template) => {

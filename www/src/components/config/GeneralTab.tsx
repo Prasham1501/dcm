@@ -152,16 +152,27 @@ export function GeneralTab() {
 
       {/* Footer Layout */}
       <div>
-        <h3 className="text-sm font-bold text-app-accent mb-3 pb-1 border-b border-app-border">
-          Print Footer Layout
+        <h3 className="text-sm font-bold text-app-accent mb-3 pb-1 border-b border-app-border flex items-center justify-between">
+          <span>Print Footer Layout</span>
+          <label className="flex items-center gap-2 text-xs font-medium text-app-text cursor-pointer">
+            <input
+              type="checkbox"
+              checked={config.enableFooter}
+              onChange={(e) => config.updateField('enableFooter', e.target.checked)}
+              className="accent-app-accent"
+            />
+            Enable Footer
+          </label>
         </h3>
-        <div className="grid grid-cols-3 gap-3">
-          <FormSelect label="Left" value={config.footerLayout.left} onChange={(v) => config.updateFooterLayout('left', v as PrintSlotContent)} options={SLOT_OPTIONS} />
-          <FormSelect label="Center" value={config.footerLayout.center} onChange={(v) => config.updateFooterLayout('center', v as PrintSlotContent)} options={SLOT_OPTIONS} />
-          <FormSelect label="Right" value={config.footerLayout.right} onChange={(v) => config.updateFooterLayout('right', v as PrintSlotContent)} options={SLOT_OPTIONS} />
-        </div>
-        <div className="mt-2">
-          <FormField label="Custom Footer Text" value={config.customFooterText} onChange={(v) => config.updateField('customFooterText', v)} />
+        <div className={config.enableFooter ? '' : 'opacity-40 pointer-events-none'}>
+          <div className="grid grid-cols-3 gap-3">
+            <FormSelect label="Left" value={config.footerLayout.left} onChange={(v) => config.updateFooterLayout('left', v as PrintSlotContent)} options={SLOT_OPTIONS} />
+            <FormSelect label="Center" value={config.footerLayout.center} onChange={(v) => config.updateFooterLayout('center', v as PrintSlotContent)} options={SLOT_OPTIONS} />
+            <FormSelect label="Right" value={config.footerLayout.right} onChange={(v) => config.updateFooterLayout('right', v as PrintSlotContent)} options={SLOT_OPTIONS} />
+          </div>
+          <div className="mt-2">
+            <FormField label="Custom Footer Text" value={config.customFooterText} onChange={(v) => config.updateField('customFooterText', v)} />
+          </div>
         </div>
       </div>
 

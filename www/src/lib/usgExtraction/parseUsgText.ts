@@ -109,6 +109,13 @@ export function parseLine(line: string, labelHint?: { key: string; label: string
   line = line.trim();
   if (!line) return null;
 
+  // ── Early rejection of machine settings noise ──
+  // These are ultrasound machine parameters, not medical measurements.
+  // Rejecting them early prevents false matches and speeds up parsing.
+  if (/^(PRF|IWF|WF|DR|FR|FH|PW|TIS|MI|SVD|SV|AP|G\d|F\d|IP|B\d|THI|STC|AO)\s*[\d.]/i.test(line)) return null;
+  if (/^\d+\s*fps$/i.test(line)) return null; // frame rate
+  if (/^[A-Z]{1,3}\d+\.\d[A-Z]\d/i.test(line)) return null; // concatenated settings like "F4.2G58"
+
   // Pre-clean common OCR artifacts
   // cmis → cm/s, cms → cm/s (common Tesseract misread of "cm/s")
   let cleaned = line
@@ -120,6 +127,8 @@ export function parseLine(line: string, labelHint?: { key: string; label: string
     .replace(/^[©®*#\[\]]+\s*/g, '')
     // Remove leading "1" before known measurement prefixes (OCR misread)
     .replace(/1(AC|HC|FL|BPD)(?=\d|\s|$)/gi, '$1')
+    // Numbered Doppler readings: "1 Vel 63.61 cm/s" → "Vel 63.61 cm/s"
+    .replace(/^\d+\s+(Vel|PSV|EDV|RI|PI|TAMV|Angle)\b/i, '$1')
     // Insert space between label and number when concatenated: "AC31.04" → "AC 31.04"
     .replace(/(AC|HC|FL|BPD|CRL|EFW|AFI|HL|PSV|EDV|Vel|TAMV|IMT)(\d)/gi, '$1 $2')
     // "31.04m75%" → "31.04cm 75%" (garbled 'c' before 'm')
@@ -197,6 +206,13 @@ export function parseLine(line: string, labelHint?: { key: string; label: string
     const value = parseFloat(numMatch[1]);
     const unit = normalizeUnit(numMatch[2]);
     const { key, label, category } = identifyKey(cleaned);
+
+    // Reject biometry/OB measurements with '%' unit — these are on-screen percentiles, not measurements
+    const BIOMETRY_KEYS = new Set(['BPD', 'HC', 'AC', 'FL', 'CRL', 'EFW', 'AFI', 'HL']);
+    if (unit === '%' && BIOMETRY_KEYS.has(key)) {
+      return null;
+    }
+
     if (key === 'measurement') {
       // If we have a label hint from the preceding line (multi-line Doppler format), use it
       if (labelHint) {
@@ -295,16 +311,18 @@ export function parseTextBlock(text: string): { readings: Reading[]; warnings: s
     if (r) {
       pendingLabel = null; // consumed
       // Apply vessel context: prefix label with vessel name for generic measurement types
-      if (currentVessel && (r.key === 'Vel' || r.key === 'angle' || r.key === 'PSV' || r.key === 'EDV' || r.key === 'RI' || r.key === 'PI' || r.key === 'TAMV')) {
+      if (currentVessel && (r.key === 'Vel' || r.key === 'angle' || r.key === 'PSV' || r.key === 'EDV' || r.key === 'RI' || r.key === 'PI' || r.key === 'TAMV' || r.key === 'SD' || r.key === 'IMT')) {
         r.label = `${currentVessel} — ${r.label}`;
         r.key = `${currentVessel}_${r.key}`;
       }
       console.log(`  [MATCH] "${line.trim()}" → ${r.key}=${r.value} ${r.unit}`);
     }
     if (!r) {
-      // Detect a standalone label line (e.g. "PSV", "RI", "EDV") for multi-line format.
+      // Detect a standalone label line (e.g. "PSV", "RI", "EDV", "2 Vel") for multi-line format.
       // Save it so the NEXT line's numeric value can be paired with it.
-      const trimmed = line.trim().replace(/^[©®*#\[\]]+\s*/g, '').replace(/[\s:=]+$/, '');
+      let trimmed = line.trim().replace(/^[©®*#\[\]]+\s*/g, '').replace(/[\s:=]+$/, '');
+      // Strip leading number prefix: "1 Vel" → "Vel", "2 PSV" → "PSV"
+      trimmed = trimmed.replace(/^\d+\s+/, '');
       if (trimmed.length >= 2 && trimmed.length <= 10 && !/\d/.test(trimmed) && /^[A-Za-z/]+$/.test(trimmed)) {
         const identified = identifyKey(trimmed);
         if (identified.key !== 'measurement') {

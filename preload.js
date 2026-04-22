@@ -17,6 +17,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getSystemPrinters: () => ipcRenderer.invoke('get-system-printers'),
     printToPrinter: (options) => ipcRenderer.invoke('print-to-printer', options),
     printCurrentToPrinter: (options) => ipcRenderer.invoke('print-current-to-printer', options),
+    printReportDialog: (options) => ipcRenderer.invoke('print-report-dialog', options),
     focusMainWindow: () => ipcRenderer.invoke('focus-main-window'),
 
     // Auto-login credentials
