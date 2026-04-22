@@ -33,45 +33,35 @@ const PAPER_DIMS: Record<string, { w: number; h: number }> = {
 export function PrintPreview() {
   const navigate = useNavigate();
   const { settings, updateSettings, setShowPrintPreview, addPrintJob, decrementPrintCount, printCountRemaining } = usePrintStore();
-  const { currentLayout, patientName, patientId, studyDate, currentPage, totalPages, images, setCurrentPage } = useViewerStore();
+  const { currentLayout, patientName, patientId, studyDate, currentPage, totalPages, totalImages, images, setCurrentPage } = useViewerStore();
   const hospitalConfig = useHospitalConfigStore();
 
-  const [zoom, setZoom]                       = useState(1.0);
-  const [currentPageCaptures, setCurrentPageCaptures] = useState<string[]>([]);
-  const [printType, setPrintType]             = useState<'image' | 'pcpndt'>('image');
-  const [printing, setPrinting]               = useState(false);
-  const [capturingAll, setCapturingAll]       = useState(false);
+  const [zoom, setZoom] = useState(1.0);
+  const [printType, setPrintType] = useState<'image' | 'pcpndt'>('image');
+  const [printing, setPrinting] = useState(false);
+  const [capturing, setCapturing] = useState(false);
   const [captureProgress, setCaptureProgress] = useState(0);
 
-  const [localPaperSize, setLocalPaperSize]   = useState<PaperSize>(settings.paperSize as PaperSize);
+  const [localPaperSize, setLocalPaperSize] = useState<PaperSize>(settings.paperSize as PaperSize);
   const [localOrientation, setLocalOrientation] = useState(settings.orientation);
-  const [localCopies, setLocalCopies]         = useState(settings.copies);
+  const [localCopies, setLocalCopies] = useState(settings.copies);
 
-  // Page selection: 'all' | 'current' | 'custom'
-  const [pageMode, setPageMode]               = useState<'all' | 'current' | 'custom'>('all');
+  const [pageMode, setPageMode] = useState<'all' | 'current' | 'custom'>('all');
   const [customPageInput, setCustomPageInput] = useState('');
   const [allPageCaptures, setAllPageCaptures] = useState<string[][]>([]);
 
-  // Show printer management panel
-  const [showPrinterMgr, setShowPrinterMgr]   = useState(false);
-  const [newPrinterName, setNewPrinterName]   = useState('');
+  const [showPrinterMgr, setShowPrinterMgr] = useState(false);
+  const [newPrinterName, setNewPrinterName] = useState('');
   const [newPrinterDisplay, setNewPrinterDisplay] = useState('');
-  const [newPrinterType, setNewPrinterType]   = useState('Laser');
+  const [newPrinterType, setNewPrinterType] = useState('Laser');
 
   const isCR = images.some(img => img.description?.toUpperCase().includes('CR') || (img as any).modality?.toUpperCase() === 'CR');
 
-  // Configured printers only
   const configuredPrinters = hospitalConfig.printers;
-  const activePrinters     = configuredPrinters.filter(p => p.isActive);
-  const defaultPrinter     = activePrinters.find(p => p.isDefault) || activePrinters[0];
+  const activePrinters = configuredPrinters.filter(p => p.isActive);
+  const defaultPrinter = activePrinters.find(p => p.isDefault) || activePrinters[0];
   const [selectedPrinter, setSelectedPrinter] = useState(defaultPrinter?.name || '');
 
-  // Capture current page on mount
-  useEffect(() => {
-    setCurrentPageCaptures(captureAllViewports());
-  }, []);
-
-  // Parse custom page input like "1,2,4-6"
   const parsePageList = useCallback((input: string): number[] => {
     const pages = new Set<number>();
     input.split(',').forEach(part => {
@@ -88,190 +78,62 @@ export function PrintPreview() {
     return [...pages].sort((a, b) => a - b);
   }, [totalPages]);
 
-  const selectedPages = (): number[] => {
+  const selectedPages = useCallback((): number[] => {
     if (pageMode === 'current') return [currentPage];
     if (pageMode === 'custom') return parsePageList(customPageInput);
-    // 'all'
     return Array.from({ length: totalPages }, (_, i) => i + 1);
-  };
+  }, [pageMode, currentPage, customPageInput, parsePageList, totalPages]);
 
-  // Capture all pages sequentially
-  const captureAllPagesFn = useCallback(async (): Promise<string[][]> => {
-    const captures: string[][] = [];
-    const origPage = currentPage;
-    setCapturingAll(true);
-    for (let p = 1; p <= totalPages; p++) {
-      setCaptureProgress(p);
-      setCurrentPage(p);
-      await new Promise(r => setTimeout(r, 600)); // wait for viewport render
-      captures[p - 1] = captureAllViewports();
-    }
-    setCurrentPage(origPage);
-    setCapturingAll(false);
-    return captures;
-  }, [currentPage, totalPages, setCurrentPage]);
+  useEffect(() => {
+    const captureAllPages = async () => {
+      setCapturing(true);
+      const origPage = currentPage;
+      const captures: string[][] = [];
+      for (let p = 1; p <= totalPages; p++) {
+        setCaptureProgress(p);
+        setCurrentPage(p);
+        await new Promise(r => setTimeout(r, 600));
+        const pageCaps = captureAllViewports();
+        captures.push(autoFill(pageCaps, currentLayout.spots, isCR));
+      }
+      setCurrentPage(origPage);
+      await new Promise(r => setTimeout(r, 300));
+      setAllPageCaptures(captures);
+      setCapturing(false);
+    };
+    captureAllPages();
+  }, []);
 
-  // Dimensions
-  const dims        = PAPER_DIMS[localPaperSize] || PAPER_DIMS.A4;
+  const dims = PAPER_DIMS[localPaperSize] || PAPER_DIMS.A4;
   const isLandscape = localOrientation === 'landscape';
-  const pw          = isLandscape ? dims.h : dims.w;
-  const ph          = isLandscape ? dims.w : dims.h;
+  const pw = isLandscape ? dims.h : dims.w;
+  const ph = isLandscape ? dims.w : dims.h;
 
-  // Grid CSS
   const buildGridCss = () => {
     const l = currentLayout;
-    let gridCols = l.gridTemplate?.columns ?? `repeat(${l.cols}, 1fr)`;
-    let gridRows = l.gridTemplate?.rows   ?? `repeat(${l.rows}, 1fr)`;
-    let gridAreas = l.areas ? `grid-template-areas: ${l.areas};` : '';
+    const gridCols = l.gridTemplate?.columns ?? `repeat(${l.cols}, 1fr)`;
+    const gridRows = l.gridTemplate?.rows ?? `repeat(${l.rows}, 1fr)`;
+    const gridAreas = l.areas ? `grid-template-areas: ${l.areas};` : '';
     return { gridCols, gridRows, gridAreas };
   };
 
   const buildHeaderHtml = () => {
-    const l = renderPrintSlot(hospitalConfig.headerLayout.left,   hospitalConfig as any, hospitalConfig.customHeaderLeft);
+    const l = renderPrintSlot(hospitalConfig.headerLayout.left, hospitalConfig as any, hospitalConfig.customHeaderLeft);
     const c = renderPrintSlot(hospitalConfig.headerLayout.center, hospitalConfig as any, hospitalConfig.customHeaderCenter);
-    const r = renderPrintSlot(hospitalConfig.headerLayout.right,  hospitalConfig as any, hospitalConfig.customHeaderRight);
+    const r = renderPrintSlot(hospitalConfig.headerLayout.right, hospitalConfig as any, hospitalConfig.customHeaderRight);
     return `<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 15px;border-bottom:1px solid #ccc;font-size:10px"><div>${l}</div><div style="text-align:center">${c}</div><div style="text-align:right">${r}</div></div>`;
   };
 
   const buildFooterHtml = () => {
-    const l = renderPrintSlot(hospitalConfig.footerLayout.left,   hospitalConfig as any, hospitalConfig.customFooterLeft);
+    const l = renderPrintSlot(hospitalConfig.footerLayout.left, hospitalConfig as any, hospitalConfig.customFooterLeft);
     const c = renderPrintSlot(hospitalConfig.footerLayout.center, hospitalConfig as any, hospitalConfig.customFooterCenter);
-    const r = renderPrintSlot(hospitalConfig.footerLayout.right,  hospitalConfig as any, hospitalConfig.customFooterRight);
+    const r = renderPrintSlot(hospitalConfig.footerLayout.right, hospitalConfig as any, hospitalConfig.customFooterRight);
     return `<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 15px;border-top:1px solid #ccc;font-size:8px;color:#999"><div>${l}</div><div style="text-align:center">${c}</div><div style="text-align:right">${r}</div></div>`;
   };
 
-  const patientBar = () => settings.patientInfoEnabled
+  const patientBarHtml = () => settings.patientInfoEnabled
     ? `<div style="padding:4px 15px;background:#f5f5f5;border-bottom:1px solid #ccc;display:flex;justify-content:space-between;font-size:10px"><span><b>Patient:</b> ${patientName}</span><span><b>ID:</b> ${patientId}</span><span><b>Date:</b> ${studyDate}</span></div>`
     : '';
-
-  const buildPageHtml = (pageCaptures: string[], pageIdx: number) => {
-    const printImgs = autoFill(pageCaptures, currentLayout.spots, isCR);
-    const { gridCols, gridRows, gridAreas } = buildGridCss();
-    const areaNames = currentLayout.areas ? getAreaLetters(currentLayout.areas) : [];
-    const imgsHtml = Array.from({ length: currentLayout.spots }).map((_, i) => {
-      const src = printImgs[i];
-      const cellBg = src ? '#000' : '#f5f5f5';
-      const cellBorder = settings.borderEnabled ? '1px solid #ccc' : '1px solid #ddd';
-      const areaAttr = currentLayout.areas && areaNames[i]
-        ? `style="grid-area:${areaNames[i]};background:${cellBg};display:flex;align-items:center;justify-content:center;overflow:hidden;border:${cellBorder}"`
-        : `style="background:${cellBg};display:flex;align-items:center;justify-content:center;overflow:hidden;border:${cellBorder}"`;
-      return src
-        ? `<div ${areaAttr}><img src="${src}" style="width:100%;height:100%;object-fit:contain" /></div>`
-        : `<div ${areaAttr}><span style="color:#aaa;font-size:10px">${(pageIdx * currentLayout.spots) + i + 1}</span></div>`;
-    }).join('');
-    return `<div class="page">${settings.headerEnabled ? buildHeaderHtml() : ''}${patientBar()}<div class="grid">${imgsHtml}</div>${settings.footerEnabled ? buildFooterHtml() : ''}</div>`;
-  };
-
-  const buildPcpndtHtml = () => {
-    const hosp = hospitalConfig.hospitalName || 'Hospital';
-    const addr = [hospitalConfig.address1, hospitalConfig.city, hospitalConfig.state, hospitalConfig.pincode].filter(Boolean).join(', ');
-    const rows = [
-      ['Patient Name', patientName], ['Patient ID', patientId], ['Date of Examination', studyDate],
-      ['Referred By', ''], ['Address', ''], ['Age / LMP', ''], ['No. of Children (M/F)', ''],
-      ['Indication for Test', ''], ['Findings', ''], ['Result / Impression', ''],
-    ];
-    const rowsHtml = rows.map(([l, v]) => `<tr><td class="label">${l}</td><td class="val">${v || '&nbsp;'}</td></tr>`).join('');
-    return `<!DOCTYPE html><html><head><title>PCPNDT Form F</title><style>
-@page{size:A5 portrait;margin:8mm}body{margin:0;font-family:Arial,sans-serif;font-size:10pt}
-.box{border:2px solid #000;padding:8px;min-height:170mm}h2{text-align:center;font-size:12pt;margin:3px 0}
-h3{text-align:center;font-size:10pt;margin:2px 0}table{width:100%;border-collapse:collapse;margin-top:8px}
-td{padding:3px 5px;border:1px solid #000;font-size:9pt}.label{font-weight:bold;width:40%}.val{min-height:16px}
-.sig{margin-top:16mm;display:flex;justify-content:space-between}.sigLine{border-top:1px solid #000;width:60mm;margin-top:10mm}
-@media print{body{-webkit-print-color-adjust:exact}}
-</style></head><body><div class="box">
-<h2>${hosp}</h2><h3>${addr}</h3>${hospitalConfig.phone ? `<p style="text-align:center;font-size:9pt;margin:2px 0">Tel: ${hospitalConfig.phone}</p>` : ''}
-<hr style="margin:5px 0;border-top:1px solid #000"/>
-<h3 style="text-decoration:underline">Form F (PCPNDT)</h3>
-<p style="text-align:center;font-size:8pt;margin:2px 0">Pre-Conception &amp; Pre-Natal Diagnostic Techniques Act, 1994</p>
-<table>${rowsHtml}</table>
-<div class="sig"><div style="text-align:center"><div class="sigLine"></div><div style="font-size:8pt">Signature of Patient / Guardian</div></div>
-<div style="text-align:center"><div class="sigLine"></div><div style="font-size:8pt">Signature &amp; Seal of Radiologist</div></div></div>
-<p style="font-size:7pt;text-align:center;margin-top:4px">This record shall be maintained for a period of 2 years or such period as may be prescribed.</p>
-</div><script>window.onload=function(){setTimeout(function(){window.print()},500)}</script></body></html>`;
-  };
-
-  const handlePrint = async (e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (printCountRemaining <= 0) { alert('No prints remaining. Please recharge your print count.'); return; }
-    setPrinting(true);
-    updateSettings({ paperSize: localPaperSize, orientation: localOrientation, copies: localCopies, defaultPrinter: selectedPrinter });
-
-    const printWin = window.open('', '_blank', 'width=900,height=1100');
-    if (!printWin) { setPrinting(false); return; }
-
-    if (printType === 'pcpndt') {
-      printWin.document.write(buildPcpndtHtml());
-    } else {
-      const pages = selectedPages();
-      let pageCaptures: string[][];
-
-      if (pages.length === 1 && pages[0] === currentPage) {
-        pageCaptures = [currentPageCaptures];
-      } else {
-        // Need to capture all selected pages
-        const allCaptures = allPageCaptures.length === totalPages
-          ? allPageCaptures
-          : await captureAllPagesFn();
-        setAllPageCaptures(allCaptures);
-        pageCaptures = pages.map(p => allCaptures[p - 1] || []);
-      }
-
-      const pagesHtml = pageCaptures.map((caps, idx) => buildPageHtml(caps, pages[idx] - 1)).join('');
-      // Calculate grid height so cells match 4:3 image AR — same as preview logic
-      // Print area: 100vw - 20mm margins ≈ 100vw - 76px; grid padding 2px each side
-      const printGridW = `calc(100vw - 80px)`;
-      // Ideal cell height: (gridW / cols) * 3/4; ideal grid height: cellH * rows
-      // Use CSS calc for this: gridH = (100vw - 80px) / cols * 3/4 * rows = (100vw - 80px) * rows * 3 / (cols * 4)
-      const printGridH = `calc((100vw - 80px) * ${currentLayout.rows * 3} / ${currentLayout.cols * 4})`;
-      const { gridCols, gridRows, gridAreas } = buildGridCss();
-      printWin.document.write(`<!DOCTYPE html><html><head><title>DICOM Print</title>
-<style>
-@page{size:${localPaperSize} ${isLandscape ? 'landscape' : 'portrait'};margin:10mm}
-body{margin:0;font-family:Arial,sans-serif}
-.page{page-break-after:always;page-break-inside:avoid}
-.page:last-child{page-break-after:auto}
-.grid{display:grid;grid-template-columns:${gridCols};grid-template-rows:${gridRows};${gridAreas}gap:1px;padding:2px;width:${printGridW};height:${printGridH};max-height:calc(100vh - 80px)}
-@media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
-</style></head><body>${pagesHtml}<script>window.onload=function(){setTimeout(function(){window.print()},600)}</script></body></html>`);
-    }
-
-    printWin.document.close();
-    addPrintJob({ patientName, studyDate, layout: `${currentLayout.spots} Spots`, copies: localCopies, paperSize: localPaperSize });
-    for (let i = 0; i < localCopies; i++) decrementPrintCount();
-
-    // Mark the patient as printed (P column: N → Y)
-    const { patients, editPatient } = usePatientStore.getState();
-    const matchedPatient = patients.find(p => p.patientId === patientId && p.patientName === patientName);
-    if (matchedPatient) {
-      editPatient(matchedPatient.id, { printed: true });
-    }
-
-    setPrinting(false);
-    setShowPrintPreview(false);
-  };
-
-  // Preview grid style — size height so cells match ~4:3 image AR, eliminating black bars
-  // Available grid width = paper width minus 2×15px side padding
-  // Cell width = gridW / cols; cell height = cellW * 3/4 for 4:3 aspect images
-  // Cap at (ph - 80) to ensure it fits on the paper preview
-  const previewImageAR = 4 / 3;
-  const previewGridW = pw - 30;
-  const previewIdealCellH = (previewGridW / currentLayout.cols) / previewImageAR;
-  const previewGridH = Math.min(previewIdealCellH * currentLayout.rows, ph - 80);
-  const previewGridStyle: React.CSSProperties = {
-    display: 'grid', gap: '1px', width: '100%', height: `${previewGridH * zoom}px`,
-    ...(currentLayout.areas ? {
-      gridTemplateAreas: currentLayout.areas,
-      gridTemplateColumns: currentLayout.gridTemplate?.columns ?? `repeat(${currentLayout.cols}, 1fr)`,
-      gridTemplateRows:    currentLayout.gridTemplate?.rows   ?? `repeat(${currentLayout.rows}, 1fr)`,
-    } : {
-      gridTemplateColumns: `repeat(${currentLayout.cols}, 1fr)`,
-      gridTemplateRows:    `repeat(${currentLayout.rows}, 1fr)`,
-    }),
-  };
-  const areaNames = currentLayout.areas ? getAreaLetters(currentLayout.areas) : [];
-  const displayImages = autoFill(currentPageCaptures, currentLayout.spots, isCR);
-  const hasRealImages = displayImages.some(i => i && i !== '');
 
   const renderSlotPv = (slot: string, customText: string) => {
     switch (slot) {
@@ -283,113 +145,141 @@ body{margin:0;font-family:Arial,sans-serif}
     }
   };
 
-  // Add printer
+  const buildPrintHtml = useCallback((pagesToPrint: number[]) => {
+    const { gridCols, gridRows, gridAreas } = buildGridCss();
+    const areaNames = currentLayout.areas ? getAreaLetters(currentLayout.areas) : [];
+    const pagesHtml = pagesToPrint.map((pageNum) => {
+      const caps = allPageCaptures[pageNum - 1] || [];
+      const imgsHtml = Array.from({ length: currentLayout.spots }).map((_, i) => {
+        const src = caps[i];
+        const cellBg = src ? '#000' : '#f5f5f5';
+        const cellBorder = settings.borderEnabled ? '1px solid #ccc' : '1px solid #ddd';
+        const areaStyle = currentLayout.areas && areaNames[i] ? `grid-area:${areaNames[i]};` : '';
+        return src
+          ? `<div style="${areaStyle}background:${cellBg};display:flex;align-items:center;justify-content:center;overflow:hidden;border:${cellBorder}"><img src="${src}" style="width:100%;height:100%;object-fit:contain" /></div>`
+          : `<div style="${areaStyle}background:${cellBg};display:flex;align-items:center;justify-content:center;overflow:hidden;border:${cellBorder}"></div>`;
+      }).join('');
+      return `<div class="page">${settings.headerEnabled ? buildHeaderHtml() : ''}${patientBarHtml()}<div class="grid">${imgsHtml}</div>${hospitalConfig.enableFooter ? buildFooterHtml() : ''}</div>`;
+    }).join('');
+    return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>DICOM Print - ${patientName}</title><style>@page{size:${localPaperSize} ${isLandscape ? 'landscape' : 'portrait'};margin:10mm}*{box-sizing:border-box}body{margin:0;padding:0;font-family:Arial,Helvetica,sans-serif}.page{page-break-after:always;page-break-inside:avoid;display:flex;flex-direction:column;height:calc(100vh);overflow:hidden}.page:last-child{page-break-after:auto}.grid{display:grid;grid-template-columns:${gridCols};grid-template-rows:${gridRows};${gridAreas}gap:1px;padding:2px;flex:1;min-height:0}img{display:block}@media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}</style></head><body>${pagesHtml}</body></html>`;
+  }, [allPageCaptures, currentLayout, settings, hospitalConfig, patientName, patientId, studyDate, localPaperSize, isLandscape]);
+
+  const buildPcpndtHtml = () => {
+    const hosp = hospitalConfig.hospitalName || 'Hospital';
+    const addr = [hospitalConfig.address1, hospitalConfig.city, hospitalConfig.state, hospitalConfig.pincode].filter(Boolean).join(', ');
+    const rows = [['Patient Name', patientName], ['Patient ID', patientId], ['Date of Examination', studyDate], ['Referred By', ''], ['Address', ''], ['Age / LMP', ''], ['No. of Children (M/F)', ''], ['Indication for Test', ''], ['Findings', ''], ['Result / Impression', '']];
+    const rowsHtml = rows.map(([l, v]) => `<tr><td class="label">${l}</td><td class="val">${v || '&nbsp;'}</td></tr>`).join('');
+    return `<!DOCTYPE html><html><head><title>PCPNDT Form F</title><style>@page{size:A5 portrait;margin:8mm}body{margin:0;font-family:Arial,sans-serif;font-size:10pt}.box{border:2px solid #000;padding:8px;min-height:170mm}h2{text-align:center;font-size:12pt;margin:3px 0}h3{text-align:center;font-size:10pt;margin:2px 0}table{width:100%;border-collapse:collapse;margin-top:8px}td{padding:3px 5px;border:1px solid #000;font-size:9pt}.label{font-weight:bold;width:40%}.val{min-height:16px}.sig{margin-top:16mm;display:flex;justify-content:space-between}.sigLine{border-top:1px solid #000;width:60mm;margin-top:10mm}@media print{body{-webkit-print-color-adjust:exact}}</style></head><body><div class="box"><h2>${hosp}</h2><h3>${addr}</h3>${hospitalConfig.phone ? `<p style="text-align:center;font-size:9pt;margin:2px 0">Tel: ${hospitalConfig.phone}</p>` : ''}<hr style="margin:5px 0;border-top:1px solid #000"/><h3 style="text-decoration:underline">Form F (PCPNDT)</h3><p style="text-align:center;font-size:8pt;margin:2px 0">Pre-Conception &amp; Pre-Natal Diagnostic Techniques Act, 1994</p><table>${rowsHtml}</table><div class="sig"><div style="text-align:center"><div class="sigLine"></div><div style="font-size:8pt">Signature of Patient / Guardian</div></div><div style="text-align:center"><div class="sigLine"></div><div style="font-size:8pt">Signature &amp; Seal of Radiologist</div></div></div><p style="font-size:7pt;text-align:center;margin-top:4px">This record shall be maintained for a period of 2 years or such period as may be prescribed.</p></div></body></html>`;
+  };
+
+  const handlePrint = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (activePrinters.length === 0) { alert('No printers configured. Please add a printer in Config or Printer Settings.'); return; }
+    if (printCountRemaining <= 0) { alert('No prints remaining. Please recharge your print count.'); return; }
+    if (allPageCaptures.length === 0 && printType === 'image') { alert('Still capturing pages, please wait.'); return; }
+    setPrinting(true);
+    updateSettings({ paperSize: localPaperSize, orientation: localOrientation, copies: localCopies, defaultPrinter: selectedPrinter });
+    const pagesToPrint = selectedPages();
+    const htmlContent = printType === 'pcpndt' ? buildPcpndtHtml() : buildPrintHtml(pagesToPrint);
+    const electronAPI = (window as any).electronAPI;
+    if (electronAPI?.printToPrinter && selectedPrinter) {
+      try {
+        const result = await electronAPI.printToPrinter({ printerName: selectedPrinter, htmlContent, printSettings: { paperSize: localPaperSize, orientation: localOrientation, copies: localCopies, colorMode: 'color' } });
+        if (!result.success) {
+          console.error('Direct print failed:', result.error);
+          if (electronAPI?.printReportDialog) await electronAPI.printReportDialog({ htmlContent, paperSize: localPaperSize });
+        }
+      } catch (err) { console.error('Print error:', err); }
+    } else if (electronAPI?.printReportDialog) {
+      try { await electronAPI.printReportDialog({ htmlContent, paperSize: localPaperSize }); } catch (err) { console.error('PDF print error:', err); }
+    } else {
+      const printWin = window.open('', '_blank');
+      if (printWin) { printWin.document.write(htmlContent); printWin.document.close(); setTimeout(() => { printWin.print(); }, 600); }
+    }
+    addPrintJob({ patientName, studyDate, layout: `${currentLayout.spots} Spots`, copies: localCopies, paperSize: localPaperSize });
+    for (let i = 0; i < localCopies; i++) decrementPrintCount();
+    const { patients, editPatient } = usePatientStore.getState();
+    const matchedPatient = patients.find(p => p.patientId === patientId && p.patientName === patientName);
+    if (matchedPatient) editPatient(matchedPatient.id, { printed: true });
+    setPrinting(false);
+    setShowPrintPreview(false);
+  };
+
+  const previewGridStyle: React.CSSProperties = {
+    display: 'grid', gap: 0, flex: 1, minHeight: 0,
+    ...(currentLayout.areas ? {
+      gridTemplateAreas: currentLayout.areas,
+      gridTemplateColumns: currentLayout.gridTemplate?.columns ?? `repeat(${currentLayout.cols}, 1fr)`,
+      gridTemplateRows: currentLayout.gridTemplate?.rows ?? `repeat(${currentLayout.rows}, 1fr)`,
+    } : {
+      gridTemplateColumns: `repeat(${currentLayout.cols}, 1fr)`,
+      gridTemplateRows: `repeat(${currentLayout.rows}, 1fr)`,
+    }),
+  };
+  const toolbarH = showPrinterMgr ? 190 : 55;
+  const areaNames = currentLayout.areas ? getAreaLetters(currentLayout.areas) : [];
+
   const handleAddPrinter = (e: React.MouseEvent) => {
     e.stopPropagation();
     if (!newPrinterName.trim()) return;
-    hospitalConfig.addPrinter({
-      name: newPrinterName.trim(),
-      displayName: newPrinterDisplay.trim() || newPrinterName.trim(),
-      type: newPrinterType,
-      isDefault: configuredPrinters.length === 0,
-      isActive: true,
-    });
+    hospitalConfig.addPrinter({ name: newPrinterName.trim(), displayName: newPrinterDisplay.trim() || newPrinterName.trim(), type: newPrinterType, isDefault: configuredPrinters.length === 0, isActive: true });
     setNewPrinterName(''); setNewPrinterDisplay(''); setNewPrinterType('Laser');
   };
 
+  const pagesToShow = selectedPages();
+
   return (
-    <div className="fixed inset-0 bg-black/70 flex flex-col z-50" onClick={e => e.stopPropagation()}>
-      {/* ── Top bar ── */}
+    <div className="fixed inset-0 bg-black/80 flex flex-col z-[1000]" onClick={e => e.stopPropagation()}>
       <div className="flex items-center justify-between px-3 py-1.5 bg-app-header-bg border-b border-app-border flex-shrink-0 flex-wrap gap-2">
-        {/* Left */}
         <div className="flex items-center gap-2">
           <button type="button" onClick={e => { e.stopPropagation(); setShowPrintPreview(false); navigate('/'); }} className="px-2 py-1 text-xs border border-app-border text-app-text-secondary bg-app-bg rounded hover:bg-app-hover flex items-center gap-1"><Users className="w-3 h-3" /> Patients</button>
           <button type="button" onClick={e => { e.stopPropagation(); setShowPrintPreview(false); }} className="px-2 py-1 text-xs border border-app-border text-app-text-secondary bg-app-bg rounded hover:bg-app-hover flex items-center gap-1"><ChevronLeft className="w-3 h-3" /> Viewer</button>
           <span className="text-xs text-app-text-muted">|</span>
-          <Printer className="w-4 h-4 text-app-accent" />
+          <Printer className="w-5 h-5 text-app-accent" />
           <span className="text-sm font-bold text-app-text">Print Preview</span>
-          {capturingAll && <span className="text-[10px] text-yellow-500 animate-pulse">Capturing page {captureProgress}/{totalPages}…</span>}
-          {!isCR && currentPageCaptures.some(i => !i || i === '') && <span className="text-[10px] text-green-500 bg-green-500/10 px-2 py-0.5 rounded">Auto-filled</span>}
+          {capturing && <span className="text-[10px] text-yellow-500 animate-pulse">Capturing page {captureProgress}/{totalPages}…</span>}
+          {!capturing && <span className="text-xs text-app-text-muted">{totalPages} page{totalPages > 1 ? 's' : ''} · {totalImages} images</span>}
         </div>
-
-        {/* Right controls */}
         <div className="flex items-center gap-2 flex-wrap">
-          {/* Print count */}
           <span className="text-xs text-app-text-secondary whitespace-nowrap">Prints: <span className={`font-bold ${printCountRemaining < 50 ? 'text-red-500' : 'text-green-600'}`}>{printCountRemaining}</span></span>
-
-          {/* Zoom */}
           <button type="button" onClick={e => { e.stopPropagation(); setZoom(z => Math.max(0.3, z - 0.1)); }} className="p-1 text-app-text-secondary hover:bg-app-hover rounded"><ZoomOut className="w-4 h-4" /></button>
           <span className="text-xs text-app-text w-10 text-center">{Math.round(zoom * 100)}%</span>
           <button type="button" onClick={e => { e.stopPropagation(); setZoom(z => Math.min(2.0, z + 0.1)); }} className="p-1 text-app-text-secondary hover:bg-app-hover rounded"><ZoomIn className="w-4 h-4" /></button>
-
           <div className="w-px h-5 bg-app-border" />
-
-          {/* Paper size */}
-          <select value={localPaperSize} onChange={e => { e.stopPropagation(); setLocalPaperSize(e.target.value as PaperSize); }} onClick={e => e.stopPropagation()} className="h-7 px-1 text-xs border border-app-border bg-app-bg text-app-text rounded">
-            {PAPER_SIZES.map(s => <option key={s} value={s}>{s}</option>)}
-          </select>
-
-          {/* Orientation */}
+          <select value={localPaperSize} onChange={e => { e.stopPropagation(); setLocalPaperSize(e.target.value as PaperSize); }} onClick={e => e.stopPropagation()} className="h-7 px-1 text-xs border border-app-border bg-app-bg text-app-text rounded">{PAPER_SIZES.map(s => <option key={s} value={s}>{s}</option>)}</select>
           <div className="flex rounded overflow-hidden border border-app-border">
-            {(['portrait', 'landscape'] as const).map(o => (
-              <button key={o} type="button" onClick={e => { e.stopPropagation(); setLocalOrientation(o); }} className={`px-2 py-1 text-[10px] font-bold transition-colors ${localOrientation === o ? 'bg-app-accent text-white' : 'bg-app-bg text-app-text-secondary hover:bg-app-hover'}`}>{o === 'portrait' ? 'P' : 'L'}</button>
-            ))}
+            {(['portrait', 'landscape'] as const).map(o => (<button key={o} type="button" onClick={e => { e.stopPropagation(); setLocalOrientation(o); }} className={`px-2 py-1 text-[10px] font-bold transition-colors ${localOrientation === o ? 'bg-app-accent text-white' : 'bg-app-bg text-app-text-secondary hover:bg-app-hover'}`}>{o === 'portrait' ? 'P' : 'L'}</button>))}
           </div>
-
-          {/* Copies */}
           <div className="flex items-center gap-1">
             <span className="text-xs text-app-text-muted">Copies:</span>
             <input type="number" min={1} max={10} value={localCopies} onChange={e => { e.stopPropagation(); setLocalCopies(Math.max(1, Math.min(10, Number(e.target.value)))); }} onClick={e => e.stopPropagation()} className="w-10 h-7 px-1 text-xs border border-app-border bg-app-bg text-app-text rounded text-center" />
           </div>
-
-          {/* Page selection */}
           <div className="flex items-center gap-1 border border-app-border rounded overflow-hidden">
-            {(['all', 'current', 'custom'] as const).map(m => (
-              <button key={m} type="button" onClick={e => { e.stopPropagation(); setPageMode(m); }} className={`px-2 py-1 text-[10px] font-semibold whitespace-nowrap transition-colors ${pageMode === m ? 'bg-app-accent text-white' : 'bg-app-bg text-app-text-secondary hover:bg-app-hover'}`}>
-                {m === 'all' ? `All (${totalPages})` : m === 'current' ? `Page ${currentPage}` : 'Custom'}
-              </button>
-            ))}
+            {(['all', 'current', 'custom'] as const).map(m => (<button key={m} type="button" onClick={e => { e.stopPropagation(); setPageMode(m); }} className={`px-2 py-1 text-[10px] font-semibold whitespace-nowrap transition-colors ${pageMode === m ? 'bg-app-accent text-white' : 'bg-app-bg text-app-text-secondary hover:bg-app-hover'}`}>{m === 'all' ? `All (${totalPages})` : m === 'current' ? `Page ${currentPage}` : 'Custom'}</button>))}
           </div>
-          {pageMode === 'custom' && (
-            <input type="text" value={customPageInput} onChange={e => { e.stopPropagation(); setCustomPageInput(e.target.value); }} onClick={e => e.stopPropagation()} placeholder="e.g. 1,3-5" className="w-24 h-7 px-2 text-xs border border-app-border bg-app-bg text-app-text rounded" />
-          )}
-
-          {/* Printer */}
+          {pageMode === 'custom' && (<input type="text" value={customPageInput} onChange={e => { e.stopPropagation(); setCustomPageInput(e.target.value); }} onClick={e => e.stopPropagation()} placeholder="e.g. 1,3-5" className="w-24 h-7 px-2 text-xs border border-app-border bg-app-bg text-app-text rounded" />)}
           <div className="flex items-center gap-1">
             {activePrinters.length > 0 ? (
-              <select value={selectedPrinter} onChange={e => { e.stopPropagation(); setSelectedPrinter(e.target.value); }} onClick={e => e.stopPropagation()} className="h-7 px-1 text-xs border border-app-border bg-app-bg text-app-text rounded max-w-[130px]">
-                {activePrinters.map(p => <option key={p.name} value={p.name}>{p.displayName || p.name}</option>)}
-              </select>
-            ) : <span className="text-[10px] text-app-text-muted italic">Default printer</span>}
+              <select value={selectedPrinter} onChange={e => { e.stopPropagation(); setSelectedPrinter(e.target.value); }} onClick={e => e.stopPropagation()} className="h-7 px-1 text-xs border border-app-border bg-app-bg text-app-text rounded max-w-[130px]">{activePrinters.map(p => <option key={p.name} value={p.name}>{p.displayName || p.name}</option>)}</select>
+            ) : <span className="text-[10px] text-red-400 italic">No printers configured</span>}
             <button type="button" onClick={e => { e.stopPropagation(); setShowPrinterMgr(v => !v); }} className={`h-7 px-2 text-[10px] border rounded transition-colors ${showPrinterMgr ? 'border-app-accent bg-app-accent/10 text-app-accent' : 'border-app-border text-app-text-secondary hover:bg-app-hover'}`} title="Manage printers">⚙</button>
           </div>
-
-          {/* DICOM / PCPNDT toggle */}
           <div className="flex rounded overflow-hidden border border-app-border">
             <button type="button" onClick={e => { e.stopPropagation(); setPrintType('image'); }} className={`px-2 py-1 text-[10px] font-semibold transition-colors ${printType === 'image' ? 'bg-app-accent text-white' : 'bg-app-bg text-app-text-secondary hover:bg-app-hover'}`}>DICOM</button>
             <button type="button" onClick={e => { e.stopPropagation(); setPrintType('pcpndt'); }} className={`px-2 py-1 text-[10px] font-semibold transition-colors ${printType === 'pcpndt' ? 'bg-app-accent text-white' : 'bg-app-bg text-app-text-secondary hover:bg-app-hover'}`}>PCPNDT</button>
           </div>
-
-          {/* Print button */}
-          <button type="button" onClick={handlePrint} disabled={printing || capturingAll || printCountRemaining <= 0} className="px-4 py-1.5 text-xs font-semibold border-2 border-app-accent text-white bg-app-accent rounded hover:opacity-90 transition-colors flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed">
-            <Printer className="w-3 h-3" />
-            {printing ? 'Printing…' : capturingAll ? 'Capturing…' : `Print${pageMode !== 'current' && totalPages > 1 ? ` (${selectedPages().length}p)` : ''}`}
+          <button type="button" onClick={handlePrint} disabled={printing || capturing || printCountRemaining <= 0 || activePrinters.length === 0} className="flex items-center gap-2 px-5 py-1.5 text-xs font-bold bg-app-accent text-white rounded hover:brightness-110 disabled:opacity-50 transition-colors">
+            <Printer className="w-4 h-4" />{printing ? 'Printing…' : capturing ? 'Capturing…' : `Print${pagesToShow.length > 1 ? ` (${pagesToShow.length}p)` : ''}`}
           </button>
-
           <button type="button" onClick={e => { e.stopPropagation(); setShowPrintPreview(false); }} className="p-1 text-app-text-secondary hover:text-app-text"><X className="w-4 h-4" /></button>
         </div>
       </div>
-
-      {/* ── Printer management panel ── */}
       {showPrinterMgr && (
         <div className="bg-app-surface border-b border-app-border px-4 py-3 flex-shrink-0" onClick={e => e.stopPropagation()}>
           <div className="flex items-start gap-6">
-            {/* Existing printers */}
             <div className="flex-1">
               <h4 className="text-xs font-bold text-app-accent mb-2">Configured Printers</h4>
-              {configuredPrinters.length === 0 ? (
-                <p className="text-xs text-app-text-muted italic">No printers configured. Add one below.</p>
-              ) : (
+              {configuredPrinters.length === 0 ? (<p className="text-xs text-app-text-muted italic">No printers configured. Add one below.</p>) : (
                 <div className="space-y-1 max-h-32 overflow-auto">
                   {configuredPrinters.map(p => (
                     <div key={p.name} className="flex items-center gap-2 text-xs">
@@ -403,16 +293,13 @@ body{margin:0;font-family:Arial,sans-serif}
                 </div>
               )}
             </div>
-            {/* Add printer */}
             <div className="w-64">
               <h4 className="text-xs font-bold text-app-accent mb-2">Add Printer</h4>
               <div className="space-y-1.5">
                 <input type="text" value={newPrinterName} onChange={e => { e.stopPropagation(); setNewPrinterName(e.target.value); }} onClick={e => e.stopPropagation()} placeholder="System printer name (exact)" className="w-full h-7 px-2 text-xs border border-app-border bg-app-bg text-app-text rounded" />
                 <input type="text" value={newPrinterDisplay} onChange={e => { e.stopPropagation(); setNewPrinterDisplay(e.target.value); }} onClick={e => e.stopPropagation()} placeholder="Display name (optional)" className="w-full h-7 px-2 text-xs border border-app-border bg-app-bg text-app-text rounded" />
                 <div className="flex gap-1">
-                  <select value={newPrinterType} onChange={e => { e.stopPropagation(); setNewPrinterType(e.target.value); }} onClick={e => e.stopPropagation()} className="flex-1 h-7 px-1 text-xs border border-app-border bg-app-bg text-app-text rounded">
-                    {['Laser', 'Inkjet', 'DICOM Thermal', 'Virtual', 'Other'].map(t => <option key={t} value={t}>{t}</option>)}
-                  </select>
+                  <select value={newPrinterType} onChange={e => { e.stopPropagation(); setNewPrinterType(e.target.value); }} onClick={e => e.stopPropagation()} className="flex-1 h-7 px-1 text-xs border border-app-border bg-app-bg text-app-text rounded">{['Laser', 'Inkjet', 'DICOM Thermal', 'Virtual', 'Other'].map(t => <option key={t} value={t}>{t}</option>)}</select>
                   <button type="button" onClick={handleAddPrinter} disabled={!newPrinterName.trim()} className="h-7 px-3 text-xs font-semibold bg-app-accent text-white rounded hover:opacity-90 disabled:opacity-40 flex items-center gap-1"><Plus className="w-3 h-3" /> Add</button>
                 </div>
               </div>
@@ -420,11 +307,8 @@ body{margin:0;font-family:Arial,sans-serif}
           </div>
         </div>
       )}
-
-      {/* ── Preview area ── */}
-      <div className="flex-1 overflow-auto flex items-start justify-center p-8 bg-gray-600" onClick={e => e.stopPropagation()}>
+      <div className="flex-1 overflow-auto flex flex-col items-center bg-gray-900/50 p-2" onClick={e => e.stopPropagation()}>
         {printType === 'pcpndt' ? (
-          /* PCPNDT preview */
           <div style={{ width: 420 * zoom, minWidth: 420 * zoom }} className="bg-white shadow-2xl p-6">
             <div className="border-2 border-black p-4" style={{ fontSize: 10 * zoom }}>
               <div className="text-center font-bold" style={{ fontSize: 12 * zoom }}>{hospitalConfig.hospitalName}</div>
@@ -433,56 +317,65 @@ body{margin:0;font-family:Arial,sans-serif}
               <div className="text-center font-bold underline" style={{ fontSize: 11 * zoom }}>Form F (PCPNDT)</div>
               <div className="text-center text-gray-500" style={{ fontSize: 8 * zoom }}>Pre-Conception & Pre-Natal Diagnostic Techniques Act, 1994</div>
               <table className="w-full mt-2 border-collapse" style={{ fontSize: 9 * zoom }}>
+                <tbody>
                 {[['Patient Name', patientName], ['Patient ID', patientId], ['Date', studyDate], ['Referred By', ''], ['Age / LMP', ''], ['Findings', ''], ['Result', '']].map(([l, v]) => (
                   <tr key={l}><td className="border border-black px-1 py-0.5 font-bold w-2/5">{l}</td><td className="border border-black px-1 py-0.5">{v || '—'}</td></tr>
                 ))}
+                </tbody>
               </table>
             </div>
           </div>
-        ) : (
-          /* DICOM image preview (current page) */
-          <div style={{ width: pw * zoom, minWidth: pw * zoom, minHeight: ph * zoom }} className="bg-white shadow-2xl relative">
-            {settings.headerEnabled && (
-              <div style={{ padding: `${8 * zoom}px ${15 * zoom}px` }} className="border-b border-gray-300 flex items-center justify-between">
-                <div>{renderSlotPv(hospitalConfig.headerLayout.left, hospitalConfig.customHeaderLeft)}</div>
-                <div className="text-center">{renderSlotPv(hospitalConfig.headerLayout.center, hospitalConfig.customHeaderCenter)}</div>
-                <div className="text-right">{renderSlotPv(hospitalConfig.headerLayout.right, hospitalConfig.customHeaderRight)}</div>
-              </div>
-            )}
-            {settings.patientInfoEnabled && (
-              <div style={{ padding: `${5 * zoom}px ${15 * zoom}px`, fontSize: 8 * zoom }} className="bg-gray-100 border-b border-gray-300 flex justify-between text-gray-700">
-                <span><strong>Patient:</strong> {patientName}</span>
-                {patientId && <span><strong>ID:</strong> {patientId}</span>}
-                <span><strong>Date:</strong> {studyDate}</span>
-                <span><strong>Layout:</strong> {currentLayout.spots} Spots</span>
-                <span className="text-gray-400 text-[8px]">Showing page {currentPage}/{totalPages}</span>
-              </div>
-            )}
-            <div style={{ padding: `${2 * zoom}px` }}>
-              <div style={previewGridStyle}>
-                {Array.from({ length: currentLayout.spots }).map((_, i) => {
-                  const aStyle: React.CSSProperties = currentLayout.areas && areaNames[i] ? { gridArea: areaNames[i] } : {};
-                  return (
-                    <div key={i} className="flex items-center justify-center overflow-hidden" style={{ ...aStyle, background: hasRealImages && displayImages[i] ? '#000' : '#f0f0f0', border: settings.borderEnabled ? '1px solid #ccc' : '1px solid #ddd' }}>
-                      {hasRealImages && displayImages[i]
-                        ? <img src={displayImages[i]} className="w-full h-full object-contain" alt={`Image ${i + 1}`} />
-                        : <div className="w-full h-full flex items-center justify-center">
-                            <span style={{ fontSize: 7 * zoom }} className="text-gray-400">{i + 1}</span>
-                          </div>
-                      }
-                    </div>
-                  );
-                })}
-              </div>
+        ) : capturing ? (
+          <div className="flex items-center justify-center h-full">
+            <div className="text-center">
+              <div className="text-app-accent text-lg font-bold mb-2">Capturing Pages…</div>
+              <div className="text-app-text-muted text-sm">Page {captureProgress} of {totalPages}</div>
+              <div className="w-48 h-2 bg-gray-700 rounded-full mt-3 overflow-hidden"><div className="h-full bg-app-accent rounded-full transition-all" style={{ width: `${(captureProgress / totalPages) * 100}%` }} /></div>
             </div>
-            {settings.footerEnabled && (
-              <div style={{ padding: `${5 * zoom}px ${15 * zoom}px`, fontSize: 7 * zoom }} className="absolute bottom-0 left-0 right-0 border-t border-gray-300 flex justify-between items-center bg-white">
-                <div>{renderSlotPv(hospitalConfig.footerLayout.left, hospitalConfig.customFooterLeft)}</div>
-                <div className="text-center">{renderSlotPv(hospitalConfig.footerLayout.center, hospitalConfig.customFooterCenter)}</div>
-                <div className="text-right">{renderSlotPv(hospitalConfig.footerLayout.right, hospitalConfig.customFooterRight)}</div>
-              </div>
-            )}
           </div>
+        ) : (
+          pagesToShow.map((pageNum) => {
+            const pageCaps = allPageCaptures[pageNum - 1] || [];
+            return (
+              <div key={`preview-page-${pageNum}`} className="flex-shrink-0 flex flex-col w-full" style={{ height: `calc((100vh - ${toolbarH}px - 24px) * ${zoom})` }}>
+                <div className="text-[10px] text-app-text-muted py-0.5 text-center flex-shrink-0">Page {pageNum} of {totalPages} — {localPaperSize} {localOrientation}</div>
+                <div className="bg-black flex-1 flex flex-col min-h-0">
+                  {settings.headerEnabled && (
+                    <div style={{ padding: '4px 12px' }} className="border-b border-gray-700 flex items-center justify-between bg-gray-900 flex-shrink-0">
+                      <div>{renderSlotPv(hospitalConfig.headerLayout.left, hospitalConfig.customHeaderLeft)}</div>
+                      <div className="text-center">{renderSlotPv(hospitalConfig.headerLayout.center, hospitalConfig.customHeaderCenter)}</div>
+                      <div className="text-right">{renderSlotPv(hospitalConfig.headerLayout.right, hospitalConfig.customHeaderRight)}</div>
+                    </div>
+                  )}
+                  {settings.patientInfoEnabled && (
+                    <div style={{ padding: '3px 12px', fontSize: '10px' }} className="bg-gray-900 border-b border-gray-700 flex justify-between text-gray-300 font-medium flex-shrink-0">
+                      <span>Patient: {patientName}</span><span>ID: {patientId}</span><span>Date: {studyDate}</span><span>Page {pageNum}/{totalPages}</span>
+                    </div>
+                  )}
+                  <div className="flex-1 min-h-0">
+                    <div style={previewGridStyle} className="h-full">
+                      {Array.from({ length: currentLayout.spots }).map((_, i) => {
+                        const src = pageCaps[i];
+                        const aStyle: React.CSSProperties = currentLayout.areas && areaNames[i] ? { gridArea: areaNames[i] } : {};
+                        return (
+                          <div key={i} className="bg-black overflow-hidden" style={aStyle}>
+                            {src ? (<img src={src} className="w-full h-full object-cover" alt={`Page ${pageNum} Image ${i + 1}`} />) : (<span className="text-gray-600 text-[10px] select-none flex items-center justify-center w-full h-full">Empty</span>)}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  {hospitalConfig.enableFooter && (
+                    <div style={{ padding: '3px 12px', fontSize: '9px' }} className="border-t border-gray-700 flex justify-between items-center bg-gray-900 text-gray-400 flex-shrink-0">
+                      <div>{renderSlotPv(hospitalConfig.footerLayout.left, hospitalConfig.customFooterLeft)}</div>
+                      <div className="text-center">{renderSlotPv(hospitalConfig.footerLayout.center, hospitalConfig.customFooterCenter)}</div>
+                      <div className="text-right">{renderSlotPv(hospitalConfig.footerLayout.right, hospitalConfig.customFooterRight)}</div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })
         )}
       </div>
     </div>

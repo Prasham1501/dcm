@@ -110,18 +110,15 @@ export function CRToolbar() {
         <div className="relative ml-1">
           <button
             onClick={() => {
-              if (stamps.length === 0) {
-                setShowStampCreator(true);
-              } else {
-                setShowStampDropdown(!showStampDropdown);
-              }
+              setStampMode(!isStampMode);
+              setShowStampDropdown(false);
             }}
             className={`flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded border-2 transition-colors ${
               isStampMode
                 ? 'border-yellow-500 bg-yellow-500/20 text-yellow-400'
                 : 'border-app-accent text-app-accent bg-app-bg hover:bg-app-accent hover:text-white'
             }`}
-            title="Stamp tool"
+            title={isStampMode ? 'Exit stamp mode' : 'Stamp tool — click on viewport to place'}
           >
             <Stamp className="w-3.5 h-3.5" />
             Stamp

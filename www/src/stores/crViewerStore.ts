@@ -147,8 +147,10 @@ interface CRViewerState {
   setActiveStamp: (id: string | null) => void;
   setStampMode: (v: boolean) => void;
   placeStamp: (viewportIndex: number, xPercent: number, yPercent: number) => void;
+  placeStampDirect: (viewportIndex: number, xPercent: number, yPercent: number, text: string, color: string, fontSize: number) => void;
   removeStampPlacement: (id: string) => void;
   updateStampPlacement: (id: string, xPercent: number, yPercent: number) => void;
+  updateStampPlacementProps: (id: string, props: { color?: string; fontSize?: number }) => void;
   undoStampPlacement: () => void;
   clearStampPlacements: (viewportIndex?: number) => void;
 
@@ -559,6 +561,22 @@ export const useCRViewerStore = create<CRViewerState>((set, get) => ({
     }));
   },
 
+  placeStampDirect: (viewportIndex, xPercent, yPercent, text, color, fontSize) => {
+    const placement: StampPlacement = {
+      id: `sp-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      stampId: 'direct',
+      text,
+      color,
+      fontSize,
+      viewportIndex,
+      xPercent,
+      yPercent,
+    };
+    set((state) => ({
+      stampPlacements: [...state.stampPlacements, placement],
+    }));
+  },
+
   removeStampPlacement: (id) => {
     set((state) => ({
       stampPlacements: state.stampPlacements.filter(s => s.id !== id),
@@ -569,6 +587,14 @@ export const useCRViewerStore = create<CRViewerState>((set, get) => ({
     set((state) => ({
       stampPlacements: state.stampPlacements.map(s =>
         s.id === id ? { ...s, xPercent, yPercent } : s
+      ),
+    }));
+  },
+
+  updateStampPlacementProps: (id, props) => {
+    set((state) => ({
+      stampPlacements: state.stampPlacements.map(s =>
+        s.id === id ? { ...s, ...props } : s
       ),
     }));
   },

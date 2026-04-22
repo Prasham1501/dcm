@@ -114,6 +114,30 @@ export function CRViewportGrid() {
           const isSelected = selectedViewport === i;
           const isMultiSelected = selectedViewportIndices.includes(i) && selectedViewportIndices.length > 1;
 
+          // Empty slot — no CRViewport so no stale cornerstone canvas can appear
+          if (!imageId) {
+            return (
+              <div
+                key={`empty-cr-vp-${i}`}
+                className="relative overflow-hidden min-h-0 bg-black"
+                onClick={(e) => handleViewportClick(i, e)}
+                onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  const imageUrl = e.dataTransfer.getData('application/dicom-image-url') || e.dataTransfer.getData('text/plain');
+                  if (imageUrl) setViewportImage(imageUrl, i);
+                }}
+              >
+                <div className="absolute inset-0 flex items-center justify-center text-gray-500 text-xs select-none pointer-events-none">
+                  Empty
+                </div>
+                {(isSelected || isMultiSelected) && (
+                  <div className="absolute inset-0 z-40 pointer-events-none" style={{ boxShadow: 'inset 0 0 0 3px #ef4444' }} />
+                )}
+              </div>
+            );
+          }
+
           return (
             <div key={`cr-vp-${i}`} className={`relative overflow-hidden min-h-0 ${isArrangeMode ? 'cursor-pointer' : ''}`} onMouseDown={(e) => handleViewportMouseDown(i, e)} onDoubleClick={() => handleViewportDoubleClick(i)}
               onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; }}
