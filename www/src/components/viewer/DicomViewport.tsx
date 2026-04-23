@@ -301,10 +301,13 @@ function DicomViewportInner({
         cornerstone.setViewport(el, viewport);
         useViewerStore.getState().setZoom(newScale);
 
-        // Broadcast zoom so each selected viewport applies it to its own element
-        window.dispatchEvent(new CustomEvent('dicom-viewport-sync', {
-          detail: { type: 'scale', sourceIndex: viewportIndex, scale: newScale },
-        }));
+        const { selectedViewportIndices } = useViewerStore.getState();
+        if (selectedViewportIndices.length > 1 && selectedViewportIndices.includes(viewportIndex)) {
+          // Broadcast zoom only for true multi-select interactions.
+          window.dispatchEvent(new CustomEvent('dicom-viewport-sync', {
+            detail: { type: 'scale', sourceIndex: viewportIndex, scale: newScale },
+          }));
+        }
       } catch { /* ignore */ }
     };
 
@@ -322,7 +325,7 @@ function DicomViewportInner({
       if (!el || !enabledRef.current) return;
       // Only apply if this viewport is in the multi-select
       const { selectedViewportIndices } = useViewerStore.getState();
-      if (!selectedViewportIndices.includes(viewportIndex)) return;
+      if (selectedViewportIndices.length <= 1 || !selectedViewportIndices.includes(viewportIndex)) return;
       try {
         const vp = cornerstone.getViewport(el);
         if (!vp) return;
@@ -370,10 +373,13 @@ function DicomViewportInner({
             useViewerStore.getState().setWidth(Math.round(newWW));
             useViewerStore.getState().setLevel(Math.round(newWC));
 
-            // Broadcast W/L so each selected viewport applies it to its own element
-            window.dispatchEvent(new CustomEvent('dicom-viewport-sync', {
-              detail: { type: 'voi', sourceIndex: viewportIndex, windowWidth: newWW, windowCenter: newWC },
-            }));
+            const { selectedViewportIndices } = useViewerStore.getState();
+            if (selectedViewportIndices.length > 1 && selectedViewportIndices.includes(viewportIndex)) {
+              // Broadcast W/L only for true multi-select interactions.
+              window.dispatchEvent(new CustomEvent('dicom-viewport-sync', {
+                detail: { type: 'voi', sourceIndex: viewportIndex, windowWidth: newWW, windowCenter: newWC },
+              }));
+            }
           }
         } catch { /* ignore */ }
         return;
@@ -393,14 +399,17 @@ function DicomViewportInner({
             };
             cornerstone.setViewport(el, viewport);
 
-            // Broadcast pan so each selected viewport applies it to its own element
-            window.dispatchEvent(new CustomEvent('dicom-viewport-sync', {
-              detail: {
-                type: 'translation',
-                sourceIndex: viewportIndex,
-                translation: { x: panDragRef.current!.startTx + dx, y: panDragRef.current!.startTy + dy },
-              },
-            }));
+            const { selectedViewportIndices } = useViewerStore.getState();
+            if (selectedViewportIndices.length > 1 && selectedViewportIndices.includes(viewportIndex)) {
+              // Broadcast pan only for true multi-select interactions.
+              window.dispatchEvent(new CustomEvent('dicom-viewport-sync', {
+                detail: {
+                  type: 'translation',
+                  sourceIndex: viewportIndex,
+                  translation: { x: panDragRef.current!.startTx + dx, y: panDragRef.current!.startTy + dy },
+                },
+              }));
+            }
           }
         } catch { /* ignore */ }
       }

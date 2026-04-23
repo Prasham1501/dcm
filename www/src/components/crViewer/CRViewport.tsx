@@ -138,10 +138,13 @@ function CRViewportInner({
         vp.scale = newScale;
         cornerstone.setViewport(el, vp);
 
-        // Broadcast zoom sync to other selected viewports
-        window.dispatchEvent(new CustomEvent('cr-viewport-sync', {
-          detail: { type: 'scale', sourceIndex: viewportIndex, scale: newScale },
-        }));
+        const { selectedViewportIndices } = useCRViewerStore.getState();
+        if (selectedViewportIndices.length > 1 && selectedViewportIndices.includes(viewportIndex)) {
+          // Broadcast zoom only for true multi-select interactions.
+          window.dispatchEvent(new CustomEvent('cr-viewport-sync', {
+            detail: { type: 'scale', sourceIndex: viewportIndex, scale: newScale },
+          }));
+        }
       } catch { /* ignore */ }
     };
 
@@ -166,10 +169,13 @@ function CRViewportInner({
             vp.voi = { windowWidth: newWW, windowCenter: newWC };
             cornerstone.setViewport(el, vp);
 
-            // Broadcast W/L sync to other selected viewports
-            window.dispatchEvent(new CustomEvent('cr-viewport-sync', {
-              detail: { type: 'voi', sourceIndex: viewportIndex, windowWidth: newWW, windowCenter: newWC },
-            }));
+            const { selectedViewportIndices } = useCRViewerStore.getState();
+            if (selectedViewportIndices.length > 1 && selectedViewportIndices.includes(viewportIndex)) {
+              // Broadcast W/L only for true multi-select interactions.
+              window.dispatchEvent(new CustomEvent('cr-viewport-sync', {
+                detail: { type: 'voi', sourceIndex: viewportIndex, windowWidth: newWW, windowCenter: newWC },
+              }));
+            }
           }
         } catch { /* ignore */ }
         return;
@@ -215,7 +221,7 @@ function CRViewportInner({
       if (!el || !enabledRef.current) return;
       // Only apply if this viewport is in the multi-select
       const { selectedViewportIndices } = useCRViewerStore.getState();
-      if (!selectedViewportIndices.includes(viewportIndex)) return;
+      if (selectedViewportIndices.length <= 1 || !selectedViewportIndices.includes(viewportIndex)) return;
       try {
         const vp = cornerstone.getViewport(el);
         if (!vp) return;
