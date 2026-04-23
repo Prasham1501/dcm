@@ -5,42 +5,10 @@ import { usePrintStore } from '@/stores/printStore';
 import { useViewerStore } from '@/stores/viewerStore';
 import { usePatientStore } from '@/stores/patientStore';
 import { useHospitalConfigStore, getFormattedAddress, renderPrintSlot } from '@/stores/hospitalConfigStore';
-import { captureAllViewports } from '@/lib/viewerTools';
-import { cornerstone } from '@/lib/cornerstoneSetup';
+import { captureCornerstoneElementsForPrint } from '@/lib/printCapture';
 
-/** Capture all viewports at native DICOM image resolution (no viewport letterboxing) */
 function captureAllViewportsHQ(): string[] {
-  const viewports = document.querySelectorAll('[data-viewport-index]');
-  const result: string[] = [];
-  viewports.forEach((el) => {
-    try {
-      const enabledEl = cornerstone.getEnabledElement(el as HTMLDivElement);
-      if (enabledEl?.image) {
-        const image = enabledEl.image;
-        const viewport = enabledEl.viewport;
-        const w = image.columns || image.width || 512;
-        const h = image.rows || image.height || 512;
-        const hqCanvas = document.createElement('canvas');
-        hqCanvas.width = w;
-        hqCanvas.height = h;
-        try {
-          cornerstone.renderToCanvas(hqCanvas, image, viewport);
-          result.push(hqCanvas.toDataURL('image/jpeg', 0.95));
-          return;
-        } catch { /* fall through to canvas capture */ }
-      }
-      // Fallback: capture viewport canvas directly
-      const canvas = (el as HTMLElement).querySelector('canvas');
-      if (canvas) {
-        result.push(canvas.toDataURL('image/png'));
-      } else {
-        result.push('');
-      }
-    } catch {
-      result.push('');
-    }
-  });
-  return result;
+  return captureCornerstoneElementsForPrint('[data-viewport-index]', 'data-viewport-index');
 }
 
 function getAreaLetters(areas: string): string[] {
@@ -140,10 +108,9 @@ export function PrintPreview() {
     captureAllPages();
   }, []);
 
-  // Auto-set orientation based on layout dimensions on mount
-  // Square layouts (2x2, 3x3) default to landscape — better for typical DICOM images
+  // Default print sheets follow the configured film layout; square/tall layouts use portrait.
   useEffect(() => {
-    if (currentLayout.cols >= currentLayout.rows) setLocalOrientation('landscape');
+    if (currentLayout.cols > currentLayout.rows) setLocalOrientation('landscape');
     else setLocalOrientation('portrait');
   }, []);
 
@@ -234,7 +201,7 @@ export function PrintPreview() {
     const electronAPI = (window as any).electronAPI;
     if (electronAPI?.printToPrinter && selectedPrinter) {
       try {
-        const result = await electronAPI.printToPrinter({ printerName: selectedPrinter, htmlContent, printSettings: { paperSize: localPaperSize, orientation: localOrientation, copies: localCopies, colorMode: 'color' } });
+        const result = await electronAPI.printToPrinter({ printerName: selectedPrinter, htmlContent, printSettings: { paperSize: localPaperSize, orientation: localOrientation, copies: localCopies, colorMode: 'color', margins: 'none' } });
         if (!result.success) {
           console.error('Direct print failed:', result.error);
           if (electronAPI?.printReportDialog) await electronAPI.printReportDialog({ htmlContent, paperSize: localPaperSize });

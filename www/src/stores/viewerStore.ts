@@ -157,25 +157,25 @@ const defaultLayout = LAYOUT_CATEGORIES[3].layouts[0]; // 5-spot 2t3b
 /**
  * Auto-select the best layout for a given image count.
  * Rules:
- *   Portrait: 2, 6, 8, 15, 18 images
- *   Landscape: 4, 9, 12 images
+ *   Portrait: 1, 2, 4, 6, 8, 9, 15, 18 images
+ *   Landscape: 12 images
  *   Others: smallest pure-grid layout with enough spots, portrait if rows >= cols
  */
 function autoSelectLayout(imageCount: number): { layout: ViewerLayout; orientation: Orientation } {
-  const portraitCounts = new Set([2, 6, 8, 15, 18]);
-  const landscapeCounts = new Set([4, 9, 12]);
+  const portraitCounts = new Set([1, 2, 4, 6, 8, 9, 15, 18]);
+  const landscapeCounts = new Set([12]);
 
   // Preferred layout id keyed by image count
   const PREFERRED: Record<number, string> = {
     1: '1x1',
     2: '2x1',      // 1col × 2row → portrait
     3: '1+2-left', // 3-spot portrait
-    4: '2x2',      // 2×2 → landscape/square
+    4: '2x2',      // 2x2 -> portrait sheet
     5: '2+2+1',    // 5-spot portrait
     6: '2x3',      // 2col × 3row → portrait
     7: '3+2+2',    // 7-spot portrait
     8: '2x4',      // 2col × 4row → portrait
-    9: '3x3',      // 3×3 → landscape
+    9: '3x3',      // 3x3 -> portrait sheet
     10: '3x4-11',  // 11-spot portrait (best fit)
     11: '3x4-11',  // 11-spot portrait
     12: '4x3',     // 4col × 3row → landscape

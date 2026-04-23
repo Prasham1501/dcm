@@ -4,32 +4,11 @@ import { useCRViewerStore } from '@/stores/crViewerStore';
 import { usePrintStore } from '@/stores/printStore';
 import { useHospitalConfigStore, getFormattedAddress, renderPrintSlot } from '@/stores/hospitalConfigStore';
 import { usePatientStore } from '@/stores/patientStore';
-import { cornerstone } from '@/lib/cornerstoneSetup';
+import { captureCornerstoneElementForPrint } from '@/lib/printCapture';
 
-/** Capture a CR viewport at native DICOM image resolution (no viewport letterboxing) */
 function captureViewport(viewportIndex: number): string | null {
   const el = document.querySelector(`[data-cr-viewport-index="${viewportIndex}"]`) as HTMLDivElement;
-  if (!el) return null;
-  try {
-    const enabledEl = cornerstone.getEnabledElement(el);
-    if (enabledEl?.image) {
-      const image = enabledEl.image;
-      const viewport = enabledEl.viewport;
-      const w = image.columns || image.width || 512;
-      const h = image.rows || image.height || 512;
-      const hqCanvas = document.createElement('canvas');
-      hqCanvas.width = w;
-      hqCanvas.height = h;
-      try {
-        cornerstone.renderToCanvas(hqCanvas, image, viewport);
-        return hqCanvas.toDataURL('image/jpeg', 0.95);
-      } catch { /* fall through */ }
-    }
-    if (enabledEl?.canvas) {
-      return enabledEl.canvas.toDataURL('image/png');
-    }
-  } catch { /* ignore */ }
-  return null;
+  return captureCornerstoneElementForPrint(el);
 }
 
 const PAPER_SIZES = ['A4', 'A3', 'A5', 'Letter', 'Legal'] as const;
@@ -121,10 +100,9 @@ export function CRPrintPreview({ onClose }: CRPrintPreviewProps) {
     captureAllPages();
   }, []);
 
-  // Auto-set orientation based on layout dimensions on mount
-  // Square layouts (2x2, 3x3) default to landscape — better for typical DICOM images
+  // Default print sheets follow the configured film layout; square/tall layouts use portrait.
   useEffect(() => {
-    if (currentLayout.cols >= currentLayout.rows) setLocalOrientation('landscape');
+    if (currentLayout.cols > currentLayout.rows) setLocalOrientation('landscape');
     else setLocalOrientation('portrait');
   }, []);
 
@@ -192,7 +170,7 @@ export function CRPrintPreview({ onClose }: CRPrintPreviewProps) {
     const electronAPI = (window as any).electronAPI;
     if (electronAPI?.printToPrinter && selectedPrinter) {
       try {
-        const result = await electronAPI.printToPrinter({ printerName: selectedPrinter, htmlContent, printSettings: { paperSize: localPaperSize, orientation: localOrientation, copies: localCopies, colorMode: 'color' } });
+        const result = await electronAPI.printToPrinter({ printerName: selectedPrinter, htmlContent, printSettings: { paperSize: localPaperSize, orientation: localOrientation, copies: localCopies, colorMode: 'color', margins: 'none' } });
         if (!result.success) {
           console.error('Direct print failed:', result.error);
           if (electronAPI?.printReportDialog) await electronAPI.printReportDialog({ htmlContent, paperSize: localPaperSize });

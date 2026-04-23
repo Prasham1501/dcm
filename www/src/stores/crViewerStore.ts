@@ -170,12 +170,11 @@ function recalcPages(totalImages: number, spotsPerPage: number) {
 }
 
 /**
- * Determine if a layout is portrait orientation (cols < rows).
- * Portrait: 2(1×2), 6(2×3), 8(2×4), 15(3×5), 18(3×6)
- * Landscape/Square: 1(1×1), 4(2×2), 9(3×3), 12(4×3)
+ * Determine the default print/window orientation for the layout.
+ * Square and tall sheets use portrait; only wide sheets use landscape.
  */
 export function isPortraitLayout(layout: CRLayout): boolean {
-  return layout.cols < layout.rows;
+  return layout.cols <= layout.rows;
 }
 
 /**

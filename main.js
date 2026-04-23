@@ -968,12 +968,19 @@ ipcMain.handle('print-report-dialog', async (event, options) => {
         await new Promise(r => setTimeout(r, 500));
 
         // Map paper size for printToPDF
-        const sizeMap = { A4: { width: 8.27, height: 11.69 }, A5: { width: 5.83, height: 8.27 }, Letter: { width: 8.5, height: 11 } };
+        const sizeMap = {
+            A3: { width: 11.69, height: 16.54 },
+            A4: { width: 8.27, height: 11.69 },
+            A5: { width: 5.83, height: 8.27 },
+            Letter: { width: 8.5, height: 11 },
+            Legal: { width: 8.5, height: 14 }
+        };
         const dims = sizeMap[paperSize] || sizeMap.A4;
 
         // Generate PDF from the rendered HTML
         const pdfBuffer = await printWindow.webContents.printToPDF({
             pageSize: { width: dims.width, height: dims.height },
+            preferCSSPageSize: true,
             printBackground: true,
             margins: { top: 0, bottom: 0, left: 0, right: 0 },
         });
