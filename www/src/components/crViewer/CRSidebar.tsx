@@ -8,7 +8,7 @@ import { cornerstone, cornerstoneTools } from '@/lib/cornerstoneSetup';
 import { useState } from 'react';
 import {
   ChevronUp, ChevronDown,
-  RotateCcw, Undo2, FileText, CheckSquare, Move,
+  RotateCcw, Undo2, FileText, CheckSquare, Move, Trash2, Type,
 } from 'lucide-react';
 
 // All annotation tools that may be active in CR viewports
@@ -49,6 +49,8 @@ export function CRSidebar() {
     patientName, patientId, studyDate,
     selectAllViewports, selectedViewportIndices,
     undoStampPlacement, clearStampPlacements,
+    deleteImageFromViewport,
+    isTextMode, setTextMode,
   } = useCRViewerStore();
 
   const [panActive, setPanActive] = useState(false);
@@ -114,6 +116,15 @@ export function CRSidebar() {
         title={panActive ? 'Disable pan (drag to move)' : 'Enable pan (drag to move)'}
         icon={Move}
         variant={panActive ? 'accent' : 'default'}
+      />
+
+      {/* Text tool */}
+      <SidebarButton
+        onClick={() => setTextMode(!isTextMode)}
+        label="Text"
+        title={isTextMode ? 'Disable text tool' : 'Enable text tool (click to place text)'}
+        icon={Type}
+        variant={isTextMode ? 'accent' : 'default'}
       />
 
       {/* Prev */}
@@ -196,6 +207,20 @@ export function CRSidebar() {
         title="Select all viewports (Ctrl+A)"
         icon={CheckSquare}
         variant={selectedViewportIndices.length > 1 ? 'accent' : 'default'}
+      />
+
+      {/* Delete Image(s) */}
+      <SidebarButton
+        onClick={() => {
+          const indicesToDelete = selectedViewportIndices.length > 1
+            ? [...selectedViewportIndices].sort((a, b) => b - a)
+            : [selectedViewport];
+          indicesToDelete.forEach(vi => deleteImageFromViewport(vi));
+        }}
+        label={selectedViewportIndices.length > 1 ? 'Delete All' : 'Delete'}
+        title={selectedViewportIndices.length > 1 ? 'Delete all selected images' : 'Delete selected image'}
+        icon={Trash2}
+        variant="danger"
       />
 
       {/* Undo */}

@@ -6,13 +6,37 @@ import { useViewerStore } from '@/stores/viewerStore';
 import { usePatientStore } from '@/stores/patientStore';
 import { useHospitalConfigStore, getFormattedAddress, renderPrintSlot } from '@/stores/hospitalConfigStore';
 import { getAutoOrientationForLayout, getLayoutAreaNames, getLayoutGridTemplate } from '@/lib/layoutUtils';
-import { captureCornerstoneViewportForPrint } from '@/lib/printCapture';
+import { captureCornerstoneViewportForPrint, PrintOverlay } from '@/lib/printCapture';
 import { fillEmptyPrintSlots } from '@/lib/printPageUtils';
+import { useCustomAnnotationStore } from '@/stores/customAnnotationStore';
 
-function capturePageViewports(spots: number): Array<string | null> {
-  return Array.from({ length: spots }, (_, viewportIndex) =>
-    captureCornerstoneViewportForPrint('data-viewport-index', viewportIndex),
-  );
+function capturePageViewports(spots: number, page: number): Array<string | null> {
+  const store = useViewerStore.getState();
+  const { images, viewportImageOverrides } = store;
+  const startIndex = (page - 1) * spots;
+  const annStore = useCustomAnnotationStore.getState();
+
+  return Array.from({ length: spots }, (_, viewportIndex) => {
+    // Resolve imageId for this viewport (same logic as ViewportGrid)
+    const overrideUrl = viewportImageOverrides[viewportIndex];
+    const defaultImg = images[startIndex + viewportIndex];
+    const rawImageId = overrideUrl || defaultImg?.imageUrl || null;
+    const imageId = rawImageId === 'deleted' ? null : rawImageId;
+
+    // Get text/stamp annotations for this image
+    const overlays: PrintOverlay[] = imageId
+      ? annStore.getAnnotations(imageId).map(ann => ({
+          text: ann.text,
+          xPercent: ann.xPercent,
+          yPercent: ann.yPercent,
+          color: ann.color,
+          fontSize: ann.fontSize,
+          type: ann.type === 'stamp' ? 'stamp' as const : 'text' as const,
+        }))
+      : [];
+
+    return captureCornerstoneViewportForPrint('data-viewport-index', viewportIndex, overlays);
+  });
 }
 
 const PAPER_SIZES = ['A4', 'A3', 'A5', 'Letter', 'Legal'] as const;
@@ -84,7 +108,7 @@ export function PrintPreview() {
         setCaptureProgress(p);
         setCurrentPage(p);
         await new Promise(r => setTimeout(r, 600));
-        rawCaptures.push(capturePageViewports(currentLayout.spots));
+        rawCaptures.push(capturePageViewports(currentLayout.spots, p));
       }
       setCurrentPage(origPage);
       await new Promise(r => setTimeout(r, 300));

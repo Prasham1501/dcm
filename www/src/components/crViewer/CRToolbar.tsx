@@ -4,10 +4,10 @@
  */
 import { useState } from 'react';
 import { useCRViewerStore, CR_LAYOUTS, type CRLayout } from '@/stores/crViewerStore';
+import { useStampStore } from '@/stores/stampStore';
 import {
-  ChevronLeft, ChevronRight, Printer, Eye, ListOrdered, Stamp, Trash2
+  ChevronLeft, ChevronRight, Printer, Eye, ListOrdered, Stamp, Plus, X
 } from 'lucide-react';
-import { StampCreatorModal } from './StampCreatorModal';
 import { CRPrintPreview } from './CRPrintPreview';
 
 export function CRToolbar() {
@@ -15,15 +15,22 @@ export function CRToolbar() {
     currentLayout, setLayout, totalImages,
     isArrangeMode, toggleArrangeMode,
     nextPage, prevPage, currentPage, totalPages,
-    isStampMode, setStampMode, stamps, activeStampId, setActiveStamp,
+    isStampMode, setStampMode,
     undoStampPlacement, clearStampPlacements, stampPlacements,
-    selectedViewport, deleteImageFromViewport
   } = useCRViewerStore();
 
-  const [showStampCreator, setShowStampCreator] = useState(false);
+  const { stamps: sharedStamps, selectedStampId, selectStamp, addStamp, removeStamp } = useStampStore();
+
   const [showStampDropdown, setShowStampDropdown] = useState(false);
+  const [showStampCreate, setShowStampCreate] = useState(false);
   const [showPrintPreview, setShowPrintPreview] = useState(false);
   const [printFilter, setPrintFilter] = useState<'All' | 'Current'>('All');
+
+  // Stamp create form state
+  const [newStampName, setNewStampName] = useState('');
+  const [newStampText, setNewStampText] = useState('');
+  const [newStampColor, setNewStampColor] = useState('#ffff00');
+  const [newStampFontSize, setNewStampFontSize] = useState(16);
 
   return (
     <>
@@ -79,16 +86,6 @@ export function CRToolbar() {
           Arrange
         </button>
 
-        {/* Delete Image button */}
-        <button
-          onClick={() => deleteImageFromViewport(selectedViewport)}
-          className="flex items-center gap-1.5 px-3.5 py-1.5 text-sm font-semibold border-2 border-red-500 text-red-500 bg-app-bg rounded hover:bg-red-500 hover:text-white transition-colors ml-1"
-          title="Delete currently selected image"
-        >
-          <Trash2 className="w-4.5 h-4.5" />
-          Delete
-        </button>
-
         {/* Preview button */}
         <button
           onClick={() => setShowPrintPreview(true)}
@@ -123,49 +120,98 @@ export function CRToolbar() {
         <div className="relative ml-1">
           <button
             onClick={() => {
-              setStampMode(!isStampMode);
-              setShowStampDropdown(false);
+              if (isStampMode) {
+                setStampMode(false);
+                setShowStampDropdown(false);
+              } else {
+                setShowStampDropdown(prev => !prev);
+              }
             }}
             className={`flex items-center gap-1.5 px-3.5 py-1.5 text-sm font-semibold rounded border-2 transition-colors ${
               isStampMode
                 ? 'border-yellow-500 bg-yellow-500/20 text-yellow-400'
                 : 'border-app-accent text-app-accent bg-app-bg hover:bg-app-accent hover:text-white'
             }`}
-            title={isStampMode ? 'Exit stamp mode' : 'Stamp tool — click on viewport to place'}
+            title={isStampMode ? 'Exit stamp mode' : 'Stamp tool — select a stamp to place'}
           >
             <Stamp className="w-4.5 h-4.5" />
             Stamp
           </button>
 
-          {/* Stamp dropdown */}
+          {/* Stamp dropdown — shared stamps */}
           {showStampDropdown && (
-            <div className="absolute top-full left-0 mt-1 z-50 bg-app-bg border border-app-border rounded-lg shadow-xl min-w-[200px] py-1">
-              {stamps.map((stamp) => (
+            <div className="absolute top-full left-0 mt-1 z-50 bg-app-bg border border-app-border rounded-lg shadow-xl min-w-[260px] py-1">
+              <div className="px-3 py-1.5 text-[10px] text-app-text-muted uppercase font-bold border-b border-app-border mb-1">
+                Select a stamp, then click on viewport
+              </div>
+              {sharedStamps.map((stamp) => (
                 <button
                   key={stamp.id}
                   onClick={() => {
-                    setActiveStamp(stamp.id);
+                    selectStamp(stamp.id);
                     setStampMode(true);
                     setShowStampDropdown(false);
                   }}
                   className={`w-full text-left px-3 py-1.5 text-xs hover:bg-app-hover flex items-center gap-2 ${
-                    activeStampId === stamp.id ? 'bg-app-accent/20 text-app-accent' : 'text-app-text'
+                    selectedStampId === stamp.id ? 'bg-app-accent/20 text-app-accent' : 'text-app-text'
                   }`}
                 >
-                  <span
-                    className="w-3 h-3 rounded-full flex-shrink-0"
-                    style={{ backgroundColor: stamp.color }}
-                  />
-                  <span className="truncate">{stamp.name}</span>
+                  <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: stamp.color }} />
+                  <span className="font-bold flex-1 truncate uppercase">{stamp.text}</span>
+                  <span className="text-[9px] text-app-text-muted">{stamp.fontSize}px</span>
                 </button>
               ))}
               <div className="border-t border-app-border mt-1 pt-1">
-                <button
-                  onClick={() => { setShowStampCreator(true); setShowStampDropdown(false); }}
-                  className="w-full text-left px-3 py-1.5 text-xs text-app-accent hover:bg-app-hover font-semibold"
-                >
-                  + Create new stamp
-                </button>
+                {!showStampCreate ? (
+                  <button
+                    onClick={() => setShowStampCreate(true)}
+                    className="w-full text-left px-3 py-1.5 text-xs text-app-accent hover:bg-app-hover font-semibold flex items-center gap-1.5"
+                  >
+                    <Plus className="w-3 h-3" /> Create new stamp
+                  </button>
+                ) : (
+                  <div className="px-3 py-2 space-y-1.5">
+                    <div className="text-[10px] text-app-accent font-bold uppercase">Create Stamp</div>
+                    <input type="text" value={newStampName} onChange={(e) => setNewStampName(e.target.value)}
+                      placeholder="Name" autoFocus
+                      className="w-full px-2 py-1 text-[10px] bg-app-bg text-app-text border border-app-border rounded focus:border-app-accent focus:outline-none" />
+                    <input type="text" value={newStampText} onChange={(e) => setNewStampText(e.target.value)}
+                      placeholder="Stamp text (e.g. APPROVED)"
+                      className="w-full px-2 py-1 text-[10px] bg-app-bg text-app-text border border-app-border rounded focus:border-app-accent focus:outline-none" />
+                    <div className="flex items-center gap-2">
+                      <span className="text-[9px] text-app-text-muted">Color</span>
+                      <div className="flex gap-1">
+                        {['#ff0000', '#ffff00', '#00ff00', '#00ffff', '#ff00ff', '#ffffff'].map(c => (
+                          <button key={c} onClick={() => setNewStampColor(c)}
+                            className={`w-4 h-4 rounded-full border-2 ${newStampColor === c ? 'border-white scale-110' : 'border-transparent'}`}
+                            style={{ backgroundColor: c }} />
+                        ))}
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-[9px] text-app-text-muted">Size</span>
+                      <input type="range" min="10" max="40" value={newStampFontSize}
+                        onChange={(e) => setNewStampFontSize(parseInt(e.target.value))}
+                        className="w-20 h-1.5 bg-app-bg rounded-lg appearance-none cursor-pointer" />
+                      <span className="text-[9px] text-app-text">{newStampFontSize}px</span>
+                    </div>
+                    <div className="flex gap-1">
+                      <button onClick={() => {
+                        if (newStampName.trim() && newStampText.trim()) {
+                          addStamp({ name: newStampName.trim(), text: newStampText.trim(), color: newStampColor, fontSize: newStampFontSize });
+                          setNewStampName(''); setNewStampText(''); setShowStampCreate(false);
+                        }
+                      }} disabled={!newStampName.trim() || !newStampText.trim()}
+                        className="flex-1 px-2 py-1 text-[10px] bg-green-600 text-white rounded font-bold hover:bg-green-500 disabled:opacity-40">
+                        Save
+                      </button>
+                      <button onClick={() => setShowStampCreate(false)}
+                        className="px-2 py-1 text-[10px] bg-app-bg text-app-text-muted border border-app-border rounded hover:bg-app-hover">
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
                 <button
                   onClick={() => { undoStampPlacement(); }}
                   disabled={stampPlacements.length === 0}
@@ -203,12 +249,11 @@ export function CRToolbar() {
       </div>
 
       {/* Modals */}
-      {showStampCreator && <StampCreatorModal onClose={() => setShowStampCreator(false)} />}
       {showPrintPreview && <CRPrintPreview onClose={() => setShowPrintPreview(false)} initialPageMode={printFilter === 'Current' ? 'current' : 'all'} />}
 
       {/* Close stamp dropdown on outside click */}
       {showStampDropdown && (
-        <div className="fixed inset-0 z-40" onClick={() => setShowStampDropdown(false)} />
+        <div className="fixed inset-0 z-40" onClick={() => { setShowStampDropdown(false); setShowStampCreate(false); }} />
       )}
     </>
   );

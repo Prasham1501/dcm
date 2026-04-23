@@ -5,11 +5,22 @@ import { usePrintStore } from '@/stores/printStore';
 import { useHospitalConfigStore, getFormattedAddress, renderPrintSlot } from '@/stores/hospitalConfigStore';
 import { usePatientStore } from '@/stores/patientStore';
 import { getAutoOrientationForLayout } from '@/lib/layoutUtils';
-import { captureCornerstoneViewportForPrint } from '@/lib/printCapture';
+import { captureCornerstoneViewportForPrint, PrintOverlay } from '@/lib/printCapture';
 import { fillEmptyPrintSlots } from '@/lib/printPageUtils';
 
 function captureViewport(viewportIndex: number): string | null {
-  return captureCornerstoneViewportForPrint('data-cr-viewport-index', viewportIndex);
+  const { stampPlacements } = useCRViewerStore.getState();
+  const overlays: PrintOverlay[] = stampPlacements
+    .filter(sp => sp.viewportIndex === viewportIndex)
+    .map(sp => ({
+      text: sp.text,
+      xPercent: sp.xPercent,
+      yPercent: sp.yPercent,
+      color: sp.color,
+      fontSize: sp.fontSize,
+      type: sp.type ?? 'stamp',
+    }));
+  return captureCornerstoneViewportForPrint('data-cr-viewport-index', viewportIndex, overlays);
 }
 
 const PAPER_SIZES = ['A4', 'A3', 'A5', 'Letter', 'Legal'] as const;

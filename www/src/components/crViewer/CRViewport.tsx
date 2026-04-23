@@ -8,6 +8,7 @@
 import { useEffect, useRef, useCallback, memo, useState } from 'react';
 import { cornerstone } from '@/lib/cornerstoneSetup';
 import { useCRViewerStore } from '@/stores/crViewerStore';
+import { useStampStore } from '@/stores/stampStore';
 
 
 interface CRViewportProps {
@@ -33,18 +34,21 @@ function CRViewportInner({
   const currentImageIdRef = useRef<string | null>(null);
 
   const { 
-    isStampMode, stampPlacements, updateStampPlacement, updateStampPlacementProps,
-    placeStampDirect,
+    isStampMode, isTextMode, stampPlacements, updateStampPlacement, updateStampPlacementProps,
+    placeStampDirect, placeTextDirect,
   } = useCRViewerStore();
 
-  // Editing stamp state (double-click)
-  const [editingStamp, setEditingStamp] = useState<{ id: string; color: string; fontSize: number } | null>(null);
+  // Editing stamp/text state (double-click)
+  const [editingStamp, setEditingStamp] = useState<{ id: string; color: string; fontSize: number; text?: string; type?: string } | null>(null);
 
-  // Pending stamp popup (click-to-place with presets, same as DicomViewport)
+  // Pending stamp popup (click-to-place with stamp picker)
   const [pendingStamp, setPendingStamp] = useState<{ xPercent: number; yPercent: number } | null>(null);
-  const [stampText, setStampText] = useState('');
-  const [stampColor, setStampColor] = useState('#ff0000');
-  const [stampFontSize, setStampFontSize] = useState(14);
+
+  // Pending text input (click-to-place text)
+  const [pendingText, setPendingText] = useState<{ xPercent: number; yPercent: number } | null>(null);
+  const [textInput, setTextInput] = useState('');
+  const [textColor, setTextColor] = useState('#ffff00');
+  const [textFontSize, setTextFontSize] = useState(14);
 
   // Right-click W/L drag state
   const rightDragRef = useRef<{
@@ -56,6 +60,7 @@ function CRViewportInner({
     id: string; startX: number; startY: number;
     startXPct: number; startYPct: number;
   } | null>(null);
+  const wasStampDragRef = useRef(false);
 
   // Enable cornerstone on mount
   useEffect(() => {
@@ -203,6 +208,7 @@ function CRViewportInner({
         document.body.style.cursor = '';
       }
       if (e.button === 0) {
+        wasStampDragRef.current = !!stampDragRef.current;
         stampDragRef.current = null;
       }
     };
@@ -309,28 +315,48 @@ function CRViewportInner({
     } catch { /* ignore */ }
   }, []);
 
-  // Handle click — stamp placement or viewport selection
+  // Handle click — stamp/text placement or viewport selection
   const handleClick = useCallback((e: React.MouseEvent) => {
     // If a stamp drag just happened, don't treat as click
     if (stampDragRef.current) return;
+    if (wasStampDragRef.current) { wasStampDragRef.current = false; return; }
+    const target = e.target as HTMLElement;
+    if (target.closest('[data-stamp-edit]')) return;
+    if (target.closest('[data-stamp-overlay]')) return;
+    if (target.closest('[data-pending-input]')) return;
+    if (editingStamp) return;
+
     if (isStampMode && imageId) {
       const rect = containerRef.current?.getBoundingClientRect();
-      if (rect) {
-        const xPercent = ((e.clientX - rect.left) / rect.width) * 100;
-        const yPercent = ((e.clientY - rect.top) / rect.height) * 100;
-        setPendingStamp({ xPercent, yPercent });
+      if (!rect) return;
+      const xPercent = ((e.clientX - rect.left) / rect.width) * 100;
+      const yPercent = ((e.clientY - rect.top) / rect.height) * 100;
+
+      // If a stamp is selected in the shared store, place immediately
+      const selectedStamp = useStampStore.getState().getSelectedStamp();
+      if (selectedStamp) {
+        placeStampDirect(viewportIndex, xPercent, yPercent, selectedStamp.text, selectedStamp.color, selectedStamp.fontSize);
+        return;
       }
+      // Otherwise show picker
+      setPendingStamp({ xPercent, yPercent });
       return;
     }
-    onClick(e);
-  }, [isStampMode, imageId, onClick]);
 
-  const handlePlaceStamp = useCallback(() => {
-    if (!pendingStamp || !stampText.trim()) return;
-    placeStampDirect(viewportIndex, pendingStamp.xPercent, pendingStamp.yPercent, stampText.trim(), stampColor, stampFontSize);
-    setPendingStamp(null);
-    setStampText('');
-  }, [pendingStamp, stampText, stampColor, stampFontSize, viewportIndex, placeStampDirect]);
+    if (isTextMode && imageId) {
+      const rect = containerRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const xPercent = ((e.clientX - rect.left) / rect.width) * 100;
+      const yPercent = ((e.clientY - rect.top) / rect.height) * 100;
+      setPendingText({ xPercent, yPercent });
+      setTextInput('');
+      setTextColor('#ffff00');
+      setTextFontSize(14);
+      return;
+    }
+
+    onClick(e);
+  }, [isStampMode, isTextMode, imageId, onClick, viewportIndex, placeStampDirect, editingStamp]);
 
   // Filter stamp placements for this viewport
   const viewportStamps = stampPlacements.filter(s => s.viewportIndex === viewportIndex);
@@ -338,7 +364,7 @@ function CRViewportInner({
   return (
     <div
       ref={containerRef}
-      className={`w-full h-full relative bg-black overflow-hidden ${isStampMode ? 'cursor-crosshair' : 'cursor-default'}`}
+      className={`w-full h-full relative bg-black overflow-hidden ${(isStampMode || isTextMode) ? 'cursor-crosshair' : 'cursor-default'}`}
       onMouseDownCapture={handleMouseDown}
       onContextMenu={(e) => e.preventDefault()}
       onClickCapture={handleClick}
@@ -355,6 +381,7 @@ function CRViewportInner({
       {viewportStamps.map((sp) => (
         <div
           key={sp.id}
+          data-stamp-overlay="true"
           className="absolute z-10 select-none group"
           style={{
             left: `${sp.xPercent}%`,
@@ -381,10 +408,12 @@ function CRViewportInner({
           onClick={(e) => e.stopPropagation()} // prevent re-placing stamp on click
           onDoubleClick={(e) => {
             e.stopPropagation();
-            setEditingStamp({ id: sp.id, color: sp.color, fontSize: sp.fontSize });
+            setEditingStamp({ id: sp.id, color: sp.color, fontSize: sp.fontSize, text: sp.text, type: sp.type });
           }}
         >
-          <span className="inline-block px-1.5 py-0.5 rounded border-2 border-current uppercase tracking-wider"
+          <span className={`inline-block px-1.5 py-0.5 rounded font-bold whitespace-nowrap ${
+            sp.type === 'text' ? '' : 'border-2 border-current uppercase tracking-wider'
+          }`}
             style={{ backgroundColor: 'rgba(0,0,0,0.6)' }}
           >
             {sp.text}
@@ -392,60 +421,90 @@ function CRViewportInner({
         </div>
       ))}
 
-      {/* Edit stamp popup (double-click) */}
+      {/* Edit stamp/text panel (double-click) — fixed to top-right corner */}
       {editingStamp && (() => {
         const sp = viewportStamps.find(s => s.id === editingStamp.id);
         if (!sp) return null;
+        const isText = editingStamp.type === 'text';
         return (
           <div
-            className="absolute z-40"
-            style={{
-              left: `${sp.xPercent}%`,
-              top: `${sp.yPercent}%`,
-              transform: 'translate(-50%, -50%)',
-            }}
+            className="absolute z-40 top-2 right-2"
+            data-stamp-edit="true"
             onClick={(e) => e.stopPropagation()}
             onMouseDown={(e) => e.stopPropagation()}
           >
-            <div className="bg-gray-800 border border-blue-500 rounded-lg p-2 shadow-xl min-w-[180px]">
-              <div className="text-[10px] text-blue-400 font-bold mb-1 uppercase">Edit Stamp</div>
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-[8px] text-gray-400 uppercase">Size</span>
-                <input 
-                  type="range" min="10" max="40" value={editingStamp.fontSize}
-                  onChange={(e) => setEditingStamp({ ...editingStamp, fontSize: parseInt(e.target.value) })}
-                  className="w-24 h-1 bg-gray-700 rounded-lg appearance-none cursor-pointer"
-                />
-                <span className="text-[8px] text-white">{editingStamp.fontSize}px</span>
+            <div className="bg-gray-900/95 border border-blue-500/70 rounded-xl p-3 lg:p-4 shadow-2xl w-[220px] lg:w-[280px] backdrop-blur-sm">
+              <div className="flex items-center justify-between mb-2 lg:mb-3">
+                <div className="text-xs lg:text-sm text-blue-400 font-bold uppercase tracking-wide">Edit {isText ? 'Text' : 'Stamp'}</div>
+                <button onClick={() => setEditingStamp(null)} className="w-5 h-5 lg:w-6 lg:h-6 flex items-center justify-center rounded-full bg-gray-700 hover:bg-gray-600 text-gray-400 hover:text-white transition-colors text-xs">
+                  ×
+                </button>
               </div>
-              <div className="flex items-center gap-2 mb-2">
-                <span className="text-[8px] text-gray-400 uppercase">Color</span>
-                <div className="flex gap-1.5">
-                  {['#ff0000', '#ffff00', '#00ff00', '#00ffff', '#ff00ff', '#ffffff'].map(c => (
-                    <button
-                      key={c}
-                      onClick={() => setEditingStamp({ ...editingStamp, color: c })}
-                      className={`w-4 h-4 rounded-full border ${editingStamp.color === c ? 'border-white' : 'border-transparent'}`}
-                      style={{ backgroundColor: c }}
+              {/* Live preview */}
+              <div className="mb-3 lg:mb-4 p-2 lg:p-3 bg-black/70 rounded-lg border border-gray-700/50 text-center min-h-[40px] lg:min-h-[50px] flex items-center justify-center">
+                <span className={`inline-block px-2 py-1 rounded font-bold ${isText ? '' : 'border-2 border-current uppercase tracking-wider'}`}
+                  style={{ color: editingStamp.color, fontSize: `${Math.min(editingStamp.fontSize, 22)}px`, textShadow: '1px 1px 3px rgba(0,0,0,0.9)' }}>
+                  {editingStamp.text || sp.text}
+                </span>
+              </div>
+              <div className="space-y-2 lg:space-y-3">
+                {/* Text input (only for text type) */}
+                {isText && (
+                  <div>
+                    <span className="text-[10px] lg:text-xs text-gray-400 uppercase font-semibold block mb-1">Text</span>
+                    <input
+                      type="text"
+                      value={editingStamp.text ?? sp.text}
+                      onChange={(e) => setEditingStamp({ ...editingStamp, text: e.target.value })}
+                      className="w-full px-2 py-1.5 text-xs lg:text-sm bg-gray-800 text-white border border-gray-600 rounded-lg focus:border-blue-500 focus:outline-none"
                     />
-                  ))}
+                  </div>
+                )}
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-[10px] lg:text-xs text-gray-400 uppercase font-semibold">Size</span>
+                    <span className="text-[10px] lg:text-xs text-white font-bold bg-gray-700 px-1.5 py-0.5 rounded">{editingStamp.fontSize}px</span>
+                  </div>
+                  <input 
+                    type="range" min="10" max="40" value={editingStamp.fontSize}
+                    onChange={(e) => setEditingStamp({ ...editingStamp, fontSize: parseInt(e.target.value) })}
+                    className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-blue-500"
+                  />
+                </div>
+                <div>
+                  <span className="text-[10px] lg:text-xs text-gray-400 uppercase font-semibold block mb-1.5">Color</span>
+                  <div className="flex gap-2 lg:gap-2.5 flex-wrap">
+                    {['#ff0000', '#ffff00', '#00ff00', '#00ffff', '#ff00ff', '#ffffff', '#ff8800', '#8800ff'].map(c => (
+                      <button
+                        key={c}
+                        onClick={() => setEditingStamp({ ...editingStamp, color: c })}
+                        className={`w-6 h-6 lg:w-7 lg:h-7 rounded-full border-2 transition-transform ${editingStamp.color === c ? 'border-white scale-110 ring-2 ring-blue-500/50' : 'border-gray-600 hover:border-gray-400'}`}
+                        style={{ backgroundColor: c }}
+                      />
+                    ))}
+                  </div>
                 </div>
               </div>
-              <div className="flex gap-1">
+              <div className="flex gap-2 mt-3 lg:mt-4">
                 <button
                   onClick={() => {
-                    updateStampPlacementProps(editingStamp.id, { color: editingStamp.color, fontSize: editingStamp.fontSize });
+                    const updates: { color: string; fontSize: number; text?: string } = { color: editingStamp.color, fontSize: editingStamp.fontSize };
+                    if (isText && editingStamp.text !== undefined) updates.text = editingStamp.text;
+                    updateStampPlacementProps(editingStamp.id, updates);
                     setEditingStamp(null);
                   }}
-                  className="flex-1 px-2 py-1 text-[10px] bg-blue-600 text-white rounded font-bold hover:bg-blue-500"
+                  className="flex-1 px-3 py-2 text-xs lg:text-sm bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-500 transition-colors"
                 >
                   Save
                 </button>
                 <button
-                  onClick={() => setEditingStamp(null)}
-                  className="px-2 py-1 text-[10px] bg-gray-700 text-gray-300 rounded hover:bg-gray-600"
+                  onClick={() => {
+                    useCRViewerStore.getState().removeStampPlacement(editingStamp.id);
+                    setEditingStamp(null);
+                  }}
+                  className="px-3 py-2 text-xs lg:text-sm bg-red-600/80 text-white rounded-lg font-bold hover:bg-red-500 transition-colors"
                 >
-                  ×
+                  Delete
                 </button>
               </div>
             </div>
@@ -453,71 +512,90 @@ function CRViewportInner({
         );
       })()}
 
-      {/* Pending stamp popup (click-to-place with presets) */}
+      {/* Pending stamp picker (click-to-place) — fixed to top-right corner */}
       {pendingStamp && (
         <div
-          className="absolute z-40"
-          style={{
-            left: `${pendingStamp.xPercent}%`,
-            top: `${pendingStamp.yPercent}%`,
-            transform: 'translate(-50%, -50%)',
-          }}
+          className="absolute z-40 top-2 right-2"
+          data-pending-input="true"
           onClick={(e) => e.stopPropagation()}
           onMouseDown={(e) => e.stopPropagation()}
         >
-          <div className="bg-gray-800 border border-blue-500 rounded-lg p-2 shadow-xl min-w-[180px]">
-            <div className="text-[10px] text-blue-400 font-bold mb-1 uppercase">Place Stamp</div>
-            <div className="grid grid-cols-3 gap-1">
-              {['VERIFIED', 'REVIEWED', 'APPROVED', 'REJECT', 'PENDING', 'URGENT'].map((s) => (
-                <button
-                  key={s}
-                  onClick={() => setStampText(s)}
-                  className={`px-1 py-1 text-[8px] font-bold border rounded uppercase transition-colors ${
-                    stampText === s ? 'bg-red-600 border-red-400 text-white' : 'border-gray-600 text-gray-300 hover:border-red-400'
-                  }`}
-                >
-                  {s}
-                </button>
-              ))}
-            </div>
-            <div className="flex flex-col gap-1 mt-2">
+          <div className="bg-gray-800 border border-blue-500 rounded-lg p-2.5 shadow-xl min-w-[220px]">
+            <div className="text-[10px] text-blue-400 font-bold mb-1.5 uppercase">Select Stamp to Place</div>
+            <CRStampPickerPanel
+              onSelect={(text, color, fontSize) => {
+                placeStampDirect(viewportIndex, pendingStamp.xPercent, pendingStamp.yPercent, text, color, fontSize);
+                setPendingStamp(null);
+              }}
+              onCancel={() => setPendingStamp(null)}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Pending text input (click-to-place text) — fixed to top-right corner */}
+      {pendingText && (
+        <div
+          className="absolute z-40 top-2 right-2"
+          data-pending-input="true"
+          onClick={(e) => e.stopPropagation()}
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          <div className="bg-gray-800 border border-blue-500 rounded-lg p-2.5 shadow-xl min-w-[220px]">
+            <div className="text-[10px] text-blue-400 font-bold mb-1.5 uppercase">Add Text</div>
+            <div className="space-y-2">
+              <input
+                type="text"
+                value={textInput}
+                onChange={(e) => setTextInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && textInput.trim()) {
+                    placeTextDirect(viewportIndex, pendingText.xPercent, pendingText.yPercent, textInput.trim(), textColor, textFontSize);
+                    setPendingText(null);
+                  }
+                  if (e.key === 'Escape') setPendingText(null);
+                }}
+                placeholder="Type text..."
+                className="w-full px-2 py-1 text-xs bg-gray-900 text-white border border-gray-600 rounded focus:border-blue-500 focus:outline-none"
+                autoFocus
+              />
               <div className="flex items-center justify-between">
                 <span className="text-[8px] text-gray-400 uppercase">Size</span>
-                <input 
-                  type="range" min="10" max="40" value={stampFontSize}
-                  onChange={(e) => setStampFontSize(parseInt(e.target.value))}
-                  className="w-24 h-1 bg-gray-700 rounded-lg appearance-none cursor-pointer"
+                <input type="range" min="8" max="30" value={textFontSize}
+                  onChange={(e) => setTextFontSize(parseInt(e.target.value))}
+                  className="flex-1 mx-2 h-1.5 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-blue-500"
                 />
-                <span className="text-[8px] text-white">{stampFontSize}px</span>
+                <span className="text-[8px] text-white">{textFontSize}px</span>
               </div>
-              <div className="flex items-center gap-2 mt-1">
+              <div className="flex items-center gap-2">
                 <span className="text-[8px] text-gray-400 uppercase">Color</span>
                 <div className="flex gap-1.5">
-                  {['#ff0000', '#ffff00', '#00ff00', '#00ffff', '#ff00ff', '#ffffff'].map(c => (
-                    <button
-                      key={c}
-                      onClick={() => setStampColor(c)}
-                      className={`w-4 h-4 rounded-full border ${stampColor === c ? 'border-white' : 'border-transparent'}`}
-                      style={{ backgroundColor: c }}
-                    />
+                  {['#ffff00', '#00ff00', '#ffffff', '#ff0000', '#00ffff'].map(c => (
+                    <button key={c} onClick={() => setTextColor(c)}
+                      className={`w-4 h-4 rounded-full border ${textColor === c ? 'border-white' : 'border-transparent'}`}
+                      style={{ backgroundColor: c }} />
                   ))}
                 </div>
               </div>
-            </div>
-            <div className="flex gap-1 mt-2">
-              <button
-                onClick={handlePlaceStamp}
-                disabled={!stampText.trim()}
-                className="flex-1 px-2 py-1 text-[10px] bg-red-600 text-white rounded font-bold hover:bg-red-500 disabled:opacity-40"
-              >
-                Place Stamp
-              </button>
-              <button
-                onClick={() => setPendingStamp(null)}
-                className="px-2 py-1 text-[10px] bg-gray-700 text-gray-300 rounded hover:bg-gray-600"
-              >
-                ×
-              </button>
+              <div className="flex gap-1">
+                <button
+                  onClick={() => {
+                    if (textInput.trim()) {
+                      placeTextDirect(viewportIndex, pendingText.xPercent, pendingText.yPercent, textInput.trim(), textColor, textFontSize);
+                      setPendingText(null);
+                    }
+                  }}
+                  className="flex-1 px-2 py-1 text-[10px] font-bold bg-blue-600 text-white rounded hover:bg-blue-500 transition-colors"
+                >
+                  Add Text
+                </button>
+                <button
+                  onClick={() => setPendingText(null)}
+                  className="px-2 py-1 text-[10px] font-bold bg-gray-600 text-white rounded hover:bg-gray-500 transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -532,6 +610,104 @@ function CRViewportInner({
       {!imageId && (
         <div className="absolute inset-0 flex items-center justify-center text-gray-600 text-xs select-none pointer-events-none z-10">
           No image
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** CRStampPickerPanel — inline panel showing saved stamps for quick placement in CR viewer */
+function CRStampPickerPanel({ onSelect, onCancel }: {
+  onSelect: (text: string, color: string, fontSize: number) => void;
+  onCancel: () => void;
+}) {
+  const { stamps, addStamp } = useStampStore();
+  const [showCreate, setShowCreate] = useState(false);
+  const [newName, setNewName] = useState('');
+  const [newText, setNewText] = useState('');
+  const [newColor, setNewColor] = useState('#ffff00');
+  const [newFontSize, setNewFontSize] = useState(16);
+
+  return (
+    <div className="space-y-2">
+      {stamps.length > 0 && (
+        <div className="max-h-[180px] overflow-y-auto space-y-1">
+          {stamps.map((stamp) => (
+            <button
+              key={stamp.id}
+              onClick={() => onSelect(stamp.text, stamp.color, stamp.fontSize)}
+              className="w-full flex items-center gap-2 px-2 py-1.5 rounded border border-gray-600 hover:border-blue-400 hover:bg-gray-700/50 transition-colors text-left"
+            >
+              <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: stamp.color }} />
+              <span className="text-[10px] font-bold text-white flex-1 truncate uppercase">{stamp.text}</span>
+              <span className="text-[9px] text-gray-500">{stamp.fontSize}px</span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {stamps.length === 0 && !showCreate && (
+        <div className="text-[10px] text-gray-400 text-center py-2">No stamps yet. Create one below.</div>
+      )}
+
+      {showCreate ? (
+        <div className="border-t border-gray-600 pt-2 space-y-1.5">
+          <div className="text-[9px] text-blue-400 font-bold uppercase">Create Stamp</div>
+          <input type="text" value={newName} onChange={(e) => setNewName(e.target.value)}
+            placeholder="Name (e.g. Hospital)" autoFocus
+            className="w-full px-2 py-1 text-[10px] bg-gray-900 text-white border border-gray-600 rounded focus:border-blue-500 focus:outline-none" />
+          <input type="text" value={newText} onChange={(e) => setNewText(e.target.value)}
+            placeholder="Stamp text (e.g. APPROVED)"
+            className="w-full px-2 py-1 text-[10px] bg-gray-900 text-white border border-gray-600 rounded focus:border-blue-500 focus:outline-none" />
+          <div className="flex items-center justify-between">
+            <span className="text-[9px] text-gray-400 uppercase">Size</span>
+            <input type="range" min="10" max="40" value={newFontSize}
+              onChange={(e) => setNewFontSize(parseInt(e.target.value))}
+              className="w-20 h-1.5 bg-gray-700 rounded-lg appearance-none cursor-pointer" />
+            <span className="text-[9px] text-white w-8 text-right">{newFontSize}px</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-[9px] text-gray-400 uppercase">Color</span>
+            <div className="flex gap-1">
+              {['#ff0000', '#ffff00', '#00ff00', '#00ffff', '#ff00ff', '#ffffff'].map(c => (
+                <button key={c} onClick={() => setNewColor(c)}
+                  className={`w-4 h-4 rounded-full border-2 ${newColor === c ? 'border-white scale-110' : 'border-transparent'}`}
+                  style={{ backgroundColor: c }} />
+              ))}
+            </div>
+          </div>
+          <div className="p-1.5 bg-black/60 rounded border border-gray-700 text-center">
+            <span className="inline-block px-1.5 py-0.5 rounded font-bold border-2 border-current uppercase tracking-wider"
+              style={{ color: newColor, fontSize: `${Math.min(newFontSize, 18)}px`, textShadow: '1px 1px 2px rgba(0,0,0,0.8)' }}>
+              {newText || 'PREVIEW'}
+            </span>
+          </div>
+          <div className="flex gap-1">
+            <button onClick={() => {
+              if (newName.trim() && newText.trim()) {
+                addStamp({ name: newName.trim(), text: newText.trim(), color: newColor, fontSize: newFontSize });
+                setNewName(''); setNewText(''); setShowCreate(false);
+              }
+            }} disabled={!newName.trim() || !newText.trim()}
+              className="flex-1 px-2 py-1 text-[10px] bg-green-600 text-white rounded font-bold hover:bg-green-500 disabled:opacity-40">
+              Save Stamp
+            </button>
+            <button onClick={() => setShowCreate(false)}
+              className="px-2 py-1 text-[10px] bg-gray-700 text-gray-300 rounded hover:bg-gray-600">
+              Back
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="flex gap-1">
+          <button onClick={() => setShowCreate(true)}
+            className="flex-1 px-2 py-1.5 text-[10px] bg-blue-600/80 text-white rounded font-bold hover:bg-blue-500">
+            + New Stamp
+          </button>
+          <button onClick={onCancel}
+            className="px-2 py-1.5 text-[10px] bg-gray-700 text-gray-300 rounded hover:bg-gray-600">
+            ×
+          </button>
         </div>
       )}
     </div>

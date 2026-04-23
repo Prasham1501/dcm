@@ -1,5 +1,14 @@
 import { cornerstone } from '@/lib/cornerstoneSetup';
 
+export interface PrintOverlay {
+  text: string;
+  xPercent: number;
+  yPercent: number;
+  color: string;
+  fontSize: number;
+  type?: 'stamp' | 'text';
+}
+
 function imageDimension(value: unknown, fallback: number): number {
   const n = typeof value === 'number' ? value : Number(value);
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback;
@@ -33,7 +42,59 @@ function buildPrintViewport(sourceViewport: any, image: any) {
   return viewport;
 }
 
-export function captureCornerstoneElementForPrint(element: HTMLElement | null): string | null {
+function drawOverlays(canvas: HTMLCanvasElement, overlays: PrintOverlay[]) {
+  if (!overlays.length) return;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+  const w = canvas.width;
+  const h = canvas.height;
+
+  for (const ov of overlays) {
+    const x = (ov.xPercent / 100) * w;
+    const y = (ov.yPercent / 100) * h;
+    // Scale fontSize relative to canvas (assume viewport ~500px height as baseline)
+    const scaledFontSize = Math.round(ov.fontSize * (h / 500));
+    const isStamp = ov.type !== 'text';
+
+    ctx.save();
+    ctx.font = `bold ${scaledFontSize}px Arial, sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+
+    const text = isStamp ? ov.text.toUpperCase() : ov.text;
+    const metrics = ctx.measureText(text);
+    const textWidth = metrics.width;
+    const textHeight = scaledFontSize;
+    const padX = scaledFontSize * 0.4;
+    const padY = scaledFontSize * 0.25;
+
+    // Background
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+    ctx.fillRect(x - textWidth / 2 - padX, y - textHeight / 2 - padY, textWidth + padX * 2, textHeight + padY * 2);
+
+    // Border for stamps
+    if (isStamp) {
+      ctx.strokeStyle = ov.color;
+      ctx.lineWidth = Math.max(1, scaledFontSize / 7);
+      ctx.strokeRect(x - textWidth / 2 - padX, y - textHeight / 2 - padY, textWidth + padX * 2, textHeight + padY * 2);
+    }
+
+    // Text shadow
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.8)';
+    ctx.shadowBlur = 2;
+    ctx.shadowOffsetX = 1;
+    ctx.shadowOffsetY = 1;
+
+    // Text
+    ctx.fillStyle = ov.color;
+    if (isStamp) ctx.letterSpacing = `${scaledFontSize * 0.1}px`;
+    ctx.fillText(text, x, y);
+
+    ctx.restore();
+  }
+}
+
+export function captureCornerstoneElementForPrint(element: HTMLElement | null, overlays: PrintOverlay[] = []): string | null {
   if (!element) return null;
 
   try {
@@ -52,6 +113,8 @@ export function captureCornerstoneElementForPrint(element: HTMLElement | null): 
         buildPrintViewport(enabledElement.viewport || cornerstone.getViewport(element), image),
       );
 
+      drawOverlays(canvas, overlays);
+
       return canvas.toDataURL('image/jpeg', 0.95);
     }
 
@@ -66,9 +129,9 @@ export function captureCornerstoneElementForPrint(element: HTMLElement | null): 
   return null;
 }
 
-export function captureCornerstoneViewportForPrint(indexAttribute: string, viewportIndex: number): string | null {
+export function captureCornerstoneViewportForPrint(indexAttribute: string, viewportIndex: number, overlays: PrintOverlay[] = []): string | null {
   const element = document.querySelector(`[${indexAttribute}="${viewportIndex}"]`) as HTMLElement | null;
-  return captureCornerstoneElementForPrint(element);
+  return captureCornerstoneElementForPrint(element, overlays);
 }
 
 export function captureCornerstoneElementsForPrint(selector: string, indexAttribute: string): string[] {

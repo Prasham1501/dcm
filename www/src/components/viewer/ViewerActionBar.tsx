@@ -7,7 +7,7 @@ import { useViewerStore } from '@/stores/viewerStore';
 import { usePrintStore } from '@/stores/printStore';
 import { cornerstone } from '@/lib/cornerstoneSetup';
 import {
-  X, ImagePlus, PanelTop, Info, ChevronUp, ChevronDown, Printer, Undo2, RotateCcw, CheckSquare
+  X, ImagePlus, PanelTop, Info, ChevronUp, ChevronDown, Printer, Undo2, RotateCcw, CheckSquare, Trash2
 } from 'lucide-react';
 import { useCustomAnnotationStore } from '@/stores/customAnnotationStore';
 import { resetViewport } from '@/lib/viewerTools';
@@ -149,7 +149,8 @@ export function ViewerActionBar() {
   const {
     currentPage, totalPages, totalImages, images,
     nextPage, prevPage, insertAllViewports,
-    selectAllViewports,
+    selectAllViewports, selectedViewportIndices, selectedViewport,
+    deleteImageFromViewport,
   } = useViewerStore();
   const { settings, setShowPrintPreview } = usePrintStore();
   const [showDicomInfo, setShowDicomInfo] = useState(false);
@@ -235,6 +236,22 @@ export function ViewerActionBar() {
           title="Next page"
         >
           <ChevronDown className="w-5.5 h-5.5" />
+        </button>
+
+        {/* Delete Image(s) */}
+        <button
+          type="button"
+          onClick={() => {
+            const indices = selectedViewportIndices.length > 1
+              ? [...selectedViewportIndices].sort((a, b) => b - a)
+              : [selectedViewport];
+            indices.forEach(vi => deleteImageFromViewport(vi));
+          }}
+          disabled={!hasImages}
+          className="w-10 h-10 flex items-center justify-center rounded border border-app-border text-app-text-secondary hover:bg-red-500/20 hover:text-red-400 hover:border-red-500/50 transition-colors disabled:opacity-30"
+          title={selectedViewportIndices.length > 1 ? 'Delete all selected images' : 'Delete selected image'}
+        >
+          <Trash2 className="w-5.5 h-5.5" />
         </button>
 
         {/* Select All Viewports */}

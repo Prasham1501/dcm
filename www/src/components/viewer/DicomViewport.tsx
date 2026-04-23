@@ -8,6 +8,7 @@ import { useEffect, useRef, useCallback, memo, useState } from 'react';
 import { cornerstone, cornerstoneTools } from '@/lib/cornerstoneSetup';
 import { useViewerStore } from '@/stores/viewerStore';
 import { useCustomAnnotationStore, type TextAnnotation, type DrawPath } from '@/stores/customAnnotationStore';
+import { useStampStore } from '@/stores/stampStore';
 
 
 // ---- Draw path annotation ---- (interfaces moved to store)
@@ -529,6 +530,9 @@ function DicomViewportInner({
       // Without this check, clicking OK/Cancel would create a NEW pending input at the button position.
       const target = e.target as HTMLElement;
       if (target.closest('[data-pending-input]')) return;
+      if (target.closest('[data-stamp-edit]')) return;
+      if (target.closest('[data-annotation-overlay]')) return;
+      if (editingAnn) return;
 
       const tool = useViewerStore.getState().activeToolId;
 
@@ -536,11 +540,32 @@ function DicomViewportInner({
       if (tool === 'stamp' && imageId) {
         e.stopPropagation();
         e.preventDefault();
+        const selectedStamp = useStampStore.getState().getSelectedStamp();
+        if (!selectedStamp) {
+          // No stamp selected — open stamp picker by showing pending input for text mode
+          const rect = container.getBoundingClientRect();
+          const xPercent = ((e.clientX - rect.left) / rect.width) * 100;
+          const yPercent = ((e.clientY - rect.top) / rect.height) * 100;
+          setPendingInput({ xPercent, yPercent, type: 'stamp' });
+          setInputText('');
+          return;
+        }
+        // Immediately place the selected stamp
         const rect = container.getBoundingClientRect();
         const xPercent = ((e.clientX - rect.left) / rect.width) * 100;
         const yPercent = ((e.clientY - rect.top) / rect.height) * 100;
-        setPendingInput({ xPercent, yPercent, type: 'stamp' });
-        setInputText('VERIFIED');
+        const newAnn: TextAnnotation = {
+          id: `ann-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+          text: selectedStamp.text,
+          xPercent, yPercent,
+          color: selectedStamp.color,
+          fontSize: selectedStamp.fontSize,
+          type: 'stamp',
+        };
+        addText(imageId, newAnn);
+        setAnnotations([...getAnnotations(imageId)]);
+        placeTextOnAllSelectedViewports(imageId, newAnn);
+        useViewerStore.getState().setActiveTool('');
         return;
       }
 
@@ -735,6 +760,7 @@ function DicomViewportInner({
 
     setPendingInput(null);
     setInputText('');
+    useViewerStore.getState().setActiveTool('');
   }, [pendingInput, inputText, inputColor, inputFontSize, imageId, addText, getAnnotations]);
 
   const handleDeleteAnnotation = useCallback((annId: string) => {
@@ -859,6 +885,7 @@ function DicomViewportInner({
       {annotations.map((ann) => (
         <div
           key={ann.id}
+          data-annotation-overlay="true"
           className="absolute z-20 group select-none"
           style={{
             left: `${ann.xPercent}%`,
@@ -908,54 +935,70 @@ function DicomViewportInner({
         </div>
       ))}
 
-      {/* Edit annotation popup (double-click) */}
+      {/* Edit annotation panel (double-click) — fixed to top-right corner, not on top of stamp */}
       {editingAnn && (
         <div
-          className="absolute z-40"
-          style={{
-            left: `${editingAnn.xPercent}%`,
-            top: `${editingAnn.yPercent}%`,
-            transform: 'translate(-50%, -50%)',
-          }}
+          className="absolute z-40 top-2 right-2"
+          data-stamp-edit="true"
           onClick={(e) => e.stopPropagation()}
           onMouseDown={(e) => e.stopPropagation()}
         >
-          <div className="bg-gray-800 border border-blue-500 rounded-lg p-2 shadow-xl min-w-[180px]">
-            <div className="text-[10px] text-blue-400 font-bold mb-1 uppercase">Edit {editingAnn.type === 'stamp' ? 'Stamp' : 'Text'}</div>
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-[8px] text-gray-400 uppercase">Size</span>
-              <input 
-                type="range" min="10" max="40" value={editFontSize}
-                onChange={(e) => setEditFontSize(parseInt(e.target.value))}
-                className="w-24 h-1 bg-gray-700 rounded-lg appearance-none cursor-pointer"
-              />
-              <span className="text-[8px] text-white">{editFontSize}px</span>
+          <div className="bg-gray-900/95 border border-blue-500/70 rounded-xl p-3 lg:p-4 shadow-2xl w-[220px] lg:w-[280px] backdrop-blur-sm">
+            <div className="flex items-center justify-between mb-2 lg:mb-3">
+              <div className="text-xs lg:text-sm text-blue-400 font-bold uppercase tracking-wide">Edit {editingAnn.type === 'stamp' ? 'Stamp' : 'Text'}</div>
+              <button onClick={() => setEditingAnn(null)} className="w-5 h-5 lg:w-6 lg:h-6 flex items-center justify-center rounded-full bg-gray-700 hover:bg-gray-600 text-gray-400 hover:text-white transition-colors text-xs">
+                ×
+              </button>
             </div>
-            <div className="flex items-center gap-2 mb-2">
-              <span className="text-[8px] text-gray-400 uppercase">Color</span>
-              <div className="flex gap-1.5">
-                {['#ff0000', '#ffff00', '#00ff00', '#00ffff', '#ff00ff', '#ffffff'].map(c => (
-                  <button
-                    key={c}
-                    onClick={() => setEditColor(c)}
-                    className={`w-4 h-4 rounded-full border ${editColor === c ? 'border-white' : 'border-transparent'}`}
-                    style={{ backgroundColor: c }}
-                  />
-                ))}
+            {/* Live preview */}
+            <div className="mb-3 lg:mb-4 p-2 lg:p-3 bg-black/70 rounded-lg border border-gray-700/50 text-center min-h-[40px] lg:min-h-[50px] flex items-center justify-center">
+              <span
+                className={`inline-block px-2 py-1 rounded font-bold whitespace-nowrap ${
+                  editingAnn.type === 'stamp' ? 'border-2 border-current uppercase tracking-wider' : ''
+                }`}
+                style={{ color: editColor, fontSize: `${editFontSize}px`, textShadow: '1px 1px 3px rgba(0,0,0,0.9)' }}
+              >
+                {editingAnn.text}
+              </span>
+            </div>
+            <div className="space-y-2 lg:space-y-3">
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-[10px] lg:text-xs text-gray-400 uppercase font-semibold">Size</span>
+                  <span className="text-[10px] lg:text-xs text-white font-bold bg-gray-700 px-1.5 py-0.5 rounded">{editFontSize}px</span>
+                </div>
+                <input 
+                  type="range" min="10" max="40" value={editFontSize}
+                  onChange={(e) => setEditFontSize(parseInt(e.target.value))}
+                  className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-blue-500"
+                />
+              </div>
+              <div>
+                <span className="text-[10px] lg:text-xs text-gray-400 uppercase font-semibold block mb-1.5">Color</span>
+                <div className="flex gap-2 lg:gap-2.5 flex-wrap">
+                  {['#ff0000', '#ffff00', '#00ff00', '#00ffff', '#ff00ff', '#ffffff', '#ff8800', '#8800ff'].map(c => (
+                    <button
+                      key={c}
+                      onClick={() => setEditColor(c)}
+                      className={`w-6 h-6 lg:w-7 lg:h-7 rounded-full border-2 transition-transform ${editColor === c ? 'border-white scale-110 ring-2 ring-blue-500/50' : 'border-gray-600 hover:border-gray-400'}`}
+                      style={{ backgroundColor: c }}
+                    />
+                  ))}
+                </div>
               </div>
             </div>
-            <div className="flex gap-1">
+            <div className="flex gap-2 mt-3 lg:mt-4">
               <button
                 onClick={handleSaveEditAnnotation}
-                className="flex-1 px-2 py-1 text-[10px] bg-blue-600 text-white rounded font-bold hover:bg-blue-500"
+                className="flex-1 px-3 py-2 text-xs lg:text-sm bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-500 transition-colors"
               >
                 Save
               </button>
               <button
-                onClick={() => setEditingAnn(null)}
-                className="px-2 py-1 text-[10px] bg-gray-700 text-gray-300 rounded hover:bg-gray-600"
+                onClick={() => { if (imageId) handleDeleteAnnotation(editingAnn.id); setEditingAnn(null); }}
+                className="px-3 py-2 text-xs lg:text-sm bg-red-600/80 text-white rounded-lg font-bold hover:bg-red-500 transition-colors"
               >
-                ×
+                Delete
               </button>
             </div>
           </div>
@@ -965,76 +1008,32 @@ function DicomViewportInner({
       {/* Pending text/stamp input */}
       {pendingInput && (
         <div
-          className="absolute z-30"
+          className="absolute z-30 top-2 right-2"
           data-pending-input="true"
-          style={{
-            left: `${pendingInput.xPercent}%`,
-            top: `${pendingInput.yPercent}%`,
-            transform: 'translate(-50%, -50%)',
-          }}
           onClick={(e) => e.stopPropagation()}
           onMouseDown={(e) => e.stopPropagation()}
         >
-          <div className="bg-gray-800 border border-blue-500 rounded-lg p-2 shadow-xl min-w-[180px]">
-            <div className="text-[10px] text-blue-400 font-bold mb-1 uppercase">
-              {pendingInput.type === 'stamp' ? 'Place Stamp' : 'Add Text'}
+          <div className="bg-gray-800 border border-blue-500 rounded-lg p-2.5 shadow-xl min-w-[220px]">
+            <div className="text-[10px] text-blue-400 font-bold mb-1.5 uppercase">
+              {pendingInput.type === 'stamp' ? 'Select Stamp to Place' : 'Add Text'}
             </div>
             {pendingInput.type === 'stamp' ? (
-              <div className="space-y-2">
-                <div className="grid grid-cols-3 gap-1">
-                  {['VERIFIED', 'REVIEWED', 'APPROVED', 'REJECT', 'PENDING', 'URGENT'].map((s) => (
-                    <button
-                      key={s}
-                      onClick={() => setInputText(s)}
-                      className={`px-1 py-1 text-[8px] font-bold border rounded uppercase transition-colors ${
-                        inputText === s ? 'bg-red-600 border-red-400 text-white' : 'border-gray-600 text-gray-300 hover:border-red-400'
-                      }`}
-                    >
-                      {s}
-                    </button>
-                  ))}
-                </div>
-                
-                <div className="flex flex-col gap-1 mt-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[8px] text-gray-400 uppercase">Size</span>
-                    <input 
-                      type="range" min="10" max="40" value={inputFontSize}
-                      onChange={(e) => setInputFontSize(parseInt(e.target.value))}
-                      className="w-24 h-1 bg-gray-700 rounded-lg appearance-none cursor-pointer"
-                    />
-                    <span className="text-[8px] text-white">{inputFontSize}px</span>
-                  </div>
-                  <div className="flex items-center gap-2 mt-1">
-                    <span className="text-[8px] text-gray-400 uppercase">Color</span>
-                    <div className="flex gap-1.5">
-                      {['#ff0000', '#ffff00', '#00ff00', '#00ffff', '#ff00ff', '#ffffff'].map(c => (
-                        <button
-                          key={c}
-                          onClick={() => setInputColor(c)}
-                          className={`w-4 h-4 rounded-full border ${inputColor === c ? 'border-white' : 'border-transparent'}`}
-                          style={{ backgroundColor: c }}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex gap-1 mt-2">
-                  <button
-                    onClick={handleSubmitAnnotation}
-                    className="flex-1 px-2 py-1 text-[10px] bg-red-600 text-white rounded font-bold hover:bg-red-500"
-                  >
-                    Place Stamp
-                  </button>
-                  <button
-                    onClick={() => setPendingInput(null)}
-                    className="px-2 py-1 text-[10px] bg-gray-700 text-gray-300 rounded hover:bg-gray-600"
-                  >
-                    ×
-                  </button>
-                </div>
-              </div>
+              <StampPickerPanel
+                onSelect={(text, color, fontSize) => {
+                  if (!imageId) return;
+                  const newAnn: TextAnnotation = {
+                    id: `ann-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+                    text, xPercent: pendingInput.xPercent, yPercent: pendingInput.yPercent,
+                    color, fontSize, type: 'stamp',
+                  };
+                  addText(imageId, newAnn);
+                  setAnnotations([...getAnnotations(imageId)]);
+                  placeTextOnAllSelectedViewports(imageId, newAnn);
+                  setPendingInput(null);
+                  useViewerStore.getState().setActiveTool('');
+                }}
+                onCancel={() => setPendingInput(null)}
+              />
             ) : (
               <div className="space-y-2">
                 <div className="flex gap-1">
@@ -1091,6 +1090,124 @@ function DicomViewportInner({
               </div>
             )}
           </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** StampPickerPanel — inline panel showing saved stamps for quick placement */
+function StampPickerPanel({ onSelect, onCancel }: {
+  onSelect: (text: string, color: string, fontSize: number) => void;
+  onCancel: () => void;
+}) {
+  const { stamps, addStamp } = useStampStore();
+  const [showCreate, setShowCreate] = useState(false);
+  const [newName, setNewName] = useState('');
+  const [newText, setNewText] = useState('');
+  const [newColor, setNewColor] = useState('#ffff00');
+  const [newFontSize, setNewFontSize] = useState(16);
+
+  return (
+    <div className="space-y-2">
+      {/* Saved stamps list */}
+      {stamps.length > 0 && (
+        <div className="max-h-[180px] overflow-y-auto space-y-1">
+          {stamps.map((stamp) => (
+            <button
+              key={stamp.id}
+              onClick={() => onSelect(stamp.text, stamp.color, stamp.fontSize)}
+              className="w-full flex items-center gap-2 px-2 py-1.5 rounded border border-gray-600 hover:border-blue-400 hover:bg-gray-700/50 transition-colors text-left"
+            >
+              <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: stamp.color }} />
+              <span className="text-[10px] font-bold text-white flex-1 truncate uppercase">{stamp.text}</span>
+              <span className="text-[9px] text-gray-500">{stamp.fontSize}px</span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {stamps.length === 0 && !showCreate && (
+        <div className="text-[10px] text-gray-400 text-center py-2">No stamps yet. Create one below.</div>
+      )}
+
+      {/* Create new stamp inline */}
+      {showCreate ? (
+        <div className="border-t border-gray-600 pt-2 space-y-1.5">
+          <div className="text-[9px] text-blue-400 font-bold uppercase">Create Stamp</div>
+          <input
+            type="text"
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            placeholder="Name (e.g. Hospital)"
+            className="w-full px-2 py-1 text-[10px] bg-gray-900 text-white border border-gray-600 rounded focus:border-blue-500 focus:outline-none"
+            autoFocus
+          />
+          <input
+            type="text"
+            value={newText}
+            onChange={(e) => setNewText(e.target.value)}
+            placeholder="Stamp text (e.g. APPROVED)"
+            className="w-full px-2 py-1 text-[10px] bg-gray-900 text-white border border-gray-600 rounded focus:border-blue-500 focus:outline-none"
+          />
+          <div className="flex items-center justify-between">
+            <span className="text-[9px] text-gray-400 uppercase">Size</span>
+            <input type="range" min="10" max="40" value={newFontSize}
+              onChange={(e) => setNewFontSize(parseInt(e.target.value))}
+              className="w-20 h-1.5 bg-gray-700 rounded-lg appearance-none cursor-pointer"
+            />
+            <span className="text-[9px] text-white w-8 text-right">{newFontSize}px</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-[9px] text-gray-400 uppercase">Color</span>
+            <div className="flex gap-1">
+              {['#ff0000', '#ffff00', '#00ff00', '#00ffff', '#ff00ff', '#ffffff'].map(c => (
+                <button key={c} onClick={() => setNewColor(c)}
+                  className={`w-4 h-4 rounded-full border-2 ${newColor === c ? 'border-white scale-110' : 'border-transparent'}`}
+                  style={{ backgroundColor: c }} />
+              ))}
+            </div>
+          </div>
+          {/* Preview */}
+          <div className="p-1.5 bg-black/60 rounded border border-gray-700 text-center">
+            <span className="inline-block px-1.5 py-0.5 rounded font-bold border-2 border-current uppercase tracking-wider"
+              style={{ color: newColor, fontSize: `${Math.min(newFontSize, 18)}px`, textShadow: '1px 1px 2px rgba(0,0,0,0.8)' }}>
+              {newText || 'PREVIEW'}
+            </span>
+          </div>
+          <div className="flex gap-1">
+            <button
+              onClick={() => {
+                if (newName.trim() && newText.trim()) {
+                  addStamp({ name: newName.trim(), text: newText.trim(), color: newColor, fontSize: newFontSize });
+                  setNewName(''); setNewText(''); setShowCreate(false);
+                }
+              }}
+              disabled={!newName.trim() || !newText.trim()}
+              className="flex-1 px-2 py-1 text-[10px] bg-green-600 text-white rounded font-bold hover:bg-green-500 disabled:opacity-40"
+            >
+              Save Stamp
+            </button>
+            <button onClick={() => setShowCreate(false)}
+              className="px-2 py-1 text-[10px] bg-gray-700 text-gray-300 rounded hover:bg-gray-600">
+              Back
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="flex gap-1">
+          <button
+            onClick={() => setShowCreate(true)}
+            className="flex-1 px-2 py-1.5 text-[10px] bg-blue-600/80 text-white rounded font-bold hover:bg-blue-500"
+          >
+            + New Stamp
+          </button>
+          <button
+            onClick={onCancel}
+            className="px-2 py-1.5 text-[10px] bg-gray-700 text-gray-300 rounded hover:bg-gray-600"
+          >
+            ×
+          </button>
         </div>
       )}
     </div>
