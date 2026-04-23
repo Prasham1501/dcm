@@ -4,6 +4,7 @@ import { useCRViewerStore } from '@/stores/crViewerStore';
 import { usePrintStore } from '@/stores/printStore';
 import { useHospitalConfigStore, getFormattedAddress, renderPrintSlot } from '@/stores/hospitalConfigStore';
 import { usePatientStore } from '@/stores/patientStore';
+import { getAutoOrientationForLayout } from '@/lib/layoutUtils';
 import { captureCornerstoneElementForPrint } from '@/lib/printCapture';
 
 function captureViewport(viewportIndex: number): string | null {
@@ -100,24 +101,15 @@ export function CRPrintPreview({ onClose }: CRPrintPreviewProps) {
     captureAllPages();
   }, []);
 
-  // Default print sheets follow the configured film layout; square/tall layouts use portrait.
+  // Default print orientation follows the shared spot-count rule.
   useEffect(() => {
-    if (currentLayout.cols > currentLayout.rows) setLocalOrientation('landscape');
-    else setLocalOrientation('portrait');
-  }, []);
+    setLocalOrientation(getAutoOrientationForLayout(currentLayout));
+  }, [currentLayout]);
 
   const dims = PAPER_DIMS[localPaperSize] || PAPER_DIMS.A4;
   const isLandscape = localOrientation === 'landscape';
   const pw = isLandscape ? dims.h : dims.w;
   const ph = isLandscape ? dims.w : dims.h;
-
-  // Swap cols/rows to match orientation (simple grids only)
-  const needsSwap = (
-    (isLandscape && currentLayout.cols < currentLayout.rows) ||
-    (!isLandscape && currentLayout.cols > currentLayout.rows)
-  );
-  const effectiveCols = needsSwap ? currentLayout.rows : currentLayout.cols;
-  const effectiveRows = needsSwap ? currentLayout.cols : currentLayout.rows;
 
   const renderSlotPv = (slot: string, customText: string) => {
     switch (slot) {
@@ -147,8 +139,8 @@ export function CRPrintPreview({ onClose }: CRPrintPreviewProps) {
     const patientBarHtml = () => settings.patientInfoEnabled
       ? `<div style="padding:4px 15px;background:#f5f5f5;border-bottom:1px solid #ccc;display:flex;justify-content:space-between;font-size:10px"><span><b>Patient:</b> ${patientName}</span><span><b>ID:</b> ${patientId}</span><span><b>Date:</b> ${studyDate}</span></div>`
       : '';
-    const gridCols = `repeat(${effectiveCols}, 1fr)`;
-    const gridRows = `repeat(${effectiveRows}, 1fr)`;
+    const gridCols = `repeat(${currentLayout.cols}, 1fr)`;
+    const gridRows = `repeat(${currentLayout.rows}, 1fr)`;
     const pagesHtml = pagesToPrint.map((pageNum) => {
       const caps = allPageCaptures[pageNum - 1] || [];
       const imgsHtml = caps.map((src) =>
@@ -193,8 +185,8 @@ export function CRPrintPreview({ onClose }: CRPrintPreviewProps) {
 
   const previewGridStyle: React.CSSProperties = {
     display: 'grid', gap: '1px', flex: 1, minHeight: 0, padding: 0, background: '#444',
-    gridTemplateColumns: `repeat(${effectiveCols}, 1fr)`,
-    gridTemplateRows: `repeat(${effectiveRows}, 1fr)`,
+    gridTemplateColumns: `repeat(${currentLayout.cols}, 1fr)`,
+    gridTemplateRows: `repeat(${currentLayout.rows}, 1fr)`,
   };
   const toolbarH = showPrinterMgr ? 190 : 55;
 

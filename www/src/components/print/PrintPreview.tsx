@@ -5,14 +5,11 @@ import { usePrintStore } from '@/stores/printStore';
 import { useViewerStore } from '@/stores/viewerStore';
 import { usePatientStore } from '@/stores/patientStore';
 import { useHospitalConfigStore, getFormattedAddress, renderPrintSlot } from '@/stores/hospitalConfigStore';
+import { getAutoOrientationForLayout, getLayoutAreaNames, getLayoutGridTemplate } from '@/lib/layoutUtils';
 import { captureCornerstoneElementsForPrint } from '@/lib/printCapture';
 
 function captureAllViewportsHQ(): string[] {
   return captureCornerstoneElementsForPrint('[data-viewport-index]', 'data-viewport-index');
-}
-
-function getAreaLetters(areas: string): string[] {
-  return [...new Set(areas.replace(/['"]/g, '').split(/\s+/).filter(Boolean))];
 }
 
 function autoFill(imgs: string[], spots: number, isCR: boolean): string[] {
@@ -108,30 +105,21 @@ export function PrintPreview() {
     captureAllPages();
   }, []);
 
-  // Default print sheets follow the configured film layout; square/tall layouts use portrait.
+  // Default print orientation follows the requested spot-count rule from the reference software.
   useEffect(() => {
-    if (currentLayout.cols > currentLayout.rows) setLocalOrientation('landscape');
-    else setLocalOrientation('portrait');
-  }, []);
+    setLocalOrientation(getAutoOrientationForLayout(currentLayout));
+  }, [currentLayout]);
 
   const dims = PAPER_DIMS[localPaperSize] || PAPER_DIMS.A4;
   const isLandscape = localOrientation === 'landscape';
   const pw = isLandscape ? dims.h : dims.w;
   const ph = isLandscape ? dims.w : dims.h;
 
-  // Swap cols/rows to match orientation (only for simple grids without areas)
-  const needsSwap = !currentLayout.areas && (
-    (isLandscape && currentLayout.cols < currentLayout.rows) ||
-    (!isLandscape && currentLayout.cols > currentLayout.rows)
-  );
-  const effectiveCols = needsSwap ? currentLayout.rows : currentLayout.cols;
-  const effectiveRows = needsSwap ? currentLayout.cols : currentLayout.rows;
-
   const buildGridCss = () => {
-    const l = currentLayout;
-    const gridCols = l.areas ? (l.gridTemplate?.columns ?? `repeat(${l.cols}, 1fr)`) : `repeat(${effectiveCols}, 1fr)`;
-    const gridRows = l.areas ? (l.gridTemplate?.rows ?? `repeat(${l.rows}, 1fr)`) : `repeat(${effectiveRows}, 1fr)`;
-    const gridAreas = l.areas ? `grid-template-areas: ${l.areas};` : '';
+    const grid = getLayoutGridTemplate(currentLayout);
+    const gridCols = grid.columns;
+    const gridRows = grid.rows;
+    const gridAreas = grid.areas ? `grid-template-areas: ${grid.areas};` : '';
     return { gridCols, gridRows, gridAreas };
   };
 
@@ -165,7 +153,7 @@ export function PrintPreview() {
 
   const buildPrintHtml = useCallback((pagesToPrint: number[]) => {
     const { gridCols, gridRows, gridAreas } = buildGridCss();
-    const areaNames = currentLayout.areas ? getAreaLetters(currentLayout.areas) : [];
+    const areaNames = getLayoutAreaNames(currentLayout.areas);
     const pagesHtml = pagesToPrint.map((pageNum) => {
       const caps = allPageCaptures[pageNum - 1] || [];
       const imgsHtml = Array.from({ length: currentLayout.spots }).map((_, i) => {
@@ -224,17 +212,12 @@ export function PrintPreview() {
 
   const previewGridStyle: React.CSSProperties = {
     display: 'grid', gap: '1px', flex: 1, minHeight: 0, padding: 0, background: '#444',
-    ...(currentLayout.areas ? {
-      gridTemplateAreas: currentLayout.areas,
-      gridTemplateColumns: currentLayout.gridTemplate?.columns ?? `repeat(${currentLayout.cols}, 1fr)`,
-      gridTemplateRows: currentLayout.gridTemplate?.rows ?? `repeat(${currentLayout.rows}, 1fr)`,
-    } : {
-      gridTemplateColumns: `repeat(${effectiveCols}, 1fr)`,
-      gridTemplateRows: `repeat(${effectiveRows}, 1fr)`,
-    }),
+    ...(currentLayout.areas ? { gridTemplateAreas: currentLayout.areas } : {}),
+    gridTemplateColumns: getLayoutGridTemplate(currentLayout).columns,
+    gridTemplateRows: getLayoutGridTemplate(currentLayout).rows,
   };
   const toolbarH = showPrinterMgr ? 190 : 55;
-  const areaNames = currentLayout.areas ? getAreaLetters(currentLayout.areas) : [];
+  const areaNames = getLayoutAreaNames(currentLayout.areas);
 
   const handleAddPrinter = (e: React.MouseEvent) => {
     e.stopPropagation();

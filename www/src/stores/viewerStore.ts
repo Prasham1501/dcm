@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import type { ViewerLayout, Orientation, PaperSize } from '@/types/viewer';
 import { LAYOUT_CATEGORIES, mockImages } from '@/types/viewer';
 import { studyService } from '@/services/studyService';
+import { autoSelectLayoutForImageCount, getAutoOrientationForLayout } from '@/lib/layoutUtils';
 import {
   localFileToImageId,
   orthancToImageId,
@@ -153,6 +154,7 @@ interface ViewerState {
 }
 
 const defaultLayout = LAYOUT_CATEGORIES[3].layouts[0]; // 5-spot 2t3b
+const autoSelectLayout = autoSelectLayoutForImageCount;
 
 /**
  * Auto-select the best layout for a given image count.
@@ -161,7 +163,7 @@ const defaultLayout = LAYOUT_CATEGORIES[3].layouts[0]; // 5-spot 2t3b
  *   Landscape: 12 images
  *   Others: smallest pure-grid layout with enough spots, portrait if rows >= cols
  */
-function autoSelectLayout(imageCount: number): { layout: ViewerLayout; orientation: Orientation } {
+function legacyAutoSelectLayout(imageCount: number): { layout: ViewerLayout; orientation: Orientation } {
   const portraitCounts = new Set([1, 2, 4, 6, 8, 9, 15, 18]);
   const landscapeCounts = new Set([12]);
 
@@ -331,6 +333,7 @@ export const useViewerStore = create<ViewerState>((set, get) => ({
     const { totalImages } = get();
     set({
       currentLayout: layout,
+      orientation: getAutoOrientationForLayout(layout),
       ...recalcPages(totalImages || mockImages.length, layout.spots),
     });
     // Resize the popup window to match the new layout's aspect ratio
@@ -596,6 +599,7 @@ export const useViewerStore = create<ViewerState>((set, get) => ({
         arrangeSelectedImages: [],
         arrangeClickOrder: [],
         currentLayout: bestLayout,
+        orientation: getAutoOrientationForLayout(bestLayout),
         ...recalcPages(get().totalImages, bestLayout.spots),
         viewportImageOverrides: newOverrides,
         viewportIndexOverrides: newIndexOverrides,
@@ -668,6 +672,7 @@ export const useViewerStore = create<ViewerState>((set, get) => ({
       const prevPage = get().preDoubleClickPage;
       set({
         currentLayout: prevLayout,
+        orientation: getAutoOrientationForLayout(prevLayout),
         ...recalcPages(get().totalImages, prevLayout.spots),
         currentPage: prevPage,
         preDoubleClickLayout: null,
@@ -695,6 +700,7 @@ export const useViewerStore = create<ViewerState>((set, get) => ({
         preDoubleClickPage: currentPage,
         doubleClickViewportImage: imageUrl,
         currentLayout: singleLayout,
+        orientation: getAutoOrientationForLayout(singleLayout),
         ...recalcPages(get().totalImages, singleLayout.spots),
         currentPage: 1,
         viewportImageOverrides: { 0: imageUrl },

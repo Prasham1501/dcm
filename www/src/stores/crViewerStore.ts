@@ -4,6 +4,7 @@
  */
 import { create } from 'zustand';
 import { localFileToImageId, prefetchImages } from '@/lib/dicomLoader';
+import { getAutoOrientationForLayout } from '@/lib/layoutUtils';
 
 export interface CRImage {
   id: string;
@@ -170,11 +171,11 @@ function recalcPages(totalImages: number, spotsPerPage: number) {
 }
 
 /**
- * Determine the default print/window orientation for the layout.
- * Square and tall sheets use portrait; only wide sheets use landscape.
+ * Determine the default paper/window orientation for the layout.
+ * This follows the spot-count rule used in print preview and the main viewer.
  */
 export function isPortraitLayout(layout: CRLayout): boolean {
-  return layout.cols <= layout.rows;
+  return getAutoOrientationForLayout(layout) === 'portrait';
 }
 
 /**
