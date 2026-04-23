@@ -64,7 +64,7 @@ function byCategory(readings: Reading[], cat: TemplateKey) {
 }
 
 /** Build structured OB report with Hadlock calculations */
-function obstetricStructuredHtml(readings: Reading[]): string {
+function obstetricStructuredHtml(readings: Reading[], includeCharts = true): string {
   // Find machine-reported GA from readings
   const gaReading = readings.find(r => r.key === 'GA' || r.key.startsWith('GA_'));
   const machineGA = gaReading ? String(gaReading.value) : undefined;
@@ -143,7 +143,7 @@ function obstetricStructuredHtml(readings: Reading[]): string {
   }
 
   // ── Growth Charts (static SVG) ──
-  if (obData.referenceGA) {
+  if (includeCharts && obData.referenceGA) {
     const chartableKeys = ['BPD', 'HC', 'AC', 'FL'];
     const chartPoints: GrowthChartPoint[] = [];
     for (const r of obData.readings) {
@@ -190,9 +190,10 @@ function genericHtml(readings: Reading[]): string {
 }
 
 /** Build a full HTML fragment from a ReadingSet, ready to inject into the report contentEditable. */
-export function buildReportHtml(readingSet: ReadingSet, studyDate?: string): string {
+export function buildReportHtml(readingSet: ReadingSet, studyDate?: string, options?: { includeCharts?: boolean }): string {
   const { readings, source, templateKey, warnings } = readingSet;
   if (readings.length === 0) return '';
+  const includeCharts = options?.includeCharts ?? true;
 
   const sourceLabel = SOURCE_LABELS[source] ?? source;
   const dateStr = studyDate ? ` — ${studyDate}` : '';
@@ -207,7 +208,7 @@ export function buildReportHtml(readingSet: ReadingSet, studyDate?: string): str
   // Render sections based on template
   switch (templateKey) {
     case 'obstetric':
-      parts.push(obstetricStructuredHtml(readings));
+      parts.push(obstetricStructuredHtml(readings, includeCharts));
       // also include any other categories found
       parts.push(abdominalHtml(readings), pelvicHtml(readings), vascularHtml(readings));
       break;

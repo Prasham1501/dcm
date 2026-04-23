@@ -267,22 +267,22 @@ export function ToolsPanel() {
   const multiSelected = selectedViewportIndices.length > 1;
 
   return (
-    <div className="w-80 flex flex-col bg-app-surface border-l border-app-border overflow-y-auto">
+    <div className="w-14 sm:w-28 lg:w-48 2xl:w-80 flex flex-col bg-app-surface border-l border-app-border overflow-y-auto">
       {/* W/L Presets */}
-      <div className="p-2.5 border-b border-app-border">
+      <div className="p-1 2xl:p-2.5 border-b border-app-border">
         <button
           onClick={() => setShowWLPresets(!showWLPresets)}
-          className="w-full px-2.5 py-1.5 text-xs font-semibold border border-app-border text-app-text bg-app-bg rounded hover:bg-app-hover transition-colors"
+          className="w-full px-1 py-1 2xl:px-2.5 2xl:py-1.5 text-[8px] sm:text-[10px] 2xl:text-xs font-semibold border border-app-border text-app-text bg-app-bg rounded hover:bg-app-hover transition-colors truncate"
         >
-          W/L Presets
+          {showWLPresets ? 'Close' : 'W/L Presets'}
         </button>
         {showWLPresets && (
-          <div className="mt-1.5 grid grid-cols-2 gap-1.5">
+          <div className="mt-1 2xl:mt-1.5 grid grid-cols-1 sm:grid-cols-2 gap-1 2xl:gap-1.5">
             {Object.entries(WL_PRESET_LABELS).map(([key, label]) => (
               <button
                 key={key}
                 onClick={() => handleWLPreset(key)}
-                className="px-1.5 py-1.5 text-[10px] font-semibold border border-app-border text-app-text bg-app-bg rounded hover:bg-app-accent hover:text-white transition-colors truncate"
+                className="px-1 py-1 2xl:px-1.5 2xl:py-1.5 text-[8px] sm:text-[9px] 2xl:text-[10px] font-semibold border border-app-border text-app-text bg-app-bg rounded hover:bg-app-accent hover:text-white transition-colors truncate"
               >
                 {label}
               </button>
@@ -294,9 +294,9 @@ export function ToolsPanel() {
       {/* Annotation color picker */}
       {(activeToolId === 'text' || activeToolId === 'arrow' || activeToolId === 'line'
         || activeToolId === 'draw' || activeToolId === 'measure' || activeToolId === 'polyline') && (
-        <div className="p-2.5 border-b border-app-border">
-          <div className="text-xs font-semibold text-app-text-muted mb-1.5">COLOR</div>
-          <div className="flex items-center gap-1.5 flex-wrap">
+        <div className="p-1 2xl:p-2.5 border-b border-app-border">
+          <div className="hidden sm:block text-[10px] 2xl:text-xs font-semibold text-app-text-muted mb-1 2xl:mb-1.5">COLOR</div>
+          <div className="flex items-center gap-1 2xl:gap-1.5 flex-wrap justify-center sm:justify-start">
             {['#00ff00', '#ff0000', '#ffff00', '#00ffff', '#ff00ff', '#ffffff', '#ff8800'].map((color) => (
               <button
                 key={color}
@@ -304,7 +304,7 @@ export function ToolsPanel() {
                   setAnnotationColor(color);
                   setAnnotationToolColor(color);
                 }}
-                className={`w-6 h-6 rounded-sm border-2 transition-colors ${
+                className={`w-3.5 h-3.5 sm:w-5 sm:h-5 2xl:w-6 2xl:h-6 rounded-sm border transition-colors ${
                   annotationColor === color ? 'border-white scale-110' : 'border-gray-600'
                 }`}
                 style={{ backgroundColor: color }}
@@ -317,21 +317,21 @@ export function ToolsPanel() {
 
       {/* Multi-select indicator */}
       {multiSelected && (
-        <div className="px-2.5 py-1.5 bg-yellow-500/20 border-b border-yellow-500/40">
-          <div className="text-xs text-yellow-400 font-semibold">
-            {selectedViewportIndices.length} viewports selected
+        <div className="px-1 py-1 sm:px-2.5 sm:py-1.5 bg-yellow-500/20 border-b border-yellow-500/40 text-center sm:text-left">
+          <div className="text-[8px] sm:text-xs text-yellow-400 font-semibold leading-tight">
+            <span className="sm:hidden">{selectedViewportIndices.length}V</span>
+            <span className="hidden sm:inline">{selectedViewportIndices.length} viewports selected</span>
           </div>
-          <div className="text-[10px] text-yellow-400/70">Actions apply to all</div>
         </div>
       )}
 
       {/* Configurable shortcut buttons */}
-      <div className="p-2.5 border-b border-app-border">
-        <div className="grid grid-cols-3 gap-1.5">
+      <div className="hidden sm:block p-1.5 2xl:p-2.5 border-b border-app-border">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-1 2xl:gap-1.5">
           {['Not defined', 'Not defined', 'Not defined'].map((label, i) => (
             <button
               key={i}
-              className="px-1.5 py-2 text-xs border border-app-border text-app-text-muted bg-app-bg rounded hover:bg-app-hover transition-colors truncate"
+              className="px-1 py-1.5 2xl:px-1.5 2xl:py-2 text-[8px] lg:text-[10px] 2xl:text-xs border border-app-border text-app-text-muted bg-app-bg rounded hover:bg-app-hover transition-colors truncate"
             >
               {label}
             </button>
@@ -340,8 +340,8 @@ export function ToolsPanel() {
       </div>
 
       {/* Unified tool grid */}
-      <div className="p-2.5 border-b border-app-border">
-        <div className="grid grid-cols-3 gap-1.5">
+      <div className="p-1 2xl:p-2.5 border-b border-app-border">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 2xl:grid-cols-3 gap-1 2xl:gap-1.5">
           {allTools.map((tool) => {
             const Icon = tool.icon;
             let isActive = false;
@@ -358,7 +358,7 @@ export function ToolsPanel() {
               <button
                 key={tool.id}
                 onClick={() => handleToolClick(tool)}
-                className={`flex flex-col items-center justify-center p-2 rounded border transition-colors ${
+                className={`flex flex-col items-center justify-center p-1 sm:p-1.5 2xl:p-2 rounded border transition-colors ${
                   isActive
                     ? 'border-app-accent bg-app-accent text-white shadow-[0_0_8px_rgba(var(--app-accent-rgb),0.6)]'
                     : isToggled
@@ -367,8 +367,8 @@ export function ToolsPanel() {
                 }`}
                 title={tool.label + (isToggled ? ' (active)' : '')}
               >
-                <Icon className="w-5 h-5 mb-0.5" />
-                <span className="text-[10px] leading-tight truncate w-full text-center">{tool.label}</span>
+                <Icon className="w-3.5 h-3.5 sm:w-4 sm:h-4 2xl:w-5 2xl:h-5 mb-0.5" />
+                <span className="hidden sm:block text-[8px] lg:text-[9px] 2xl:text-[10px] leading-tight truncate w-full text-center">{tool.label}</span>
               </button>
             );
           })}
@@ -381,28 +381,28 @@ export function ToolsPanel() {
       )}
 
       {/* Reset + Clear All buttons */}
-      <div className="p-2.5 border-b border-app-border flex gap-1.5">
+      <div className="p-1 2xl:p-2.5 border-b border-app-border flex flex-col sm:flex-row gap-1 2xl:gap-1.5">
         <button
           onClick={handleReset}
-          className="flex-1 px-2.5 py-2 text-sm font-semibold border-2 border-app-accent text-app-accent bg-app-bg rounded hover:bg-app-accent hover:text-white transition-colors"
+          className="flex-1 px-1 py-1 2xl:px-2.5 2xl:py-2 text-[8px] sm:text-xs 2xl:text-sm font-semibold border border-app-accent text-app-accent bg-app-bg rounded hover:bg-app-accent hover:text-white transition-colors"
         >
           Reset
         </button>
         <button
           onClick={handleClearAll}
-          className="flex items-center justify-center gap-1.5 px-2.5 py-2 text-sm font-semibold border-2 border-red-500 text-red-500 bg-app-bg rounded hover:bg-red-500 hover:text-white transition-colors"
+          className="flex items-center justify-center gap-1 px-1 py-1 2xl:px-2.5 2xl:py-2 text-[8px] sm:text-xs 2xl:text-sm font-semibold border border-red-500 text-red-500 bg-app-bg rounded hover:bg-red-500 hover:text-white transition-colors"
           title="Clear all annotations from selected viewport(s)"
         >
-          <Eraser className="w-4 h-4" />
-          Clear
+          <Eraser className="w-3 h-3 sm:w-3.5 sm:h-3.5 2xl:w-4 2xl:h-4" />
+          <span className="hidden sm:inline">Clear</span>
         </button>
       </div>
 
       {/* Cine button */}
-      <div className="p-2.5 border-b border-app-border">
+      <div className="p-1 2xl:p-2.5 border-b border-app-border">
         <button
           onClick={handleCineToggle}
-          className={`w-full flex items-center justify-center gap-2 px-2.5 py-2 text-sm font-semibold rounded border transition-colors ${
+          className={`w-full flex items-center justify-center gap-1 2xl:gap-1.5 px-1 py-1 2xl:px-2.5 2xl:py-2 text-[8px] sm:text-xs 2xl:text-sm font-semibold rounded border transition-colors ${
             isPlaying
               ? 'border-red-500 bg-red-500/20 text-red-400 hover:bg-red-500/40'
               : 'border-app-border text-app-text hover:bg-app-hover'
@@ -410,16 +410,16 @@ export function ToolsPanel() {
           title={isPlaying ? 'Stop Cine (currently playing)' : 'Start Cine playback'}
         >
           {isPlaying ? (
-            <><StopCircle className="w-4.5 h-4.5" /><span>Stop Cine</span></>
+            <><StopCircle className="w-3.5 h-3.5 2xl:w-4.5 2xl:h-4.5" /><span className="hidden sm:inline">Stop Cine</span></>
           ) : (
-            <><Play className="w-4.5 h-4.5" /><span>Cine</span></>
+            <><Play className="w-3.5 h-3.5 2xl:w-4.5 2xl:h-4.5" /><span className="hidden sm:inline">Cine</span></>
           )}
         </button>
       </div>
 
       {/* Keyboard shortcuts hint */}
-      <div className="p-2.5">
-        <div className="text-[10px] text-app-text-muted space-y-0.5">
+      <div className="hidden lg:block p-1.5 2xl:p-2.5">
+        <div className="text-[9px] 2xl:text-[10px] text-app-text-muted space-y-0.5">
           <div>Ctrl+A — select all viewports</div>
           <div>Ctrl+Z — undo annotation</div>
           <div>Delete — clear all annotations</div>

@@ -34,17 +34,17 @@ export function CRToolbar() {
 
   return (
     <>
-      <div className="flex items-center gap-2 px-3 py-2 bg-app-surface border-b border-app-border">
+      <div className="flex items-center gap-1.5 2xl:gap-2 px-2 2xl:px-3 py-1 2xl:py-2 bg-app-surface border-b border-app-border">
         {/* Format / Layout selector */}
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-bold text-app-accent uppercase tracking-wider">Format</span>
+        <div className="flex items-center gap-1.5 2xl:gap-2">
+          <span className="text-[10px] 2xl:text-xs font-bold text-app-accent uppercase tracking-wider">Format</span>
           <select
             value={currentLayout.id}
             onChange={(e) => {
               const layout = CR_LAYOUTS.find(l => l.id === e.target.value);
               if (layout) setLayout(layout);
             }}
-            className="text-sm px-3 py-1.5 bg-app-bg border border-app-border rounded text-app-text cursor-pointer focus:border-app-accent focus:outline-none"
+            className="text-xs 2xl:text-sm px-2 2xl:px-3 py-1 2xl:py-1.5 bg-app-bg border border-app-border rounded text-app-text cursor-pointer focus:border-app-accent focus:outline-none"
           >
             {CR_LAYOUTS.map((l) => (
               <option key={l.id} value={l.id}>{l.name}</option>
@@ -53,62 +53,62 @@ export function CRToolbar() {
         </div>
 
         {/* Navigation arrows */}
-        <div className="flex items-center gap-1 ml-1">
+        <div className="flex items-center gap-0.5 ml-0.5">
           <button
             onClick={prevPage}
             disabled={currentPage <= 1}
-            className="p-1.5 rounded border border-app-border text-app-accent hover:bg-app-hover disabled:opacity-30 transition-colors"
+            className="p-1 2xl:p-1.5 rounded border border-app-border text-app-accent hover:bg-app-hover disabled:opacity-30 transition-colors"
             title="Previous page"
           >
-            <ChevronLeft className="w-4.5 h-4.5" />
+            <ChevronLeft className="w-3.5 h-3.5 2xl:w-4.5 2xl:h-4.5" />
           </button>
           <button
             onClick={nextPage}
             disabled={currentPage >= totalPages}
-            className="p-1.5 rounded border border-app-border text-app-accent hover:bg-app-hover disabled:opacity-30 transition-colors"
+            className="p-1 2xl:p-1.5 rounded border border-app-border text-app-accent hover:bg-app-hover disabled:opacity-30 transition-colors"
             title="Next page"
           >
-            <ChevronRight className="w-4.5 h-4.5" />
+            <ChevronRight className="w-3.5 h-3.5 2xl:w-4.5 2xl:h-4.5" />
           </button>
         </div>
 
         {/* Arrange button */}
         <button
           onClick={toggleArrangeMode}
-          className={`flex items-center gap-1.5 px-3.5 py-1.5 text-sm font-semibold rounded border-2 transition-colors ${
+          className={`flex items-center gap-1 2xl:gap-1.5 px-2.5 2xl:px-3.5 py-1 2xl:py-1.5 text-xs 2xl:text-sm font-semibold rounded border-2 transition-colors ${
             isArrangeMode
               ? 'border-green-500 bg-green-500/20 text-green-400'
               : 'border-app-accent text-app-accent bg-app-bg hover:bg-app-accent hover:text-white'
           }`}
           title="Arrange images in viewports"
         >
-          <ListOrdered className="w-4.5 h-4.5" />
+          <ListOrdered className="w-3.5 h-3.5 2xl:w-4.5 2xl:h-4.5" />
           Arrange
         </button>
 
         {/* Preview button */}
         <button
           onClick={() => setShowPrintPreview(true)}
-          className="flex items-center gap-1.5 px-3.5 py-1.5 text-sm font-semibold border-2 border-app-accent text-app-accent bg-app-bg rounded hover:bg-app-accent hover:text-white transition-colors"
+          className="flex items-center gap-1 2xl:gap-1.5 px-2.5 2xl:px-3.5 py-1 2xl:py-1.5 text-xs 2xl:text-sm font-semibold border-2 border-app-accent text-app-accent bg-app-bg rounded hover:bg-app-accent hover:text-white transition-colors"
           title="Print preview"
         >
-          <Eye className="w-4.5 h-4.5" />
+          <Eye className="w-3.5 h-3.5 2xl:w-4.5 2xl:h-4.5" />
           Preview
         </button>
 
         {/* Print button */}
         <button
           onClick={() => setShowPrintPreview(true)}
-          className="flex items-center gap-1.5 px-3.5 py-1.5 text-sm font-semibold border-2 border-app-accent text-white bg-app-accent rounded hover:opacity-90 transition-colors"
+          className="flex items-center gap-1 2xl:gap-1.5 px-2.5 2xl:px-3.5 py-1 2xl:py-1.5 text-xs 2xl:text-sm font-semibold border-2 border-app-accent text-white bg-app-accent rounded hover:opacity-90 transition-colors"
           title="Print"
         >
-          <Printer className="w-4.5 h-4.5" />
+          <Printer className="w-3.5 h-3.5 2xl:w-4.5 2xl:h-4.5" />
           Print
         </button>
 
         {/* Image filter dropdown */}
         <select
-          className="text-sm px-3 py-1.5 bg-app-bg border border-app-border rounded text-app-text cursor-pointer focus:border-app-accent focus:outline-none ml-1"
+          className="text-xs 2xl:text-sm px-2 2xl:px-3 py-1 2xl:py-1.5 bg-app-bg border border-app-border rounded text-app-text cursor-pointer focus:border-app-accent focus:outline-none ml-0.5"
           value={printFilter}
           onChange={(e) => setPrintFilter(e.target.value as 'All' | 'Current')}
         >
@@ -117,7 +117,7 @@ export function CRToolbar() {
         </select>
 
         {/* Stamp button with dropdown */}
-        <div className="relative ml-1">
+        <div className="relative ml-0.5">
           <button
             onClick={() => {
               if (isStampMode) {
@@ -127,14 +127,14 @@ export function CRToolbar() {
                 setShowStampDropdown(prev => !prev);
               }
             }}
-            className={`flex items-center gap-1.5 px-3.5 py-1.5 text-sm font-semibold rounded border-2 transition-colors ${
+            className={`flex items-center gap-1 2xl:gap-1.5 px-2.5 2xl:px-3.5 py-1 2xl:py-1.5 text-xs 2xl:text-sm font-semibold rounded border-2 transition-colors ${
               isStampMode
                 ? 'border-yellow-500 bg-yellow-500/20 text-yellow-400'
                 : 'border-app-accent text-app-accent bg-app-bg hover:bg-app-accent hover:text-white'
             }`}
-            title={isStampMode ? 'Exit stamp mode' : 'Stamp tool — select a stamp to place'}
+            title={isStampMode ? 'Exit stamp mode' : 'Stamp tool \u2014 select a stamp to place'}
           >
-            <Stamp className="w-4.5 h-4.5" />
+            <Stamp className="w-3.5 h-3.5 2xl:w-4.5 2xl:h-4.5" />
             Stamp
           </button>
 

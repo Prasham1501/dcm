@@ -50,6 +50,7 @@ interface ReportStore {
   removeTemplate: (id: string) => void;
   saveFullReport: (report: Omit<SavedReport, 'id' | 'createdAt' | 'updatedAt'> & { id?: string }) => void;
   getReportsForPatient: (patientId: string) => SavedReport[];
+  deleteSavedReport: (reportId: string) => void;
   markReportPrinted: (reportId: string) => void;
   getReportPrintCount: (reportId: string) => number;
   addRichTemplate: (template: { name: string; content: string }) => void;
@@ -209,6 +210,12 @@ export const useReportStore = create<ReportStore>()(
 
       getReportsForPatient: (patientId) => {
         return get().savedReports.filter(r => r.patientId === patientId);
+      },
+
+      deleteSavedReport: (reportId) => {
+        set((s) => ({
+          savedReports: s.savedReports.filter(r => r.id !== reportId),
+        }));
       },
 
       markReportPrinted: (reportId) => {

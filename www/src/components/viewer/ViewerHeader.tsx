@@ -31,29 +31,29 @@ export function ViewerHeader() {
   const isPopup = typeof window !== 'undefined' && (window.opener != null || window.history.length <= 1);
 
   return (
-    <div className="flex items-center justify-between px-3 py-1.5 bg-app-header-bg border-b border-app-border">
+    <div className="flex items-center justify-between px-2 2xl:px-3 py-1 2xl:py-1.5 bg-app-header-bg border-b border-app-border">
       {/* Left: Back to patients / Close + page navigation */}
       <div className="flex items-center gap-3">
         {isPopup ? (
           <button
             onClick={() => window.close()}
-            className="px-3 py-1.5 text-sm font-semibold border-2 border-app-accent text-app-accent bg-app-bg rounded hover:bg-app-accent hover:text-white transition-colors flex items-center gap-1.5"
+            className="px-2 py-1 2xl:px-3 2xl:py-1.5 text-xs 2xl:text-sm font-semibold border-2 border-app-accent text-app-accent bg-app-bg rounded hover:bg-app-accent hover:text-white transition-colors flex items-center gap-1"
             title="Close CR viewer"
           >
-            <X className="w-4 h-4" />
+            <X className="w-3.5 h-3.5 2xl:w-4 2xl:h-4" />
             Close
           </button>
         ) : (
           <button
             onClick={() => navigate('/')}
-            className="px-3 py-1.5 text-sm font-semibold border-2 border-app-accent text-app-accent bg-app-bg rounded hover:bg-app-accent hover:text-white transition-colors flex items-center gap-1.5"
+            className="px-2 py-1 2xl:px-3 2xl:py-1.5 text-xs 2xl:text-sm font-semibold border-2 border-app-accent text-app-accent bg-app-bg rounded hover:bg-app-accent hover:text-white transition-colors flex items-center gap-1"
             title="Back to patient list"
           >
-            <ChevronLeft className="w-4 h-4" />
+            <ChevronLeft className="w-3.5 h-3.5 2xl:w-4 2xl:h-4" />
             Patients
           </button>
         )}
-        <span className="text-sm font-bold text-app-accent uppercase tracking-wide">CR Viewer</span>
+        <span className="text-xs 2xl:text-sm font-bold text-app-accent uppercase tracking-wide">CR Viewer</span>
 
         <button
           onClick={prevPage}
@@ -62,7 +62,7 @@ export function ViewerHeader() {
         >
           <ChevronLeft className="w-4 h-4" />
         </button>
-        <span className="text-sm text-app-text select-none whitespace-nowrap">
+        <span className="text-xs 2xl:text-sm text-app-text select-none whitespace-nowrap">
           Page {currentPage} of {totalPages}
           <span className="text-app-accent font-bold ml-1">({totalImages})</span>
         </span>
@@ -76,32 +76,32 @@ export function ViewerHeader() {
       </div>
 
       {/* Center: Patient details */}
-      <div className="flex items-center gap-4 min-w-0">
+      <div className="hidden sm:flex items-center gap-4 min-w-0">
         {patientName && (
-          <div className="flex items-center gap-4 text-sm min-w-0 overflow-hidden">
-            <span className="font-bold text-app-accent truncate max-w-[300px]" title={patientName}>
+          <div className="flex items-center gap-1.5 2xl:gap-4 text-xs 2xl:text-sm min-w-0 overflow-hidden">
+            <span className="font-bold text-app-accent truncate max-w-[120px] md:max-w-[200px] 2xl:max-w-[350px]" title={patientName}>
               {patientName}
             </span>
             {patientId && (
               <span className="text-app-text font-semibold flex-shrink-0">ID: {patientId}</span>
             )}
             {studyDate && (
-              <span className="text-app-text font-semibold flex-shrink-0">{studyDate}</span>
+              <span className="hidden md:inline text-app-text font-semibold flex-shrink-0">{studyDate}</span>
             )}
             <button
               onClick={handleCopyHeader}
               className="p-1 rounded hover:bg-app-hover transition-colors text-app-text-secondary flex-shrink-0"
               title="Copy patient info to clipboard"
             >
-              {copied ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
+              {copied ? <Check className="w-3.5 h-3.5 2xl:w-4 2xl:h-4 text-green-500" /> : <Copy className="w-3.5 h-3.5 2xl:w-4 2xl:h-4" />}
             </button>
           </div>
         )}
       </div>
 
       {/* Right: Print count + Print button + Theme toggle */}
-      <div className="flex items-center gap-3 flex-shrink-0">
-        <span className="text-sm text-app-text-secondary whitespace-nowrap">
+      <div className="flex items-center gap-1.5 2xl:gap-3 flex-shrink-0">
+        <span className="hidden lg:inline text-[10px] 2xl:text-sm text-app-text-secondary whitespace-nowrap">
           Prints:{' '}
           <span className={`font-bold ${printCountRemaining < 50 ? 'text-red-500' : 'text-green-500'}`}>
             {printCountRemaining}
@@ -110,19 +110,19 @@ export function ViewerHeader() {
 
         <button
           onClick={() => setShowPrintPreview(true)}
-          className="px-3.5 py-1.5 text-sm font-semibold border-2 border-app-accent text-white bg-app-accent rounded hover:opacity-90 transition-colors flex items-center gap-1.5"
+          className="px-2 py-1 2xl:px-3.5 2xl:py-1.5 text-[10px] 2xl:text-sm font-semibold border-2 border-app-accent text-white bg-app-accent rounded hover:opacity-90 transition-colors flex items-center gap-1"
           title="Open print preview"
         >
-          <Printer className="w-4 h-4" />
+          <Printer className="w-3 h-3 2xl:w-3.5 2xl:h-3.5" />
           Print
         </button>
 
         <button
           onClick={toggleTheme}
-          className="p-1.5 rounded hover:bg-app-hover transition-colors text-app-text-secondary"
+          className="p-1 2xl:p-1.5 rounded hover:bg-app-hover transition-colors text-app-text-secondary"
           title={mode === 'light' ? 'Dark mode' : 'Light mode'}
         >
-          {mode === 'light' ? <Moon className="w-4.5 h-4.5" /> : <Sun className="w-4.5 h-4.5" />}
+          {mode === 'light' ? <Moon className="w-4 h-4 2xl:w-4.5 2xl:h-4.5" /> : <Sun className="w-4 h-4 2xl:w-4.5 2xl:h-4.5" />}
         </button>
         {mode === 'dark' && (
           <div className="relative">

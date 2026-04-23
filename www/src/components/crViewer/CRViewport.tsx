@@ -433,37 +433,37 @@ function CRViewportInner({
             onClick={(e) => e.stopPropagation()}
             onMouseDown={(e) => e.stopPropagation()}
           >
-            <div className="bg-gray-900/95 border border-blue-500/70 rounded-xl p-3 lg:p-4 shadow-2xl w-[220px] lg:w-[280px] backdrop-blur-sm">
-              <div className="flex items-center justify-between mb-2 lg:mb-3">
-                <div className="text-xs lg:text-sm text-blue-400 font-bold uppercase tracking-wide">Edit {isText ? 'Text' : 'Stamp'}</div>
-                <button onClick={() => setEditingStamp(null)} className="w-5 h-5 lg:w-6 lg:h-6 flex items-center justify-center rounded-full bg-gray-700 hover:bg-gray-600 text-gray-400 hover:text-white transition-colors text-xs">
+            <div className="bg-gray-900/95 border border-blue-500/70 rounded-xl p-2 2xl:p-4 shadow-2xl w-[180px] 2xl:w-[260px] backdrop-blur-sm">
+              <div className="flex items-center justify-between mb-1.5 2xl:mb-3">
+                <div className="text-[10px] 2xl:text-sm text-blue-400 font-bold uppercase tracking-wide">Edit {isText ? 'Text' : 'Stamp'}</div>
+                <button onClick={() => setEditingStamp(null)} className="w-4 h-4 2xl:w-6 2xl:h-6 flex items-center justify-center rounded-full bg-gray-700 hover:bg-gray-600 text-gray-400 hover:text-white transition-colors text-[10px] 2xl:text-xs">
                   ×
                 </button>
               </div>
               {/* Live preview */}
-              <div className="mb-3 lg:mb-4 p-2 lg:p-3 bg-black/70 rounded-lg border border-gray-700/50 text-center min-h-[40px] lg:min-h-[50px] flex items-center justify-center">
+              <div className="mb-2 2xl:mb-4 p-1.5 2xl:p-3 bg-black/70 rounded-lg border border-gray-700/50 text-center min-h-[30px] 2xl:min-h-[50px] flex items-center justify-center">
                 <span className={`inline-block px-2 py-1 rounded font-bold ${isText ? '' : 'border-2 border-current uppercase tracking-wider'}`}
                   style={{ color: editingStamp.color, fontSize: `${Math.min(editingStamp.fontSize, 22)}px`, textShadow: '1px 1px 3px rgba(0,0,0,0.9)' }}>
                   {editingStamp.text || sp.text}
                 </span>
               </div>
-              <div className="space-y-2 lg:space-y-3">
+              <div className="space-y-1.5 2xl:space-y-3">
                 {/* Text input (only for text type) */}
                 {isText && (
                   <div>
-                    <span className="text-[10px] lg:text-xs text-gray-400 uppercase font-semibold block mb-1">Text</span>
+                    <span className="text-[9px] 2xl:text-xs text-gray-400 uppercase font-semibold block mb-1">Text</span>
                     <input
                       type="text"
                       value={editingStamp.text ?? sp.text}
                       onChange={(e) => setEditingStamp({ ...editingStamp, text: e.target.value })}
-                      className="w-full px-2 py-1.5 text-xs lg:text-sm bg-gray-800 text-white border border-gray-600 rounded-lg focus:border-blue-500 focus:outline-none"
+                      className="w-full px-2 py-1 text-[10px] 2xl:text-sm bg-gray-800 text-white border border-gray-600 rounded-lg focus:border-blue-500 focus:outline-none"
                     />
                   </div>
                 )}
                 <div>
                   <div className="flex items-center justify-between mb-1">
-                    <span className="text-[10px] lg:text-xs text-gray-400 uppercase font-semibold">Size</span>
-                    <span className="text-[10px] lg:text-xs text-white font-bold bg-gray-700 px-1.5 py-0.5 rounded">{editingStamp.fontSize}px</span>
+                    <span className="text-[9px] 2xl:text-xs text-gray-400 uppercase font-semibold">Size</span>
+                    <span className="text-[9px] 2xl:text-xs text-white font-bold bg-gray-700 px-1 py-0.5 rounded">{editingStamp.fontSize}px</span>
                   </div>
                   <input 
                     type="range" min="10" max="40" value={editingStamp.fontSize}
@@ -472,20 +472,20 @@ function CRViewportInner({
                   />
                 </div>
                 <div>
-                  <span className="text-[10px] lg:text-xs text-gray-400 uppercase font-semibold block mb-1.5">Color</span>
-                  <div className="flex gap-2 lg:gap-2.5 flex-wrap">
+                  <span className="text-[9px] 2xl:text-xs text-gray-400 uppercase font-semibold block mb-1">Color</span>
+                  <div className="flex gap-1.5 2xl:gap-2.5 flex-wrap">
                     {['#ff0000', '#ffff00', '#00ff00', '#00ffff', '#ff00ff', '#ffffff', '#ff8800', '#8800ff'].map(c => (
                       <button
                         key={c}
                         onClick={() => setEditingStamp({ ...editingStamp, color: c })}
-                        className={`w-6 h-6 lg:w-7 lg:h-7 rounded-full border-2 transition-transform ${editingStamp.color === c ? 'border-white scale-110 ring-2 ring-blue-500/50' : 'border-gray-600 hover:border-gray-400'}`}
+                        className={`w-5 h-5 2xl:w-7 2xl:h-7 rounded-full border-2 transition-transform ${editingStamp.color === c ? 'border-white scale-110 ring-2 ring-blue-500/50' : 'border-gray-600 hover:border-gray-400'}`}
                         style={{ backgroundColor: c }}
                       />
                     ))}
                   </div>
                 </div>
               </div>
-              <div className="flex gap-2 mt-3 lg:mt-4">
+              <div className="flex gap-1.5 mt-2 2xl:mt-4">
                 <button
                   onClick={() => {
                     const updates: { color: string; fontSize: number; text?: string } = { color: editingStamp.color, fontSize: editingStamp.fontSize };
@@ -493,7 +493,7 @@ function CRViewportInner({
                     updateStampPlacementProps(editingStamp.id, updates);
                     setEditingStamp(null);
                   }}
-                  className="flex-1 px-3 py-2 text-xs lg:text-sm bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-500 transition-colors"
+                  className="flex-1 px-2 py-1.5 text-[10px] 2xl:text-sm bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-500 transition-colors"
                 >
                   Save
                 </button>
@@ -502,7 +502,7 @@ function CRViewportInner({
                     useCRViewerStore.getState().removeStampPlacement(editingStamp.id);
                     setEditingStamp(null);
                   }}
-                  className="px-3 py-2 text-xs lg:text-sm bg-red-600/80 text-white rounded-lg font-bold hover:bg-red-500 transition-colors"
+                  className="px-2 py-1.5 text-[10px] 2xl:text-sm bg-red-600/80 text-white rounded-lg font-bold hover:bg-red-500 transition-colors"
                 >
                   Delete
                 </button>
@@ -520,8 +520,8 @@ function CRViewportInner({
           onClick={(e) => e.stopPropagation()}
           onMouseDown={(e) => e.stopPropagation()}
         >
-          <div className="bg-gray-800 border border-blue-500 rounded-lg p-2.5 shadow-xl min-w-[220px]">
-            <div className="text-[10px] text-blue-400 font-bold mb-1.5 uppercase">Select Stamp to Place</div>
+          <div className="bg-gray-800 border border-blue-500 rounded-lg p-2 shadow-xl min-w-[180px] 2xl:min-w-[220px]">
+            <div className="text-[9px] 2xl:text-[10px] text-blue-400 font-bold mb-1.5 uppercase">Select Stamp to Place</div>
             <CRStampPickerPanel
               onSelect={(text, color, fontSize) => {
                 placeStampDirect(viewportIndex, pendingStamp.xPercent, pendingStamp.yPercent, text, color, fontSize);
@@ -541,8 +541,8 @@ function CRViewportInner({
           onClick={(e) => e.stopPropagation()}
           onMouseDown={(e) => e.stopPropagation()}
         >
-          <div className="bg-gray-800 border border-blue-500 rounded-lg p-2.5 shadow-xl min-w-[220px]">
-            <div className="text-[10px] text-blue-400 font-bold mb-1.5 uppercase">Add Text</div>
+          <div className="bg-gray-800 border border-blue-500 rounded-lg p-2 shadow-xl min-w-[180px] 2xl:min-w-[220px]">
+            <div className="text-[9px] 2xl:text-[10px] text-blue-400 font-bold mb-1.5 uppercase">Add Text</div>
             <div className="space-y-2">
               <input
                 type="text"

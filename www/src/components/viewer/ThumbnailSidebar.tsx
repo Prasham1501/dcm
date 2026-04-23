@@ -168,10 +168,10 @@ export function ThumbnailSidebar() {
 
   if (!hasRealImages) {
     return (
-      <div className="w-44 flex flex-col bg-gray-900 border-l border-gray-700 overflow-y-auto">
+      <div className="w-16 sm:w-32 lg:w-44 2xl:w-56 flex flex-col bg-gray-900 border-l border-gray-700 overflow-y-auto">
         {Array.from({ length: 6 }, (_, i) => (
           <div key={i} className="p-1">
-            <div className="text-[9px] text-gray-500 px-0.5">P {i + 1}</div>
+            <div className="text-[7px] sm:text-[9px] text-gray-500 px-0.5">P {i + 1}</div>
             <div className="aspect-[4/3] bg-gray-800 border border-gray-600 rounded-sm" />
           </div>
         ))}
@@ -195,7 +195,7 @@ export function ThumbnailSidebar() {
   }
 
   return (
-    <div className="w-44 flex flex-col bg-gray-900 border-l border-gray-700 overflow-y-auto">
+    <div className="w-16 sm:w-32 lg:w-44 2xl:w-56 flex flex-col bg-gray-900 border-l border-gray-700 overflow-y-auto">
       {images.map((img, i) => {
         const pageForImage = Math.floor(i / currentLayout.spots) + 1;
         const isOnCurrentPage = pageForImage === currentPage;
@@ -209,7 +209,7 @@ export function ThumbnailSidebar() {
         return (
           <div
             key={img.id}
-            className={`p-0.5 cursor-pointer select-none relative ${
+            className={`p-0.5 sm:p-1 lg:p-1.5 cursor-pointer select-none relative ${
               isArrangeMode ? '' : 'active:cursor-grabbing'
             }`}
             draggable={!isArrangeMode}
@@ -217,15 +217,15 @@ export function ThumbnailSidebar() {
             onClick={() => handleThumbClick(i, img.imageUrl)}
             title={`Image ${img.instanceNumber}${isArrangeMode ? '' : ' — drag to viewport'}`}
           >
-            <div className="flex justify-between items-center px-0.5 relative z-10 w-full">
-              <span className={`text-[10px] font-bold ${isOnCurrentPage ? 'text-blue-400' : 'text-gray-500'}`}>
+            <div className="flex justify-between items-center px-0.5 relative z-10 w-full mb-0.5">
+              <span className={`text-[8px] sm:text-[10px] font-bold ${isOnCurrentPage ? 'text-blue-400' : 'text-gray-500'}`}>
                 {img.instanceNumber}
               </span>
               
               {/* Show Viewport Assignment Badge */}
               {assignedViewport !== undefined && (
-                <span className="text-[10px] font-bold text-white bg-green-600 px-1 rounded-sm shadow-sm opacity-90 leading-tight">
-                  Spot {assignedViewport}
+                <span className="text-[7px] sm:text-[9px] font-bold text-white bg-green-600 px-1 rounded-sm shadow-sm opacity-90 leading-tight">
+                  <span className="hidden sm:inline">Spot </span>{assignedViewport}
                 </span>
               )}
             </div>
@@ -242,7 +242,7 @@ export function ThumbnailSidebar() {
               {/* Arrange Selection Overlay Badge */}
               {isArrangeSelected && (
                 <div className="absolute inset-0 bg-green-500/20 z-10 flex items-center justify-center pointer-events-none">
-                  <div className="w-6 h-6 rounded-full bg-green-600 border-2 border-white flex items-center justify-center text-white text-xs font-bold shadow-md">
+                  <div className="w-4 h-4 sm:w-6 sm:h-6 rounded-full bg-green-600 border border-white flex items-center justify-center text-white text-[8px] sm:text-xs font-bold shadow-md">
                     {arrangeIdx + 1}
                   </div>
                 </div>

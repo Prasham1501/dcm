@@ -111,36 +111,36 @@ export function CRViewerPage() {
   return (
     <div className="flex flex-col h-screen bg-app-bg">
       {/* Header bar */}
-      <div className="flex items-center justify-between px-3 py-1.5 bg-app-header-bg border-b border-app-border">
+      <div className="flex items-center justify-between px-2 2xl:px-3 py-1 2xl:py-1.5 bg-app-header-bg border-b border-app-border">
         {/* Left: back/close + title */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 2xl:gap-3">
           {isPopup ? (
             <button
               onClick={() => window.close()}
-              className="px-3 py-1.5 text-sm font-semibold border-2 border-app-accent text-app-accent bg-app-bg rounded hover:bg-app-accent hover:text-white transition-colors flex items-center gap-1.5"
+              className="px-2 py-1 2xl:px-3 2xl:py-1.5 text-xs 2xl:text-sm font-semibold border-2 border-app-accent text-app-accent bg-app-bg rounded hover:bg-app-accent hover:text-white transition-colors flex items-center gap-1"
               title="Close viewer"
             >
-              <X className="w-4 h-4" />
+              <X className="w-3.5 h-3.5" />
               Close
             </button>
           ) : (
             <button
               onClick={() => navigate('/')}
-              className="px-3 py-1.5 text-sm font-semibold border-2 border-app-accent text-app-accent bg-app-bg rounded hover:bg-app-accent hover:text-white transition-colors flex items-center gap-1.5"
+              className="px-2 py-1 2xl:px-3 2xl:py-1.5 text-xs 2xl:text-sm font-semibold border-2 border-app-accent text-app-accent bg-app-bg rounded hover:bg-app-accent hover:text-white transition-colors flex items-center gap-1"
               title="Back to patient list"
             >
-              <ChevronLeft className="w-4 h-4" />
+              <ChevronLeft className="w-3.5 h-3.5" />
               Patients
             </button>
           )}
-          <span className="text-sm font-bold text-app-accent uppercase tracking-wide">Viewer</span>
+          <span className="text-xs 2xl:text-sm font-bold text-app-accent uppercase tracking-wide">Viewer</span>
         </div>
 
         {/* Center: Patient info */}
-        <div className="flex items-center gap-4 text-sm">
+        <div className="flex items-center gap-3 text-xs 2xl:text-sm">
           {patientName && (
             <>
-              <span className="font-bold text-app-accent truncate max-w-[300px]">{patientName}</span>
+              <span className="font-bold text-app-accent truncate max-w-[250px]">{patientName}</span>
               {patientId && <span className="text-app-text font-semibold">ID: {patientId}</span>}
               {studyDate && <span className="text-app-text font-semibold">{studyDate}</span>}
             </>
@@ -148,17 +148,17 @@ export function CRViewerPage() {
         </div>
 
         {/* Right: Page info + theme */}
-        <div className="flex items-center gap-3">
-          <span className="text-sm text-app-text-secondary font-medium">
+        <div className="flex items-center gap-2 2xl:gap-3">
+          <span className="text-xs 2xl:text-sm text-app-text-secondary font-medium">
             Page {currentPage}/{totalPages}
             <span className="text-app-accent font-bold ml-1">({totalImages})</span>
           </span>
           <button
             onClick={toggleTheme}
-            className="p-1.5 rounded hover:bg-app-hover transition-colors text-app-text-secondary"
+            className="p-1 rounded hover:bg-app-hover transition-colors text-app-text-secondary"
             title={mode === 'light' ? 'Dark mode' : 'Light mode'}
           >
-            {mode === 'light' ? <Moon className="w-4.5 h-4.5" /> : <Sun className="w-4.5 h-4.5" />}
+            {mode === 'light' ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
           </button>
         </div>
       </div>
@@ -168,8 +168,8 @@ export function CRViewerPage() {
 
       {/* Main content: viewport grid + sidebar (+ optional inline report) */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Viewport area — shrinks to 50% when report panel is open */}
-        <div className={`flex overflow-hidden ${showInlineReport ? 'w-[50%]' : 'flex-1'}`}>
+        {/* Viewport area — shrinks to 60% when report panel is open */}
+        <div className={`flex overflow-hidden ${showInlineReport ? 'w-[60%]' : 'flex-1'}`}>
           <CRViewportGrid />
           <div className="flex h-full border-l border-app-border">
             <CRThumbnailSidebar />
@@ -177,16 +177,16 @@ export function CRViewerPage() {
           </div>
         </div>
 
-        {/* Inline report panel — 50% width */}
+        {/* Inline report panel — 40% width */}
         {showInlineReport && (
-          <div className="w-[50%] flex-shrink-0 overflow-hidden">
+          <div className="w-[40%] flex-shrink-0 overflow-hidden">
             <InlineReportPanel />
           </div>
         )}
       </div>
 
       {/* Bottom bar: patient name + study date */}
-      <div className="text-center py-1.5 bg-gray-900 text-gray-200 text-sm border-t border-gray-700 font-semibold">
+      <div className="text-center py-1 2xl:py-1.5 bg-gray-900 text-gray-200 text-xs 2xl:text-sm border-t border-gray-700 font-semibold">
         {patientName} : {studyDate}
       </div>
     </div>

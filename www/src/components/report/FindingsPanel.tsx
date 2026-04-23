@@ -73,9 +73,11 @@ export function FindingsPanel({ detectedTemplate, obData, onInsert, compact }: F
   const [activeTemplate, setActiveTemplate] = useState<TemplateKey>(detectedTemplate || 'abdominal');
   const [expanded, setExpanded] = useState(true);
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const groupRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
-  // Multi-template selections: { templateKey: { groupName: optionIndex } }
-  const [allSelections, setAllSelections] = useState<Record<string, Record<string, number>>>({});
+  // Multi-template selections: { templateKey: { groupName: [optionIndex, ...] } }
+  const [allSelections, setAllSelections] = useState<Record<string, Record<string, number[]>>>({});
 
   // Derive current template's selections
   const selections = allSelections[activeTemplate] || {};
@@ -129,8 +131,18 @@ export function FindingsPanel({ detectedTemplate, obData, onInsert, compact }: F
   const toggleGroup = useCallback((groupName: string) => {
     setExpandedGroups(prev => {
       const next = new Set(prev);
-      if (next.has(groupName)) next.delete(groupName);
+      const wasOpen = next.has(groupName);
+      if (wasOpen) next.delete(groupName);
       else next.add(groupName);
+      // When collapsing, scroll so this group header is visible
+      if (wasOpen) {
+        setTimeout(() => {
+          const el = groupRefs.current[groupName];
+          if (el && scrollContainerRef.current) {
+            el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+          }
+        }, 50);
+      }
       return next;
     });
   }, []);
@@ -138,20 +150,25 @@ export function FindingsPanel({ detectedTemplate, obData, onInsert, compact }: F
   const selectFinding = useCallback((groupName: string, optIdx: number) => {
     setAllSelections(prev => {
       const templateSels = { ...(prev[activeTemplate] || {}) };
-      if (templateSels[groupName] === optIdx) {
-        delete templateSels[groupName];
+      const current = templateSels[groupName] || [];
+      if (current.includes(optIdx)) {
+        // Deselect
+        const next = current.filter(i => i !== optIdx);
+        if (next.length === 0) delete templateSels[groupName];
+        else templateSels[groupName] = next;
       } else {
-        templateSels[groupName] = optIdx;
+        // Add to selection
+        templateSels[groupName] = [...current, optIdx];
       }
       return { ...prev, [activeTemplate]: templateSels };
     });
   }, [activeTemplate]);
 
   const selectAllNormal = useCallback(() => {
-    const normals: Record<string, number> = {};
+    const normals: Record<string, number[]> = {};
     mergedGroups.forEach(g => {
       const normalIdx = g.options.findIndex(o => o.isNormal);
-      if (normalIdx >= 0) normals[g.name] = normalIdx;
+      if (normalIdx >= 0) normals[g.name] = [normalIdx];
     });
     setAllSelections(prev => ({ ...prev, [activeTemplate]: normals }));
   }, [mergedGroups, activeTemplate]);
@@ -168,7 +185,8 @@ export function FindingsPanel({ detectedTemplate, obData, onInsert, compact }: F
   const templateCounts = useMemo(() => {
     const counts: Record<string, number> = {};
     for (const [k, sels] of Object.entries(allSelections)) {
-      const c = Object.keys(sels).length;
+      let c = 0;
+      for (const indices of Object.values(sels)) c += indices.length;
       if (c > 0) counts[k] = c;
     }
     return counts;
@@ -187,9 +205,12 @@ export function FindingsPanel({ detectedTemplate, obData, onInsert, compact }: F
       if (Object.keys(sels).length === 0) continue;
       const groups = getMergedGroups(tKey as TemplateKey, customFindings);
       for (const g of groups) {
-        const idx = sels[g.name];
-        if (idx !== undefined && g.options[idx]) {
-          texts.push(g.options[idx].text);
+        const indices = sels[g.name];
+        if (!indices) continue;
+        for (const idx of indices) {
+          if (g.options[idx]) {
+            texts.push(g.options[idx].text);
+          }
         }
       }
     }
@@ -198,11 +219,13 @@ export function FindingsPanel({ detectedTemplate, obData, onInsert, compact }: F
 
   // Determine primary template for impression generation
   const primaryTemplate = useMemo((): TemplateKey => {
-    if (Object.keys(allSelections['obstetric'] || {}).length > 0) return 'obstetric';
+    const obSels = allSelections['obstetric'] || {};
+    if (Object.values(obSels).some(a => a.length > 0)) return 'obstetric';
     let maxKey: TemplateKey = activeTemplate;
     let maxCount = 0;
     for (const [k, sels] of Object.entries(allSelections)) {
-      const count = Object.keys(sels).length;
+      let count = 0;
+      for (const indices of Object.values(sels)) count += indices.length;
       if (count > maxCount) { maxCount = count; maxKey = k as TemplateKey; }
     }
     return maxKey;
@@ -250,13 +273,14 @@ export function FindingsPanel({ detectedTemplate, obData, onInsert, compact }: F
 
   const handleInsert = useCallback(() => {
     const html = generateHtml();
-    if (html) onInsert(html);
+    if (!html) return;
+    onInsert(html);
   }, [generateHtml, onInsert]);
 
   if (mergedGroups.length === 0) return null;
 
   const content = (
-    <div className="overflow-y-auto flex-1">
+    <div ref={scrollContainerRef} className="overflow-y-auto flex-1">
       {/* Template selector tabs */}
       <div className="flex flex-wrap gap-0.5 px-2 py-1 border-b border-app-border/50 sticky top-0 bg-app-surface z-10">
         {TEMPLATE_KEYS.map(({ key, label }) => {
@@ -301,45 +325,34 @@ export function FindingsPanel({ detectedTemplate, obData, onInsert, compact }: F
           <RotateCcw className="w-3 h-3" />
           Clear
         </button>
-        {totalSelectionCount > 0 && (
-          <>
-            {Object.keys(templateCounts).length > 1 && (
-              <button
-                onClick={clearAllTemplates}
-                className="flex items-center gap-1 px-2 py-0.5 text-[10px] rounded border border-red-400/40 text-red-500 hover:bg-red-500/10 font-medium"
-                title="Clear all selections across all templates"
-              >
-                <X className="w-3 h-3" />
-                Clear All
-              </button>
-            )}
-            <button
-              onClick={handleInsert}
-              className="flex items-center gap-1 px-2.5 py-0.5 text-[10px] rounded border border-app-accent bg-app-accent text-white hover:bg-app-accent/90 font-semibold ml-auto transition-colors"
-            >
-              <ClipboardCopy className="w-3 h-3" />
-              Insert ({totalSelectionCount})
-            </button>
-          </>
+        {totalSelectionCount > 0 && Object.keys(templateCounts).length > 1 && (
+          <button
+            onClick={clearAllTemplates}
+            className="flex items-center gap-1 px-2 py-0.5 text-[10px] rounded border border-red-400/40 text-red-500 hover:bg-red-500/10 font-medium"
+            title="Clear all selections across all templates"
+          >
+            <X className="w-3 h-3" />
+            Clear All
+          </button>
         )}
       </div>
 
       {/* Finding groups */}
       {mergedGroups.map(group => {
         const isOpen = expandedGroups.has(group.name);
-        const selectedIdx = selections[group.name];
-        const hasSelection = selectedIdx !== undefined;
-        const selectedOpt = hasSelection ? group.options[selectedIdx] : null;
+        const selectedIndices = selections[group.name] || [];
+        const hasSelection = selectedIndices.length > 0;
+        const allNormal = hasSelection && selectedIndices.every(i => group.options[i]?.isNormal);
         const presetCount = template.groups.find(g => g.name === group.name)?.options.length ?? 0;
 
         return (
-          <div key={group.name} className="border-b border-app-border/20">
+          <div key={group.name} className="border-b border-app-border/20" ref={el => { groupRefs.current[group.name] = el; }}>
             <button
               onClick={() => toggleGroup(group.name)}
               className="w-full flex items-center gap-1.5 px-3 py-1 text-xs hover:bg-app-hover/30 transition-colors"
             >
               {hasSelection ? (
-                <CheckCircle2 className={`w-3 h-3 flex-shrink-0 ${selectedOpt?.isNormal ? 'text-green-500' : 'text-amber-500'}`} />
+                <CheckCircle2 className={`w-3 h-3 flex-shrink-0 ${allNormal ? 'text-green-500' : 'text-amber-500'}`} />
               ) : (
                 <Circle className="w-3 h-3 text-app-text-secondary/40 flex-shrink-0" />
               )}
@@ -347,11 +360,14 @@ export function FindingsPanel({ detectedTemplate, obData, onInsert, compact }: F
                 {group.name}
               </span>
               {hasSelection && (
-                <span className={`text-[10px] ml-1 truncate max-w-[200px] ${selectedOpt?.isNormal ? 'text-green-600' : 'text-amber-600'}`}>
-                  — {selectedOpt?.label}
+                <span className={`text-[10px] ml-1 truncate max-w-[200px] ${allNormal ? 'text-green-600' : 'text-amber-600'}`}>
+                  — {selectedIndices.map(i => group.options[i]?.label).filter(Boolean).join(', ')}
                 </span>
               )}
-              <span className="ml-auto">
+              <span className="ml-auto flex items-center gap-1">
+                {selectedIndices.length > 1 && (
+                  <span className="text-[9px] bg-amber-500/20 text-amber-600 px-1 rounded font-bold">{selectedIndices.length}</span>
+                )}
                 {isOpen ? <ChevronUp className="w-3 h-3 text-app-text-secondary/50" /> : <ChevronDown className="w-3 h-3 text-app-text-secondary/50" />}
               </span>
             </button>
@@ -360,7 +376,7 @@ export function FindingsPanel({ detectedTemplate, obData, onInsert, compact }: F
               <div className="px-3 pb-1.5 pt-0.5">
                 <div className="flex flex-wrap gap-1">
                   {group.options.map((opt, optIdx) => {
-                    const isSelected = selectedIdx === optIdx;
+                    const isSelected = selectedIndices.includes(optIdx);
                     const isCustom = optIdx >= presetCount;
                     return (
                       <span key={optIdx} className="relative inline-flex items-center group/opt">
@@ -453,9 +469,30 @@ export function FindingsPanel({ detectedTemplate, obData, onInsert, compact }: F
     </div>
   );
 
-  // Compact mode: no header wrapper, just content
+  // Bottom Insert bar (shown in both modes when there are selections)
+  const insertBar = totalSelectionCount > 0 ? (
+    <div className="shrink-0 px-3 py-1.5 border-t border-app-border bg-app-surface flex items-center justify-between">
+      <span className="text-[10px] text-app-text-secondary">
+        {totalSelectionCount} finding{totalSelectionCount !== 1 ? 's' : ''} selected
+      </span>
+      <button
+        onClick={handleInsert}
+        className="flex items-center gap-1 px-3 py-1 text-xs rounded border font-semibold transition-colors border-app-accent bg-app-accent text-white hover:bg-app-accent/90"
+      >
+        <ClipboardCopy className="w-3 h-3" />
+        {`Insert (${totalSelectionCount})`}
+      </button>
+    </div>
+  ) : null;
+
+  // Compact mode: no header wrapper, just content + insert bar
   if (compact) {
-    return <div className="flex flex-col h-full bg-app-surface/30">{content}</div>;
+    return (
+      <div className="flex flex-col h-full bg-app-surface/30">
+        {content}
+        {insertBar}
+      </div>
+    );
   }
 
   // Standalone mode: with expand/collapse header
@@ -479,6 +516,7 @@ export function FindingsPanel({ detectedTemplate, obData, onInsert, compact }: F
         {expanded ? <ChevronUp className="w-3.5 h-3.5 text-app-text-secondary" /> : <ChevronDown className="w-3.5 h-3.5 text-app-text-secondary" />}
       </button>
       {expanded && <div className="max-h-72 overflow-y-auto">{content}</div>}
+      {expanded && insertBar}
     </div>
   );
 }

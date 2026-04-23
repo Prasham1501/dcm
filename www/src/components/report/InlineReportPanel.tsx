@@ -10,7 +10,7 @@ import {
   Bold, Italic, Underline, Strikethrough, AlignLeft, AlignCenter, AlignRight, AlignJustify,
   List, ListOrdered, Undo2, Redo2, Save, Printer, X,
   Sparkles, ChevronDown, ChevronUp, Loader2, ScanSearch, AlertTriangle, ShieldCheck,
-  Pencil, Type, Minus, Eraser,
+  Pencil, Type, Minus, Eraser, Trash2,
   Superscript, Subscript, Highlighter,
   RotateCcw, TableProperties, PanelLeftClose, PanelLeft, FileText,
 } from 'lucide-react';
@@ -104,7 +104,7 @@ export function InlineReportPanel() {
   // Report store
   const {
     savedReports, templates,
-    saveFullReport, getReportsForPatient,
+    saveFullReport, getReportsForPatient, deleteSavedReport,
     setShowInlineReport,
     editingPatientId, editingPatientName, editingStudyDate,
   } = useReportStore();
@@ -162,6 +162,7 @@ export function InlineReportPanel() {
   const [showFontColor, setShowFontColor] = useState(false);
   const [showHighlight, setShowHighlight] = useState(false);
   const [showPrintPreview, setShowPrintPreview] = useState(false);
+  const [includeCharts, setIncludeCharts] = useState(true);
 
   // OB data for FindingsPanel
   const panelOBData = useMemo(() => {
@@ -258,11 +259,11 @@ export function InlineReportPanel() {
 
   const handleAutoFill = useCallback(() => {
     if (!readingSet || readingSet.readings.length === 0 || !editorRef.current) return;
-    const html = buildReportHtml(readingSet, studyDate);
+    const html = buildReportHtml(readingSet, studyDate, { includeCharts });
     if (!html) return;
     insertHtmlIntoEditor(html);
     setAutoFillDone(true);
-  }, [readingSet, studyDate, insertHtmlIntoEditor]);
+  }, [readingSet, studyDate, insertHtmlIntoEditor, includeCharts]);
 
   const handlePrint = useCallback(() => {
     if (!editorRef.current) return;
@@ -284,7 +285,7 @@ export function InlineReportPanel() {
   /*  RENDER                                                     */
   /* ═══════════════════════════════════════════════════════════ */
   return (
-    <div className="flex flex-col h-full bg-neutral-100 dark:bg-neutral-900 border-l-2 border-app-accent/30 text-app-text text-sm overflow-hidden">
+    <div className="flex flex-col h-full bg-neutral-100 dark:bg-neutral-900 border-l-2 border-app-accent/30 text-app-text text-sm overflow-hidden relative">
 
       {/* ═══ TOP BAR ═══════════════════════════════════════════ */}
       <div className="flex items-center justify-between px-3 py-1.5 bg-app-header-bg border-b border-app-border shrink-0">
@@ -382,19 +383,30 @@ export function InlineReportPanel() {
               className="flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium rounded-md border border-app-border/60 text-app-text-secondary hover:bg-app-hover transition-colors"
             ><ScanSearch className="w-3 h-3" />Scan</button>
           )}
-          {hasReadings && !autoFillDone && (
+          {hasReadings && (
             <button onClick={() => setShowReadings(!showReadings)}
               className="flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium rounded-md border border-sky-400/40 text-sky-600 dark:text-sky-400 hover:bg-sky-500/10 transition-colors"
             ><Pencil className="w-3 h-3" />{showReadings ? 'Hide' : 'Review'}</button>
           )}
           {hasReadings && (
-            <button onClick={handleAutoFill} disabled={autoFillDone}
+            <button onClick={() => { handleAutoFill(); }}
               className={`flex items-center gap-1 px-2.5 py-0.5 text-[10px] font-bold rounded-md border transition-colors ${
                 autoFillDone
-                  ? 'border-green-500/30 text-green-600 cursor-default'
+                  ? 'border-green-500/30 text-green-600 hover:bg-green-500/10'
                   : 'border-app-accent text-app-accent hover:bg-app-accent hover:text-white'
               }`}
             ><Sparkles className="w-3 h-3" />{autoFillDone ? 'Inserted ✓' : 'Insert Readings'}</button>
+          )}
+          {hasReadings && readingSet?.templateKey === 'obstetric' && (
+            <label className="flex items-center gap-1 text-[10px] text-app-text-secondary cursor-pointer select-none" title="Include growth charts in report">
+              <input
+                type="checkbox"
+                checked={includeCharts}
+                onChange={(e) => setIncludeCharts(e.target.checked)}
+                className="w-3 h-3 accent-app-accent cursor-pointer"
+              />
+              Charts
+            </label>
           )}
           <button onClick={() => setShowFindings(!showFindings)}
             className={`flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium rounded-md border transition-colors ${
@@ -419,16 +431,8 @@ export function InlineReportPanel() {
         </div>
       )}
 
-      {/* ═══ READINGS TABLE (collapsible) ══════════════════════ */}
-      {hasReadings && !autoFillDone && showReadings && (
-        <EditableReadingsTable
-          readingSet={readingSet!}
-          onReadingsChange={(updated) => setActiveReadingSet({ ...readingSet!, readings: updated })}
-        />
-      )}
-
       {/* ═══ MAIN CONTENT AREA ═════════════════════════════════ */}
-      <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
+      <div className="flex flex-col flex-1 min-h-0 overflow-hidden relative">
 
           {/* ═══ WORD-LIKE TOOLBAR ══════════════════════════════ */}
           <div className="shrink-0 bg-app-surface border-b border-app-border px-1 py-0.5">
@@ -533,6 +537,35 @@ export function InlineReportPanel() {
 
               <FmtBtn onClick={() => exec('undo')} tip="Undo (Ctrl+Z)"><Undo2 className="w-3.5 h-3.5" /></FmtBtn>
               <FmtBtn onClick={() => exec('redo')} tip="Redo (Ctrl+Y)"><Redo2 className="w-3.5 h-3.5" /></FmtBtn>
+
+              <ToolbarSep />
+
+              {/* Clear All — single click with confirm dialog */}
+              <button
+                onClick={() => {
+                  if (confirm('Clear all content in the editor?')) {
+                    setTimeout(() => {
+                      if (editorRef.current) {
+                        editorRef.current.innerHTML = '<p><br></p>';
+                        editorRef.current.focus();
+                        // Place caret inside the empty paragraph
+                        const sel = window.getSelection();
+                        const range = document.createRange();
+                        range.setStart(editorRef.current.firstChild!, 0);
+                        range.collapse(true);
+                        sel?.removeAllRanges();
+                        sel?.addRange(range);
+                      }
+                    }, 50);
+                  } else {
+                    setTimeout(() => editorRef.current?.focus(), 50);
+                  }
+                }}
+                title="Clear All Content"
+                className="w-6 h-6 flex items-center justify-center rounded transition-all border border-transparent text-red-400 hover:bg-red-500/10 hover:text-red-500"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
             </div>
           </div>
 
@@ -710,25 +743,7 @@ export function InlineReportPanel() {
             </div>
           </div>
 
-        {/* ── FINDINGS BOTTOM PANEL ─────────────────────────── */}
-        {showFindings && (
-          <div className="shrink-0 border-t-2 border-app-accent/30 flex flex-col bg-app-bg overflow-hidden" style={{ height: '280px' }}>
-            <div className="flex items-center justify-between px-3 py-1 bg-app-surface border-b border-app-border shrink-0">
-              <span className="text-[11px] font-bold text-app-accent uppercase tracking-wider">Findings & Impression</span>
-              <button onClick={() => setShowFindings(false)} className="text-app-text-secondary hover:text-app-text">
-                <X className="w-3.5 h-3.5" />
-              </button>
-            </div>
-            <div className="flex-1 overflow-y-auto">
-              <FindingsPanel
-                detectedTemplate={readingSet?.templateKey}
-                obData={panelOBData}
-                onInsert={(html) => { insertHtmlIntoEditor(html); }}
-                compact
-              />
-            </div>
-          </div>
-        )}
+        {/* ── FINDINGS MODAL ──────────────────────────────── */}
       </div>
 
       {/* ═══ STATUS BAR (bottom) ═══════════════════════════════ */}
@@ -751,21 +766,124 @@ export function InlineReportPanel() {
           <div className="absolute bottom-full left-0 right-0 mx-3 mb-1 bg-white dark:bg-neutral-800 border border-app-border rounded-lg shadow-lg z-10 max-h-40 overflow-y-auto">
             {[...patientReports].sort((a, b) => b.updatedAt - a.updatedAt).map((r) => (
               <div key={r.id}
-                className="flex items-center justify-between px-3 py-1.5 hover:bg-app-hover border-b border-app-border/20 last:border-0 cursor-pointer"
-                onClick={() => { loadReport(r); setShowTemplates(false); }}
+                className="group flex items-center justify-between px-3 py-1.5 hover:bg-app-hover border-b border-app-border/20 last:border-0"
               >
-                <div className="min-w-0">
+                <div className="min-w-0 flex-1 cursor-pointer" onClick={() => { loadReport(r); setShowTemplates(false); }}>
                   <div className="text-xs text-app-text truncate font-medium">{r.title}</div>
                   <div className="text-[10px] text-app-text-secondary">{new Date(r.updatedAt).toLocaleDateString()} · {r.doctor || 'No doctor'}</div>
                 </div>
-                <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${r.status === 'final' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
-                  {r.status}
-                </span>
+                <div className="flex items-center gap-1.5 ml-2 shrink-0">
+                  <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${r.status === 'final' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
+                    {r.status}
+                  </span>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (confirm('Delete this saved report?')) {
+                        deleteSavedReport(r.id);
+                        if (currentReportId === r.id) setCurrentReportId(null);
+                      }
+                    }}
+                    className="p-0.5 rounded text-red-400 hover:text-red-600 hover:bg-red-500/10 transition-all"
+                    title="Delete report"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
               </div>
             ))}
           </div>
         )}
       </div>
+
+      {/* ═══ READINGS OVERLAY (covers full panel) ═══════════════ */}
+      {hasReadings && showReadings && (
+        <div className="absolute inset-0 z-30 flex flex-col bg-neutral-100 dark:bg-neutral-900">
+          <div className="flex items-center justify-between px-3 py-2 border-b border-app-border shrink-0 bg-app-header-bg">
+            <div className="flex items-center gap-2">
+              <Sparkles className="w-3.5 h-3.5 text-app-accent" />
+              <span className="text-xs font-bold text-app-text">Extracted Measurements</span>
+              <span className="text-[10px] text-app-text-secondary">({readingSet!.readings.length})</span>
+            </div>
+            <button
+              onClick={() => setShowReadings(false)}
+              className="p-1 rounded hover:bg-app-hover text-app-text-secondary hover:text-app-text transition-colors"
+              title="Close"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+          {autoFillDone && (
+            <div className="flex items-center gap-2 px-3 py-1.5 bg-amber-500/10 border-b border-amber-500/20 shrink-0">
+              <AlertTriangle className="w-3.5 h-3.5 text-amber-500 flex-shrink-0" />
+              <span className="text-[11px] text-amber-600 dark:text-amber-400">These readings have already been inserted into the report.</span>
+            </div>
+          )}
+          <div className="flex-1 overflow-y-auto">
+            <EditableReadingsTable
+              readingSet={readingSet!}
+              onReadingsChange={(updated) => setActiveReadingSet({ ...readingSet!, readings: updated })}
+            />
+          </div>
+          <div className="shrink-0 px-3 py-1.5 border-t border-app-border flex items-center justify-between bg-app-surface">
+            <div className="flex items-center gap-2">
+              {readingSet?.templateKey === 'obstetric' && (
+                <label className="flex items-center gap-1 text-[11px] text-app-text-secondary cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={includeCharts}
+                    onChange={(e) => setIncludeCharts(e.target.checked)}
+                    className="w-3.5 h-3.5 accent-app-accent cursor-pointer"
+                  />
+                  Include Charts
+                </label>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowReadings(false)}
+              className="px-3 py-1 text-xs rounded border border-app-border text-app-text-secondary hover:bg-app-hover transition-colors"
+            >
+              Close
+            </button>
+            <button
+              onClick={() => { handleAutoFill(); setShowReadings(false); }}
+              className={`flex items-center gap-1 px-3 py-1 text-xs font-bold rounded border transition-colors ${
+                autoFillDone
+                  ? 'border-amber-500 bg-amber-500 text-white hover:bg-amber-600'
+                  : 'border-app-accent bg-app-accent text-white hover:opacity-90'
+              }`}
+            >
+              <Sparkles className="w-3 h-3" />
+              {autoFillDone ? 'Re-insert into Report' : 'Insert into Report'}
+            </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ═══ FINDINGS OVERLAY (covers full panel) ════════════════ */}
+      {showFindings && (
+        <div className="absolute inset-0 z-30 flex flex-col bg-neutral-100 dark:bg-neutral-900">
+          <div className="flex items-center justify-between px-3 py-2 border-b border-app-border shrink-0 bg-app-header-bg">
+            <div className="flex items-center gap-2">
+              <FileText className="w-3.5 h-3.5 text-app-accent" />
+              <span className="text-xs font-bold text-app-accent uppercase tracking-wider">Findings & Impression</span>
+            </div>
+            <button onClick={() => setShowFindings(false)} className="p-1 rounded hover:bg-app-hover text-app-text-secondary hover:text-app-text transition-colors">
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+          <div className="flex-1 overflow-y-auto min-h-0">
+            <FindingsPanel
+              detectedTemplate={readingSet?.templateKey}
+              obData={panelOBData}
+              onInsert={(html) => { insertHtmlIntoEditor(html); setShowFindings(false); }}
+              compact
+            />
+          </div>
+        </div>
+      )}
 
       {/* ═══ PRINT PREVIEW MODAL ═══════════════════════════════ */}
       {showPrintPreview && (
@@ -934,7 +1052,7 @@ function EditableReadingsTable({
   }
 
   return (
-    <div className="max-h-80 overflow-y-auto border-b border-app-border shrink-0 bg-app-surface/30">
+    <div className="overflow-y-auto border-b border-app-border shrink-0 bg-app-surface/30">
       {/* OB Summary bar */}
       {obData && (obData.compositeGA || obData.computedEFW) && (
         <div className="px-3 py-1.5 bg-blue-500/5 border-b border-blue-500/15 flex flex-wrap gap-3 text-[11px]">

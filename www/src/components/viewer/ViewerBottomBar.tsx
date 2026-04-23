@@ -44,47 +44,47 @@ export function ViewerBottomBar() {
   }, [setZoom]);
 
   return (
-    <div className="flex items-center gap-6 px-3 py-1.5 bg-app-surface border-t border-app-border">
+    <div className="flex items-center gap-1.5 sm:gap-4 2xl:gap-6 px-1.5 sm:px-2 2xl:px-3 py-1 2xl:py-1.5 bg-app-surface border-t border-app-border overflow-x-auto no-scrollbar">
       {/* Loading indicator */}
       {loadingStudy && (
-        <div className="flex items-center gap-2">
-          <div className="w-3 h-3 border-2 border-app-accent border-t-transparent rounded-full animate-spin" />
-          <span className="text-[10px] text-app-accent">{loadProgress}%</span>
+        <div className="flex items-center gap-1.5 shrink-0">
+          <div className="w-2 h-2 sm:w-2.5 sm:h-2.5 border-2 border-app-accent border-t-transparent rounded-full animate-spin" />
+          <span className="text-[8px] sm:text-[9px] text-app-accent">{loadProgress}%</span>
         </div>
       )}
 
       {/* Level (Window Center) */}
-      <div className="flex items-center gap-1.5">
-        <label className="text-xs font-semibold text-app-accent whitespace-nowrap min-w-[38px]">LEVEL</label>
-        <span className="text-[10px] text-app-text-muted min-w-[32px] text-right tabular-nums">{level}</span>
+      <div className="flex items-center gap-1 shrink-0">
+        <label className="text-[7px] sm:text-[10px] font-semibold text-app-accent whitespace-nowrap min-w-[20px] sm:min-w-[32px]">L</label>
+        <span className="hidden sm:inline text-[9px] text-app-text-muted min-w-[28px] text-right tabular-nums">{level}</span>
         <input
           type="range"
           min="-1000"
           max="1000"
           value={level}
           onChange={handleLevelChange}
-          className="w-28 h-1 accent-app-accent"
+          className="w-12 sm:w-24 h-1 accent-app-accent"
         />
       </div>
 
       {/* Width (Window Width) */}
-      <div className="flex items-center gap-1.5">
-        <label className="text-xs font-semibold text-app-accent whitespace-nowrap min-w-[38px]">WIDTH</label>
-        <span className="text-[10px] text-app-text-muted min-w-[32px] text-right tabular-nums">{width}</span>
+      <div className="flex items-center gap-1 shrink-0">
+        <label className="text-[7px] sm:text-[10px] font-semibold text-app-accent whitespace-nowrap min-w-[20px] sm:min-w-[32px]">W</label>
+        <span className="hidden sm:inline text-[9px] text-app-text-muted min-w-[28px] text-right tabular-nums">{width}</span>
         <input
           type="range"
           min="1"
           max="4000"
           value={width}
           onChange={handleWidthChange}
-          className="w-28 h-1 accent-app-accent"
+          className="w-12 sm:w-24 h-1 accent-app-accent"
         />
       </div>
 
       {/* Zoom */}
-      <div className="flex items-center gap-1.5">
-        <label className="text-xs font-semibold text-app-accent whitespace-nowrap min-w-[38px]">ZOOM</label>
-        <span className="text-[10px] text-app-text-muted min-w-[32px] text-right tabular-nums">{zoom.toFixed(2)}</span>
+      <div className="flex items-center gap-1 shrink-0">
+        <label className="text-[7px] sm:text-[10px] font-semibold text-app-accent whitespace-nowrap min-w-[20px] sm:min-w-[32px]">Z</label>
+        <span className="hidden sm:inline text-[9px] text-app-text-muted min-w-[28px] text-right tabular-nums">{zoom.toFixed(2)}</span>
         <input
           type="range"
           min="0.1"
@@ -92,19 +92,19 @@ export function ViewerBottomBar() {
           step="0.01"
           value={zoom}
           onChange={handleZoomChange}
-          className="w-28 h-1 accent-app-accent"
+          className="w-12 sm:w-24 h-1 accent-app-accent"
         />
       </div>
 
       {/* Logo checkbox */}
-      <label className="flex items-center gap-1.5 ml-auto cursor-pointer">
+      <label className="flex items-center gap-1.5 ml-auto cursor-pointer shrink-0">
         <input
           type="checkbox"
           checked={showLogo}
           onChange={(e) => setShowLogo(e.target.checked)}
-          className="accent-app-accent w-3 h-3"
+          className="w-2.5 h-2.5 sm:w-3 sm:h-3 accent-app-accent"
         />
-        <span className="text-xs text-app-text-secondary">Logo</span>
+        <span className="text-[7px] sm:text-[10px] font-semibold text-app-accent uppercase tracking-wider">Logo</span>
       </label>
     </div>
   );

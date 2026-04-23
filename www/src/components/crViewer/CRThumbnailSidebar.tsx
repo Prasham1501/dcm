@@ -113,7 +113,7 @@ export function CRThumbnailSidebar() {
   };
 
   return (
-    <div className="w-44 flex flex-col bg-app-surface border-l border-app-border overflow-y-auto custom-scrollbar shadow-inner">
+    <div className="w-52 2xl:w-56 flex flex-col bg-app-surface border-l border-app-border overflow-y-auto custom-scrollbar shadow-inner">
       <div className="p-2.5 border-b border-app-border bg-app-bg/50">
         <span className="text-xs font-bold text-app-accent uppercase tracking-wider">Preview</span>
       </div>
