@@ -5,7 +5,7 @@
  * - COVER scale: image fills viewport with no black bars
  * - Draggable stamps
  */
-import { useEffect, useRef, useCallback, memo } from 'react';
+import { useEffect, useRef, useCallback, memo, useState } from 'react';
 import { cornerstone } from '@/lib/cornerstoneSetup';
 import { useCRViewerStore } from '@/stores/crViewerStore';
 
@@ -33,8 +33,18 @@ function CRViewportInner({
   const currentImageIdRef = useRef<string | null>(null);
 
   const { 
-    isStampMode, activeStampId, placeStamp, stampPlacements, updateStampPlacement,
+    isStampMode, stampPlacements, updateStampPlacement, updateStampPlacementProps,
+    placeStampDirect,
   } = useCRViewerStore();
+
+  // Editing stamp state (double-click)
+  const [editingStamp, setEditingStamp] = useState<{ id: string; color: string; fontSize: number } | null>(null);
+
+  // Pending stamp popup (click-to-place with presets, same as DicomViewport)
+  const [pendingStamp, setPendingStamp] = useState<{ xPercent: number; yPercent: number } | null>(null);
+  const [stampText, setStampText] = useState('');
+  const [stampColor, setStampColor] = useState('#ff0000');
+  const [stampFontSize, setStampFontSize] = useState(14);
 
   // Right-click W/L drag state
   const rightDragRef = useRef<{
@@ -294,17 +304,24 @@ function CRViewportInner({
   const handleClick = useCallback((e: React.MouseEvent) => {
     // If a stamp drag just happened, don't treat as click
     if (stampDragRef.current) return;
-    if (isStampMode && activeStampId) {
+    if (isStampMode && imageId) {
       const rect = containerRef.current?.getBoundingClientRect();
       if (rect) {
         const xPercent = ((e.clientX - rect.left) / rect.width) * 100;
         const yPercent = ((e.clientY - rect.top) / rect.height) * 100;
-        placeStamp(viewportIndex, xPercent, yPercent);
+        setPendingStamp({ xPercent, yPercent });
       }
       return;
     }
     onClick(e);
-  }, [isStampMode, activeStampId, placeStamp, viewportIndex, onClick]);
+  }, [isStampMode, imageId, onClick]);
+
+  const handlePlaceStamp = useCallback(() => {
+    if (!pendingStamp || !stampText.trim()) return;
+    placeStampDirect(viewportIndex, pendingStamp.xPercent, pendingStamp.yPercent, stampText.trim(), stampColor, stampFontSize);
+    setPendingStamp(null);
+    setStampText('');
+  }, [pendingStamp, stampText, stampColor, stampFontSize, viewportIndex, placeStampDirect]);
 
   // Filter stamp placements for this viewport
   const viewportStamps = stampPlacements.filter(s => s.viewportIndex === viewportIndex);
@@ -329,7 +346,7 @@ function CRViewportInner({
       {viewportStamps.map((sp) => (
         <div
           key={sp.id}
-          className="absolute z-10 select-none"
+          className="absolute z-10 select-none group"
           style={{
             left: `${sp.xPercent}%`,
             top: `${sp.yPercent}%`,
@@ -353,10 +370,149 @@ function CRViewportInner({
             };
           }}
           onClick={(e) => e.stopPropagation()} // prevent re-placing stamp on click
+          onDoubleClick={(e) => {
+            e.stopPropagation();
+            setEditingStamp({ id: sp.id, color: sp.color, fontSize: sp.fontSize });
+          }}
         >
-          {sp.text}
+          <span className="inline-block px-1.5 py-0.5 rounded border-2 border-current uppercase tracking-wider"
+            style={{ backgroundColor: 'rgba(0,0,0,0.6)' }}
+          >
+            {sp.text}
+          </span>
         </div>
       ))}
+
+      {/* Edit stamp popup (double-click) */}
+      {editingStamp && (() => {
+        const sp = viewportStamps.find(s => s.id === editingStamp.id);
+        if (!sp) return null;
+        return (
+          <div
+            className="absolute z-40"
+            style={{
+              left: `${sp.xPercent}%`,
+              top: `${sp.yPercent}%`,
+              transform: 'translate(-50%, -50%)',
+            }}
+            onClick={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <div className="bg-gray-800 border border-blue-500 rounded-lg p-2 shadow-xl min-w-[180px]">
+              <div className="text-[10px] text-blue-400 font-bold mb-1 uppercase">Edit Stamp</div>
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-[8px] text-gray-400 uppercase">Size</span>
+                <input 
+                  type="range" min="10" max="40" value={editingStamp.fontSize}
+                  onChange={(e) => setEditingStamp({ ...editingStamp, fontSize: parseInt(e.target.value) })}
+                  className="w-24 h-1 bg-gray-700 rounded-lg appearance-none cursor-pointer"
+                />
+                <span className="text-[8px] text-white">{editingStamp.fontSize}px</span>
+              </div>
+              <div className="flex items-center gap-2 mb-2">
+                <span className="text-[8px] text-gray-400 uppercase">Color</span>
+                <div className="flex gap-1.5">
+                  {['#ff0000', '#ffff00', '#00ff00', '#00ffff', '#ff00ff', '#ffffff'].map(c => (
+                    <button
+                      key={c}
+                      onClick={() => setEditingStamp({ ...editingStamp, color: c })}
+                      className={`w-4 h-4 rounded-full border ${editingStamp.color === c ? 'border-white' : 'border-transparent'}`}
+                      style={{ backgroundColor: c }}
+                    />
+                  ))}
+                </div>
+              </div>
+              <div className="flex gap-1">
+                <button
+                  onClick={() => {
+                    updateStampPlacementProps(editingStamp.id, { color: editingStamp.color, fontSize: editingStamp.fontSize });
+                    setEditingStamp(null);
+                  }}
+                  className="flex-1 px-2 py-1 text-[10px] bg-blue-600 text-white rounded font-bold hover:bg-blue-500"
+                >
+                  Save
+                </button>
+                <button
+                  onClick={() => setEditingStamp(null)}
+                  className="px-2 py-1 text-[10px] bg-gray-700 text-gray-300 rounded hover:bg-gray-600"
+                >
+                  ×
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Pending stamp popup (click-to-place with presets) */}
+      {pendingStamp && (
+        <div
+          className="absolute z-40"
+          style={{
+            left: `${pendingStamp.xPercent}%`,
+            top: `${pendingStamp.yPercent}%`,
+            transform: 'translate(-50%, -50%)',
+          }}
+          onClick={(e) => e.stopPropagation()}
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          <div className="bg-gray-800 border border-blue-500 rounded-lg p-2 shadow-xl min-w-[180px]">
+            <div className="text-[10px] text-blue-400 font-bold mb-1 uppercase">Place Stamp</div>
+            <div className="grid grid-cols-3 gap-1">
+              {['VERIFIED', 'REVIEWED', 'APPROVED', 'REJECT', 'PENDING', 'URGENT'].map((s) => (
+                <button
+                  key={s}
+                  onClick={() => setStampText(s)}
+                  className={`px-1 py-1 text-[8px] font-bold border rounded uppercase transition-colors ${
+                    stampText === s ? 'bg-red-600 border-red-400 text-white' : 'border-gray-600 text-gray-300 hover:border-red-400'
+                  }`}
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
+            <div className="flex flex-col gap-1 mt-2">
+              <div className="flex items-center justify-between">
+                <span className="text-[8px] text-gray-400 uppercase">Size</span>
+                <input 
+                  type="range" min="10" max="40" value={stampFontSize}
+                  onChange={(e) => setStampFontSize(parseInt(e.target.value))}
+                  className="w-24 h-1 bg-gray-700 rounded-lg appearance-none cursor-pointer"
+                />
+                <span className="text-[8px] text-white">{stampFontSize}px</span>
+              </div>
+              <div className="flex items-center gap-2 mt-1">
+                <span className="text-[8px] text-gray-400 uppercase">Color</span>
+                <div className="flex gap-1.5">
+                  {['#ff0000', '#ffff00', '#00ff00', '#00ffff', '#ff00ff', '#ffffff'].map(c => (
+                    <button
+                      key={c}
+                      onClick={() => setStampColor(c)}
+                      className={`w-4 h-4 rounded-full border ${stampColor === c ? 'border-white' : 'border-transparent'}`}
+                      style={{ backgroundColor: c }}
+                    />
+                  ))}
+                </div>
+              </div>
+            </div>
+            <div className="flex gap-1 mt-2">
+              <button
+                onClick={handlePlaceStamp}
+                disabled={!stampText.trim()}
+                className="flex-1 px-2 py-1 text-[10px] bg-red-600 text-white rounded font-bold hover:bg-red-500 disabled:opacity-40"
+              >
+                Place Stamp
+              </button>
+              <button
+                onClick={() => setPendingStamp(null)}
+                className="px-2 py-1 text-[10px] bg-gray-700 text-gray-300 rounded hover:bg-gray-600"
+              >
+                ×
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Spot number indicator */}
       <div className="absolute bottom-1 left-1 text-white text-xs font-bold opacity-60 select-none pointer-events-none z-10">

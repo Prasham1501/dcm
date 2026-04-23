@@ -68,6 +68,11 @@ function DicomViewportInner({
   const [inputFontSize, setInputFontSize] = useState(14);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // Editing an existing annotation (double-click)
+  const [editingAnn, setEditingAnn] = useState<TextAnnotation | null>(null);
+  const [editColor, setEditColor] = useState('#ffff00');
+  const [editFontSize, setEditFontSize] = useState(14);
+
   // Drag state for move existing annotations
   const [draggingAnn, setDraggingAnn] = useState<{
     id: string;
@@ -725,6 +730,20 @@ function DicomViewportInner({
     setAnnotations([...getAnnotations(imageId)]);
   }, [imageId, removeText, getAnnotations]);
 
+  const handleEditAnnotation = useCallback((ann: TextAnnotation) => {
+    setEditingAnn(ann);
+    setEditColor(ann.color);
+    setEditFontSize(ann.fontSize);
+  }, []);
+
+  const handleSaveEditAnnotation = useCallback(() => {
+    if (!editingAnn || !imageId) return;
+    const updated = { ...editingAnn, color: editColor, fontSize: editFontSize };
+    updateText(imageId, updated);
+    setAnnotations([...getAnnotations(imageId).map(a => a.id === updated.id ? updated : a)]);
+    setEditingAnn(null);
+  }, [editingAnn, editColor, editFontSize, imageId, updateText, getAnnotations]);
+
   const handleDeleteDrawPath = useCallback((pathId: string) => {
     if (!imageId) return;
     removePath(imageId, pathId);
@@ -845,6 +864,10 @@ function DicomViewportInner({
               startYPct: ann.yPercent,
             });
           }}
+          onDoubleClick={(e) => {
+            e.stopPropagation();
+            handleEditAnnotation(ann);
+          }}
         >
           <span
             className={`inline-block px-1.5 py-0.5 rounded font-bold whitespace-nowrap ${
@@ -871,6 +894,60 @@ function DicomViewportInner({
           </button>
         </div>
       ))}
+
+      {/* Edit annotation popup (double-click) */}
+      {editingAnn && (
+        <div
+          className="absolute z-40"
+          style={{
+            left: `${editingAnn.xPercent}%`,
+            top: `${editingAnn.yPercent}%`,
+            transform: 'translate(-50%, -50%)',
+          }}
+          onClick={(e) => e.stopPropagation()}
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          <div className="bg-gray-800 border border-blue-500 rounded-lg p-2 shadow-xl min-w-[180px]">
+            <div className="text-[10px] text-blue-400 font-bold mb-1 uppercase">Edit {editingAnn.type === 'stamp' ? 'Stamp' : 'Text'}</div>
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-[8px] text-gray-400 uppercase">Size</span>
+              <input 
+                type="range" min="10" max="40" value={editFontSize}
+                onChange={(e) => setEditFontSize(parseInt(e.target.value))}
+                className="w-24 h-1 bg-gray-700 rounded-lg appearance-none cursor-pointer"
+              />
+              <span className="text-[8px] text-white">{editFontSize}px</span>
+            </div>
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-[8px] text-gray-400 uppercase">Color</span>
+              <div className="flex gap-1.5">
+                {['#ff0000', '#ffff00', '#00ff00', '#00ffff', '#ff00ff', '#ffffff'].map(c => (
+                  <button
+                    key={c}
+                    onClick={() => setEditColor(c)}
+                    className={`w-4 h-4 rounded-full border ${editColor === c ? 'border-white' : 'border-transparent'}`}
+                    style={{ backgroundColor: c }}
+                  />
+                ))}
+              </div>
+            </div>
+            <div className="flex gap-1">
+              <button
+                onClick={handleSaveEditAnnotation}
+                className="flex-1 px-2 py-1 text-[10px] bg-blue-600 text-white rounded font-bold hover:bg-blue-500"
+              >
+                Save
+              </button>
+              <button
+                onClick={() => setEditingAnn(null)}
+                className="px-2 py-1 text-[10px] bg-gray-700 text-gray-300 rounded hover:bg-gray-600"
+              >
+                ×
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Pending text/stamp input */}
       {pendingInput && (
