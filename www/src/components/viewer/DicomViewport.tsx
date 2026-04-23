@@ -229,6 +229,10 @@ function DicomViewportInner({
           cornerstone.displayImage(el, image);
           currentImageIdRef.current = imageId;
 
+          if (image.columns && image.rows) {
+            useViewerStore.getState().setImageAspectRatio(image.columns / image.rows);
+          }
+
           if (viewportIndex === 0) {
             const wc = image.windowCenter ?? 127;
             const ww = image.windowWidth ?? 255;

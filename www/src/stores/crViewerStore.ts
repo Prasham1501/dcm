@@ -64,6 +64,7 @@ interface CRViewerState {
   images: CRImage[];
   originalImages: CRImage[];
   totalImages: number;
+  imageAspectRatio: number;
 
   // Layout
   currentLayout: CRLayout;
@@ -113,6 +114,7 @@ interface CRViewerState {
   setSelectedViewport: (index: number) => void;
   toggleViewportSelection: (index: number) => void;
   selectAllViewports: () => void;
+  setImageAspectRatio: (ratio: number) => void;
 
   // Arrange
   toggleArrangeMode: () => void;
@@ -249,6 +251,7 @@ export const useCRViewerStore = create<CRViewerState>((set, get) => ({
   images: [],
   originalImages: [],
   totalImages: 0,
+  imageAspectRatio: 4 / 3,
   currentLayout: CR_LAYOUTS[2], // default 4 spots
   currentPage: 1,
   totalPages: 1,
@@ -344,6 +347,8 @@ export const useCRViewerStore = create<CRViewerState>((set, get) => ({
     const indices = Array.from({ length: currentLayout.spots }, (_, i) => i);
     set({ selectedViewportIndices: indices, selectedViewport: 0 });
   },
+
+  setImageAspectRatio: (ratio) => set({ imageAspectRatio: ratio }),
 
   // Arrange
   toggleArrangeMode: () => {

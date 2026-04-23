@@ -238,10 +238,10 @@ function startMySQL() {
             if (isDev) { console.log('[MySQL] Using system MySQL (dev mode)'); resolve(); return; }
             reject(new Error('MySQL not found: ' + mysqldPath)); return;
         }
-        
+
         // Ensure port is free
         ensurePortFree(MYSQL_PORT);
-        
+
         console.log('[MySQL] Starting MariaDB...');
         mysqlProcess = spawn(mysqldPath, [
             `--datadir=${mysqlDataSubDir}`, `--basedir=${mysqlDir}`,
@@ -338,7 +338,7 @@ async function runMigrations() {
             execSync(`${cmd} "${dbName}" -e "source ${filePath}"`, {
                 timeout: 30000, stdio: 'pipe', shell: true
             });
-            
+
             // Mark as applied
             execSync(`${cmd} "${dbName}" -e "INSERT INTO app_migrations (filename) VALUES ('${sqlFile}')"`, {
                 timeout: 10000, stdio: 'pipe', shell: true
@@ -350,12 +350,12 @@ async function runMigrations() {
             if (msg.includes('WARNING: option --ssl-verify-server-cert is disabled')) {
                 // If the file is now in app_migrations, it actually worked
                 try {
-                   const check = execSync(`${cmd} "${dbName}" -N -e "SELECT id FROM app_migrations WHERE filename='${sqlFile}'"`, { stdio: 'pipe' }).toString().trim();
-                   if (check) {
-                       console.log(`[MySQL] + ${sqlFile} (applied despite warning)`);
-                       continue;
-                   }
-                } catch(e2) {}
+                    const check = execSync(`${cmd} "${dbName}" -N -e "SELECT id FROM app_migrations WHERE filename='${sqlFile}'"`, { stdio: 'pipe' }).toString().trim();
+                    if (check) {
+                        console.log(`[MySQL] + ${sqlFile} (applied despite warning)`);
+                        continue;
+                    }
+                } catch (e2) { }
             }
             console.error(`[MySQL] ! ${sqlFile} failed: ${msg.substring(0, 150)}`);
         }
@@ -404,10 +404,10 @@ function startOrthanc() {
             if (isDev) console.log('[Orthanc] Not found (dev mode)');
             resolve(); return;
         }
-        
+
         // Ensure port is free
         ensurePortFree(ORTHANC_PORT);
-        
+
         console.log('[Orthanc] Starting...');
         const configPath = generateOrthancConfig();
         orthancProcess = spawn(orthancExePath, [configPath], { cwd: orthancDir, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -448,17 +448,17 @@ async function waitForOrthanc(maxAttempts = 15) {
 // =====================================================
 const mime = {
     '.html': 'text/html',
-    '.js':   'application/javascript',
-    '.css':  'text/css',
+    '.js': 'application/javascript',
+    '.css': 'text/css',
     '.json': 'application/json',
-    '.png':  'image/png',
-    '.jpg':  'image/jpeg',
-    '.gif':  'image/gif',
-    '.svg':  'image/svg+xml',
-    '.ico':  'image/x-icon',
+    '.png': 'image/png',
+    '.jpg': 'image/jpeg',
+    '.gif': 'image/gif',
+    '.svg': 'image/svg+xml',
+    '.ico': 'image/x-icon',
     '.woff': 'font/woff',
-    '.woff2':'font/woff2',
-    '.ttf':  'font/ttf',
+    '.woff2': 'font/woff2',
+    '.ttf': 'font/ttf',
     '.webp': 'image/webp',
 };
 
@@ -562,7 +562,7 @@ async function startApp() {
 
         // 1. Kick off all services in parallel
         console.log('[Startup] Initializing services in parallel...');
-        
+
         const mysqlPromise = (async () => {
             if (usePortableMySQL) {
                 const firstRun = !fs.existsSync(mysqlDataSubDir) || fs.readdirSync(mysqlDataSubDir).length === 0;
@@ -994,13 +994,13 @@ ipcMain.handle('print-report-dialog', async (event, options) => {
         await shell.openPath(pdfPath);
 
         // Clean up HTML temp file immediately, PDF cleaned up on next print
-        if (tempHtml && fs.existsSync(tempHtml)) try { fs.unlinkSync(tempHtml); } catch {}
+        if (tempHtml && fs.existsSync(tempHtml)) try { fs.unlinkSync(tempHtml); } catch { }
 
         return { success: true, pdfPath };
     } catch (e) {
         console.error('[Print] PDF generation failed:', e);
         if (printWindow && !printWindow.isDestroyed()) printWindow.close();
-        if (tempHtml && fs.existsSync(tempHtml)) try { fs.unlinkSync(tempHtml); } catch {}
+        if (tempHtml && fs.existsSync(tempHtml)) try { fs.unlinkSync(tempHtml); } catch { }
         return { success: false, error: e.message };
     }
 });
@@ -1037,12 +1037,12 @@ ipcMain.handle('print-to-printer', async (event, options) => {
                 printWindow.webContents.print(opts, (success, errorType) => {
                     resolve(success ? { success: true } : { success: false, error: errorType || 'Print failed' });
                     printWindow.close();
-                    if (tempFile && fs.existsSync(tempFile)) try { fs.unlinkSync(tempFile); } catch {}
+                    if (tempFile && fs.existsSync(tempFile)) try { fs.unlinkSync(tempFile); } catch { }
                 });
             });
         } catch (e) {
             resolve({ success: false, error: e.message });
-            if (tempFile && fs.existsSync(tempFile)) try { fs.unlinkSync(tempFile); } catch {}
+            if (tempFile && fs.existsSync(tempFile)) try { fs.unlinkSync(tempFile); } catch { }
         }
     });
 });
@@ -1627,7 +1627,7 @@ ipcMain.handle('ocr-image-base64', async (event, { base64, langPath }) => {
         fs.writeFileSync(debugFile, imgBuffer);
 
         const worker = await createWorker('eng', 1, {
-            logger: () => {},
+            logger: () => { },
             langPath: langPath || undefined,
         });
         await worker.setParameters({
@@ -1692,7 +1692,7 @@ ipcMain.handle('extract-dicom-all-readings', async (event, { filePaths }) => {
                     const unitSeq = measDS.elements['x004008ea'];
                     if (unitSeq && unitSeq.items && unitSeq.items[0]?.dataSet) {
                         unitMeaning = safeString(unitSeq.items[0].dataSet, 'x00080100') ||
-                                      safeString(unitSeq.items[0].dataSet, 'x00080104') || '';
+                            safeString(unitSeq.items[0].dataSet, 'x00080104') || '';
                     }
                     if (numericValue) {
                         structured.push({
@@ -1886,25 +1886,25 @@ ipcMain.handle('extract-dicom-metadata', async (event, { filePaths }) => {
 
     // Standard DICOM tags for important clinical info
     const TAG_MAP = {
-        patientName:       'x00100010',
-        patientId:         'x00100020',
-        patientBirthDate:  'x00100030',
-        patientSex:        'x00100040',
-        patientAge:        'x00101010',
-        studyDate:         'x00080020',
-        studyTime:         'x00080030',
-        studyDescription:  'x00081030',
+        patientName: 'x00100010',
+        patientId: 'x00100020',
+        patientBirthDate: 'x00100030',
+        patientSex: 'x00100040',
+        patientAge: 'x00101010',
+        studyDate: 'x00080020',
+        studyTime: 'x00080030',
+        studyDescription: 'x00081030',
         seriesDescription: 'x0008103e',
-        modality:          'x00080060',
-        manufacturer:      'x00080070',
-        modelName:         'x00081090',
-        institutionName:   'x00080080',
-        stationName:       'x00081010',
-        referringPhysician:'x00080090',
-        performingPhysician:'x00081050',
-        bodyPart:          'x00180015',
-        protocolName:      'x00181030',
-        accessionNumber:   'x00080050',
+        modality: 'x00080060',
+        manufacturer: 'x00080070',
+        modelName: 'x00081090',
+        institutionName: 'x00080080',
+        stationName: 'x00081010',
+        referringPhysician: 'x00080090',
+        performingPhysician: 'x00081050',
+        bodyPart: 'x00180015',
+        protocolName: 'x00181030',
+        accessionNumber: 'x00080050',
     };
 
     for (const filePath of (filePaths || []).slice(0, 1)) {
@@ -2064,7 +2064,7 @@ ipcMain.handle('ocr-dicom-file', async (event, { filePath }) => {
         const grayBuf = new Uint8Array(rows * cols);
         let gMin = 255, gMax = 0;
         for (let i = 0; i < rows * cols; i++) {
-            const g = Math.round(0.299 * rgbPixels[i*3] + 0.587 * rgbPixels[i*3+1] + 0.114 * rgbPixels[i*3+2]);
+            const g = Math.round(0.299 * rgbPixels[i * 3] + 0.587 * rgbPixels[i * 3 + 1] + 0.114 * rgbPixels[i * 3 + 2]);
             grayBuf[i] = g;
             if (g < gMin) gMin = g;
             if (g > gMax) gMax = g;
@@ -2073,7 +2073,7 @@ ipcMain.handle('ocr-dicom-file', async (event, { filePath }) => {
         const grayRgb = new Uint8Array(rows * cols * 3);
         for (let i = 0; i < rows * cols; i++) {
             const s = Math.min(255, Math.round((grayBuf[i] - gMin) / gRange * 255));
-            grayRgb[i*3] = s; grayRgb[i*3+1] = s; grayRgb[i*3+2] = s;
+            grayRgb[i * 3] = s; grayRgb[i * 3 + 1] = s; grayRgb[i * 3 + 2] = s;
         }
 
         // Right 45% crop — where Mindray/GE/Philips put measurement panels on Doppler images
@@ -2084,7 +2084,7 @@ ipcMain.handle('ocr-dicom-file', async (event, { filePath }) => {
             for (let x = 0; x < cropW; x++) {
                 const g = grayBuf[y * cols + cropX + x];
                 const di = (y * cropW + x) * 3;
-                cropRgb[di] = g; cropRgb[di+1] = g; cropRgb[di+2] = g;
+                cropRgb[di] = g; cropRgb[di + 1] = g; cropRgb[di + 2] = g;
             }
         }
 
@@ -2096,7 +2096,7 @@ ipcMain.handle('ocr-dicom-file', async (event, { filePath }) => {
             for (let x = 0; x < cols; x++) {
                 const g = grayBuf[(cropTopY + y) * cols + x];
                 const di = (y * cols + x) * 3;
-                btmRgb[di] = g; btmRgb[di+1] = g; btmRgb[di+2] = g;
+                btmRgb[di] = g; btmRgb[di + 1] = g; btmRgb[di + 2] = g;
             }
         }
 
@@ -2119,17 +2119,17 @@ ipcMain.handle('ocr-dicom-file', async (event, { filePath }) => {
         const threshRgb = new Uint8Array(rows * cols * 3);
         for (let i = 0; i < rows * cols; i++) {
             const v = grayBuf[i] >= threshVal ? 255 : 0;
-            threshRgb[i*3] = v; threshRgb[i*3+1] = v; threshRgb[i*3+2] = v;
+            threshRgb[i * 3] = v; threshRgb[i * 3 + 1] = v; threshRgb[i * 3 + 2] = v;
         }
 
         const ts = Date.now();
-        const grayFile   = path.join(os.tmpdir(), `dicom-gray-${ts}.bmp`);
-        const cropFile   = path.join(os.tmpdir(), `dicom-crop-${ts}.bmp`);
-        const btmFile    = path.join(os.tmpdir(), `dicom-btm-${ts}.bmp`);
+        const grayFile = path.join(os.tmpdir(), `dicom-gray-${ts}.bmp`);
+        const cropFile = path.join(os.tmpdir(), `dicom-crop-${ts}.bmp`);
+        const btmFile = path.join(os.tmpdir(), `dicom-btm-${ts}.bmp`);
         const threshFile = path.join(os.tmpdir(), `dicom-thresh-${ts}.bmp`);
-        fs.writeFileSync(grayFile,   makeBmp24(grayRgb, cols, rows));
-        fs.writeFileSync(cropFile,   makeBmp24(cropRgb, cropW, rows));
-        fs.writeFileSync(btmFile,    makeBmp24(btmRgb, cols, cropH));
+        fs.writeFileSync(grayFile, makeBmp24(grayRgb, cols, rows));
+        fs.writeFileSync(cropFile, makeBmp24(cropRgb, cropW, rows));
+        fs.writeFileSync(btmFile, makeBmp24(btmRgb, cols, cropH));
         fs.writeFileSync(threshFile, makeBmp24(threshRgb, cols, rows));
         console.log(`[OCR-file] BMPs: full ${cols}×${rows}, right ${cropW}×${rows}, bottom ${cols}×${cropH}, thresh(${threshVal})`);
 
@@ -2138,7 +2138,7 @@ ipcMain.handle('ocr-dicom-file', async (event, { filePath }) => {
         //   PSM 6  on right crop       — block mode for structured measurement panels
         //   PSM 6  on bottom crop      — block mode for bottom measurement strips
         //   PSM 11 on thresholded full — isolates bright text overlays from dark bg
-        const worker = await createWorker('eng', 1, { logger: () => {} });
+        const worker = await createWorker('eng', 1, { logger: () => { } });
 
         await worker.setParameters({ tessedit_pageseg_mode: '11' });
         const { data: d1 } = await worker.recognize(grayFile);
@@ -2153,7 +2153,7 @@ ipcMain.handle('ocr-dicom-file', async (event, { filePath }) => {
         const { data: d4 } = await worker.recognize(threshFile);
 
         await worker.terminate();
-        for (const f of [grayFile, cropFile, btmFile, threshFile]) { try { fs.unlinkSync(f); } catch {} }
+        for (const f of [grayFile, cropFile, btmFile, threshFile]) { try { fs.unlinkSync(f); } catch { } }
 
         const ocrText = [d1.text, d2.text, d3.text, d4.text].filter(t => t?.trim()).join('\n');
         console.log(`[OCR-file] Combined text (${ocrText.length} chars):`, JSON.stringify(ocrText.substring(0, 1200)));

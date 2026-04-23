@@ -98,6 +98,9 @@ function CRViewportInner({
       if (cancelled || !enabledRef.current) return;
       try {
         cornerstone.displayImage(el, image);
+        if (image.columns && image.rows) {
+          useCRViewerStore.getState().setImageAspectRatio(image.columns / image.rows);
+        }
         cornerstone.resize(el, true);
         currentImageIdRef.current = imageId;
       } catch { /* ignore */ }

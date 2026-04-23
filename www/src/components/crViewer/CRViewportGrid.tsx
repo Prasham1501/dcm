@@ -7,6 +7,7 @@ import { useCallback, useRef, useEffect } from 'react';
 import { useCRViewerStore } from '@/stores/crViewerStore';
 import { CRViewport } from './CRViewport';
 import { Check } from 'lucide-react';
+import { useAspectGrid } from '@/hooks/useAspectGrid';
 
 export function CRViewportGrid() {
   const {
@@ -14,7 +15,7 @@ export function CRViewportGrid() {
     selectedViewportIndices, toggleViewportSelection, selectAllViewports,
     isArrangeMode, arrangeClickOrder, toggleArrangeViewport, toggleArrangeMode,
     swapImages, showLogo, toggleSingleViewport, setViewportImage,
-    viewportImageOverrides,
+    viewportImageOverrides, imageAspectRatio,
   } = useCRViewerStore();
 
   // Force-deselect multi-selection on non-Ctrl left-click.
@@ -36,6 +37,9 @@ export function CRViewportGrid() {
   const startIndex = (currentPage - 1) * currentLayout.spots;
   const hasImages = images.length > 0;
   const shiftFirstRef = useRef<number | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const gridRef = useRef<HTMLDivElement>(null);
+  const gridSize = useAspectGrid(containerRef, currentLayout.cols, currentLayout.rows, imageAspectRatio);
 
   // Ctrl+A: select all viewports (capture phase)
   useEffect(() => {
@@ -92,17 +96,17 @@ export function CRViewportGrid() {
     display: 'grid',
     gap: '2px',
     padding: '2px',
-    width: '100%',
-    height: '100%',
     gridTemplateColumns: `repeat(${currentLayout.cols}, 1fr)`,
     gridTemplateRows: `repeat(${currentLayout.rows}, 1fr)`,
     backgroundColor: '#374151', // gray-700 separator color
+    ...gridSize,
   };
 
   return (
     // gray background shows through the 2px gap as visible separator lines between viewports
     <div className="flex-1 flex flex-col bg-gray-700 overflow-hidden relative">
-      <div style={gridStyle} className="flex-1">
+      <div ref={containerRef} className="flex-1 w-full h-full flex items-center justify-center overflow-hidden bg-black">
+        <div ref={gridRef} style={gridStyle}>
         {Array.from({ length: currentLayout.spots }, (_, i) => {
           const imgIndex = startIndex + i;
           // Check for viewport override (drag-and-drop placement)
@@ -185,6 +189,7 @@ export function CRViewportGrid() {
             </div>
           );
         })}
+        </div>
       </div>
 
       {/* Floating Apply Arrange Button */}

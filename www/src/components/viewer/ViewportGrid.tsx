@@ -2,6 +2,7 @@ import { useCallback, useRef, useEffect } from 'react';
 import { useViewerStore } from '@/stores/viewerStore';
 import { DicomViewport } from './DicomViewport';
 import { useAnnotationPersistence, restoreAnnotations } from '@/hooks/useAnnotationPersistence';
+import { useAspectGrid } from '@/hooks/useAspectGrid';
 import { getStudyKey } from '@/stores/annotationStore';
 import { Check } from 'lucide-react';
 
@@ -16,11 +17,14 @@ export function ViewportGrid() {
     selectedViewportIndices, toggleViewportSelection,
     patientName, studyDate, images, activeToolId, viewportsCleared,
     isArrangeMode, arrangeClickOrder, toggleArrangeViewport, viewportImageOverrides, viewportIndexOverrides, setViewportImageOverride, setViewportIndexOverride, toggleArrangeMode,
-    toggleSingleViewport
+    toggleSingleViewport, imageAspectRatio
   } = useViewerStore();
 
   const gridRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const shiftFirstRef = useRef<number | null>(null);
+
+  const gridSize = useAspectGrid(containerRef, currentLayout.cols, currentLayout.rows, imageAspectRatio);
   const selectAllViewports = useViewerStore((s) => s.selectAllViewports);
 
   // Ctrl+A: select all viewports (capture phase so it fires before browser's native select-all)
@@ -60,9 +64,8 @@ export function ViewportGrid() {
     display: 'grid',
     gap: '2px',
     padding: '2px',
-    width: '100%',
-    height: '100%',
     backgroundColor: '#374151', // gray-700 separator lines between viewports
+    ...gridSize,
   };
 
   if (currentLayout.areas) {
@@ -174,7 +177,8 @@ export function ViewportGrid() {
       onDrop={handleGridDrop}
       onDragOver={handleDragOver}
     >
-      <div ref={gridRef} style={gridStyle} className="flex-1">
+      <div ref={containerRef} className="flex-1 w-full h-full flex items-center justify-center overflow-hidden">
+        <div ref={gridRef} style={gridStyle}>
         {Array.from({ length: currentLayout.spots }, (_, i) => {
           const imgIndex = startIndex + i;
           // For asymmetric layouts, assign grid-area by letter
@@ -296,6 +300,7 @@ export function ViewportGrid() {
             );
           }
         })}
+        </div>
       </div>
 
       {/* Floating Apply Arrange Button */}

@@ -76,6 +76,7 @@ interface ViewerState {
   loadingStudy: boolean;
   studyError: string | null;
   loadProgress: number; // 0-100
+  imageAspectRatio: number; // For aspect-safe grid rendering
 
   // Arrange mode
   isArrangeMode: boolean;
@@ -108,6 +109,7 @@ interface ViewerState {
   setWidth: (v: number) => void;
   setZoom: (v: number) => void;
   setPatientInfo: (name: string, date: string) => void;
+  setImageAspectRatio: (ratio: number) => void;
 
   // Cine actions
   startCine: () => void;
@@ -322,6 +324,7 @@ export const useViewerStore = create<ViewerState>((set, get) => ({
   loadingStudy: false,
   studyError: null,
   loadProgress: 0,
+  imageAspectRatio: 4 / 3,
 
   isArrangeMode: false,
   arrangeSelectedImages: [],
@@ -464,6 +467,7 @@ export const useViewerStore = create<ViewerState>((set, get) => ({
   setWidth: (v) => set({ width: v }),
   setZoom: (v) => set({ zoom: v }),
   setPatientInfo: (name, date) => set({ patientName: name, studyDate: date }),
+  setImageAspectRatio: (ratio) => set({ imageAspectRatio: ratio }),
 
   startCine: () => {
     clearCineInterval();
