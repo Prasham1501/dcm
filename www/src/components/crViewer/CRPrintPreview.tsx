@@ -6,11 +6,25 @@ import { useHospitalConfigStore, getFormattedAddress, renderPrintSlot } from '@/
 import { usePatientStore } from '@/stores/patientStore';
 import { cornerstone } from '@/lib/cornerstoneSetup';
 
+/** Capture a CR viewport at native DICOM image resolution (no viewport letterboxing) */
 function captureViewport(viewportIndex: number): string | null {
   const el = document.querySelector(`[data-cr-viewport-index="${viewportIndex}"]`) as HTMLDivElement;
   if (!el) return null;
   try {
     const enabledEl = cornerstone.getEnabledElement(el);
+    if (enabledEl?.image) {
+      const image = enabledEl.image;
+      const viewport = enabledEl.viewport;
+      const w = image.columns || image.width || 512;
+      const h = image.rows || image.height || 512;
+      const hqCanvas = document.createElement('canvas');
+      hqCanvas.width = w;
+      hqCanvas.height = h;
+      try {
+        cornerstone.renderToCanvas(hqCanvas, image, viewport);
+        return hqCanvas.toDataURL('image/jpeg', 0.95);
+      } catch { /* fall through */ }
+    }
     if (enabledEl?.canvas) {
       return enabledEl.canvas.toDataURL('image/png');
     }
@@ -107,10 +121,25 @@ export function CRPrintPreview({ onClose }: CRPrintPreviewProps) {
     captureAllPages();
   }, []);
 
+  // Auto-set orientation based on layout dimensions on mount
+  // Square layouts (2x2, 3x3) default to landscape — better for typical DICOM images
+  useEffect(() => {
+    if (currentLayout.cols >= currentLayout.rows) setLocalOrientation('landscape');
+    else setLocalOrientation('portrait');
+  }, []);
+
   const dims = PAPER_DIMS[localPaperSize] || PAPER_DIMS.A4;
   const isLandscape = localOrientation === 'landscape';
   const pw = isLandscape ? dims.h : dims.w;
   const ph = isLandscape ? dims.w : dims.h;
+
+  // Swap cols/rows to match orientation (simple grids only)
+  const needsSwap = (
+    (isLandscape && currentLayout.cols < currentLayout.rows) ||
+    (!isLandscape && currentLayout.cols > currentLayout.rows)
+  );
+  const effectiveCols = needsSwap ? currentLayout.rows : currentLayout.cols;
+  const effectiveRows = needsSwap ? currentLayout.cols : currentLayout.rows;
 
   const renderSlotPv = (slot: string, customText: string) => {
     switch (slot) {
@@ -140,14 +169,14 @@ export function CRPrintPreview({ onClose }: CRPrintPreviewProps) {
     const patientBarHtml = () => settings.patientInfoEnabled
       ? `<div style="padding:4px 15px;background:#f5f5f5;border-bottom:1px solid #ccc;display:flex;justify-content:space-between;font-size:10px"><span><b>Patient:</b> ${patientName}</span><span><b>ID:</b> ${patientId}</span><span><b>Date:</b> ${studyDate}</span></div>`
       : '';
-    const gridCols = `repeat(${currentLayout.cols}, 1fr)`;
-    const gridRows = `repeat(${currentLayout.rows}, 1fr)`;
+    const gridCols = `repeat(${effectiveCols}, 1fr)`;
+    const gridRows = `repeat(${effectiveRows}, 1fr)`;
     const pagesHtml = pagesToPrint.map((pageNum) => {
       const caps = allPageCaptures[pageNum - 1] || [];
       const imgsHtml = caps.map((src) =>
-        `<div style="background:#000;display:flex;align-items:center;justify-content:center;overflow:hidden;border:1px solid #222">${src ? `<img src="${src}" style="width:100%;height:100%;object-fit:contain" />` : ''}</div>`
+        `<div style="background:#000;display:flex;align-items:center;justify-content:center;overflow:hidden">${src ? `<img src="${src}" style="width:100%;height:100%;object-fit:contain" />` : ''}</div>`
       ).join('');
-      return `<div class="page">${settings.headerEnabled ? buildHeaderHtml() : ''}${patientBarHtml()}<div style="display:grid;grid-template-columns:${gridCols};grid-template-rows:${gridRows};gap:2px;padding:4px;flex:1;min-height:0">${imgsHtml}</div>${hospitalConfig.enableFooter ? buildFooterHtml() : ''}</div>`;
+      return `<div class="page">${settings.headerEnabled ? buildHeaderHtml() : ''}${patientBarHtml()}<div style="display:grid;grid-template-columns:${gridCols};grid-template-rows:${gridRows};gap:1px;background:#444;padding:0;flex:1;min-height:0">${imgsHtml}</div>${hospitalConfig.enableFooter ? buildFooterHtml() : ''}</div>`;
     }).join('');
     return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>DICOM Print - ${patientName}</title><style>@page{size:${localPaperSize} ${isLandscape ? 'landscape' : 'portrait'};margin:10mm}*{box-sizing:border-box}body{margin:0;padding:0;font-family:Arial,Helvetica,sans-serif}.page{page-break-after:always;page-break-inside:avoid;display:flex;flex-direction:column;height:calc(100vh);overflow:hidden}.page:last-child{page-break-after:auto}img{display:block}@media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}</style></head><body>${pagesHtml}</body></html>`;
   }, [allPageCaptures, currentLayout, settings, hospitalConfig, patientName, patientId, studyDate, localPaperSize, isLandscape]);
@@ -185,9 +214,9 @@ export function CRPrintPreview({ onClose }: CRPrintPreviewProps) {
   };
 
   const previewGridStyle: React.CSSProperties = {
-    display: 'grid', gap: 0, flex: 1, minHeight: 0,
-    gridTemplateColumns: `repeat(${currentLayout.cols}, 1fr)`,
-    gridTemplateRows: `repeat(${currentLayout.rows}, 1fr)`,
+    display: 'grid', gap: '1px', flex: 1, minHeight: 0, padding: 0, background: '#444',
+    gridTemplateColumns: `repeat(${effectiveCols}, 1fr)`,
+    gridTemplateRows: `repeat(${effectiveRows}, 1fr)`,
   };
   const toolbarH = showPrinterMgr ? 190 : 55;
 
@@ -271,7 +300,7 @@ export function CRPrintPreview({ onClose }: CRPrintPreviewProps) {
           </div>
         </div>
       )}
-      <div className="flex-1 overflow-auto flex flex-col items-center bg-gray-900/50 p-2">
+      <div className="flex-1 overflow-auto flex flex-col items-center bg-gray-900/50 p-4 gap-4">
         {capturing ? (
           <div className="flex items-center justify-center h-full">
             <div className="text-center">
@@ -284,9 +313,9 @@ export function CRPrintPreview({ onClose }: CRPrintPreviewProps) {
           pagesToShow.map((pageNum) => {
             const pageCaps = allPageCaptures[pageNum - 1] || [];
             return (
-              <div key={`preview-page-${pageNum}`} className="flex-shrink-0 flex flex-col w-full" style={{ height: `calc((100vh - ${toolbarH}px - 24px) * ${zoom})` }}>
-                <div className="text-[10px] text-app-text-muted py-0.5 text-center flex-shrink-0">Page {pageNum} of {totalPages} — {localPaperSize} {localOrientation}</div>
-                <div className="bg-black flex-1 flex flex-col min-h-0">
+              <div key={`preview-page-${pageNum}`} className="flex-shrink-0 flex flex-col items-center mb-4">
+                <div className="text-[10px] text-app-text-muted py-1 text-center">Page {pageNum} of {totalPages} — {localPaperSize} {localOrientation}</div>
+                <div className="flex flex-col border border-gray-600 shadow-xl" style={{ width: `min(calc(98vw * ${zoom}), calc((100vh - ${toolbarH}px - 50px) * ${zoom} * ${(pw/ph).toFixed(4)}))`, aspectRatio: `${pw} / ${ph}` }}>
                   {settings.headerEnabled && (
                     <div style={{ padding: '4px 12px' }} className="border-b border-gray-700 flex items-center justify-between bg-gray-900 flex-shrink-0">
                       <div>{renderSlotPv(hospitalConfig.headerLayout.left, hospitalConfig.customHeaderLeft)}</div>
@@ -303,7 +332,7 @@ export function CRPrintPreview({ onClose }: CRPrintPreviewProps) {
                     <div style={previewGridStyle} className="h-full">
                       {pageCaps.map((src, i) => (
                         <div key={i} className="bg-black overflow-hidden">
-                          {src ? (<img src={src} className="w-full h-full object-cover" alt={`Page ${pageNum} Image ${i + 1}`} />) : (<span className="text-gray-600 text-[10px] select-none flex items-center justify-center w-full h-full">Empty</span>)}
+                          {src ? (<img src={src} className="w-full h-full object-contain" alt={`Page ${pageNum} Image ${i + 1}`} />) : (<span className="text-gray-600 text-[10px] select-none flex items-center justify-center w-full h-full">Empty</span>)}
                         </div>
                       ))}
                     </div>

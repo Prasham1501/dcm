@@ -6,6 +6,42 @@ import { useViewerStore } from '@/stores/viewerStore';
 import { usePatientStore } from '@/stores/patientStore';
 import { useHospitalConfigStore, getFormattedAddress, renderPrintSlot } from '@/stores/hospitalConfigStore';
 import { captureAllViewports } from '@/lib/viewerTools';
+import { cornerstone } from '@/lib/cornerstoneSetup';
+
+/** Capture all viewports at native DICOM image resolution (no viewport letterboxing) */
+function captureAllViewportsHQ(): string[] {
+  const viewports = document.querySelectorAll('[data-viewport-index]');
+  const result: string[] = [];
+  viewports.forEach((el) => {
+    try {
+      const enabledEl = cornerstone.getEnabledElement(el as HTMLDivElement);
+      if (enabledEl?.image) {
+        const image = enabledEl.image;
+        const viewport = enabledEl.viewport;
+        const w = image.columns || image.width || 512;
+        const h = image.rows || image.height || 512;
+        const hqCanvas = document.createElement('canvas');
+        hqCanvas.width = w;
+        hqCanvas.height = h;
+        try {
+          cornerstone.renderToCanvas(hqCanvas, image, viewport);
+          result.push(hqCanvas.toDataURL('image/jpeg', 0.95));
+          return;
+        } catch { /* fall through to canvas capture */ }
+      }
+      // Fallback: capture viewport canvas directly
+      const canvas = (el as HTMLElement).querySelector('canvas');
+      if (canvas) {
+        result.push(canvas.toDataURL('image/png'));
+      } else {
+        result.push('');
+      }
+    } catch {
+      result.push('');
+    }
+  });
+  return result;
+}
 
 function getAreaLetters(areas: string): string[] {
   return [...new Set(areas.replace(/['"]/g, '').split(/\s+/).filter(Boolean))];
@@ -93,7 +129,7 @@ export function PrintPreview() {
         setCaptureProgress(p);
         setCurrentPage(p);
         await new Promise(r => setTimeout(r, 600));
-        const pageCaps = captureAllViewports();
+        const pageCaps = captureAllViewportsHQ();
         captures.push(autoFill(pageCaps, currentLayout.spots, isCR));
       }
       setCurrentPage(origPage);
@@ -104,15 +140,30 @@ export function PrintPreview() {
     captureAllPages();
   }, []);
 
+  // Auto-set orientation based on layout dimensions on mount
+  // Square layouts (2x2, 3x3) default to landscape — better for typical DICOM images
+  useEffect(() => {
+    if (currentLayout.cols >= currentLayout.rows) setLocalOrientation('landscape');
+    else setLocalOrientation('portrait');
+  }, []);
+
   const dims = PAPER_DIMS[localPaperSize] || PAPER_DIMS.A4;
   const isLandscape = localOrientation === 'landscape';
   const pw = isLandscape ? dims.h : dims.w;
   const ph = isLandscape ? dims.w : dims.h;
 
+  // Swap cols/rows to match orientation (only for simple grids without areas)
+  const needsSwap = !currentLayout.areas && (
+    (isLandscape && currentLayout.cols < currentLayout.rows) ||
+    (!isLandscape && currentLayout.cols > currentLayout.rows)
+  );
+  const effectiveCols = needsSwap ? currentLayout.rows : currentLayout.cols;
+  const effectiveRows = needsSwap ? currentLayout.cols : currentLayout.rows;
+
   const buildGridCss = () => {
     const l = currentLayout;
-    const gridCols = l.gridTemplate?.columns ?? `repeat(${l.cols}, 1fr)`;
-    const gridRows = l.gridTemplate?.rows ?? `repeat(${l.rows}, 1fr)`;
+    const gridCols = l.areas ? (l.gridTemplate?.columns ?? `repeat(${l.cols}, 1fr)`) : `repeat(${effectiveCols}, 1fr)`;
+    const gridRows = l.areas ? (l.gridTemplate?.rows ?? `repeat(${l.rows}, 1fr)`) : `repeat(${effectiveRows}, 1fr)`;
     const gridAreas = l.areas ? `grid-template-areas: ${l.areas};` : '';
     return { gridCols, gridRows, gridAreas };
   };
@@ -153,15 +204,14 @@ export function PrintPreview() {
       const imgsHtml = Array.from({ length: currentLayout.spots }).map((_, i) => {
         const src = caps[i];
         const cellBg = src ? '#000' : '#f5f5f5';
-        const cellBorder = settings.borderEnabled ? '1px solid #ccc' : '1px solid #ddd';
         const areaStyle = currentLayout.areas && areaNames[i] ? `grid-area:${areaNames[i]};` : '';
         return src
-          ? `<div style="${areaStyle}background:${cellBg};display:flex;align-items:center;justify-content:center;overflow:hidden;border:${cellBorder}"><img src="${src}" style="width:100%;height:100%;object-fit:contain" /></div>`
-          : `<div style="${areaStyle}background:${cellBg};display:flex;align-items:center;justify-content:center;overflow:hidden;border:${cellBorder}"></div>`;
+          ? `<div style="${areaStyle}background:${cellBg};display:flex;align-items:center;justify-content:center;overflow:hidden"><img src="${src}" style="width:100%;height:100%;object-fit:contain" /></div>`
+          : `<div style="${areaStyle}background:${cellBg};display:flex;align-items:center;justify-content:center;overflow:hidden"></div>`;
       }).join('');
       return `<div class="page">${settings.headerEnabled ? buildHeaderHtml() : ''}${patientBarHtml()}<div class="grid">${imgsHtml}</div>${hospitalConfig.enableFooter ? buildFooterHtml() : ''}</div>`;
     }).join('');
-    return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>DICOM Print - ${patientName}</title><style>@page{size:${localPaperSize} ${isLandscape ? 'landscape' : 'portrait'};margin:10mm}*{box-sizing:border-box}body{margin:0;padding:0;font-family:Arial,Helvetica,sans-serif}.page{page-break-after:always;page-break-inside:avoid;display:flex;flex-direction:column;height:calc(100vh);overflow:hidden}.page:last-child{page-break-after:auto}.grid{display:grid;grid-template-columns:${gridCols};grid-template-rows:${gridRows};${gridAreas}gap:1px;padding:2px;flex:1;min-height:0}img{display:block}@media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}</style></head><body>${pagesHtml}</body></html>`;
+    return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>DICOM Print - ${patientName}</title><style>@page{size:${localPaperSize} ${isLandscape ? 'landscape' : 'portrait'};margin:10mm}*{box-sizing:border-box}body{margin:0;padding:0;font-family:Arial,Helvetica,sans-serif}.page{page-break-after:always;page-break-inside:avoid;display:flex;flex-direction:column;height:calc(100vh);overflow:hidden}.page:last-child{page-break-after:auto}.grid{display:grid;grid-template-columns:${gridCols};grid-template-rows:${gridRows};${gridAreas}gap:1px;background:#444;padding:0;flex:1;min-height:0}img{display:block}@media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}</style></head><body>${pagesHtml}</body></html>`;
   }, [allPageCaptures, currentLayout, settings, hospitalConfig, patientName, patientId, studyDate, localPaperSize, isLandscape]);
 
   const buildPcpndtHtml = () => {
@@ -206,14 +256,14 @@ export function PrintPreview() {
   };
 
   const previewGridStyle: React.CSSProperties = {
-    display: 'grid', gap: 0, flex: 1, minHeight: 0,
+    display: 'grid', gap: '1px', flex: 1, minHeight: 0, padding: 0, background: '#444',
     ...(currentLayout.areas ? {
       gridTemplateAreas: currentLayout.areas,
       gridTemplateColumns: currentLayout.gridTemplate?.columns ?? `repeat(${currentLayout.cols}, 1fr)`,
       gridTemplateRows: currentLayout.gridTemplate?.rows ?? `repeat(${currentLayout.rows}, 1fr)`,
     } : {
-      gridTemplateColumns: `repeat(${currentLayout.cols}, 1fr)`,
-      gridTemplateRows: `repeat(${currentLayout.rows}, 1fr)`,
+      gridTemplateColumns: `repeat(${effectiveCols}, 1fr)`,
+      gridTemplateRows: `repeat(${effectiveRows}, 1fr)`,
     }),
   };
   const toolbarH = showPrinterMgr ? 190 : 55;
@@ -307,7 +357,7 @@ export function PrintPreview() {
           </div>
         </div>
       )}
-      <div className="flex-1 overflow-auto flex flex-col items-center bg-gray-900/50 p-2" onClick={e => e.stopPropagation()}>
+      <div className="flex-1 overflow-auto flex flex-col items-center bg-gray-900/50 p-4 gap-4" onClick={e => e.stopPropagation()}>
         {printType === 'pcpndt' ? (
           <div style={{ width: 420 * zoom, minWidth: 420 * zoom }} className="bg-white shadow-2xl p-6">
             <div className="border-2 border-black p-4" style={{ fontSize: 10 * zoom }}>
@@ -337,9 +387,9 @@ export function PrintPreview() {
           pagesToShow.map((pageNum) => {
             const pageCaps = allPageCaptures[pageNum - 1] || [];
             return (
-              <div key={`preview-page-${pageNum}`} className="flex-shrink-0 flex flex-col w-full" style={{ height: `calc((100vh - ${toolbarH}px - 24px) * ${zoom})` }}>
-                <div className="text-[10px] text-app-text-muted py-0.5 text-center flex-shrink-0">Page {pageNum} of {totalPages} — {localPaperSize} {localOrientation}</div>
-                <div className="bg-black flex-1 flex flex-col min-h-0">
+              <div key={`preview-page-${pageNum}`} className="flex-shrink-0 flex flex-col items-center mb-4">
+                <div className="text-[10px] text-app-text-muted py-1 text-center">Page {pageNum} of {totalPages} — {localPaperSize} {localOrientation}</div>
+                <div className="flex flex-col border border-gray-600 shadow-xl" style={{ width: `min(calc(98vw * ${zoom}), calc((100vh - ${toolbarH}px - 50px) * ${zoom} * ${(pw/ph).toFixed(4)}))`, aspectRatio: `${pw} / ${ph}` }}>
                   {settings.headerEnabled && (
                     <div style={{ padding: '4px 12px' }} className="border-b border-gray-700 flex items-center justify-between bg-gray-900 flex-shrink-0">
                       <div>{renderSlotPv(hospitalConfig.headerLayout.left, hospitalConfig.customHeaderLeft)}</div>
@@ -359,7 +409,7 @@ export function PrintPreview() {
                         const aStyle: React.CSSProperties = currentLayout.areas && areaNames[i] ? { gridArea: areaNames[i] } : {};
                         return (
                           <div key={i} className="bg-black overflow-hidden" style={aStyle}>
-                            {src ? (<img src={src} className="w-full h-full object-cover" alt={`Page ${pageNum} Image ${i + 1}`} />) : (<span className="text-gray-600 text-[10px] select-none flex items-center justify-center w-full h-full">Empty</span>)}
+                            {src ? (<img src={src} className="w-full h-full object-contain" alt={`Page ${pageNum} Image ${i + 1}`} />) : (<span className="text-gray-600 text-[10px] select-none flex items-center justify-center w-full h-full">Empty</span>)}
                           </div>
                         );
                       })}
