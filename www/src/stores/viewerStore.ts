@@ -666,22 +666,30 @@ export const useViewerStore = create<ViewerState>((set, get) => ({
   clearViewportOverrides: () => set({ viewportImageOverrides: {}, viewportIndexOverrides: {} }),
 
   deleteImageFromViewport: (viewportIndex) => {
-    const { currentPage, currentLayout, images, viewportImageOverrides } = get();
+    const { currentPage, currentLayout, images, viewportImageOverrides, viewportIndexOverrides } = get();
     const globalIdx = (currentPage - 1) * currentLayout.spots + viewportIndex;
     
     const overrideUrl = viewportImageOverrides[viewportIndex];
     const defaultImg = images[globalIdx];
     const imageUrl = overrideUrl || defaultImg?.imageUrl || null;
 
-    if (imageUrl) {
-      set({
-        viewportImageOverrides: {
-          ...viewportImageOverrides,
-          [-1]: imageUrl,
-          [viewportIndex]: 'deleted',
-        }
-      });
-    }
+    if (!imageUrl) return;
+
+    // Remove the image from the array and shift subsequent images up
+    const newImages = images.filter(img => img.imageUrl !== imageUrl);
+    const newTotal = newImages.length;
+    const spots = currentLayout.spots;
+    const newTotalPages = Math.max(1, Math.ceil(newTotal / spots));
+    const newCurrentPage = Math.min(currentPage, newTotalPages);
+
+    set({
+      images: newImages,
+      totalImages: newTotal,
+      totalPages: newTotalPages,
+      currentPage: newCurrentPage,
+      viewportImageOverrides: {},
+      viewportIndexOverrides: {},
+    });
   },
 
   // Double-click toggle: zoom into 1x1 showing clicked image, or restore previous layout

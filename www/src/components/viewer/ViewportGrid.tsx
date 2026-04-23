@@ -183,12 +183,14 @@ export function ViewportGrid() {
           if (hasRealImages) {
             const overrideUrl = viewportImageOverrides[i];
             const defaultImg = images[imgIndex];
-            const imageId = overrideUrl || defaultImg?.imageUrl || null;
+            const rawImageId = overrideUrl || defaultImg?.imageUrl || null;
+            // Treat 'deleted' override as empty
+            const imageId = rawImageId === 'deleted' ? null : rawImageId;
 
             // Use explicit index override first (set by swap/arrange), then URL-based lookup, then sequential
             const actualImgIndex = viewportIndexOverrides[i] !== undefined
               ? viewportIndexOverrides[i]
-              : overrideUrl
+              : overrideUrl && overrideUrl !== 'deleted'
                 ? images.findIndex((img) => img.imageUrl === overrideUrl)
                 : imgIndex;
 

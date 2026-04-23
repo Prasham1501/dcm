@@ -103,10 +103,12 @@ export function CRViewportGrid() {
           const imgIndex = startIndex + i;
           // Check for viewport override (drag-and-drop placement)
           const overrideUrl = viewportImageOverrides[imgIndex];
-          const overrideImage = overrideUrl ? images.find(img => img.imageUrl === overrideUrl) : null;
+          const overrideImage = (overrideUrl && overrideUrl !== 'deleted') ? images.find(img => img.imageUrl === overrideUrl) : null;
           // Use override if present, otherwise default to sequential
           const image = overrideImage || ((hasImages && imgIndex < images.length) ? images[imgIndex] : null);
-          const imageId = image?.imageUrl || null;
+          const rawImageId = image?.imageUrl || null;
+          // Treat 'deleted' override as empty
+          const imageId = overrideUrl === 'deleted' ? null : rawImageId;
           const isSelected = selectedViewport === i;
           const isMultiSelected = selectedViewportIndices.includes(i) && selectedViewportIndices.length > 1;
 

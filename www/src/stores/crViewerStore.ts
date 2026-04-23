@@ -639,15 +639,22 @@ export const useCRViewerStore = create<CRViewerState>((set, get) => ({
     const defaultImg = images[globalIdx];
     const imageUrl = overrideUrl || defaultImg?.imageUrl || null;
     
-    if (imageUrl) {
-      set({
-        viewportImageOverrides: {
-          ...viewportImageOverrides,
-          [-1]: imageUrl,
-          [globalIdx]: 'deleted',
-        }
-      });
-    }
+    if (!imageUrl) return;
+
+    // Remove the image from the array and shift subsequent images up
+    const newImages = images.filter(img => img.imageUrl !== imageUrl);
+    const newTotal = newImages.length;
+    const spots = currentLayout.spots;
+    const newTotalPages = Math.max(1, Math.ceil(newTotal / spots));
+    const newCurrentPage = Math.min(currentPage, newTotalPages);
+
+    set({
+      images: newImages,
+      totalImages: newTotal,
+      totalPages: newTotalPages,
+      currentPage: newCurrentPage,
+      viewportImageOverrides: {},
+    });
   },
 
   clearViewportOverride: (globalIndex) => {
