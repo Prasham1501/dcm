@@ -111,54 +111,54 @@ export function CRViewerPage() {
   return (
     <div className="flex flex-col h-screen bg-app-bg">
       {/* Header bar */}
-      <div className="flex items-center justify-between px-2 py-1 bg-app-header-bg border-b border-app-border">
+      <div className="flex items-center justify-between px-3 py-1.5 bg-app-header-bg border-b border-app-border">
         {/* Left: back/close + title */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
           {isPopup ? (
             <button
               onClick={() => window.close()}
-              className="px-2 py-1 text-xs font-semibold border-2 border-app-accent text-app-accent bg-app-bg rounded hover:bg-app-accent hover:text-white transition-colors flex items-center gap-1"
+              className="px-3 py-1.5 text-sm font-semibold border-2 border-app-accent text-app-accent bg-app-bg rounded hover:bg-app-accent hover:text-white transition-colors flex items-center gap-1.5"
               title="Close viewer"
             >
-              <X className="w-3.5 h-3.5" />
+              <X className="w-4 h-4" />
               Close
             </button>
           ) : (
             <button
               onClick={() => navigate('/')}
-              className="px-2 py-1 text-xs font-semibold border-2 border-app-accent text-app-accent bg-app-bg rounded hover:bg-app-accent hover:text-white transition-colors flex items-center gap-1"
+              className="px-3 py-1.5 text-sm font-semibold border-2 border-app-accent text-app-accent bg-app-bg rounded hover:bg-app-accent hover:text-white transition-colors flex items-center gap-1.5"
               title="Back to patient list"
             >
-              <ChevronLeft className="w-3.5 h-3.5" />
+              <ChevronLeft className="w-4 h-4" />
               Patients
             </button>
           )}
-          <span className="text-xs font-bold text-app-accent uppercase tracking-wide">Viewer</span>
+          <span className="text-sm font-bold text-app-accent uppercase tracking-wide">Viewer</span>
         </div>
 
         {/* Center: Patient info */}
-        <div className="flex items-center gap-3 text-xs">
+        <div className="flex items-center gap-4 text-sm">
           {patientName && (
             <>
-              <span className="font-bold text-app-accent truncate max-w-[200px]">{patientName}</span>
-              {patientId && <span className="text-app-text-muted">ID: {patientId}</span>}
-              {studyDate && <span className="text-app-text-muted">{studyDate}</span>}
+              <span className="font-bold text-app-accent truncate max-w-[300px]">{patientName}</span>
+              {patientId && <span className="text-app-text font-semibold">ID: {patientId}</span>}
+              {studyDate && <span className="text-app-text font-semibold">{studyDate}</span>}
             </>
           )}
         </div>
 
         {/* Right: Page info + theme */}
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-app-text-secondary">
+        <div className="flex items-center gap-3">
+          <span className="text-sm text-app-text-secondary font-medium">
             Page {currentPage}/{totalPages}
-            <span className="text-app-accent font-semibold ml-1">({totalImages})</span>
+            <span className="text-app-accent font-bold ml-1">({totalImages})</span>
           </span>
           <button
             onClick={toggleTheme}
-            className="p-1 rounded hover:bg-app-hover transition-colors text-app-text-secondary"
+            className="p-1.5 rounded hover:bg-app-hover transition-colors text-app-text-secondary"
             title={mode === 'light' ? 'Dark mode' : 'Light mode'}
           >
-            {mode === 'light' ? <Moon className="w-3.5 h-3.5" /> : <Sun className="w-3.5 h-3.5" />}
+            {mode === 'light' ? <Moon className="w-4.5 h-4.5" /> : <Sun className="w-4.5 h-4.5" />}
           </button>
         </div>
       </div>
@@ -186,7 +186,7 @@ export function CRViewerPage() {
       </div>
 
       {/* Bottom bar: patient name + study date */}
-      <div className="text-center py-1 bg-gray-900 text-gray-200 text-xs border-t border-gray-700 font-semibold">
+      <div className="text-center py-1.5 bg-gray-900 text-gray-200 text-sm border-t border-gray-700 font-semibold">
         {patientName} : {studyDate}
       </div>
     </div>

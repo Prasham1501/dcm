@@ -218,7 +218,7 @@ export function PrintPreview() {
   const pagesToShow = selectedPages();
 
   return (
-    <div className="fixed inset-0 bg-black/80 flex flex-col z-[1000]" onClick={e => e.stopPropagation()}>
+    <div className="fixed inset-0 bg-black flex flex-col z-[1000]" onClick={e => e.stopPropagation()}>
       <div className="flex items-center justify-between px-3 py-1.5 bg-app-header-bg border-b border-app-border flex-shrink-0 flex-wrap gap-2">
         <div className="flex items-center gap-2">
           <button type="button" onClick={e => { e.stopPropagation(); setShowPrintPreview(false); navigate('/'); }} className="px-2 py-1 text-xs border border-app-border text-app-text-secondary bg-app-bg rounded hover:bg-app-hover flex items-center gap-1"><Users className="w-3 h-3" /> Patients</button>

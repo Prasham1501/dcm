@@ -113,9 +113,9 @@ export function CRThumbnailSidebar() {
   };
 
   return (
-    <div className="w-36 flex flex-col bg-app-surface border-l border-app-border overflow-y-auto custom-scrollbar shadow-inner">
-      <div className="p-2 border-b border-app-border bg-app-bg/50">
-        <span className="text-[10px] font-bold text-app-accent uppercase tracking-wider">Preview</span>
+    <div className="w-44 flex flex-col bg-app-surface border-l border-app-border overflow-y-auto custom-scrollbar shadow-inner">
+      <div className="p-2.5 border-b border-app-border bg-app-bg/50">
+        <span className="text-xs font-bold text-app-accent uppercase tracking-wider">Preview</span>
       </div>
       
       {images.map((img, i) => {
@@ -132,7 +132,7 @@ export function CRThumbnailSidebar() {
             onClick={() => handleThumbClick(i)}
           >
             <div className="flex justify-between items-center px-1 mb-0.5">
-              <span className={`text-[9px] font-bold ${isOnCurrentPage ? 'text-app-accent' : 'text-app-text-muted'}`}>
+              <span className={`text-[10px] font-bold ${isOnCurrentPage ? 'text-app-accent' : 'text-app-text-muted'}`}>
                 {img.instanceNumber}
               </span>
             </div>

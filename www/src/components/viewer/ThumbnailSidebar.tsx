@@ -195,7 +195,7 @@ export function ThumbnailSidebar() {
   }
 
   return (
-    <div className="w-36 flex flex-col bg-gray-900 border-l border-gray-700 overflow-y-auto">
+    <div className="w-44 flex flex-col bg-gray-900 border-l border-gray-700 overflow-y-auto">
       {images.map((img, i) => {
         const pageForImage = Math.floor(i / currentLayout.spots) + 1;
         const isOnCurrentPage = pageForImage === currentPage;
@@ -218,13 +218,13 @@ export function ThumbnailSidebar() {
             title={`Image ${img.instanceNumber}${isArrangeMode ? '' : ' — drag to viewport'}`}
           >
             <div className="flex justify-between items-center px-0.5 relative z-10 w-full">
-              <span className={`text-[9px] font-bold ${isOnCurrentPage ? 'text-blue-400' : 'text-gray-500'}`}>
+              <span className={`text-[10px] font-bold ${isOnCurrentPage ? 'text-blue-400' : 'text-gray-500'}`}>
                 {img.instanceNumber}
               </span>
               
               {/* Show Viewport Assignment Badge */}
               {assignedViewport !== undefined && (
-                <span className="text-[9px] font-bold text-white bg-green-600 px-1 rounded-sm shadow-sm opacity-90 leading-tight">
+                <span className="text-[10px] font-bold text-white bg-green-600 px-1 rounded-sm shadow-sm opacity-90 leading-tight">
                   Spot {assignedViewport}
                 </span>
               )}

@@ -165,7 +165,7 @@ export function ViewportGrid() {
 
   return (
     <div
-      className="flex-1 flex flex-col bg-black overflow-hidden relative"
+      className="flex-1 flex flex-col bg-gray-400 dark:bg-gray-600 overflow-hidden relative"
       onDrop={handleGridDrop}
       onDragOver={handleDragOver}
     >

@@ -96,17 +96,17 @@ export function CRSidebar() {
     return (
       <button
         onClick={onClick}
-        className={`w-full px-1.5 py-1.5 text-[10px] font-bold uppercase tracking-wide border rounded transition-colors text-center leading-tight ${colorClass}`}
+        className={`w-full px-2 py-2 text-xs font-bold uppercase tracking-wide border rounded transition-colors text-center leading-tight ${colorClass}`}
         title={title}
       >
-        {Icon && <Icon className="w-3.5 h-3.5 mx-auto mb-0.5" />}
+        {Icon && <Icon className="w-4.5 h-4.5 mx-auto mb-0.5" />}
         {label}
       </button>
     );
   };
 
   return (
-    <div className="w-16 flex flex-col items-center bg-app-surface border-l border-app-border py-2 gap-1.5 px-1 overflow-y-auto">
+    <div className="w-20 flex flex-col items-center bg-app-surface border-l border-app-border py-2 gap-2 px-1.5 overflow-y-auto">
       {/* Pan toggle */}
       <SidebarButton
         onClick={togglePan}
@@ -128,17 +128,17 @@ export function CRSidebar() {
       <button
         onClick={prevPage}
         disabled={currentPage <= 1}
-        className="w-8 h-8 flex items-center justify-center rounded-full border border-app-accent text-app-accent hover:bg-app-accent hover:text-white disabled:opacity-30 transition-colors"
+        className="w-10 h-10 flex items-center justify-center rounded-full border border-app-accent text-app-accent hover:bg-app-accent hover:text-white disabled:opacity-30 transition-colors"
       >
-        <ChevronUp className="w-4 h-4" />
+        <ChevronUp className="w-5 h-5" />
       </button>
 
       <button
         onClick={nextPage}
         disabled={currentPage >= totalPages}
-        className="w-8 h-8 flex items-center justify-center rounded-full border border-app-accent text-app-accent hover:bg-app-accent hover:text-white disabled:opacity-30 transition-colors"
+        className="w-10 h-10 flex items-center justify-center rounded-full border border-app-accent text-app-accent hover:bg-app-accent hover:text-white disabled:opacity-30 transition-colors"
       >
-        <ChevronDown className="w-4 h-4" />
+        <ChevronDown className="w-5 h-5" />
       </button>
 
       {/* Next */}

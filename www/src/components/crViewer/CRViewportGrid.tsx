@@ -97,7 +97,7 @@ export function CRViewportGrid() {
   return (
     // gray background shows through the 2px gap as visible separator lines between viewports
     <div className="flex-1 flex flex-col bg-gray-700 overflow-hidden relative">
-      <div ref={containerRef} className="flex-1 w-full h-full flex items-center justify-center overflow-hidden bg-black">
+      <div ref={containerRef} className="flex-1 w-full h-full flex items-center justify-center overflow-hidden bg-gray-400 dark:bg-gray-600">
         <div ref={gridRef} style={gridStyle}>
         {Array.from({ length: currentLayout.spots }, (_, i) => {
           const imgIndex = startIndex + i;

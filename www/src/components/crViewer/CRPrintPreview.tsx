@@ -22,9 +22,10 @@ const PAPER_DIMS: Record<string, { w: number; h: number }> = {
 
 interface CRPrintPreviewProps {
   onClose: () => void;
+  initialPageMode?: 'all' | 'current' | 'custom';
 }
 
-export function CRPrintPreview({ onClose }: CRPrintPreviewProps) {
+export function CRPrintPreview({ onClose, initialPageMode = 'all' }: CRPrintPreviewProps) {
   const { settings, updateSettings, addPrintJob, decrementPrintCount, printCountRemaining } = usePrintStore();
   const {
     currentLayout, currentPage, totalPages, totalImages,
@@ -36,12 +37,13 @@ export function CRPrintPreview({ onClose }: CRPrintPreviewProps) {
   const [printing, setPrinting] = useState(false);
   const [capturing, setCapturing] = useState(false);
   const [captureProgress, setCaptureProgress] = useState(0);
+  const [captureTotal, setCaptureTotal] = useState(0);
 
   const [localPaperSize, setLocalPaperSize] = useState<PaperSize>(settings.paperSize as PaperSize);
   const [localOrientation, setLocalOrientation] = useState(settings.orientation);
   const [localCopies, setLocalCopies] = useState(settings.copies);
 
-  const [pageMode, setPageMode] = useState<'all' | 'current' | 'custom'>('all');
+  const [pageMode, setPageMode] = useState<'all' | 'current' | 'custom'>(initialPageMode);
   const [customPageInput, setCustomPageInput] = useState('');
   const [allPageCaptures, setAllPageCaptures] = useState<string[][]>([]);
 
@@ -81,9 +83,12 @@ export function CRPrintPreview({ onClose }: CRPrintPreviewProps) {
     const captureAllPages = async () => {
       setCapturing(true);
       const origPage = currentPage;
+      const pagesToCapture = initialPageMode === 'current' ? [currentPage] : Array.from({ length: totalPages }, (_, i) => i + 1);
+      setCaptureTotal(pagesToCapture.length);
       const rawCaptures: Array<Array<string | null>> = [];
-      for (let p = 1; p <= totalPages; p++) {
-        setCaptureProgress(p);
+      for (let idx = 0; idx < pagesToCapture.length; idx++) {
+        const p = pagesToCapture[idx];
+        setCaptureProgress(idx + 1);
         setCurrentPage(p);
         await new Promise(r => setTimeout(r, 600));
         rawCaptures.push(
@@ -92,7 +97,17 @@ export function CRPrintPreview({ onClose }: CRPrintPreviewProps) {
       }
       setCurrentPage(origPage);
       await new Promise(r => setTimeout(r, 300));
-      setAllPageCaptures(fillEmptyPrintSlots(rawCaptures, currentLayout.spots));
+      // Build a full-size array so page indices line up (fill missing pages with empty arrays)
+      const fullCaptures: string[][] = [];
+      for (let p = 1; p <= totalPages; p++) {
+        const capturedIdx = pagesToCapture.indexOf(p);
+        if (capturedIdx >= 0) {
+          fullCaptures.push(fillEmptyPrintSlots([rawCaptures[capturedIdx]], currentLayout.spots)[0]);
+        } else {
+          fullCaptures.push(Array(currentLayout.spots).fill(''));
+        }
+      }
+      setAllPageCaptures(fullCaptures);
       setCapturing(false);
     };
     captureAllPages();
@@ -196,13 +211,13 @@ export function CRPrintPreview({ onClose }: CRPrintPreviewProps) {
   const pagesToShow = selectedPages();
 
   return (
-    <div className="fixed inset-0 bg-black/80 flex flex-col z-[1000]">
+    <div className="fixed inset-0 bg-black flex flex-col z-[1000]">
       <div className="flex items-center justify-between px-3 py-1.5 bg-app-header-bg border-b border-app-border flex-shrink-0 flex-wrap gap-2">
         <div className="flex items-center gap-2">
           <button onClick={onClose} className="p-1 rounded hover:bg-app-hover text-app-text-secondary"><X className="w-5 h-5" /></button>
           <Printer className="w-5 h-5 text-app-accent" />
           <span className="text-sm font-bold text-app-text">Print Preview</span>
-          {capturing && <span className="text-[10px] text-yellow-500 animate-pulse">Capturing page {captureProgress}/{totalPages}…</span>}
+          {capturing && <span className="text-[10px] text-yellow-500 animate-pulse">Capturing page {captureProgress}/{captureTotal}…</span>}
           {!capturing && <span className="text-xs text-app-text-muted">{totalPages} page{totalPages > 1 ? 's' : ''} · {totalImages} images</span>}
         </div>
         <div className="flex items-center gap-2 flex-wrap">
@@ -272,8 +287,8 @@ export function CRPrintPreview({ onClose }: CRPrintPreviewProps) {
           <div className="flex items-center justify-center h-full">
             <div className="text-center">
               <div className="text-app-accent text-lg font-bold mb-2">Capturing Pages…</div>
-              <div className="text-app-text-muted text-sm">Page {captureProgress} of {totalPages}</div>
-              <div className="w-48 h-2 bg-gray-700 rounded-full mt-3 overflow-hidden"><div className="h-full bg-app-accent rounded-full transition-all" style={{ width: `${(captureProgress / totalPages) * 100}%` }} /></div>
+              <div className="text-app-text-muted text-sm">Page {captureProgress} of {captureTotal}</div>
+              <div className="w-48 h-2 bg-gray-700 rounded-full mt-3 overflow-hidden"><div className="h-full bg-app-accent rounded-full transition-all" style={{ width: `${(captureProgress / (captureTotal || 1)) * 100}%` }} /></div>
             </div>
           </div>
         ) : (
