@@ -6,21 +6,13 @@ import { useViewerStore } from '@/stores/viewerStore';
 import { usePatientStore } from '@/stores/patientStore';
 import { useHospitalConfigStore, getFormattedAddress, renderPrintSlot } from '@/stores/hospitalConfigStore';
 import { getAutoOrientationForLayout, getLayoutAreaNames, getLayoutGridTemplate } from '@/lib/layoutUtils';
-import { captureCornerstoneElementsForPrint } from '@/lib/printCapture';
+import { captureCornerstoneViewportForPrint } from '@/lib/printCapture';
+import { fillEmptyPrintSlots } from '@/lib/printPageUtils';
 
-function captureAllViewportsHQ(): string[] {
-  return captureCornerstoneElementsForPrint('[data-viewport-index]', 'data-viewport-index');
-}
-
-function autoFill(imgs: string[], spots: number, isCR: boolean): string[] {
-  if (isCR) return imgs;
-  const filled = imgs.filter(i => i && i !== '');
-  if (filled.length === 0) return imgs;
-  const out: string[] = [];
-  for (let i = 0; i < spots; i++) {
-    out.push(imgs[i] && imgs[i] !== '' ? imgs[i] : filled[i % filled.length]);
-  }
-  return out;
+function capturePageViewports(spots: number): Array<string | null> {
+  return Array.from({ length: spots }, (_, viewportIndex) =>
+    captureCornerstoneViewportForPrint('data-viewport-index', viewportIndex),
+  );
 }
 
 const PAPER_SIZES = ['A4', 'A3', 'A5', 'Letter', 'Legal'] as const;
@@ -34,7 +26,7 @@ const PAPER_DIMS: Record<string, { w: number; h: number }> = {
 export function PrintPreview() {
   const navigate = useNavigate();
   const { settings, updateSettings, setShowPrintPreview, addPrintJob, decrementPrintCount, printCountRemaining } = usePrintStore();
-  const { currentLayout, patientName, patientId, studyDate, currentPage, totalPages, totalImages, images, setCurrentPage } = useViewerStore();
+  const { currentLayout, patientName, patientId, studyDate, currentPage, totalPages, totalImages, setCurrentPage } = useViewerStore();
   const hospitalConfig = useHospitalConfigStore();
 
   const [zoom, setZoom] = useState(1.0);
@@ -55,8 +47,6 @@ export function PrintPreview() {
   const [newPrinterName, setNewPrinterName] = useState('');
   const [newPrinterDisplay, setNewPrinterDisplay] = useState('');
   const [newPrinterType, setNewPrinterType] = useState('Laser');
-
-  const isCR = images.some(img => img.description?.toUpperCase().includes('CR') || (img as any).modality?.toUpperCase() === 'CR');
 
   const configuredPrinters = hospitalConfig.printers;
   const activePrinters = configuredPrinters.filter(p => p.isActive);
@@ -89,17 +79,16 @@ export function PrintPreview() {
     const captureAllPages = async () => {
       setCapturing(true);
       const origPage = currentPage;
-      const captures: string[][] = [];
+      const rawCaptures: Array<Array<string | null>> = [];
       for (let p = 1; p <= totalPages; p++) {
         setCaptureProgress(p);
         setCurrentPage(p);
         await new Promise(r => setTimeout(r, 600));
-        const pageCaps = captureAllViewportsHQ();
-        captures.push(autoFill(pageCaps, currentLayout.spots, isCR));
+        rawCaptures.push(capturePageViewports(currentLayout.spots));
       }
       setCurrentPage(origPage);
       await new Promise(r => setTimeout(r, 300));
-      setAllPageCaptures(captures);
+      setAllPageCaptures(fillEmptyPrintSlots(rawCaptures, currentLayout.spots));
       setCapturing(false);
     };
     captureAllPages();

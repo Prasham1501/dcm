@@ -5,11 +5,11 @@ import { usePrintStore } from '@/stores/printStore';
 import { useHospitalConfigStore, getFormattedAddress, renderPrintSlot } from '@/stores/hospitalConfigStore';
 import { usePatientStore } from '@/stores/patientStore';
 import { getAutoOrientationForLayout } from '@/lib/layoutUtils';
-import { captureCornerstoneElementForPrint } from '@/lib/printCapture';
+import { captureCornerstoneViewportForPrint } from '@/lib/printCapture';
+import { fillEmptyPrintSlots } from '@/lib/printPageUtils';
 
 function captureViewport(viewportIndex: number): string | null {
-  const el = document.querySelector(`[data-cr-viewport-index="${viewportIndex}"]`) as HTMLDivElement;
-  return captureCornerstoneElementForPrint(el);
+  return captureCornerstoneViewportForPrint('data-cr-viewport-index', viewportIndex);
 }
 
 const PAPER_SIZES = ['A4', 'A3', 'A5', 'Letter', 'Legal'] as const;
@@ -27,7 +27,7 @@ interface CRPrintPreviewProps {
 export function CRPrintPreview({ onClose }: CRPrintPreviewProps) {
   const { settings, updateSettings, addPrintJob, decrementPrintCount, printCountRemaining } = usePrintStore();
   const {
-    currentLayout, currentPage, totalPages, totalImages, images,
+    currentLayout, currentPage, totalPages, totalImages,
     patientName, patientId, studyDate, setCurrentPage,
   } = useCRViewerStore();
   const hospitalConfig = useHospitalConfigStore();
@@ -43,7 +43,7 @@ export function CRPrintPreview({ onClose }: CRPrintPreviewProps) {
 
   const [pageMode, setPageMode] = useState<'all' | 'current' | 'custom'>('all');
   const [customPageInput, setCustomPageInput] = useState('');
-  const [allPageCaptures, setAllPageCaptures] = useState<(string | null)[][]>([]);
+  const [allPageCaptures, setAllPageCaptures] = useState<string[][]>([]);
 
   const [showPrinterMgr, setShowPrinterMgr] = useState(false);
   const [newPrinterName, setNewPrinterName] = useState('');
@@ -81,21 +81,18 @@ export function CRPrintPreview({ onClose }: CRPrintPreviewProps) {
     const captureAllPages = async () => {
       setCapturing(true);
       const origPage = currentPage;
-      const captures: (string | null)[][] = [];
+      const rawCaptures: Array<Array<string | null>> = [];
       for (let p = 1; p <= totalPages; p++) {
         setCaptureProgress(p);
         setCurrentPage(p);
         await new Promise(r => setTimeout(r, 600));
-        const startIndex = (p - 1) * currentLayout.spots;
-        const pageCaps: (string | null)[] = [];
-        for (let i = 0; i < currentLayout.spots; i++) {
-          pageCaps.push(startIndex + i < totalImages ? captureViewport(i) : null);
-        }
-        captures.push(pageCaps);
+        rawCaptures.push(
+          Array.from({ length: currentLayout.spots }, (_, viewportIndex) => captureViewport(viewportIndex)),
+        );
       }
       setCurrentPage(origPage);
       await new Promise(r => setTimeout(r, 300));
-      setAllPageCaptures(captures);
+      setAllPageCaptures(fillEmptyPrintSlots(rawCaptures, currentLayout.spots));
       setCapturing(false);
     };
     captureAllPages();

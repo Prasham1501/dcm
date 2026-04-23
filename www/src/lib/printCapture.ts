@@ -66,6 +66,11 @@ export function captureCornerstoneElementForPrint(element: HTMLElement | null): 
   return null;
 }
 
+export function captureCornerstoneViewportForPrint(indexAttribute: string, viewportIndex: number): string | null {
+  const element = document.querySelector(`[${indexAttribute}="${viewportIndex}"]`) as HTMLElement | null;
+  return captureCornerstoneElementForPrint(element);
+}
+
 export function captureCornerstoneElementsForPrint(selector: string, indexAttribute: string): string[] {
   return Array.from(document.querySelectorAll(selector))
     .sort((a, b) => {
