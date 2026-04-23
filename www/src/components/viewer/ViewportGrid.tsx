@@ -97,47 +97,39 @@ export function ViewportGrid() {
       return;
     }
 
-    // Shift+click: swap two viewports
+    // Shift+click: swap instantly with the currently selected viewport
     if (e.shiftKey) {
-      if (shiftFirstRef.current === null) {
-        shiftFirstRef.current = index;
-        setSelectedViewport(index);
-      } else {
-        const first = shiftFirstRef.current;
-        shiftFirstRef.current = null;
-        if (first !== index) {
-          const store = useViewerStore.getState();
-          const getImageUrl = (vpIdx: number) => {
-            const override = store.viewportImageOverrides[vpIdx];
-            if (override) return override;
-            const imgIdx = (store.currentPage - 1) * store.currentLayout.spots + vpIdx;
-            return store.images[imgIdx]?.imageUrl || null;
-          };
-          const urlA = getImageUrl(first);
-          const urlB = getImageUrl(index);
-          if (urlA && urlB) {
-            store.setViewportImageOverride(first, urlB);
-            store.setViewportImageOverride(index, urlA);
-            // Also track the original image indices for reliable number display
-            const idxA = store.images.findIndex((img) => img.imageUrl === urlA);
-            const idxB = store.images.findIndex((img) => img.imageUrl === urlB);
-            if (idxA >= 0) store.setViewportIndexOverride(index, idxA);
-            if (idxB >= 0) store.setViewportIndexOverride(first, idxB);
-          }
+      const first = selectedViewport;
+      if (first !== index) {
+        const store = useViewerStore.getState();
+        const getImageUrl = (vpIdx: number) => {
+          const override = store.viewportImageOverrides[vpIdx];
+          if (override) return override;
+          const imgIdx = (store.currentPage - 1) * store.currentLayout.spots + vpIdx;
+          return store.images[imgIdx]?.imageUrl || null;
+        };
+        const urlA = getImageUrl(first);
+        const urlB = getImageUrl(index);
+        if (urlA && urlB) {
+          store.setViewportImageOverride(first, urlB);
+          store.setViewportImageOverride(index, urlA);
+          // Also track the original image indices for reliable number display
+          const idxA = store.images.findIndex((img) => img.imageUrl === urlA);
+          const idxB = store.images.findIndex((img) => img.imageUrl === urlB);
+          if (idxA >= 0) store.setViewportIndexOverride(index, idxA);
+          if (idxB >= 0) store.setViewportIndexOverride(first, idxB);
         }
-        setSelectedViewport(index);
       }
+      setSelectedViewport(index);
       return;
     }
-
-    shiftFirstRef.current = null;
 
     if (e.ctrlKey || e.metaKey) {
       toggleViewportSelection(index);
     } else {
       setSelectedViewport(index);
     }
-  }, [isArrangeMode, toggleArrangeViewport, setSelectedViewport, toggleViewportSelection]);
+  }, [isArrangeMode, toggleArrangeViewport, setSelectedViewport, toggleViewportSelection, selectedViewport]);
 
   const handleViewportDoubleClick = useCallback((index: number) => {
     if (isArrangeMode) return;

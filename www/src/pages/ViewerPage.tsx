@@ -61,6 +61,14 @@ export function ViewerPage() {
         e.stopPropagation();
         selectAllViewports();
       }
+      
+      if (e.key === 'ArrowRight' || e.key === 'PageDown') {
+        e.preventDefault();
+        useViewerStore.getState().nextPage();
+      } else if (e.key === 'ArrowLeft' || e.key === 'PageUp') {
+        e.preventDefault();
+        useViewerStore.getState().prevPage();
+      }
     };
     window.addEventListener('keydown', handleKeyDown, { capture: true });
     return () => window.removeEventListener('keydown', handleKeyDown, true);

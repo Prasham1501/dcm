@@ -12,7 +12,7 @@ import {
   Square, Circle, RotateCw, FlipHorizontal,
   CircleDot, Mouse, SlidersHorizontal,
   RotateCcwIcon, Move, ZoomIn, Triangle, Pipette,
-  FlipVertical, Play, StopCircle, Undo2, X, Pencil, Eraser, ListOrdered,
+  FlipVertical, Play, StopCircle, Undo2, X, Pencil, Eraser, ListOrdered, Trash2,
 } from 'lucide-react';
 
 interface ToolDef {
@@ -389,6 +389,21 @@ export function ToolsPanel() {
         >
           <Eraser className="w-3.5 h-3.5" />
           Clear
+        </button>
+      </div>
+
+      {/* Delete Image button */}
+      <div className="p-2 border-b border-app-border">
+        <button
+          onClick={() => {
+            const store = useViewerStore.getState();
+            store.deleteImageFromViewport(store.selectedViewport);
+          }}
+          className="w-full flex items-center justify-center gap-1 px-2 py-1.5 text-xs font-semibold border-2 border-red-500 text-red-500 bg-app-bg rounded hover:bg-red-500 hover:text-white transition-colors"
+          title="Delete image from selected viewport"
+        >
+          <Trash2 className="w-4 h-4" />
+          <span>Delete Image</span>
         </button>
       </div>
 

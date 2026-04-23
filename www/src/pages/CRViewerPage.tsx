@@ -87,6 +87,24 @@ export function CRViewerPage() {
     } catch { /* ignore parse errors */ }
   }, [loadStudy]);
 
+  // Keyboard navigation for pages
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+
+      if (e.key === 'ArrowRight' || e.key === 'PageDown') {
+        e.preventDefault();
+        useCRViewerStore.getState().nextPage();
+      } else if (e.key === 'ArrowLeft' || e.key === 'PageUp') {
+        e.preventDefault();
+        useCRViewerStore.getState().prevPage();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown, { capture: true });
+    return () => window.removeEventListener('keydown', handleKeyDown, true);
+  }, []);
+
   // Detect if we're in a popup window (opener exists or no navigation history)
   const isPopup = typeof window !== 'undefined' && (window.opener != null || window.history.length <= 1);
 
@@ -150,8 +168,8 @@ export function CRViewerPage() {
 
       {/* Main content: viewport grid + sidebar (+ optional inline report) */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Viewport area — shrinks to 70% when report panel is open */}
-        <div className={`flex overflow-hidden ${showInlineReport ? 'w-[70%]' : 'flex-1'}`}>
+        {/* Viewport area — shrinks to 50% when report panel is open */}
+        <div className={`flex overflow-hidden ${showInlineReport ? 'w-[50%]' : 'flex-1'}`}>
           <CRViewportGrid />
           <div className="flex h-full border-l border-app-border">
             <CRThumbnailSidebar />
@@ -159,9 +177,9 @@ export function CRViewerPage() {
           </div>
         </div>
 
-        {/* Inline report panel — 30% width */}
+        {/* Inline report panel — 50% width */}
         {showInlineReport && (
-          <div className="w-[30%] flex-shrink-0 overflow-hidden">
+          <div className="w-[50%] flex-shrink-0 overflow-hidden">
             <InlineReportPanel />
           </div>
         )}

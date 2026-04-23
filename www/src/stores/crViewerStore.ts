@@ -160,6 +160,7 @@ interface CRViewerState {
   // Manual image placement (Drag and Drop)
   viewportImageOverrides: Record<number, string>;
   setViewportImage: (imageUrl: string, viewportIndex: number) => void;
+  deleteImageFromViewport: (viewportIndex: number) => void;
   clearViewportOverride: (globalIndex: number) => void;
   clearAllViewportOverrides: () => void;
 }
@@ -628,6 +629,25 @@ export const useCRViewerStore = create<CRViewerState>((set, get) => ({
     set({
       viewportImageOverrides: { ...viewportImageOverrides, [globalIdx]: imageUrl },
     });
+  },
+
+  deleteImageFromViewport: (viewportIndex) => {
+    const { currentPage, currentLayout, images, viewportImageOverrides } = get();
+    const globalIdx = (currentPage - 1) * currentLayout.spots + viewportIndex;
+    
+    const overrideUrl = viewportImageOverrides[globalIdx];
+    const defaultImg = images[globalIdx];
+    const imageUrl = overrideUrl || defaultImg?.imageUrl || null;
+    
+    if (imageUrl) {
+      set({
+        viewportImageOverrides: {
+          ...viewportImageOverrides,
+          [-1]: imageUrl,
+          [globalIdx]: 'deleted',
+        }
+      });
+    }
   },
 
   clearViewportOverride: (globalIndex) => {

@@ -5,7 +5,7 @@
 import { useState } from 'react';
 import { useCRViewerStore, CR_LAYOUTS, type CRLayout } from '@/stores/crViewerStore';
 import {
-  ChevronLeft, ChevronRight, Printer, Eye, ListOrdered, Stamp,
+  ChevronLeft, ChevronRight, Printer, Eye, ListOrdered, Stamp, Trash2
 } from 'lucide-react';
 import { StampCreatorModal } from './StampCreatorModal';
 import { CRPrintPreview } from './CRPrintPreview';
@@ -17,6 +17,7 @@ export function CRToolbar() {
     nextPage, prevPage, currentPage, totalPages,
     isStampMode, setStampMode, stamps, activeStampId, setActiveStamp,
     undoStampPlacement, clearStampPlacements, stampPlacements,
+    selectedViewport, deleteImageFromViewport
   } = useCRViewerStore();
 
   const [showStampCreator, setShowStampCreator] = useState(false);
@@ -75,6 +76,16 @@ export function CRToolbar() {
         >
           <ListOrdered className="w-3.5 h-3.5" />
           Arrange
+        </button>
+
+        {/* Delete Image button */}
+        <button
+          onClick={() => deleteImageFromViewport(selectedViewport)}
+          className="flex items-center gap-1 px-2.5 py-1 text-xs font-semibold border-2 border-red-500 text-red-500 bg-app-bg rounded hover:bg-red-500 hover:text-white transition-colors ml-1"
+          title="Delete currently selected image"
+        >
+          <Trash2 className="w-3.5 h-3.5" />
+          Delete
         </button>
 
         {/* Preview button */}

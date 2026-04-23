@@ -62,26 +62,18 @@ export function CRViewportGrid() {
       return;
     }
 
-    // Shift+click: swap two viewports
+    // Shift+click: swap instantly with the currently selected viewport
     if (e.shiftKey) {
-      if (shiftFirstRef.current === null) {
-        shiftFirstRef.current = index;
-        setSelectedViewport(index);
-      } else {
-        const first = shiftFirstRef.current;
-        shiftFirstRef.current = null;
-        if (first !== index) {
-          // Swap images globally
-          const globalIdxA = startIndex + first;
-          const globalIdxB = startIndex + index;
-          swapImages(globalIdxA, globalIdxB);
-        }
-        setSelectedViewport(index);
+      const first = selectedViewport;
+      if (first !== index) {
+        // Swap images globally
+        const globalIdxA = startIndex + first;
+        const globalIdxB = startIndex + index;
+        swapImages(globalIdxA, globalIdxB);
       }
+      setSelectedViewport(index);
       return;
     }
-
-    shiftFirstRef.current = null;
 
     // Ctrl+click: toggle multi-select
     if (e.ctrlKey || e.metaKey) {
@@ -89,7 +81,7 @@ export function CRViewportGrid() {
     } else {
       setSelectedViewport(index);
     }
-  }, [isArrangeMode, toggleArrangeViewport, setSelectedViewport, toggleViewportSelection, swapImages, startIndex]);
+  }, [isArrangeMode, toggleArrangeViewport, setSelectedViewport, toggleViewportSelection, swapImages, startIndex, selectedViewport]);
 
   // Build grid style — gap creates visible separator lines using the container bg color
   const gridStyle: React.CSSProperties = {

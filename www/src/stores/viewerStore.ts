@@ -138,6 +138,7 @@ interface ViewerState {
   setViewportImageOverride: (viewportIndex: number, imageUrl: string) => void;
   setViewportIndexOverride: (viewportIndex: number, imageIndex: number) => void;
   clearViewportOverrides: () => void;
+  deleteImageFromViewport: (viewportIndex: number) => void;
 
   // Double-click toggle
   toggleSingleViewport: (viewportIndex: number) => void;
@@ -663,6 +664,25 @@ export const useViewerStore = create<ViewerState>((set, get) => ({
   },
 
   clearViewportOverrides: () => set({ viewportImageOverrides: {}, viewportIndexOverrides: {} }),
+
+  deleteImageFromViewport: (viewportIndex) => {
+    const { currentPage, currentLayout, images, viewportImageOverrides } = get();
+    const globalIdx = (currentPage - 1) * currentLayout.spots + viewportIndex;
+    
+    const overrideUrl = viewportImageOverrides[viewportIndex];
+    const defaultImg = images[globalIdx];
+    const imageUrl = overrideUrl || defaultImg?.imageUrl || null;
+
+    if (imageUrl) {
+      set({
+        viewportImageOverrides: {
+          ...viewportImageOverrides,
+          [-1]: imageUrl,
+          [viewportIndex]: 'deleted',
+        }
+      });
+    }
+  },
 
   // Double-click toggle: zoom into 1x1 showing clicked image, or restore previous layout
   toggleSingleViewport: (viewportIndex) => {
