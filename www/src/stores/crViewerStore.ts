@@ -20,6 +20,10 @@ export interface CRLayout {
   spots: number;
   cols: number;
   rows: number;
+  /** CSS Grid template areas for asymmetric layouts */
+  areas?: string;
+  /** CSS Grid template definition override */
+  gridTemplate?: { columns: string; rows: string };
 }
 
 export const CR_LAYOUTS: CRLayout[] = [

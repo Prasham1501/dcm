@@ -82,22 +82,26 @@ export const LAYOUT_CATEGORIES: LayoutCategory[] = [
   {
     label: '5 & 7 Spots',
     layouts: [
-      // 2+3: 2x2 left + 1 tall right
-      { id: '2+3', name: '5', spots: 5, cols: 3, rows: 2, areas: '"a b c" "a d e"' },
+      // 2+3: 1 big left (50%) + 4 small right
+      { id: '2+3', name: '5', spots: 5, cols: 3, rows: 2, areas: '"a b c" "a d e"',
+        gridTemplate: { columns: '2fr 1fr 1fr', rows: '1fr 1fr' } },
       // 1+4 Big Left: big left (2fr) + 4 small right
       { id: '1+4-big', name: '5', spots: 5, cols: 3, rows: 2, areas: '"a b c" "a d e"',
         gridTemplate: { columns: '2fr 1fr 1fr', rows: '1fr 1fr' } },
-      // 2+2+1: two on top, two middle, one full bottom
-      { id: '2+2+1', name: '5', spots: 5, cols: 2, rows: 3, areas: '"a b" "c d" "e e"' },
-      // 1+2+2: one full top, two middle, two bottom
-      { id: '1+2+2', name: '5', spots: 5, cols: 2, rows: 3, areas: '"a a" "b c" "d e"' },
+      // 2+2+1: two on top, two middle, one big bottom (50%)
+      { id: '2+2+1', name: '5', spots: 5, cols: 2, rows: 3, areas: '"a b" "c d" "e e"',
+        gridTemplate: { columns: '1fr 1fr', rows: '1fr 1fr 2fr' } },
+      // 1+2+2: one big top (50%), two middle, two bottom
+      { id: '1+2+2', name: '5', spots: 5, cols: 2, rows: 3, areas: '"a a" "b c" "d e"',
+        gridTemplate: { columns: '1fr 1fr', rows: '2fr 1fr 1fr' } },
       // 1×5 horizontal
       { id: '5h', name: '5', spots: 5, cols: 5, rows: 1 },
       // 5×1 vertical
       { id: '5v', name: '5', spots: 5, cols: 1, rows: 5 },
       // 7-spot layouts
       { id: '3+2+2', name: '7', spots: 7, cols: 3, rows: 3, areas: '"a b c" "d d e" "f f g"' },
-      { id: '1+3+3', name: '7', spots: 7, cols: 3, rows: 3, areas: '"a a a" "b c d" "e f g"' },
+      { id: '1+3+3', name: '7', spots: 7, cols: 3, rows: 3, areas: '"a a a" "b c d" "e f g"',
+        gridTemplate: { columns: '1fr 1fr 1fr', rows: '2fr 1fr 1fr' } },
       { id: '7-mixed', name: '7', spots: 7, cols: 4, rows: 2, areas: '"a b c d" "e f f g"' },
     ],
   },

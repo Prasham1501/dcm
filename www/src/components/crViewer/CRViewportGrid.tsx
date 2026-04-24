@@ -9,6 +9,11 @@ import { CRViewport } from './CRViewport';
 import { Check } from 'lucide-react';
 import { useAspectGrid } from '@/hooks/useAspectGrid';
 
+/** Extract unique area letters from a CSS grid-template-areas string */
+function getAreaLetters(areas: string): string[] {
+  return [...new Set(areas.replace(/['"]/g, '').split(/\s+/).filter(Boolean))];
+}
+
 export function CRViewportGrid() {
   const {
     currentLayout, currentPage, images, selectedViewport, setSelectedViewport,
@@ -88,11 +93,27 @@ export function CRViewportGrid() {
     display: 'grid',
     gap: '2px',
     padding: '2px',
-    gridTemplateColumns: `repeat(${currentLayout.cols}, 1fr)`,
-    gridTemplateRows: `repeat(${currentLayout.rows}, 1fr)`,
     backgroundColor: '#374151', // gray-700 separator color
     ...gridSize,
   };
+
+  // Support asymmetric layouts with grid-template-areas
+  if (currentLayout.areas) {
+    gridStyle.gridTemplateAreas = currentLayout.areas;
+    if (currentLayout.gridTemplate) {
+      gridStyle.gridTemplateColumns = currentLayout.gridTemplate.columns;
+      gridStyle.gridTemplateRows = currentLayout.gridTemplate.rows;
+    } else {
+      gridStyle.gridTemplateColumns = `repeat(${currentLayout.cols}, 1fr)`;
+      gridStyle.gridTemplateRows = `repeat(${currentLayout.rows}, 1fr)`;
+    }
+  } else {
+    gridStyle.gridTemplateColumns = `repeat(${currentLayout.cols}, 1fr)`;
+    gridStyle.gridTemplateRows = `repeat(${currentLayout.rows}, 1fr)`;
+  }
+
+  // Get grid area names for asymmetric layouts
+  const areaNames = currentLayout.areas ? getAreaLetters(currentLayout.areas) : [];
 
   return (
     // gray background shows through the 2px gap as visible separator lines between viewports
@@ -112,12 +133,18 @@ export function CRViewportGrid() {
           const isSelected = selectedViewport === i;
           const isMultiSelected = selectedViewportIndices.includes(i) && selectedViewportIndices.length > 1;
 
+          // For asymmetric layouts, assign grid-area by letter
+          const areaStyle: React.CSSProperties = currentLayout.areas && areaNames[i]
+            ? { gridArea: areaNames[i] }
+            : {};
+
           // Empty slot — no CRViewport so no stale cornerstone canvas can appear
           if (!imageId) {
             return (
               <div
                 key={`empty-cr-vp-${i}`}
                 className="relative overflow-hidden min-h-0 bg-black"
+                style={areaStyle}
                 onClick={(e) => handleViewportClick(i, e)}
                 onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; }}
                 onDrop={(e) => {
@@ -137,7 +164,7 @@ export function CRViewportGrid() {
           }
 
           return (
-            <div key={`cr-vp-${i}`} className={`relative overflow-hidden min-h-0 ${isArrangeMode ? 'cursor-pointer' : ''}`} onMouseDown={(e) => handleViewportMouseDown(i, e)} onDoubleClick={() => handleViewportDoubleClick(i)}
+            <div key={`cr-vp-${i}`} className={`relative overflow-hidden min-h-0 ${isArrangeMode ? 'cursor-pointer' : ''}`} style={areaStyle} onMouseDown={(e) => handleViewportMouseDown(i, e)} onDoubleClick={() => handleViewportDoubleClick(i)}
               onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; }}
               onDrop={(e) => {
                 e.preventDefault();
