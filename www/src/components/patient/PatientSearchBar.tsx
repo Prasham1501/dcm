@@ -141,7 +141,7 @@ function AutocompleteInput({
         onKeyDown={handleKeyDownInternal}
         placeholder={placeholder}
         autoComplete="off"
-        className={`${width} h-7 px-2 text-xs border border-app-border bg-app-bg text-app-text rounded-sm focus:outline-none focus:border-app-accent`}
+        className={`${width} h-7 2xl:h-9 px-2 text-xs 2xl:text-sm border border-app-border bg-app-bg text-app-text rounded-sm focus:outline-none focus:border-app-accent`}
       />
       {dropdown}
     </>
@@ -157,6 +157,13 @@ export function PatientSearchBar() {
   const patientNames = [...new Set(patients.map((p) => p.patientName).filter(Boolean))].sort();
   const accessionNumbers = [...new Set(patients.map((p) => p.accessionNumber).filter(Boolean))].sort();
 
+  // Load referring physicians from clinical config (localStorage) + patient data
+  const configPhysicians: string[] = (() => {
+    try { return JSON.parse(localStorage.getItem('clinical-referring-physicians') || '[]'); } catch { return []; }
+  })();
+  const patientPhysicians = [...new Set(patients.map((p) => p.referringPhysician).filter(Boolean))];
+  const allPhysicians = [...new Set([...configPhysicians, ...patientPhysicians])].sort();
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') applyFilters();
   };
@@ -169,10 +176,10 @@ export function PatientSearchBar() {
   };
 
   return (
-    <div className="flex items-center gap-1 px-3 py-2 border-b border-app-border bg-app-surface overflow-x-auto flex-nowrap">
+    <div className="flex items-center gap-1 2xl:gap-2 px-3 2xl:px-5 py-2 2xl:py-3 border-b border-app-border bg-app-surface overflow-x-auto flex-nowrap">
       {/* Patient ID */}
       <div className="flex items-center">
-        <label htmlFor="filter-patientId" className="text-xs font-semibold text-app-accent mr-1 whitespace-nowrap">
+        <label htmlFor="filter-patientId" className="text-xs 2xl:text-sm font-semibold text-app-accent mr-1 whitespace-nowrap">
           Patient ID
         </label>
         <AutocompleteInput
@@ -189,7 +196,7 @@ export function PatientSearchBar() {
 
       {/* Patient Name */}
       <div className="flex items-center">
-        <label htmlFor="filter-patientName" className="text-xs font-semibold text-app-accent mr-1 whitespace-nowrap">
+        <label htmlFor="filter-patientName" className="text-xs 2xl:text-sm font-semibold text-app-accent mr-1 whitespace-nowrap">
           Patient Name
         </label>
         <AutocompleteInput
@@ -206,30 +213,27 @@ export function PatientSearchBar() {
 
       {/* Referring Physician */}
       <div className="flex items-center">
-        <label className="text-xs font-semibold text-app-accent mr-1 whitespace-nowrap">Referring Physician</label>
+        <label className="text-xs 2xl:text-sm font-semibold text-app-accent mr-1 whitespace-nowrap">Referring Physician</label>
         <select
           value={filters.referringPhysician}
           onChange={(e) => setFilter('referringPhysician', e.target.value)}
-          className="w-28 h-7 px-1 text-xs border border-app-border bg-app-bg text-app-text rounded-sm focus:outline-none focus:border-app-accent"
+          className="w-28 2xl:w-36 h-7 2xl:h-9 px-1 text-xs 2xl:text-sm border border-app-border bg-app-bg text-app-text rounded-sm focus:outline-none focus:border-app-accent"
         >
           <option value="">All</option>
-          <option value="Dr. R. Patel">Dr. R. Patel</option>
-          <option value="Dr. S. Gupta">Dr. S. Gupta</option>
-          <option value="Dr. M. Joshi">Dr. M. Joshi</option>
-          <option value="Dr. A. Singh">Dr. A. Singh</option>
-          <option value="Dr. V. Kulkarni">Dr. V. Kulkarni</option>
-          <option value="Dr. P. Reddy">Dr. P. Reddy</option>
+          {allPhysicians.map((doc) => (
+            <option key={doc} value={doc}>{doc}</option>
+          ))}
         </select>
         <span className="text-app-accent mx-0.5 text-xs font-bold">+</span>
       </div>
 
       {/* Study Description */}
       <div className="flex items-center">
-        <label className="text-xs font-semibold text-app-accent mr-1 whitespace-nowrap">Study Description</label>
+        <label className="text-xs 2xl:text-sm font-semibold text-app-accent mr-1 whitespace-nowrap">Study Description</label>
         <select
           value={filters.studyDescription}
           onChange={(e) => setFilter('studyDescription', e.target.value)}
-          className="w-24 h-7 px-1 text-xs border border-app-border bg-app-bg text-app-text rounded-sm focus:outline-none focus:border-app-accent"
+          className="w-24 2xl:w-32 h-7 2xl:h-9 px-1 text-xs 2xl:text-sm border border-app-border bg-app-bg text-app-text rounded-sm focus:outline-none focus:border-app-accent"
         >
           <option value="">All</option>
           <option value="OB">OB</option>
@@ -241,7 +245,7 @@ export function PatientSearchBar() {
 
       {/* Accession Number */}
       <div className="flex items-center">
-        <label htmlFor="filter-accessionNumber" className="text-xs font-semibold text-app-accent mr-1 whitespace-nowrap">
+        <label htmlFor="filter-accessionNumber" className="text-xs 2xl:text-sm font-semibold text-app-accent mr-1 whitespace-nowrap">
           Accession Number
         </label>
         <AutocompleteInput
@@ -258,11 +262,11 @@ export function PatientSearchBar() {
 
       {/* Modality */}
       <div className="flex items-center">
-        <label className="text-xs font-semibold text-app-accent mr-1 whitespace-nowrap">Modality</label>
+        <label className="text-xs 2xl:text-sm font-semibold text-app-accent mr-1 whitespace-nowrap">Modality</label>
         <select
           value={filters.modality}
           onChange={(e) => setFilter('modality', e.target.value)}
-          className="w-16 h-7 px-1 text-xs border border-app-border bg-app-bg text-app-text rounded-sm focus:outline-none focus:border-app-accent"
+          className="w-16 2xl:w-20 h-7 2xl:h-9 px-1 text-xs 2xl:text-sm border border-app-border bg-app-bg text-app-text rounded-sm focus:outline-none focus:border-app-accent"
         >
           <option value="">All</option>
           <option value="US">US</option>
@@ -274,21 +278,21 @@ export function PatientSearchBar() {
       {/* Clr, Revert and Go buttons */}
       <button
         onClick={clearFilters}
-        className="ml-1 h-7 px-2 text-[10px] font-bold border border-gray-400 text-gray-500 bg-app-bg rounded hover:bg-gray-100 transition-colors"
+        className="ml-1 h-7 2xl:h-9 px-2 2xl:px-3 text-[10px] 2xl:text-xs font-bold border border-gray-400 text-gray-500 bg-app-bg rounded hover:bg-gray-100 transition-colors"
         title="Clear all fields"
       >
         Clear
       </button>
       <button
         onClick={() => { clearFilters(); setTimeout(applyFilters, 0); }}
-        className="h-7 px-2 text-[10px] font-bold border-2 border-app-accent text-app-accent bg-app-bg rounded hover:bg-app-accent hover:text-white transition-colors"
+        className="h-7 2xl:h-9 px-2 2xl:px-3 text-[10px] 2xl:text-xs font-bold border-2 border-app-accent text-app-accent bg-app-bg rounded hover:bg-app-accent hover:text-white transition-colors"
         title="Revert filters to default (all)"
       >
         Revert
       </button>
       <button
         onClick={applyFilters}
-        className="h-7 px-4 text-xs font-bold border-2 border-app-accent text-white bg-app-accent rounded hover:opacity-90 transition-opacity"
+        className="h-7 2xl:h-9 px-4 2xl:px-5 text-xs 2xl:text-sm font-bold border-2 border-app-accent text-white bg-app-accent rounded hover:opacity-90 transition-opacity"
       >
         Go
       </button>

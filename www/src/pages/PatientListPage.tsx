@@ -51,15 +51,32 @@ export function PatientListPage() {
     loadPatients();
   }, [loadPatients]);
 
+  // Auto-refresh when DICOM files are received via network
+  useEffect(() => {
+    const api = (window as any).electronAPI;
+    if (!api?.on) return;
+    let debounceTimer: ReturnType<typeof setTimeout>;
+    const handler = () => {
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => loadPatients(), 2000);
+    };
+    // api.on returns a cleanup function (removeListener)
+    const cleanup = api.on('dicom-file-received', handler);
+    return () => {
+      clearTimeout(debounceTimer);
+      if (typeof cleanup === 'function') cleanup();
+    };
+  }, [loadPatients]);
+
   return (
     <div className="flex flex-col h-screen bg-app-bg">
       {/* Header with brand */}
-      <div className="flex items-center justify-between px-3 py-1.5 bg-app-header-bg border-b-2 border-app-accent">
+      <div className="flex items-center justify-between px-3 2xl:px-5 py-1.5 2xl:py-2.5 bg-app-header-bg border-b-2 border-app-accent">
         <div className="flex items-center gap-2">
-          <span className="text-lg font-bold text-app-accent tracking-wide">
-            MediView Pro 1.0
+          <span className="text-lg 2xl:text-2xl font-bold text-app-accent tracking-wide">
+            MediView Pro
           </span>
-          <span className="text-xs text-app-text-secondary">
+          <span className="text-xs 2xl:text-sm text-app-text-secondary">
             | License TV5PPH4T | License period left : 224 days.
           </span>
         </div>

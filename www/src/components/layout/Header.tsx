@@ -21,7 +21,7 @@ export function Header() {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  const pageTitle = pageTitles[location.pathname] || 'DICOM Viewer Pro';
+  const pageTitle = pageTitles[location.pathname] || 'MediView Pro';
 
   // Close dropdown on outside click
   useEffect(() => {

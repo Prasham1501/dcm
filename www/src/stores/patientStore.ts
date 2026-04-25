@@ -6,6 +6,53 @@ import { patientService } from '@/services/patientService';
 // Set to true to use real API (PHP backend), false for local file mode
 const USE_API = import.meta.env.VITE_USE_API === 'true';
 
+// Helper: scan the network DICOM storage folder and return patients
+async function scanNetworkDicomFolder(): Promise<Patient[]> {
+  try {
+    const api = (window as any).electronAPI;
+    if (!api?.isElectron) return [];
+
+    // Use named method first, fallback to generic invoke
+    let info: any;
+    if (api.getNetworkDicomPath) {
+      info = await api.getNetworkDicomPath();
+    } else if (api.invoke) {
+      info = await api.invoke('get-network-dicom-path');
+    } else {
+      return [];
+    }
+    if (!info?.path) return [];
+
+    // Use the DICOM file server to scan the storage folder
+    const scanBase = 'http://localhost:3457';
+    const response = await fetch(`${scanBase}/api/dicom/scan-patients?dir=${encodeURIComponent(info.path)}`, {
+      signal: AbortSignal.timeout(15000),
+    });
+    const data = await response.json();
+    if (!data.success || !data.patients) return [];
+
+    return data.patients.map((p: any) => ({
+      id: p.id || p.studyInstanceUID,
+      patientId: p.patientId,
+      patientName: p.patientName,
+      age: p.age,
+      sex: (p.sex === 'M' || p.sex === 'F' || p.sex === 'O') ? p.sex : '' as const,
+      studyDate: p.studyDate,
+      studyDescription: p.studyDescription,
+      images: p.images,
+      modality: p.modality,
+      accessionNumber: p.accessionNumber,
+      referringPhysician: p.referringPhysician,
+      printed: false,
+      studyInstanceUID: p.studyInstanceUID,
+      filePaths: p.filePaths,
+    }));
+  } catch (e) {
+    console.warn('[patientStore] scanNetworkDicomFolder failed:', e);
+    return [];
+  }
+}
+
 interface PatientState {
   patients: Patient[];
   filteredPatients: Patient[];
@@ -181,6 +228,9 @@ export const usePatientStore = create<PatientState>()(
   loadPatients: async () => {
     set({ loading: true, error: null });
 
+    // Always scan the network DICOM folder for received files
+    const networkPatients = await scanNetworkDicomFolder();
+
     if (USE_API) {
       try {
         const { patients: apiPatients, pagination } = await patientService.fetchPatients(
@@ -212,7 +262,14 @@ export const usePatientStore = create<PatientState>()(
           (p) => p.filePaths && p.filePaths.length > 0 && !apiIds.has(p.patientId)
         );
 
-        const patients = [...mergedPatients, ...folderOnlyPatients];
+        // Merge network-received patients (avoid duplicates by studyInstanceUID)
+        const allIds = new Set([...apiIds, ...folderOnlyPatients.map(p => p.patientId)]);
+        const allStudyUIDs = new Set([...mergedPatients.map(p => p.studyInstanceUID), ...folderOnlyPatients.map(p => p.studyInstanceUID)]);
+        const uniqueNetworkPatients = networkPatients.filter(
+          (np) => !allIds.has(np.patientId) && !allStudyUIDs.has(np.studyInstanceUID)
+        );
+
+        const patients = [...mergedPatients, ...folderOnlyPatients, ...uniqueNetworkPatients];
 
         set({
           patients,
@@ -223,9 +280,13 @@ export const usePatientStore = create<PatientState>()(
           totalRecords: patients.length,
         });
       } catch {
-        // API unavailable — keep persisted patients (from folder sync), don't override with mock
-        const { patients, filters } = get();
+        // API unavailable — keep persisted patients + network patients
+        const { patients: existing, filters } = get();
+        const existingUIDs = new Set(existing.map(p => p.studyInstanceUID));
+        const uniqueNetwork = networkPatients.filter(np => !existingUIDs.has(np.studyInstanceUID));
+        const patients = [...existing, ...uniqueNetwork];
         set({
+          patients,
           filteredPatients: patients.filter((p) => matchesFilter(p, filters)),
           loading: false,
           totalRecords: patients.length,
@@ -233,11 +294,15 @@ export const usePatientStore = create<PatientState>()(
         });
       }
     } else {
-      // Local mode: show all persisted patients and apply current filters
-      const { patients, filters } = get();
+      // Local mode: merge network patients with persisted patients
+      const { patients: existing, filters } = get();
+      const existingUIDs = new Set(existing.map(p => p.studyInstanceUID));
+      const uniqueNetwork = networkPatients.filter(np => !existingUIDs.has(np.studyInstanceUID));
+      const patients = uniqueNetwork.length > 0 ? [...existing, ...uniqueNetwork] : existing;
       try {
         const filtered = patients.filter((p) => matchesFilter(p, filters));
         set({
+          patients,
           filteredPatients: filtered,
           loading: false,
           totalRecords: patients.length,
@@ -245,8 +310,7 @@ export const usePatientStore = create<PatientState>()(
         });
       } catch (err: any) {
         console.error('[patientStore] loadPatients filter error:', err);
-        // Fallback: show all patients unfiltered
-        set({ filteredPatients: patients, loading: false, totalRecords: patients.length, totalPages: 1 });
+        set({ patients, filteredPatients: patients, loading: false, totalRecords: patients.length, totalPages: 1 });
       }
     }
   },

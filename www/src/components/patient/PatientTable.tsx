@@ -90,13 +90,13 @@ export function PatientTable() {
 
   return (
     <div ref={tableRef} className="flex-1 overflow-auto border-b border-app-border flex flex-col">
-      <table className="w-full text-xs border-collapse">
+      <table className="w-full text-xs 2xl:text-sm border-collapse">
         <thead className="sticky top-0 z-10">
           <tr className="bg-app-header-bg border-b-2 border-app-accent">
             {columns.map((col) => (
               <th
                 key={col.key}
-                className={`${col.width} px-3 py-2.5 text-left font-bold text-app-accent uppercase tracking-wide border-r border-app-border last:border-r-0 select-none`}
+                className={`${col.width} px-3 2xl:px-4 py-2.5 2xl:py-3 text-left font-bold text-app-accent uppercase tracking-wide border-r border-app-border last:border-r-0 select-none`}
               >
                 {col.label}
               </th>

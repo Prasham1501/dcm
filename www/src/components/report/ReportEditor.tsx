@@ -29,6 +29,15 @@ export function ReportEditor() {
   const [showSaveTemplate, setShowSaveTemplate] = useState(false);
   const [templateName, setTemplateName] = useState('');
 
+  // Load physicians from clinical config
+  const [performingPhysicians, setPerformingPhysicians] = useState<string[]>([]);
+  const [referringPhysicians, setReferringPhysicians] = useState<string[]>([]);
+
+  useEffect(() => {
+    try { setPerformingPhysicians(JSON.parse(localStorage.getItem('clinical-performing-physicians') || '[]')); } catch { /* ignore */ }
+    try { setReferringPhysicians(JSON.parse(localStorage.getItem('clinical-referring-physicians') || '[]')); } catch { /* ignore */ }
+  }, [showReportEditor]);
+
   // Load existing report when opening
   useEffect(() => {
     if (showReportEditor && editingPatientId) {
@@ -245,13 +254,23 @@ export function ReportEditor() {
               <label className="block text-[10px] font-bold text-app-text-muted uppercase tracking-wider mb-1">
                 Doctor
               </label>
-              <input
-                type="text"
-                value={doctor}
-                onChange={(e) => setDoctor(e.target.value)}
-                className="w-full px-2 py-1.5 text-xs bg-app-surface border border-app-border rounded text-app-text"
-                placeholder="Dr. Name"
-              />
+              <div className="relative">
+                <input
+                  type="text"
+                  value={doctor}
+                  onChange={(e) => setDoctor(e.target.value)}
+                  list="doctor-suggestions"
+                  className="w-full px-2 py-1.5 text-xs bg-app-surface border border-app-border rounded text-app-text"
+                  placeholder="Dr. Name"
+                />
+                <datalist id="doctor-suggestions">
+                  {[...performingPhysicians, ...referringPhysicians]
+                    .filter((v, i, a) => a.indexOf(v) === i)
+                    .map((name) => (
+                      <option key={name} value={name} />
+                    ))}
+                </datalist>
+              </div>
             </div>
             <div>
               <label className="block text-[10px] font-bold text-app-text-muted uppercase tracking-wider mb-1">

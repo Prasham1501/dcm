@@ -9,9 +9,8 @@ export function PatientStatusBar() {
   const { printCountRemaining, showPrinterModal, setShowPrinterModal } = usePrintStore();
 
   // Compute real stats from patient data
-  const totalFilesSize = patients.reduce((sum, p) => {
-    return sum + (p.filePaths?.length ?? 0) * 512; // rough estimate: 512KB per image
-  }, 0);
+  const totalImages = patients.reduce((sum, p) => sum + (p.filePaths?.length ?? 0), 0);
+  const totalFilesSize = totalImages * 512; // rough estimate: 512KB per image
   const sizeDisplay = totalFilesSize > 1024
     ? `~${(totalFilesSize / 1024).toFixed(1)} GB`
     : `~${totalFilesSize.toFixed(0)} MB`;
@@ -28,28 +27,28 @@ export function PatientStatusBar() {
 
   return (
     <>
-      <div className="flex items-center justify-between px-3 py-1 bg-app-statusbar-bg border-t border-app-border">
-        <div className="flex items-center gap-1">
+      <div className="flex items-center justify-between px-3 2xl:px-5 py-1 2xl:py-2 bg-app-statusbar-bg border-t border-app-border">
+        <div className="flex items-center gap-1 2xl:gap-2">
           <button
             onClick={() => navigate('/config')}
-            className="px-2 py-0.5 text-xs border border-app-border text-app-text-secondary bg-app-bg rounded hover:bg-app-hover"
+            className="px-2 2xl:px-3 py-0.5 2xl:py-1 text-xs 2xl:text-sm border border-app-border text-app-text-secondary bg-app-bg rounded hover:bg-app-hover"
           >
             Config
           </button>
           <button
             onClick={() => setShowPrinterModal(true)}
-            className="px-2 py-0.5 text-xs border border-app-border text-app-text-secondary bg-app-bg rounded hover:bg-app-hover"
+            className="px-2 2xl:px-3 py-0.5 2xl:py-1 text-xs 2xl:text-sm border border-app-border text-app-text-secondary bg-app-bg rounded hover:bg-app-hover"
           >
             Default Printer
           </button>
         </div>
 
-        <div className="flex items-center gap-4 text-xs text-app-text-secondary">
+        <div className="flex items-center gap-4 text-xs 2xl:text-sm text-app-text-secondary">
           <span>Print count left- A4: {printCountRemaining}</span>
           <span className="text-app-border">|</span>
-          <span>Images occupied : {patients.length > 0 ? sizeDisplay : '0 MB'}</span>
+          <span>Images occupied : {totalImages > 0 ? `${totalImages} (${sizeDisplay})` : '0'}</span>
           <span className="text-app-border">|</span>
-          <span>Total patient records : {filteredPatients.length}</span>
+          <span>Total patient records : {patients.length}</span>
           <span className="text-app-border">|</span>
           <span>Oldest record date : {oldestDate || 'N/A'}</span>
           <span className="text-app-border">|</span>

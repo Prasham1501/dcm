@@ -196,7 +196,7 @@ export function PatientActionBar() {
   return (
     <div className="border-t border-app-border bg-app-surface">
       {/* Single row: All action buttons combined */}
-      <div className="flex items-center justify-center gap-1.5 px-3 py-1.5 flex-wrap">
+      <div className="flex items-center justify-center gap-1.5 2xl:gap-2.5 px-3 2xl:px-5 py-1.5 2xl:py-2.5 flex-wrap">
         <ActionButton label="Open" onClick={() => {
           const p = selectedPatient;
           if (!p) { alert('Select a patient first'); return; }
@@ -328,7 +328,7 @@ function ActionButton({
   return (
     <button
       onClick={onClick}
-      className={`px-3 py-1 text-xs font-semibold border-2 rounded transition-colors ${
+      className={`px-3 2xl:px-4 py-1 2xl:py-1.5 text-xs 2xl:text-sm font-semibold border-2 rounded transition-colors ${
         variant === 'danger'
           ? 'border-red-500 text-red-500 bg-app-bg hover:bg-red-500 hover:text-white'
           : 'border-app-accent text-app-accent bg-app-bg hover:bg-app-accent hover:text-white'
