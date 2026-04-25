@@ -210,11 +210,23 @@ function createMainWindow() {
 // =====================================================
 async function initMySQLData() {
     if (fs.existsSync(mysqlDataSubDir) && fs.readdirSync(mysqlDataSubDir).length > 0) return false;
-    console.log('[MySQL] First run - initializing...');
+    console.log('[MySQL] First run - initializing data directory...');
     if (!fs.existsSync(mysqlDataDir)) fs.mkdirSync(mysqlDataDir, { recursive: true });
-    execSync(`"${mysqldPath}" --initialize-insecure --datadir="${mysqlDataSubDir}" --basedir="${mysqlDir}"`, {
-        timeout: 120000, stdio: 'pipe'
-    });
+    
+    // MariaDB uses mysql_install_db.exe (not mysqld --initialize-insecure which is MySQL 5.7+)
+    const installDbPath = path.join(mysqlDir, 'bin', 'mysql_install_db.exe');
+    if (fs.existsSync(installDbPath)) {
+        console.log('[MySQL] Using mysql_install_db.exe...');
+        execSync(`"${installDbPath}" --datadir="${mysqlDataSubDir}" --password="" --default-user --silent`, {
+            timeout: 120000, stdio: 'pipe', cwd: mysqlDir
+        });
+    } else {
+        // Fallback for older MySQL distributions
+        console.log('[MySQL] Using mysqld --initialize-insecure...');
+        execSync(`"${mysqldPath}" --initialize-insecure --datadir="${mysqlDataSubDir}" --basedir="${mysqlDir}"`, {
+            timeout: 120000, stdio: 'pipe'
+        });
+    }
     console.log('[MySQL] Data directory initialized');
     return true;
 }
