@@ -91,11 +91,12 @@ async function ensureFrontendBuild() {
 // =====================================================
 function createSplashWindow() {
     splashWindow = new BrowserWindow({
-        width: 450,
-        height: 350,
+        width: 480,
+        height: 380,
         transparent: true,
         frame: false,
         alwaysOnTop: true,
+        resizable: false,
         webPreferences: { nodeIntegration: false, contextIsolation: true }
     });
     splashWindow.loadFile(path.join(__dirname, 'splash.html'));
@@ -114,6 +115,7 @@ function createMainWindow() {
         minWidth: 1024,
         minHeight: 768,
         show: false,
+        title: "MediView Pro",
         icon: path.join(__dirname, 'icon.ico'),
         webPreferences: {
             nodeIntegration: false,
@@ -1494,85 +1496,661 @@ ipcMain.handle('get-dicom-modalities', async () => {
 });
 
 // =====================================================
-// DICOM Network Receiver (C-STORE) for USG/Network
 // =====================================================
-const DICOM_LISTEN_PORT = 3458; // DICOM network listening port
+// DICOM Network Receiver (C-STORE SCP) for USG/Network
+// Implements DICOM Upper Layer Protocol for proper
+// association negotiation and C-STORE reception.
+// =====================================================
+const DICOM_LISTEN_PORT = 10104;
+const DICOM_AE_TITLE = 'MEDIVIEW';
+const DICOM_MAX_PDU = 131072; // 128KB — compatible with most devices
 let dicomNetworkServer = null;
-let networkDicomStorage = path.join(userDataPath, 'network-dicom');
+const dicomSettingsPath = path.join(userDataPath, 'dicom-scp-settings.json');
+let networkDicomStorage = loadDicomSettings().storagePath || path.join(userDataPath, 'network-dicom');
+
+function loadDicomSettings() {
+    try {
+        if (fs.existsSync(dicomSettingsPath)) {
+            return JSON.parse(fs.readFileSync(dicomSettingsPath, 'utf8'));
+        }
+    } catch (e) { console.warn('[DICOM SCP] Failed to load settings:', e.message); }
+    return {};
+}
+
+function saveDicomSettings(settings) {
+    try {
+        const existing = loadDicomSettings();
+        const merged = { ...existing, ...settings };
+        fs.writeFileSync(dicomSettingsPath, JSON.stringify(merged, null, 2), 'utf8');
+    } catch (e) { console.warn('[DICOM SCP] Failed to save settings:', e.message); }
+}
 
 function ensureNetworkDicomStorage() {
     if (!fs.existsSync(networkDicomStorage)) {
         fs.mkdirSync(networkDicomStorage, { recursive: true });
-        console.log(`[DICOM Network] Storage directory created: ${networkDicomStorage}`);
+        console.log(`[DICOM SCP] Storage directory created: ${networkDicomStorage}`);
+    }
+}
+
+// ── DICOM Upper Layer PDU helpers ──
+
+function padAE(str) {
+    return (str + '                ').slice(0, 16);
+}
+
+function padUID(str) {
+    // UIDs are padded with NULL (0x00) to even length per DICOM PS3.5
+    if (str.length % 2 !== 0) return str + '\0';
+    return str;
+}
+
+function buildAssociateAC(rqBuffer) {
+    const pduLength = rqBuffer.readUInt32BE(2);
+    const calledAE = rqBuffer.slice(10, 26).toString('ascii').trim();
+    const callingAE = rqBuffer.slice(26, 42).toString('ascii').trim();
+    console.log(`[DICOM SCP] Association request: Called=${calledAE} Calling=${callingAE}`);
+
+    // Parse variable items starting at offset 74
+    const items = [];
+    let offset = 74;
+    const pduEnd = 6 + pduLength;
+    while (offset + 4 <= pduEnd && offset + 4 <= rqBuffer.length) {
+        const itemType = rqBuffer[offset];
+        if (offset + 4 > rqBuffer.length) break;
+        const itemLen = rqBuffer.readUInt16BE(offset + 2);
+        if (itemLen === 0 && itemType === 0) break; // safety
+        if (offset + 4 + itemLen > rqBuffer.length) break;
+
+        if (itemType === 0x20) {
+            // Presentation Context Item (RQ)
+            const pcId = rqBuffer[offset + 4];
+            let abstractSyntax = '';
+            const transferSyntaxes = [];
+            let subOffset = offset + 8;
+            const pcEnd = offset + 4 + itemLen;
+            while (subOffset + 4 <= pcEnd && subOffset + 4 <= rqBuffer.length) {
+                const subType = rqBuffer[subOffset];
+                const subLen = rqBuffer.readUInt16BE(subOffset + 2);
+                if (subOffset + 4 + subLen > rqBuffer.length) break;
+                if (subType === 0x30) {
+                    abstractSyntax = rqBuffer.slice(subOffset + 4, subOffset + 4 + subLen).toString('ascii').replace(/\0+$/, '').trim();
+                } else if (subType === 0x40) {
+                    transferSyntaxes.push(rqBuffer.slice(subOffset + 4, subOffset + 4 + subLen).toString('ascii').replace(/\0+$/, '').trim());
+                }
+                subOffset += 4 + subLen;
+            }
+            items.push({ pcId, abstractSyntax, transferSyntaxes });
+        }
+        offset += 4 + itemLen;
+    }
+
+    // Build AC presentation context results — accept all
+    const pcResults = [];
+    for (const pc of items) {
+        // Prefer Explicit VR Little Endian, then first offered
+        let selectedTs = pc.transferSyntaxes[0] || '1.2.840.10008.1.2';
+        const explicitLE = pc.transferSyntaxes.find(ts => ts === '1.2.840.10008.1.2.1');
+        if (explicitLE) selectedTs = explicitLE;
+
+        const tsBytes = Buffer.from(selectedTs, 'ascii');
+        const tsSub = Buffer.alloc(4 + tsBytes.length);
+        tsSub[0] = 0x40; tsSub[1] = 0x00;
+        tsSub.writeUInt16BE(tsBytes.length, 2);
+        tsBytes.copy(tsSub, 4);
+
+        const pcItem = Buffer.alloc(8 + tsSub.length);
+        pcItem[0] = 0x21; pcItem[1] = 0x00;
+        pcItem.writeUInt16BE(4 + tsSub.length, 2);
+        pcItem[4] = pc.pcId;
+        pcItem[5] = 0x00; pcItem[6] = 0x00; pcItem[7] = 0x00; // accepted
+        tsSub.copy(pcItem, 8);
+        pcResults.push(pcItem);
+
+        // Store the accepted TS back for later use
+        pc.acceptedTransferSyntax = selectedTs;
+    }
+
+    // Application Context
+    const appCtxUid = '1.2.840.10008.3.1.1.1';
+    const appCtxBytes = Buffer.from(appCtxUid, 'ascii');
+    const appCtxItem = Buffer.alloc(4 + appCtxBytes.length);
+    appCtxItem[0] = 0x10; appCtxItem[1] = 0x00;
+    appCtxItem.writeUInt16BE(appCtxBytes.length, 2);
+    appCtxBytes.copy(appCtxItem, 4);
+
+    // User Information
+    const maxPduSub = Buffer.alloc(8);
+    maxPduSub[0] = 0x51; maxPduSub[1] = 0x00;
+    maxPduSub.writeUInt16BE(4, 2);
+    maxPduSub.writeUInt32BE(DICOM_MAX_PDU, 4);
+
+    const implUid = '1.2.826.0.1.3680043.8.498.1';
+    const implUidBytes = Buffer.from(implUid, 'ascii');
+    const implSub = Buffer.alloc(4 + implUidBytes.length);
+    implSub[0] = 0x52; implSub[1] = 0x00;
+    implSub.writeUInt16BE(implUidBytes.length, 2);
+    implUidBytes.copy(implSub, 4);
+
+    // Implementation Version Name
+    const implVerName = 'MEDIVIEW_SCP';
+    const implVerBytes = Buffer.from(implVerName, 'ascii');
+    const implVerSub = Buffer.alloc(4 + implVerBytes.length);
+    implVerSub[0] = 0x55; implVerSub[1] = 0x00;
+    implVerSub.writeUInt16BE(implVerBytes.length, 2);
+    implVerBytes.copy(implVerSub, 4);
+
+    const userInfoContent = Buffer.concat([maxPduSub, implSub, implVerSub]);
+    const userInfoItem = Buffer.alloc(4 + userInfoContent.length);
+    userInfoItem[0] = 0x50; userInfoItem[1] = 0x00;
+    userInfoItem.writeUInt16BE(userInfoContent.length, 2);
+    userInfoContent.copy(userInfoItem, 4);
+
+    const variableItems = Buffer.concat([appCtxItem, ...pcResults, userInfoItem]);
+
+    const fixedLen = 2 + 2 + 16 + 16 + 32; // 68 bytes after length field
+    const pduLen = fixedLen + variableItems.length;
+    const acPdu = Buffer.alloc(6 + pduLen);
+    acPdu[0] = 0x02; acPdu[1] = 0x00;
+    acPdu.writeUInt32BE(pduLen, 2);
+    acPdu.writeUInt16BE(1, 6); // protocol version
+    acPdu.writeUInt16BE(0, 8);
+    Buffer.from(padAE(DICOM_AE_TITLE)).copy(acPdu, 10);
+    Buffer.from(padAE(callingAE)).copy(acPdu, 26);
+    variableItems.copy(acPdu, 74);
+
+    return { acPdu, items, callingAE };
+}
+
+function buildReleaseRP() {
+    const rp = Buffer.alloc(10);
+    rp[0] = 0x06; rp[1] = 0x00;
+    rp.writeUInt32BE(4, 2);
+    return rp;
+}
+
+function buildCStoreRSP(pcId, messageId, sopClassUid, sopInstanceUid) {
+    // Command set is ALWAYS Implicit VR Little Endian (DICOM PS3.7 §6.3.1)
+    const elements = [];
+
+    function addUint16Elem(group, elem, val) {
+        const b = Buffer.alloc(10);
+        b.writeUInt16LE(group, 0);
+        b.writeUInt16LE(elem, 2);
+        b.writeUInt32LE(2, 4);
+        b.writeUInt16LE(val, 8);
+        return b;
+    }
+
+    function addStringElem(group, elem, val) {
+        let v = Buffer.from(val, 'ascii');
+        if (v.length % 2 !== 0) v = Buffer.concat([v, Buffer.from([0x00])]);
+        const hdr = Buffer.alloc(8);
+        hdr.writeUInt16LE(group, 0);
+        hdr.writeUInt16LE(elem, 2);
+        hdr.writeUInt32LE(v.length, 4);
+        return Buffer.concat([hdr, v]);
+    }
+
+    elements.push(addStringElem(0x0000, 0x0002, sopClassUid));      // Affected SOP Class UID
+    elements.push(addUint16Elem(0x0000, 0x0100, 0x8001));            // Command Field: C-STORE-RSP
+    elements.push(addUint16Elem(0x0000, 0x0120, messageId));         // Message ID Being Responded To
+    elements.push(addUint16Elem(0x0000, 0x0800, 0x0101));            // Data Set Type: none
+    elements.push(addUint16Elem(0x0000, 0x0900, 0x0000));            // Status: Success
+    elements.push(addStringElem(0x0000, 0x1000, sopInstanceUid));    // Affected SOP Instance UID
+
+    const cmdData = Buffer.concat(elements);
+
+    // Group Length element (0000,0000)
+    const grpLenElem = Buffer.alloc(12);
+    grpLenElem.writeUInt16LE(0x0000, 0);
+    grpLenElem.writeUInt16LE(0x0000, 2);
+    grpLenElem.writeUInt32LE(4, 4);
+    grpLenElem.writeUInt32LE(cmdData.length, 8);
+
+    const fullCmd = Buffer.concat([grpLenElem, cmdData]);
+
+    // PDV: length(4) + pcId(1) + header(1) + data
+    const pdvLen = 2 + fullCmd.length;
+    const pdv = Buffer.alloc(4 + pdvLen);
+    pdv.writeUInt32BE(pdvLen, 0);
+    pdv[4] = pcId;
+    pdv[5] = 0x03; // command + last fragment
+    fullCmd.copy(pdv, 6);
+
+    // P-DATA-TF
+    const pdata = Buffer.alloc(6 + pdv.length);
+    pdata[0] = 0x04; pdata[1] = 0x00;
+    pdata.writeUInt32BE(pdv.length, 2);
+    pdv.copy(pdata, 6);
+    return pdata;
+}
+
+function buildCEchoRSP(pcId, messageId) {
+    // C-ECHO-RSP: similar to C-STORE-RSP but with Command Field = 0x8030
+    const elements = [];
+
+    function addUint16Elem(group, elem, val) {
+        const b = Buffer.alloc(10);
+        b.writeUInt16LE(group, 0);
+        b.writeUInt16LE(elem, 2);
+        b.writeUInt32LE(2, 4);
+        b.writeUInt16LE(val, 8);
+        return b;
+    }
+
+    function addStringElem(group, elem, val) {
+        let v = Buffer.from(val, 'ascii');
+        if (v.length % 2 !== 0) v = Buffer.concat([v, Buffer.from([0x00])]);
+        const hdr = Buffer.alloc(8);
+        hdr.writeUInt16LE(group, 0);
+        hdr.writeUInt16LE(elem, 2);
+        hdr.writeUInt32LE(v.length, 4);
+        return Buffer.concat([hdr, v]);
+    }
+
+    // Verification SOP Class UID
+    elements.push(addStringElem(0x0000, 0x0002, '1.2.840.10008.1.1'));
+    elements.push(addUint16Elem(0x0000, 0x0100, 0x8030));  // C-ECHO-RSP
+    elements.push(addUint16Elem(0x0000, 0x0120, messageId));
+    elements.push(addUint16Elem(0x0000, 0x0800, 0x0101));  // No dataset
+    elements.push(addUint16Elem(0x0000, 0x0900, 0x0000));  // Success
+
+    const cmdData = Buffer.concat(elements);
+    const grpLenElem = Buffer.alloc(12);
+    grpLenElem.writeUInt16LE(0x0000, 0);
+    grpLenElem.writeUInt16LE(0x0000, 2);
+    grpLenElem.writeUInt32LE(4, 4);
+    grpLenElem.writeUInt32LE(cmdData.length, 8);
+
+    const fullCmd = Buffer.concat([grpLenElem, cmdData]);
+    const pdvLen = 2 + fullCmd.length;
+    const pdv = Buffer.alloc(4 + pdvLen);
+    pdv.writeUInt32BE(pdvLen, 0);
+    pdv[4] = pcId;
+    pdv[5] = 0x03;
+    fullCmd.copy(pdv, 6);
+
+    const pdata = Buffer.alloc(6 + pdv.length);
+    pdata[0] = 0x04; pdata[1] = 0x00;
+    pdata.writeUInt32BE(pdv.length, 2);
+    pdv.copy(pdata, 6);
+    return pdata;
+}
+
+function parseCommandSet(cmdBuffer) {
+    // Command set is Implicit VR Little Endian: group(2)+elem(2)+len(4)+value
+    const result = {};
+    let offset = 0;
+    while (offset + 8 <= cmdBuffer.length) {
+        const group = cmdBuffer.readUInt16LE(offset);
+        const elem = cmdBuffer.readUInt16LE(offset + 2);
+        const len = cmdBuffer.readUInt32LE(offset + 4);
+        if (len === 0xFFFFFFFF || len > cmdBuffer.length - offset - 8) break;
+        const tag = `${group.toString(16).padStart(4, '0')},${elem.toString(16).padStart(4, '0')}`;
+        if (len === 2) {
+            result[tag] = cmdBuffer.readUInt16LE(offset + 8);
+        } else if (len === 4 && group === 0x0000 && elem === 0x0000) {
+            result[tag] = cmdBuffer.readUInt32LE(offset + 8);
+        } else {
+            result[tag] = cmdBuffer.slice(offset + 8, offset + 8 + len).toString('ascii').replace(/\0+$/, '');
+        }
+        offset += 8 + len;
+    }
+    return result;
+}
+
+// Build proper DICOM Part 10 File Meta Information header
+// Uses Explicit VR Little Endian (mandatory for File Meta per DICOM PS3.10)
+function buildFileMetaHeader(sopClassUid, sopInstanceUid, transferSyntax) {
+    const parts = [];
+
+    // Helper: Explicit VR LE element with short VR (UI, UL, SH, etc. — 2-byte length)
+    function addShortVR(group, elem, vr, value) {
+        const valBuf = Buffer.isBuffer(value) ? value : Buffer.from(padUID(value), 'ascii');
+        const hdr = Buffer.alloc(8);
+        hdr.writeUInt16LE(group, 0);
+        hdr.writeUInt16LE(elem, 2);
+        hdr[4] = vr.charCodeAt(0);
+        hdr[5] = vr.charCodeAt(1);
+        hdr.writeUInt16LE(valBuf.length, 6);
+        return Buffer.concat([hdr, valBuf]);
+    }
+
+    // Helper: Explicit VR LE element with long VR (OB, OW, UN, etc. — 4-byte length)
+    function addLongVR(group, elem, vr, value) {
+        const valBuf = Buffer.isBuffer(value) ? value : Buffer.from(value, 'ascii');
+        const hdr = Buffer.alloc(12);
+        hdr.writeUInt16LE(group, 0);
+        hdr.writeUInt16LE(elem, 2);
+        hdr[4] = vr.charCodeAt(0);
+        hdr[5] = vr.charCodeAt(1);
+        hdr.writeUInt16LE(0, 6); // reserved 2 bytes
+        hdr.writeUInt32LE(valBuf.length, 8);
+        return Buffer.concat([hdr, valBuf]);
+    }
+
+    // (0002,0001) File Meta Information Version — OB, uses long VR format
+    parts.push(addLongVR(0x0002, 0x0001, 'OB', Buffer.from([0x00, 0x01])));
+    // (0002,0002) Media Storage SOP Class UID — UI
+    parts.push(addShortVR(0x0002, 0x0002, 'UI', sopClassUid));
+    // (0002,0003) Media Storage SOP Instance UID — UI
+    parts.push(addShortVR(0x0002, 0x0003, 'UI', sopInstanceUid));
+    // (0002,0010) Transfer Syntax UID — UI
+    parts.push(addShortVR(0x0002, 0x0010, 'UI', transferSyntax));
+    // (0002,0012) Implementation Class UID — UI
+    parts.push(addShortVR(0x0002, 0x0012, 'UI', '1.2.826.0.1.3680043.8.498.1'));
+    // (0002,0013) Implementation Version Name — SH
+    const verName = 'MEDIVIEW_SCP ';
+    parts.push(addShortVR(0x0002, 0x0013, 'SH', Buffer.from(verName.length % 2 !== 0 ? verName + ' ' : verName, 'ascii')));
+
+    const metaContent = Buffer.concat(parts);
+
+    // (0002,0000) File Meta Information Group Length — UL (short VR)
+    const grpLen = addShortVR(0x0002, 0x0000, 'UL', Buffer.alloc(0));
+    // Fix: UL is 4 bytes
+    const grpLenBuf = Buffer.alloc(12);
+    grpLenBuf.writeUInt16LE(0x0002, 0);
+    grpLenBuf.writeUInt16LE(0x0000, 2);
+    grpLenBuf[4] = 0x55; grpLenBuf[5] = 0x4C; // 'UL'
+    grpLenBuf.writeUInt16LE(4, 6);
+    grpLenBuf.writeUInt32LE(metaContent.length, 8);
+
+    const preamble = Buffer.alloc(128, 0);
+    const magic = Buffer.from('DICM');
+
+    return Buffer.concat([preamble, magic, grpLenBuf, metaContent]);
+}
+
+function addFirewallRule() {
+    if (process.platform !== 'win32') return;
+    try {
+        const { execSync, exec } = require('child_process');
+        // Check if rule already exists
+        try {
+            const check = execSync('netsh advfirewall firewall show rule name="DICOM Viewer Pro SCP"', { encoding: 'utf8', timeout: 5000, windowsHide: true });
+            if (check.includes('DICOM Viewer Pro SCP')) {
+                console.log('[DICOM SCP] Firewall rule already exists');
+                return;
+            }
+        } catch (e) { /* rule doesn't exist, create it */ }
+
+        // Try adding directly first (works if app is already admin)
+        try {
+            execSync(`netsh advfirewall firewall add rule name="DICOM Viewer Pro SCP" dir=in action=allow protocol=TCP localport=${DICOM_LISTEN_PORT} profile=any`, { timeout: 10000, windowsHide: true });
+            console.log(`[DICOM SCP] Firewall rule added for port ${DICOM_LISTEN_PORT}`);
+            return;
+        } catch (e) { /* needs elevation */ }
+
+        // Request elevation via PowerShell — shows UAC prompt
+        console.log('[DICOM SCP] Requesting admin elevation for firewall rule...');
+        const cmd = `Start-Process -FilePath 'netsh' -ArgumentList 'advfirewall firewall add rule name=\\"DICOM Viewer Pro SCP\\" dir=in action=allow protocol=TCP localport=${DICOM_LISTEN_PORT} profile=any' -Verb RunAs -WindowStyle Hidden -Wait`;
+        exec(`powershell -NoProfile -Command "${cmd}"`, { timeout: 30000, windowsHide: true }, (err) => {
+            if (err) {
+                console.warn(`[DICOM SCP] Firewall rule not added (user may have declined UAC): ${err.message}`);
+            } else {
+                console.log(`[DICOM SCP] Firewall rule added via elevation for port ${DICOM_LISTEN_PORT}`);
+            }
+        });
+    } catch (e) {
+        console.warn(`[DICOM SCP] Could not add firewall rule: ${e.message}`);
     }
 }
 
 function startDicomNetworkReceiver() {
     ensureNetworkDicomStorage();
+    addFirewallRule();
 
     try {
         const net = require('net');
-        dicomNetworkServer = net.createServer((socket) => {
-            console.log(`[DICOM Network] New connection from ${socket.remoteAddress}:${socket.remotePort}`);
+        dicomNetworkServer = net.createServer({ allowHalfOpen: false }, (socket) => {
+            console.log(`[DICOM SCP] Connection from ${socket.remoteAddress}:${socket.remotePort}`);
+            socket.setKeepAlive(true, 10000);
+            socket.setTimeout(120000); // 2 min timeout for idle connections
 
-            let buffer = Buffer.alloc(0);
+            let recvBuffer = Buffer.alloc(0);
+            let associationInfo = null;
+            let currentCommand = null;
+            let fileCount = 0;
+            let socketAlive = true;
 
-            socket.on('data', (data) => {
-                buffer = Buffer.concat([buffer, data]);
+            function safeWrite(data) {
+                if (socketAlive && !socket.destroyed) {
+                    try { socket.write(data); } catch (e) {
+                        console.error(`[DICOM SCP] Write error: ${e.message}`);
+                    }
+                }
+            }
 
-                // Simple DICOM file detection (DICOM files start with specific bytes or have DICM at offset 128)
-                if (buffer.length > 132) {
-                    const hasDicmSignature = buffer.toString('utf8', 128, 132) === 'DICM';
-                    const isParseable = buffer[0] === 0x28 || hasDicmSignature; // (28,xx) or DICM signature
+            function processPDU() {
+                while (recvBuffer.length >= 6) {
+                    const pduType = recvBuffer[0];
+                    const pduLen = recvBuffer.readUInt32BE(2);
+                    const totalLen = 6 + pduLen;
 
-                    if (isParseable) {
-                        const timestamp = Date.now();
-                        const filename = `received_${timestamp}.dcm`;
+                    // Sanity check — reject absurdly large PDUs (>16MB)
+                    if (pduLen > 16 * 1024 * 1024) {
+                        console.error(`[DICOM SCP] PDU length too large (${pduLen}), closing connection`);
+                        socket.destroy();
+                        return;
+                    }
+
+                    if (recvBuffer.length < totalLen) break;
+
+                    const pdu = Buffer.from(recvBuffer.slice(0, totalLen));
+                    recvBuffer = recvBuffer.slice(totalLen);
+
+                    try {
+                        handlePDU(pduType, pdu);
+                    } catch (e) {
+                        console.error(`[DICOM SCP] Error handling PDU type 0x${pduType.toString(16)}: ${e.message}`);
+                    }
+                }
+            }
+
+            function handlePDU(pduType, pdu) {
+                switch (pduType) {
+                    case 0x01: { // A-ASSOCIATE-RQ
+                        try {
+                            const { acPdu, items, callingAE } = buildAssociateAC(pdu);
+                            associationInfo = { items, callingAE };
+                            safeWrite(acPdu);
+                            console.log(`[DICOM SCP] Association accepted from ${callingAE} (${items.length} presentation contexts)`);
+                        } catch (e) {
+                            console.error(`[DICOM SCP] Association failed: ${e.message}`);
+                            const rj = Buffer.alloc(10);
+                            rj[0] = 0x03; rj[1] = 0x00;
+                            rj.writeUInt32BE(4, 2);
+                            rj[7] = 0x01; rj[8] = 0x01; rj[9] = 0x01;
+                            safeWrite(rj);
+                            socket.end();
+                        }
+                        break;
+                    }
+
+                    case 0x04: { // P-DATA-TF
+                        if (!associationInfo) break;
+                        const pduDataLen = pdu.readUInt32BE(2);
+                        let offset = 6;
+                        const end = 6 + pduDataLen;
+
+                        while (offset + 6 <= end && offset + 6 <= pdu.length) {
+                            const pdvLen = pdu.readUInt32BE(offset);
+                            if (pdvLen < 2 || offset + 4 + pdvLen > pdu.length) break;
+                            const pdvPcId = pdu[offset + 4];
+                            const pdvHeader = pdu[offset + 5];
+                            // Per DICOM PS3.7 E.2: bit 0 = 1 means Command, 0 means Dataset
+                            // Per DICOM PS3.7 E.2: bit 1 = 1 means last fragment
+                            const isCommand = (pdvHeader & 0x01) !== 0;
+                            const isLast = (pdvHeader & 0x02) !== 0;
+                            const data = pdu.slice(offset + 6, offset + 4 + pdvLen);
+
+                            if (!currentCommand) {
+                                currentCommand = { pcId: pdvPcId, cmdFragments: [], dataFragments: [], parsed: null };
+                            }
+
+                            if (isCommand) {
+                                currentCommand.cmdFragments.push(data);
+                                if (isLast) {
+                                    const cmdData = Buffer.concat(currentCommand.cmdFragments);
+                                    currentCommand.parsed = parseCommandSet(cmdData);
+                                    currentCommand.cmdFragments = [];
+                                    const dataSetType = currentCommand.parsed['0000,0800'];
+                                    if (dataSetType === 0x0101) {
+                                        handleCompleteMessage(pdvPcId);
+                                    }
+                                }
+                            } else {
+                                currentCommand.dataFragments.push(data);
+                                if (isLast) {
+                                    handleCompleteMessage(pdvPcId);
+                                }
+                            }
+
+                            offset += 4 + pdvLen;
+                        }
+                        break;
+                    }
+
+                    case 0x05: { // A-RELEASE-RQ
+                        console.log(`[DICOM SCP] Release (${fileCount} files received)`);
+                        safeWrite(buildReleaseRP());
+                        socket.end();
+                        break;
+                    }
+
+                    case 0x07: { // A-ABORT
+                        console.log('[DICOM SCP] Abort received');
+                        socket.end();
+                        break;
+                    }
+
+                    default:
+                        console.warn(`[DICOM SCP] Unknown PDU type: 0x${pduType.toString(16)}`);
+                }
+            }
+
+            function handleCompleteMessage(pcId) {
+                if (!currentCommand || !currentCommand.parsed) {
+                    currentCommand = null;
+                    return;
+                }
+                const cmd = currentCommand.parsed;
+                const commandField = cmd['0000,0100'];
+                const messageId = cmd['0000,0110'] || 1;
+                const sopClassUid = cmd['0000,0002'] || '';
+                const sopInstanceUid = cmd['0000,1000'] || `1.2.${Date.now()}.${fileCount}`;
+
+                if (commandField === 0x0030) {
+                    // C-ECHO-RQ — respond with C-ECHO-RSP
+                    console.log(`[DICOM SCP] C-ECHO from association`);
+                    safeWrite(buildCEchoRSP(pcId, messageId));
+                } else if (commandField === 0x0001) {
+                    // C-STORE-RQ
+                    const datasetData = Buffer.concat(currentCommand.dataFragments || []);
+
+                    if (datasetData.length > 0) {
+                        // Determine accepted transfer syntax for this PC
+                        let transferSyntax = '1.2.840.10008.1.2';
+                        if (associationInfo) {
+                            const pc = associationInfo.items.find(i => i.pcId === pcId);
+                            if (pc && pc.acceptedTransferSyntax) {
+                                transferSyntax = pc.acceptedTransferSyntax;
+                            }
+                        }
+
+                        // Build Part 10 file with correct File Meta Information
+                        const fileHeader = buildFileMetaHeader(sopClassUid, sopInstanceUid, transferSyntax);
+                        const fullFile = Buffer.concat([fileHeader, datasetData]);
+
+                        const safeUid = sopInstanceUid.replace(/[^0-9.]/g, '');
+                        const filename = `${safeUid || Date.now()}.dcm`;
                         const filepath = path.join(networkDicomStorage, filename);
 
                         try {
-                            fs.writeFileSync(filepath, buffer);
-                            console.log(`[DICOM Network] Received and saved: ${filename} (${buffer.length} bytes)`);
+                            fs.writeFileSync(filepath, fullFile);
+                            fileCount++;
+                            console.log(`[DICOM SCP] Saved: ${filename} (${fullFile.length} bytes)`);
 
-                            // Notify UI that a new file was received
                             if (mainWindow && mainWindow.webContents) {
                                 mainWindow.webContents.send('dicom-file-received', {
-                                    filename: filename,
-                                    filepath: filepath,
-                                    size: buffer.length,
-                                    timestamp: new Date().toISOString()
+                                    filename, filepath, size: fullFile.length,
+                                    timestamp: new Date().toISOString(),
+                                    sopClassUid, sopInstanceUid
                                 });
                             }
-
-                            // Send acknowledgment
-                            socket.write(Buffer.from([0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00]));
-                            socket.end();
                         } catch (e) {
-                            console.error(`[DICOM Network] Error saving file: ${e.message}`);
-                            socket.end();
+                            console.error(`[DICOM SCP] Save error: ${e.message}`);
                         }
                     }
+
+                    safeWrite(buildCStoreRSP(pcId, messageId, sopClassUid, sopInstanceUid));
+                } else {
+                    console.warn(`[DICOM SCP] Unsupported command: 0x${commandField?.toString(16)}`);
                 }
+
+                currentCommand = null;
+            }
+
+            socket.on('data', (data) => {
+                recvBuffer = Buffer.concat([recvBuffer, data]);
+                processPDU();
             });
 
             socket.on('end', () => {
-                console.log(`[DICOM Network] Connection closed from ${socket.remoteAddress}`);
+                socketAlive = false;
+                // Process any remaining buffered data
+                if (recvBuffer.length > 0) {
+                    try { processPDU(); } catch (e) { /* ignore */ }
+                }
+                // Save any buffered data that looks like DICOM as fallback
+                if (fileCount === 0 && recvBuffer.length > 132) {
+                    const hasDicm = recvBuffer.length > 132 && recvBuffer.toString('ascii', 128, 132) === 'DICM';
+                    if (hasDicm) {
+                        const filename = `raw_${Date.now()}.dcm`;
+                        const filepath = path.join(networkDicomStorage, filename);
+                        try {
+                            fs.writeFileSync(filepath, recvBuffer);
+                            console.log(`[DICOM SCP] Saved raw DICOM: ${filename} (${recvBuffer.length} bytes)`);
+                        } catch (e) { /* ignore */ }
+                    }
+                }
+                if (fileCount > 0) {
+                    console.log(`[DICOM SCP] Connection closed (${fileCount} files received)`);
+                }
             });
 
             socket.on('error', (err) => {
-                console.error(`[DICOM Network] Socket error: ${err.message}`);
+                socketAlive = false;
+                if (err.code !== 'ECONNRESET') {
+                    console.error(`[DICOM SCP] Socket error: ${err.message}`);
+                }
             });
+
+            socket.on('timeout', () => {
+                console.warn('[DICOM SCP] Socket timeout, closing');
+                socket.destroy();
+            });
+
+            socket.on('close', () => { socketAlive = false; });
         });
 
         dicomNetworkServer.listen(DICOM_LISTEN_PORT, '0.0.0.0', () => {
-            console.log(`[DICOM Network] Receiver listening on port ${DICOM_LISTEN_PORT}`);
+            console.log(`[DICOM SCP] Listening on port ${DICOM_LISTEN_PORT} (AET: ${DICOM_AE_TITLE}), storage: ${networkDicomStorage}`);
         });
 
         dicomNetworkServer.on('error', (err) => {
-            console.error(`[DICOM Network] Server error: ${err.message}`);
+            if (err.code === 'EADDRINUSE') {
+                console.error(`[DICOM SCP] Port ${DICOM_LISTEN_PORT} is already in use, retrying in 3s...`);
+                dicomNetworkServer = null;
+                setTimeout(() => startDicomNetworkReceiver(), 3000);
+            } else {
+                console.error(`[DICOM SCP] Server error: ${err.message}`);
+            }
         });
+
+        dicomNetworkServer.maxConnections = 10; // Prevent resource exhaustion
     } catch (e) {
-        console.error(`[DICOM Network] Failed to start receiver: ${e.message}`);
+        console.error(`[DICOM SCP] Failed to start: ${e.message}`);
     }
 }
 
@@ -1586,11 +2164,70 @@ function stopDicomNetworkReceiver() {
 
 // IPC Handler: Get network DICOM storage path
 ipcMain.handle('get-network-dicom-path', () => {
+    // Get local network IP — skip virtual adapters (WSL, Hyper-V, VPN, Bluetooth, loopback-like)
+    const os = require('os');
+    const nets = os.networkInterfaces();
+    let localIp = '127.0.0.1';
+    const skipPatterns = /vethernet|wsl|hyper-v|docker|vmware|virtualbox|bluetooth|loopback/i;
+    // Prefer Wi-Fi and Ethernet interfaces
+    const preferred = ['Wi-Fi', 'Ethernet', 'eth0', 'en0', 'wlan0'];
+    const candidates = [];
+    for (const name of Object.keys(nets)) {
+        if (skipPatterns.test(name)) continue;
+        for (const net of nets[name]) {
+            if (net.family === 'IPv4' && !net.internal && !net.address.startsWith('169.254.')) {
+                const priority = preferred.findIndex(p => name.toLowerCase().includes(p.toLowerCase()));
+                candidates.push({ ip: net.address, priority: priority >= 0 ? priority : 99, name });
+            }
+        }
+    }
+    candidates.sort((a, b) => a.priority - b.priority);
+    if (candidates.length > 0) localIp = candidates[0].ip;
     return {
         path: networkDicomStorage,
         port: DICOM_LISTEN_PORT,
+        ip: localIp,
+        aet: 'MEDIVIEW',
+        isRunning: dicomNetworkServer !== null,
         success: true
     };
+});
+
+// IPC Handler: Update network DICOM storage path
+ipcMain.handle('set-network-dicom-path', (event, newPath) => {
+    try {
+        if (!newPath || typeof newPath !== 'string') throw new Error('Invalid path');
+        if (!fs.existsSync(newPath)) {
+            fs.mkdirSync(newPath, { recursive: true });
+        }
+        networkDicomStorage = newPath;
+        saveDicomSettings({ storagePath: newPath });
+        console.log(`[DICOM Network] Storage path updated to: ${newPath}`);
+        return { success: true, path: networkDicomStorage };
+    } catch (e) {
+        return { success: false, error: e.message };
+    }
+});
+
+// IPC Handler: Restart DICOM network receiver
+ipcMain.handle('restart-network-receiver', () => {
+    try {
+        stopDicomNetworkReceiver();
+        startDicomNetworkReceiver();
+        return { success: true, port: DICOM_LISTEN_PORT };
+    } catch (e) {
+        return { success: false, error: e.message };
+    }
+});
+
+// IPC Handler: Open folder in file explorer
+ipcMain.handle('open-folder', async (event, folderPath) => {
+    try {
+        shell.openPath(folderPath);
+        return { success: true };
+    } catch (e) {
+        return { success: false, error: e.message };
+    }
 });
 
 // IPC Handler: Get list of received DICOM files
@@ -2168,5 +2805,6 @@ ipcMain.handle('ocr-dicom-file', async (event, { filePath }) => {
 // NOTE: Port 3458 is now owned by Orthanc (DICOM SCP with AE=MEDIVIEW).
 // The custom TCP receiver is disabled to avoid port conflict.
 function startNetworkReceiverOnAppReady() {
-    console.log('[DICOM Network] Orthanc handles DICOM receives on port 3458 (AE: MEDIVIEW) — custom TCP receiver disabled.');
+    startDicomNetworkReceiver();
+    console.log(`[DICOM Network] Custom TCP receiver started on port ${DICOM_LISTEN_PORT}`);
 }

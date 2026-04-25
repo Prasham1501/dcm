@@ -5,46 +5,174 @@
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
             display: flex; align-items: center; justify-content: center;
             height: 100vh; background: transparent; -webkit-app-region: drag;
+            overflow: hidden;
         }
+
         .splash {
-            background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
-            border-radius: 16px; padding: 48px 40px; text-align: center;
-            box-shadow: 0 25px 50px rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.1);
-            width: 400px;
+            position: relative;
+            background: linear-gradient(145deg, #0c1322 0%, #111d33 40%, #0a1628 100%);
+            border-radius: 20px;
+            padding: 52px 48px 40px;
+            text-align: center;
+            width: 440px;
+            border: 1px solid rgba(255,255,255,0.06);
+            box-shadow:
+                0 32px 64px rgba(0,0,0,0.5),
+                0 0 0 1px rgba(255,255,255,0.03),
+                inset 0 1px 0 rgba(255,255,255,0.05);
+            overflow: hidden;
         }
-        .logo {
-            width: 64px; height: 64px; margin: 0 auto 16px;
-            background: linear-gradient(135deg, #B22222, #8B1A1A);
-            border-radius: 16px; display: flex; align-items: center; justify-content: center;
-            font-size: 28px; color: white; font-weight: 700;
+
+        /* Subtle ambient glow behind logo */
+        .splash::before {
+            content: '';
+            position: absolute;
+            top: -40px; left: 50%; transform: translateX(-50%);
+            width: 200px; height: 200px;
+            background: radial-gradient(circle, rgba(178,34,34,0.12) 0%, transparent 70%);
+            pointer-events: none;
         }
-        h1 { color: #f1f5f9; font-size: 22px; font-weight: 600; margin-bottom: 4px; }
-        p { color: #94a3b8; font-size: 13px; margin-bottom: 24px; }
-        .loader {
-            width: 200px; height: 3px; background: rgba(255,255,255,0.1);
-            border-radius: 2px; margin: 0 auto; overflow: hidden;
+
+        /* Top accent line */
+        .splash::after {
+            content: '';
+            position: absolute;
+            top: 0; left: 20%; right: 20%; height: 2px;
+            background: linear-gradient(90deg, transparent, #B22222 30%, #e94560 70%, transparent);
+            border-radius: 0 0 2px 2px;
         }
+
+        .logo-container {
+            position: relative;
+            width: 80px; height: 80px;
+            margin: 0 auto 20px;
+        }
+
+        /* Outer ring pulse */
+        .logo-ring {
+            position: absolute;
+            inset: -6px;
+            border-radius: 22px;
+            border: 1.5px solid rgba(178,34,34,0.25);
+            animation: ringPulse 3s ease-in-out infinite;
+        }
+
+        @keyframes ringPulse {
+            0%, 100% { opacity: 0.3; transform: scale(1); }
+            50% { opacity: 0.7; transform: scale(1.04); }
+        }
+
+        .logo-img {
+            width: 80px; height: 80px;
+            border-radius: 18px;
+            object-fit: contain;
+            position: relative;
+            z-index: 1;
+            background: white; /* Ensure consistent background for transparent logos */
+            padding: 8px;      /* Add breathing room for the logo */
+            filter: drop-shadow(0 4px 12px rgba(0,0,0,0.5));
+        }
+
+        /* Fallback CSS logo if image fails */
+        .logo-fallback {
+            width: 80px; height: 80px;
+            border-radius: 18px;
+            background: linear-gradient(135deg, #B22222 0%, #8B1A1A 100%);
+            display: none;
+            align-items: center; justify-content: center;
+            font-size: 32px; color: white; font-weight: 700;
+            letter-spacing: 1px;
+            position: relative; z-index: 1;
+            box-shadow: 0 4px 16px rgba(178,34,34,0.35);
+        }
+
+        .brand {
+            margin-bottom: 6px;
+        }
+
+        .brand h1 {
+            color: #f1f5f9;
+            font-size: 26px;
+            font-weight: 700;
+            letter-spacing: 1.5px;
+            text-transform: uppercase;
+        }
+
+        .brand h1 span {
+            background: linear-gradient(135deg, #e94560, #B22222);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .tagline {
+            color: #64748b;
+            font-size: 12px;
+            font-weight: 400;
+            letter-spacing: 3px;
+            text-transform: uppercase;
+            margin-bottom: 32px;
+        }
+
+        /* Loading bar */
+        .loader-track {
+            width: 180px;
+            height: 2px;
+            background: rgba(255,255,255,0.06);
+            border-radius: 2px;
+            margin: 0 auto;
+            overflow: hidden;
+            position: relative;
+        }
+
         .loader-bar {
-            height: 100%; width: 40%; background: linear-gradient(90deg, #B22222, #e94560);
-            border-radius: 2px; animation: loading 1.5s ease-in-out infinite;
+            height: 100%;
+            width: 50%;
+            background: linear-gradient(90deg, transparent, #B22222 40%, #e94560 60%, transparent);
+            border-radius: 2px;
+            animation: loading 1.8s ease-in-out infinite;
         }
+
         @keyframes loading {
-            0% { transform: translateX(-100%); }
-            100% { transform: translateX(350%); }
+            0% { transform: translateX(-120%); }
+            100% { transform: translateX(300%); }
         }
-        .status { color: #64748b; font-size: 11px; margin-top: 16px; }
+
+        .status {
+            color: #475569;
+            font-size: 11px;
+            margin-top: 18px;
+            letter-spacing: 0.5px;
+            transition: color 0.3s;
+        }
+
+        .version {
+            position: absolute;
+            bottom: 14px; right: 20px;
+            color: #334155;
+            font-size: 10px;
+            letter-spacing: 0.5px;
+        }
     </style>
 </head>
 <body>
     <div class="splash">
-        <div class="logo">DV</div>
-        <h1>DICOM Viewer Pro</h1>
-        <p>Hospital Edition</p>
-        <div class="loader"><div class="loader-bar"></div></div>
+        <div class="logo-container">
+            <div class="logo-ring"></div>
+            <img class="logo-img" src="favicon.jpeg" alt="MediView"
+                 onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />
+            <div class="logo-fallback">MV</div>
+        </div>
+        <div class="brand">
+            <h1>Medi<span>View</span></h1>
+        </div>
+        <div class="tagline">Medical Imaging</div>
+        <div class="loader-track"><div class="loader-bar"></div></div>
         <div class="status">Starting services...</div>
+        <div class="version">v1.0</div>
     </div>
 </body>
 </html>

@@ -46,7 +46,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
     resizeViewer: (params) => ipcRenderer.invoke('resize-viewer', params),
 
     // Network DICOM Receiver
+    getNetworkDicomPath: () => ipcRenderer.invoke('get-network-dicom-path'),
+    setNetworkDicomPath: (newPath) => ipcRenderer.invoke('set-network-dicom-path', newPath),
+    restartNetworkReceiver: () => ipcRenderer.invoke('restart-network-receiver'),
+    getReceivedDicomFiles: () => ipcRenderer.invoke('get-received-dicom-files'),
+    openFolder: (folderPath) => ipcRenderer.invoke('open-folder', folderPath),
+
+    // Generic IPC (fallback)
     invoke: (channel, ...args) => ipcRenderer.invoke(channel, ...args),
-    on: (channel, callback) => ipcRenderer.on(channel, callback),
-    off: (channel, callback) => ipcRenderer.off(channel, callback)
+    on: (channel, callback) => {
+        const sub = (_event, ...args) => callback(...args);
+        ipcRenderer.on(channel, sub);
+        return () => ipcRenderer.removeListener(channel, sub);
+    },
+    off: (channel, callback) => ipcRenderer.removeListener(channel, callback)
 });
