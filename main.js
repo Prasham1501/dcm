@@ -369,11 +369,14 @@ async function runMigrations() {
 // =====================================================
 function generateOrthancConfig() {
     const configPath = path.join(userDataPath, 'orthanc.json');
-    const luaScript = path.join(wwwPath, 'orthanc-config', 'dicom-callbacks.lua');
+    const orthancConfigDir = isDev ? path.join(__dirname, 'orthanc-config') : path.join(appPath, 'orthanc-config');
+    const luaScript = path.join(orthancConfigDir, 'dicom-callbacks.lua');
+    const pluginsDir = orthancDir.replace(/\\/g, '/');
     const config = {
         Name: 'Hospital_DICOM_Server',
         HttpPort: ORTHANC_PORT,
         RemoteAccessAllowed: true,
+        Plugins: [pluginsDir],
         DicomPort: 3458,
         DicomServerEnabled: true,
         DicomAet: 'MEDIVIEW',
@@ -2250,7 +2253,7 @@ ipcMain.handle('get-received-dicom-files', async () => {
 ipcMain.handle('ocr-image-base64', async (event, { base64, langPath }) => {
     try {
         const os = require('os');
-        const { createWorker } = require(path.join(__dirname, 'www', 'node_modules', 'tesseract.js'));
+        const { createWorker } = require('tesseract.js');
 
         // Save base64 PNG to temp file
         const tmpFile = path.join(os.tmpdir(), `dicom-ocr-${Date.now()}.png`);
@@ -2607,7 +2610,7 @@ ipcMain.handle('ocr-dicom-file', async (event, { filePath }) => {
     try {
         const os = require('os');
         const dicomParserLib = require('dicom-parser');
-        const { createWorker } = require(path.join(__dirname, 'www', 'node_modules', 'tesseract.js'));
+        const { createWorker } = require('tesseract.js');
 
         const buffer = fs.readFileSync(filePath);
         const byteArray = new Uint8Array(buffer);

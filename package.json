@@ -1,7 +1,7 @@
 {
-    "name": "dicom-viewer-pro",
+    "name": "mediview-pro",
     "version": "1.0.0",
-    "description": "Hospital DICOM Viewer Pro - Modern Desktop Edition",
+    "description": "MediView Pro - Professional Medical Imaging Desktop Application",
     "main": "main.js",
     "scripts": {
         "start": "electron .",
@@ -11,7 +11,7 @@
         "build:quick": "electron-builder --win",
         "pack": "electron-builder --dir"
     },
-    "author": "Hospital DICOM Team",
+    "author": "MediView Team",
     "license": "MIT",
     "devDependencies": {
         "concurrently": "^8.2.2",
@@ -19,11 +19,11 @@
         "electron-builder": "^24.9.1"
     },
     "build": {
-        "appId": "com.hospital.dicom-viewer-pro",
-        "productName": "DICOM Viewer Pro",
+        "appId": "com.mediview.pro",
+        "productName": "MediView Pro",
         "icon": "icon.ico",
         "directories": {
-            "output": "dist",
+            "output": "installer-output",
             "app": "."
         },
         "files": [
@@ -31,7 +31,11 @@
             "preload.js",
             "splash.html",
             "icon.ico",
-            "package.json"
+            "favicon.jpeg",
+            "logo.png",
+            "logo-dark.png",
+            "package.json",
+            "eng.traineddata"
         ],
         "extraResources": [
             {
@@ -46,8 +50,7 @@
                     "bin/mysqladmin.exe",
                     "bin/*.dll",
                     "share/**/*",
-                    "lib/**/*",
-                    "data/**/*"
+                    "lib/**/*"
                 ]
             },
             {
@@ -62,6 +65,21 @@
                 "to": "www/dist",
                 "filter": [
                     "**/*"
+                ]
+            },
+            {
+                "from": "www/database/migrations",
+                "to": "www/database/migrations",
+                "filter": [
+                    "*.sql"
+                ]
+            },
+            {
+                "from": "orthanc-config",
+                "to": "orthanc-config",
+                "filter": [
+                    "*.lua",
+                    "*.json"
                 ]
             }
         ],
@@ -82,11 +100,17 @@
             "allowToChangeInstallationDirectory": true,
             "createDesktopShortcut": true,
             "createStartMenuShortcut": true,
-            "shortcutName": "DICOM Viewer Pro"
+            "shortcutName": "MediView Pro",
+            "installerIcon": "icon.ico",
+            "uninstallerIcon": "icon.ico",
+            "installerHeaderIcon": "icon.ico",
+            "deleteAppDataOnUninstall": false,
+            "runAfterFinish": true
         },
         "compression": "normal"
     },
     "dependencies": {
-        "dicom-parser": "^1.8.21"
+        "dicom-parser": "^1.8.21",
+        "tesseract.js": "^5.1.1"
     }
 }
