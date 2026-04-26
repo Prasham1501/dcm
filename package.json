@@ -6,6 +6,8 @@
     "scripts": {
         "start": "electron .",
         "dev": "concurrently \"cd www && npm run dev\" \"electron .\"",
+        "setup": "npm install && cd www && npm install && npm run build",
+        "postinstall": "cd www && npm install",
         "build:react": "cd www && npm run build",
         "build:win": "npm run build:react && electron-builder --win",
         "build:quick": "electron-builder --win",

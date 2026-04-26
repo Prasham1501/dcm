@@ -171,8 +171,16 @@
         </div>
         <div class="tagline">Medical Imaging</div>
         <div class="loader-track"><div class="loader-bar"></div></div>
-        <div class="status">Starting services...</div>
+        <div class="status" id="status">Starting services...</div>
         <div class="version">v1.0</div>
     </div>
+    <script>
+        // Listen for status updates from main process
+        window.addEventListener('message', (e) => {
+            if (e.data && e.data.type === 'splash-status') {
+                document.getElementById('status').textContent = e.data.message;
+            }
+        });
+    </script>
 </body>
 </html>

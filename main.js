@@ -129,6 +129,15 @@ function createSplashWindow() {
     splashWindow.center();
 }
 
+function updateSplashStatus(message) {
+    if (splashWindow && !splashWindow.isDestroyed()) {
+        splashWindow.webContents.executeJavaScript(
+            `document.getElementById('status').textContent = ${JSON.stringify(message)};`
+        ).catch(() => {});
+    }
+    console.log(`[Startup] ${message}`);
+}
+
 // =====================================================
 // Main Window
 // =====================================================
@@ -325,6 +334,53 @@ async function waitForMySQL(maxAttempts = 30) {
             return true;
         } catch { console.log(`[MySQL] Waiting... (${i + 1}/${maxAttempts})`); await new Promise(r => setTimeout(r, 1000)); }
     }
+    return false;
+}
+
+// Check for system MySQL (XAMPP on 3306, or any other MySQL)
+async function waitForSystemMySQL(maxAttempts = 5) {
+    const net = require('net');
+    const systemPorts = [3306, 3307, 3308]; // Common MySQL ports
+    
+    for (const port of systemPorts) {
+        for (let i = 0; i < maxAttempts; i++) {
+            try {
+                await new Promise((resolve, reject) => {
+                    const socket = net.createConnection({ host: '127.0.0.1', port });
+                    socket.on('connect', () => { socket.destroy(); resolve(); });
+                    socket.on('error', (err) => { socket.destroy(); reject(err); });
+                    setTimeout(() => { socket.destroy(); reject(new Error('timeout')); }, 1000);
+                });
+                console.log(`[MySQL] System MySQL found on port ${port}`);
+                return true;
+            } catch { /* try next */ }
+        }
+    }
+
+    // Try to start XAMPP MySQL if available
+    const xamppMysql = 'C:\\xampp\\mysql\\bin\\mysqld.exe';
+    if (fs.existsSync(xamppMysql)) {
+        console.log('[MySQL] Attempting to start XAMPP MySQL...');
+        try {
+            spawn(xamppMysql, ['--defaults-file=C:\\xampp\\mysql\\bin\\my.ini'], { 
+                stdio: 'ignore', detached: true 
+            }).unref();
+            // Wait for it
+            for (let i = 0; i < 15; i++) {
+                try {
+                    await new Promise((resolve, reject) => {
+                        const socket = net.createConnection({ host: '127.0.0.1', port: 3306 });
+                        socket.on('connect', () => { socket.destroy(); resolve(); });
+                        socket.on('error', reject);
+                        setTimeout(() => { socket.destroy(); reject(new Error('timeout')); }, 1000);
+                    });
+                    console.log('[MySQL] XAMPP MySQL started successfully');
+                    return true;
+                } catch { await new Promise(r => setTimeout(r, 1000)); }
+            }
+        } catch (e) { console.warn('[MySQL] Could not start XAMPP MySQL:', e.message); }
+    }
+
     return false;
 }
 
@@ -593,34 +649,115 @@ async function checkViteRunning() {
 }
 
 // =====================================================
+// Firewall Configuration
+// =====================================================
+function configureFirewall() {
+    const rules = [
+        { name: 'Accurate DICOM Viewer - Web Server', port: PHP_PORT },
+        { name: 'Accurate DICOM Viewer - DICOM Server', port: DICOM_PORT },
+        { name: 'Accurate DICOM Viewer - Orthanc HTTP', port: ORTHANC_PORT },
+        { name: 'Accurate DICOM Viewer - Orthanc DICOM', port: 3458 },
+        { name: 'Accurate DICOM Viewer - Network Receiver', port: 10104 },
+        { name: 'Accurate DICOM Viewer - MySQL', port: MYSQL_PORT },
+    ];
+
+    for (const rule of rules) {
+        try {
+            // Check if rule already exists
+            const check = execSync(`netsh advfirewall firewall show rule name="${rule.name}"`, { stdio: 'pipe', shell: true }).toString();
+            if (check.includes(rule.name)) continue;
+        } catch { /* rule doesn't exist */ }
+
+        try {
+            execSync(`netsh advfirewall firewall add rule name="${rule.name}" dir=in action=allow protocol=TCP localport=${rule.port}`, {
+                stdio: 'pipe', shell: true
+            });
+            console.log(`[Firewall] Added rule: ${rule.name} (port ${rule.port})`);
+        } catch (e) {
+            console.warn(`[Firewall] Could not add rule for port ${rule.port}: ${e.message}`);
+        }
+    }
+}
+
+// =====================================================
+// Auto Install Dependencies
+// =====================================================
+async function ensureDependencies() {
+    // Check root node_modules
+    const rootNodeModules = path.join(__dirname, 'node_modules');
+    if (!fs.existsSync(rootNodeModules) || !fs.existsSync(path.join(rootNodeModules, 'electron'))) {
+        console.log('[Setup] Installing root dependencies...');
+        updateSplashStatus('Installing dependencies...');
+        try {
+            execSync('npm install --production', { cwd: __dirname, stdio: 'pipe', shell: true, timeout: 120000 });
+        } catch (e) {
+            console.warn('[Setup] Root npm install warning:', e.message?.substring(0, 200));
+        }
+    }
+
+    // Check www node_modules
+    const wwwNodeModules = path.join(wwwPath, 'node_modules');
+    if (!fs.existsSync(wwwNodeModules)) {
+        console.log('[Setup] Installing www dependencies...');
+        updateSplashStatus('Installing frontend dependencies...');
+        try {
+            execSync('npm install', { cwd: wwwPath, stdio: 'pipe', shell: true, timeout: 180000 });
+        } catch (e) {
+            console.warn('[Setup] www npm install warning:', e.message?.substring(0, 200));
+        }
+    }
+}
+
+// =====================================================
 // Main Startup
 // =====================================================
 async function startApp() {
     try {
         ensureDirectories();
-        await ensureFrontendBuild();
         createSplashWindow();
+
+        // Auto-install dependencies if missing (fresh clone scenario)
+        if (isDev) {
+            await ensureDependencies();
+        }
+
+        updateSplashStatus('Building frontend...');
+        await ensureFrontendBuild();
+
+        // Configure firewall rules (non-blocking — warn on failure)
+        updateSplashStatus('Configuring firewall...');
+        try { configureFirewall(); } catch (e) {
+            console.warn('[Startup] Firewall config skipped:', e.message);
+        }
 
         const usePortableMySQL = fs.existsSync(mysqldPath);
 
         // 1. Kick off all services in parallel
+        updateSplashStatus('Starting services...');
         console.log('[Startup] Initializing services in parallel...');
 
         const mysqlPromise = (async () => {
+            updateSplashStatus('Starting MySQL...');
             if (usePortableMySQL) {
                 const firstRun = !fs.existsSync(mysqlDataSubDir) || fs.readdirSync(mysqlDataSubDir).length === 0;
-                if (firstRun) await initMySQLData();
+                if (firstRun) {
+                    updateSplashStatus('Initializing database (first run)...');
+                    await initMySQLData();
+                }
                 await startMySQL();
             }
+            updateSplashStatus('Waiting for MySQL...');
             return await waitForMySQL(30);
         })();
 
         const orthancPromise = (async () => {
+            updateSplashStatus('Starting Orthanc PACS...');
             await startOrthanc();
             return await waitForOrthanc(15);
         })();
 
         const phpPromise = (async () => {
+            updateSplashStatus('Starting web server...');
             await startPhpServer();
             return await waitForServer();
         })();
@@ -632,14 +769,28 @@ async function startApp() {
         // 2. Wait for MySQL to finish so we can run migrations
         const mysqlReady = await mysqlPromise;
         if (!mysqlReady) {
-            dialog.showErrorBox('Error', 'Failed to start MySQL.');
-            app.quit(); return;
+            // Try to detect system MySQL (XAMPP, etc.)
+            updateSplashStatus('Portable MySQL failed, checking system...');
+            console.warn('[MySQL] Portable MySQL failed, checking system MySQL...');
+            const systemMysqlReady = await waitForSystemMySQL();
+            if (!systemMysqlReady) {
+                dialog.showErrorBox('Database Error',
+                    'Could not start MySQL database.\n\n' +
+                    'Please ensure one of the following:\n' +
+                    '• The mysql/ folder exists in the application directory\n' +
+                    '• XAMPP MySQL is running on port 3306\n' +
+                    '• MySQL/MariaDB is installed and running on the system\n\n' +
+                    'The application will continue without database features.'
+                );
+            }
         }
 
         // Run migrations (blocks until done, but only runs new ones)
+        updateSplashStatus('Running database migrations...');
         try { await runMigrations(); } catch (e) { console.error('[Startup] Migration warning:', e.message); }
 
         // 3. Wait for static server and Orthanc
+        updateSplashStatus('Waiting for services...');
         const [orthancReady, phpReady] = await Promise.all([orthancPromise, phpPromise]);
         console.log(`[Startup] Orthanc: ${orthancReady ? 'running' : 'not available'}`);
         console.log(`[Startup] Static server: ${phpReady ? 'running' : 'retrying...'}`);
@@ -657,6 +808,7 @@ async function startApp() {
         }
 
         // 5. Show window
+        updateSplashStatus('Loading application...');
         createMainWindow();
         console.log(`[Startup] Loading application from: ${APP_URL}`);
         mainWindow.loadURL(APP_URL);
@@ -674,7 +826,7 @@ async function startApp() {
 let dicomServer = null;
 
 function startDicomServer() {
-    dicomServer = http.createServer((req, res) => {
+    dicomServer = http.createServer(async (req, res) => {
         const parsedUrl = url.parse(req.url, true);
 
         // CORS headers
@@ -704,9 +856,11 @@ function startDicomServer() {
         }
 
         // Scan a directory for DICOM files and extract patient metadata
+        // Supports streaming mode (?stream=1) for large directories
         if (parsedUrl.pathname === '/api/dicom/scan-patients') {
             const dirPath = parsedUrl.query.dir;
-            const limit = parseInt(parsedUrl.query.limit || '5000', 10);
+            const limit = parseInt(parsedUrl.query.limit || '10000', 10);
+            const streamMode = parsedUrl.query.stream === '1';
             if (!dirPath) {
                 res.statusCode = 400;
                 res.setHeader('Content-Type', 'application/json');
@@ -723,26 +877,43 @@ function startDicomServer() {
                     return;
                 }
 
+                // Collect files (non-blocking via setImmediate batches)
                 const dicomFiles = [];
-                function collectFiles(dir) {
-                    if (dicomFiles.length >= limit) return;
-                    try {
-                        const entries = fs.readdirSync(dir, { withFileTypes: true });
-                        for (const entry of entries) {
-                            if (dicomFiles.length >= limit) break;
-                            const fullPath = path.join(dir, entry.name);
-                            if (entry.isDirectory()) {
-                                collectFiles(fullPath);
-                            } else if (entry.isFile()) {
-                                const name = entry.name.toLowerCase();
-                                if (name.endsWith('.dcm') || name.endsWith('.dicom') || (!name.includes('.') && name !== 'dicomdir')) {
-                                    dicomFiles.push(fullPath);
-                                }
+                const collectFilesAsync = (dirs) => {
+                    return new Promise((resolve) => {
+                        let idx = 0;
+                        function processBatch() {
+                            const batchEnd = Math.min(idx + 200, dirs.length);
+                            while (idx < batchEnd) {
+                                if (dicomFiles.length >= limit) { resolve(); return; }
+                                const dir = dirs[idx++];
+                                try {
+                                    const entries = fs.readdirSync(dir, { withFileTypes: true });
+                                    for (const entry of entries) {
+                                        if (dicomFiles.length >= limit) { resolve(); return; }
+                                        const fullPath = path.join(dir, entry.name);
+                                        if (entry.isDirectory()) {
+                                            dirs.push(fullPath);
+                                        } else if (entry.isFile()) {
+                                            const name = entry.name.toLowerCase();
+                                            if (name.endsWith('.dcm') || name.endsWith('.dicom') || (!name.includes('.') && name !== 'dicomdir')) {
+                                                dicomFiles.push(fullPath);
+                                            }
+                                        }
+                                    }
+                                } catch { /* skip unreadable dirs */ }
+                            }
+                            if (idx < dirs.length && dicomFiles.length < limit) {
+                                setImmediate(processBatch);
+                            } else {
+                                resolve();
                             }
                         }
-                    } catch { /* skip unreadable dirs */ }
-                }
-                collectFiles(resolved);
+                        processBatch();
+                    });
+                };
+
+                await collectFilesAsync([resolved]);
 
                 let dicomParser;
                 try {
@@ -762,57 +933,172 @@ function startDicomServer() {
                     try { return (dataSet.string(tag) || '').trim(); } catch { return ''; }
                 }
 
-                const studies = {};
-                for (const filePath of dicomFiles) {
-                    try {
-                        const fd = fs.openSync(filePath, 'r');
-                        const headerSize = Math.min(fs.statSync(filePath).size, 65536);
-                        const buffer = Buffer.alloc(headerSize);
-                        fs.readSync(fd, buffer, 0, headerSize, 0);
-                        fs.closeSync(fd);
+                // Stream mode: send progress events via SSE
+                if (streamMode) {
+                    res.setHeader('Content-Type', 'text/event-stream');
+                    res.setHeader('Cache-Control', 'no-cache');
+                    res.setHeader('Connection', 'keep-alive');
+                    res.statusCode = 200;
 
-                        const byteArray = new Uint8Array(buffer);
-                        const dataSet = dicomParser.parseDicom(byteArray, { untilTag: 'x7fe00010' });
+                    // Send initial file count
+                    res.write(`data: ${JSON.stringify({ type: 'progress', total: dicomFiles.length, processed: 0 })}\n\n`);
 
-                        // Skip DICOMDIR files
-                        const sopClassUID = readTag(dataSet, 'x00020002');
-                        if (sopClassUID === '1.2.840.10008.1.3.10') continue;
+                    const studies = {};
+                    const BATCH_SIZE = 50;
 
-                        // Skip files with no useful tags
-                        const rawStudyUID = readTag(dataSet, 'x0020000d');
-                        if (!rawStudyUID && !readTag(dataSet, 'x00100010') && !readTag(dataSet, 'x00100020')) continue;
+                    const processBatch = (startIdx) => {
+                        const endIdx = Math.min(startIdx + BATCH_SIZE, dicomFiles.length);
+                        for (let fi = startIdx; fi < endIdx; fi++) {
+                            const filePath = dicomFiles[fi];
+                            try {
+                                const fd = fs.openSync(filePath, 'r');
+                                const headerSize = Math.min(fs.statSync(filePath).size, 65536);
+                                const buffer = Buffer.alloc(headerSize);
+                                fs.readSync(fd, buffer, 0, headerSize, 0);
+                                fs.closeSync(fd);
 
-                        const studyUID = rawStudyUID || `unknown-${Object.keys(studies).length}`;
+                                const byteArray = new Uint8Array(buffer);
+                                const dataSet = dicomParser.parseDicom(byteArray, { untilTag: 'x7fe00010' });
 
-                        if (!studies[studyUID]) {
-                            const rawDate = readTag(dataSet, 'x00080020');
-                            let formattedDate = rawDate;
-                            if (rawDate.length === 8) {
-                                formattedDate = `${rawDate.slice(6, 8)}-${rawDate.slice(4, 6)}-${rawDate.slice(0, 4)}`;
-                            }
-                            const rawName = readTag(dataSet, 'x00100010').replace(/\^/g, ' ');
-                            studies[studyUID] = {
-                                patientName: rawName || 'Unknown',
-                                patientId: readTag(dataSet, 'x00100020') || 'N/A',
-                                age: readTag(dataSet, 'x00101010') || '',
-                                sex: readTag(dataSet, 'x00100040') || '',
-                                studyDate: formattedDate || new Date().toLocaleDateString(),
-                                studyDescription: readTag(dataSet, 'x00081030') || '',
-                                modality: readTag(dataSet, 'x00080060') || 'OT',
-                                accessionNumber: readTag(dataSet, 'x00080050') || '',
-                                referringPhysician: (readTag(dataSet, 'x00080090') || '').replace(/\^/g, ' '),
-                                studyInstanceUID: studyUID,
-                                files: [],
-                                sopInstanceUIDs: new Set(),
-                            };
+                                const sopClassUID = readTag(dataSet, 'x00020002');
+                                if (sopClassUID === '1.2.840.10008.1.3.10') continue;
+
+                                const rawStudyUID = readTag(dataSet, 'x0020000d');
+                                if (!rawStudyUID && !readTag(dataSet, 'x00100010') && !readTag(dataSet, 'x00100020')) continue;
+
+                                const studyUID = rawStudyUID || `unknown-${Object.keys(studies).length}`;
+
+                                if (!studies[studyUID]) {
+                                    const rawDate = readTag(dataSet, 'x00080020');
+                                    let formattedDate = rawDate;
+                                    if (rawDate.length === 8) {
+                                        formattedDate = `${rawDate.slice(6, 8)}-${rawDate.slice(4, 6)}-${rawDate.slice(0, 4)}`;
+                                    }
+                                    const rawName = readTag(dataSet, 'x00100010').replace(/\^/g, ' ');
+                                    studies[studyUID] = {
+                                        patientName: rawName || 'Unknown',
+                                        patientId: readTag(dataSet, 'x00100020') || 'N/A',
+                                        age: readTag(dataSet, 'x00101010') || '',
+                                        sex: readTag(dataSet, 'x00100040') || '',
+                                        studyDate: formattedDate || new Date().toLocaleDateString(),
+                                        studyDescription: readTag(dataSet, 'x00081030') || '',
+                                        modality: readTag(dataSet, 'x00080060') || 'OT',
+                                        accessionNumber: readTag(dataSet, 'x00080050') || '',
+                                        referringPhysician: (readTag(dataSet, 'x00080090') || '').replace(/\^/g, ' '),
+                                        studyInstanceUID: studyUID,
+                                        files: [],
+                                        sopInstanceUIDs: new Set(),
+                                    };
+                                }
+                                const sopInstanceUID = readTag(dataSet, 'x00080018');
+                                if (sopInstanceUID && studies[studyUID].sopInstanceUIDs.has(sopInstanceUID)) continue;
+                                if (sopInstanceUID) studies[studyUID].sopInstanceUIDs.add(sopInstanceUID);
+                                studies[studyUID].files.push(filePath.replace(/\\/g, '/'));
+                            } catch { /* skip unparseable files */ }
                         }
-                        // Deduplicate by SOP Instance UID — skip if same image already added
-                        const sopInstanceUID = readTag(dataSet, 'x00080018');
-                        if (sopInstanceUID && studies[studyUID].sopInstanceUIDs.has(sopInstanceUID)) continue;
-                        if (sopInstanceUID) studies[studyUID].sopInstanceUIDs.add(sopInstanceUID);
-                        studies[studyUID].files.push(filePath.replace(/\\/g, '/'));
-                    } catch { /* skip unparseable files */ }
+
+                        // Send progress
+                        res.write(`data: ${JSON.stringify({ type: 'progress', total: dicomFiles.length, processed: endIdx })}\n\n`);
+
+                        if (endIdx < dicomFiles.length) {
+                            setImmediate(() => processBatch(endIdx));
+                        } else {
+                            // Send final result
+                            const patients = Object.values(studies).map(s => ({
+                                id: s.studyInstanceUID,
+                                patientId: s.patientId,
+                                patientName: s.patientName,
+                                age: s.age,
+                                sex: s.sex,
+                                studyDate: s.studyDate,
+                                studyDescription: s.studyDescription,
+                                modality: s.modality,
+                                accessionNumber: s.accessionNumber,
+                                referringPhysician: s.referringPhysician,
+                                images: s.files.length,
+                                printed: false,
+                                studyInstanceUID: s.studyInstanceUID,
+                                filePaths: s.files,
+                            }));
+
+                            res.write(`data: ${JSON.stringify({ type: 'complete', success: true, directory: resolved, studyCount: patients.length, totalFiles: dicomFiles.length, patients })}\n\n`);
+                            res.end();
+                        }
+                    };
+
+                    processBatch(0);
+                    return;
                 }
+
+                // Non-streaming mode: process in async batches to avoid blocking event loop
+                const studies = {};
+                const BATCH_SIZE = 100;
+
+                const processFilesAsync = () => {
+                    return new Promise((resolve) => {
+                        let idx = 0;
+                        function processBatch() {
+                            const endIdx = Math.min(idx + BATCH_SIZE, dicomFiles.length);
+                            for (let fi = idx; fi < endIdx; fi++) {
+                                const filePath = dicomFiles[fi];
+                                try {
+                                    const fd = fs.openSync(filePath, 'r');
+                                    const headerSize = Math.min(fs.statSync(filePath).size, 65536);
+                                    const buffer = Buffer.alloc(headerSize);
+                                    fs.readSync(fd, buffer, 0, headerSize, 0);
+                                    fs.closeSync(fd);
+
+                                    const byteArray = new Uint8Array(buffer);
+                                    const dataSet = dicomParser.parseDicom(byteArray, { untilTag: 'x7fe00010' });
+
+                                    const sopClassUID = readTag(dataSet, 'x00020002');
+                                    if (sopClassUID === '1.2.840.10008.1.3.10') continue;
+
+                                    const rawStudyUID = readTag(dataSet, 'x0020000d');
+                                    if (!rawStudyUID && !readTag(dataSet, 'x00100010') && !readTag(dataSet, 'x00100020')) continue;
+
+                                    const studyUID = rawStudyUID || `unknown-${Object.keys(studies).length}`;
+
+                                    if (!studies[studyUID]) {
+                                        const rawDate = readTag(dataSet, 'x00080020');
+                                        let formattedDate = rawDate;
+                                        if (rawDate.length === 8) {
+                                            formattedDate = `${rawDate.slice(6, 8)}-${rawDate.slice(4, 6)}-${rawDate.slice(0, 4)}`;
+                                        }
+                                        const rawName = readTag(dataSet, 'x00100010').replace(/\^/g, ' ');
+                                        studies[studyUID] = {
+                                            patientName: rawName || 'Unknown',
+                                            patientId: readTag(dataSet, 'x00100020') || 'N/A',
+                                            age: readTag(dataSet, 'x00101010') || '',
+                                            sex: readTag(dataSet, 'x00100040') || '',
+                                            studyDate: formattedDate || new Date().toLocaleDateString(),
+                                            studyDescription: readTag(dataSet, 'x00081030') || '',
+                                            modality: readTag(dataSet, 'x00080060') || 'OT',
+                                            accessionNumber: readTag(dataSet, 'x00080050') || '',
+                                            referringPhysician: (readTag(dataSet, 'x00080090') || '').replace(/\^/g, ' '),
+                                            studyInstanceUID: studyUID,
+                                            files: [],
+                                            sopInstanceUIDs: new Set(),
+                                        };
+                                    }
+                                    const sopInstanceUID = readTag(dataSet, 'x00080018');
+                                    if (sopInstanceUID && studies[studyUID].sopInstanceUIDs.has(sopInstanceUID)) continue;
+                                    if (sopInstanceUID) studies[studyUID].sopInstanceUIDs.add(sopInstanceUID);
+                                    studies[studyUID].files.push(filePath.replace(/\\/g, '/'));
+                                } catch { /* skip unparseable files */ }
+                            }
+                            idx = endIdx;
+                            if (idx < dicomFiles.length) {
+                                setImmediate(processBatch);
+                            } else {
+                                resolve();
+                            }
+                        }
+                        processBatch();
+                    });
+                };
+
+                await processFilesAsync();
 
                 const patients = Object.values(studies).map(s => ({
                     id: s.studyInstanceUID,
