@@ -1,7 +1,7 @@
 {
-    "name": "mediview-pro",
+    "name": "accurate-viewer",
     "version": "1.0.0",
-    "description": "MediView Pro - Professional Medical Imaging Desktop Application",
+    "description": "Accurate - Professional Medical Imaging Desktop Application",
     "main": "main.js",
     "scripts": {
         "start": "electron .",
@@ -11,7 +11,7 @@
         "build:quick": "electron-builder --win",
         "pack": "electron-builder --dir"
     },
-    "author": "MediView Team",
+    "author": "Accurate Team",
     "license": "MIT",
     "devDependencies": {
         "concurrently": "^8.2.2",
@@ -19,8 +19,8 @@
         "electron-builder": "^24.9.1"
     },
     "build": {
-        "appId": "com.mediview.pro",
-        "productName": "MediView Pro",
+        "appId": "com.accurate.viewer",
+        "productName": "Accurate",
         "icon": "icon.ico",
         "directories": {
             "output": "installer-output",
@@ -100,7 +100,7 @@
             "allowToChangeInstallationDirectory": true,
             "createDesktopShortcut": true,
             "createStartMenuShortcut": true,
-            "shortcutName": "MediView Pro",
+            "shortcutName": "Accurate",
             "installerIcon": "icon.ico",
             "uninstallerIcon": "icon.ico",
             "installerHeaderIcon": "icon.ico",

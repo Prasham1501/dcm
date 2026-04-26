@@ -502,35 +502,51 @@ declare global {
 
 /**
  * Undo the last annotation on the active viewport element.
+ * Tracks annotation counts per tool to detect which tool had the most recent addition.
  */
+const prevToolCounts = new Map<string, number>();
+
 function undoLastAnnotation(element: HTMLDivElement): void {
   const toolNames = [
     'Length', 'Angle', 'EllipticalRoi', 'RectangleRoi',
     'FreehandRoi', 'ArrowAnnotate', 'TextMarker', 'Probe',
   ];
-  let latestTool = '';
-  let latestIdx = -1;
+
+  // Find which tool gained an annotation since last call (most recently added)
+  let newestTool = '';
+  let newestGain = 0;
+
   toolNames.forEach((name) => {
     try {
       const state = cornerstoneTools.getToolState(element, name);
       if (state && state.data && state.data.length > 0) {
-        if (state.data.length > latestIdx) {
-          latestTool = name;
-          latestIdx = state.data.length;
+        const prevCount = prevToolCounts.get(name) || 0;
+        const gain = state.data.length - prevCount;
+        if (gain > newestGain) {
+          newestGain = gain;
+          newestTool = name;
         }
+        // If no gains detected, fall back to any tool with data
+        if (!newestTool) newestTool = name;
       }
-    } catch {
-      // ignore
-    }
+    } catch { /* ignore */ }
   });
-  if (latestTool && latestIdx > 0) {
+
+  if (newestTool) {
     try {
-      const state = cornerstoneTools.getToolState(element, latestTool);
-      state.data.pop();
-      cornerstone.updateImage(element);
-    } catch {
-      // ignore
-    }
+      const state = cornerstoneTools.getToolState(element, newestTool);
+      if (state?.data?.length > 0) {
+        state.data.pop();
+        // Update tracked counts
+        toolNames.forEach((name) => {
+          try {
+            const s = cornerstoneTools.getToolState(element, name);
+            prevToolCounts.set(name, s?.data?.length || 0);
+          } catch { /* ignore */ }
+        });
+        cornerstone.updateImage(element);
+      }
+    } catch { /* ignore */ }
   }
 }
 

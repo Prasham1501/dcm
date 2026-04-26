@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import JSZip from 'jszip';
 import { openViewerPopup } from '@/stores/viewerStore';
 import { openCRViewerPopup } from '@/stores/crViewerStore';
+import { openDualViewerPopup } from '@/stores/dualViewerStore';
+import { usePatientStore } from '@/stores/patientStore';
 import { localFileToImageId } from '@/lib/dicomLoader';
 import { useSendToStore, type SendDestination } from '@/stores/sendToStore';
 import type { Patient } from '@/types/patient';
@@ -21,14 +23,21 @@ async function dicomToJpeg(imageId: string): Promise<Blob | null> {
   try {
     const image = await cs.loadAndCacheImage(imageId);
     const div = document.createElement('div');
-    div.style.cssText = `width:${image.width}px;height:${image.height}px;position:fixed;left:-99999px;top:0;visibility:hidden;`;
+    // Use a reasonable size; visibility:hidden is fine — cornerstone renders to canvas regardless
+    div.style.cssText = `width:${image.width}px;height:${image.height}px;position:fixed;left:-99999px;top:0;`;
     document.body.appendChild(div);
     try {
       cs.enable(div);
       cs.displayImage(div, image);
-      const el = cs.getEnabledElement(div);
+      // Force a render cycle so the canvas is painted
+      try { cs.updateImage(div); } catch { /* ignore */ }
+      // Wait for the canvas paint to complete
+      await new Promise(r => setTimeout(r, 100));
+      const enabledEl = cs.getEnabledElement(div);
+      const canvas = enabledEl?.canvas || enabledEl?.element?.querySelector('canvas');
+      if (!canvas) return null;
       return await new Promise<Blob>((resolve, reject) => {
-        el.canvas.toBlob(
+        canvas.toBlob(
           (b: Blob | null) => (b ? resolve(b) : reject(new Error('toBlob failed'))),
           'image/jpeg',
           0.92
@@ -80,9 +89,47 @@ export function PatientContextMenu({ x, y, patient, onClose }: Props) {
       case 'open':
         openInCRViewer();
         break;
-      case 'open-dual':
-        openInViewer('2x1');
+      case 'open-dual': {
+        const patientStore = usePatientStore.getState();
+        const selectedIds = Array.from(patientStore.selectedPatients);
+        const allPatients = patientStore.filteredPatients;
+        const selected = selectedIds
+          .map(id => allPatients.find(p => p.id === id))
+          .filter(p => p?.filePaths?.length);
+
+        if (selected.length >= 2) {
+          openDualViewerPopup({
+            leftStudy: {
+              patientName: selected[0]!.patientName,
+              patientId: selected[0]!.patientId,
+              studyDate: selected[0]!.studyDate,
+              filePaths: selected[0]!.filePaths!,
+            },
+            rightStudy: {
+              patientName: selected[1]!.patientName,
+              patientId: selected[1]!.patientId,
+              studyDate: selected[1]!.studyDate,
+              filePaths: selected[1]!.filePaths!,
+            },
+          }, navigate);
+        } else {
+          openDualViewerPopup({
+            leftStudy: {
+              patientName: patient.patientName,
+              patientId: patient.patientId,
+              studyDate: patient.studyDate,
+              filePaths: patient.filePaths || [],
+            },
+            rightStudy: {
+              patientName: patient.patientName,
+              patientId: patient.patientId,
+              studyDate: patient.studyDate,
+              filePaths: patient.filePaths || [],
+            },
+          }, navigate);
+        }
         break;
+      }
       case 'open-cr':
         openInViewer();
         break;

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { ViewerHeader } from '@/components/viewer/ViewerHeader';
 import { ViewportGrid } from '@/components/viewer/ViewportGrid';
@@ -20,6 +20,7 @@ export function ViewerPage() {
   const { showCine, setShowCine, stopCine, loadStudyFiles } = useViewerStore();
   const [searchParams] = useSearchParams();
   const undo = useCustomAnnotationStore((s) => s.undo);
+  const [showThumbnails, setShowThumbnails] = useState(true);
   const launchChecked = useRef(false);
 
   // Check for launch data in localStorage (when opened as popup window)
@@ -84,7 +85,7 @@ export function ViewerPage() {
   return (
     <div className="flex flex-col h-screen bg-app-bg select-none">
       {/* Header */}
-      <ViewerHeader />
+      <ViewerHeader showThumbnails={showThumbnails} onToggleThumbnails={() => setShowThumbnails(!showThumbnails)} />
 
       {/* Main viewer area */}
       <div className="flex-1 flex overflow-hidden">
@@ -104,9 +105,11 @@ export function ViewerPage() {
         <ViewerActionBar />
 
         {/* Thumbnail sidebar (right of viewports) */}
-        <div className="relative">
-          <ThumbnailSidebar />
-        </div>
+        {showThumbnails && (
+          <div className="relative">
+            <ThumbnailSidebar />
+          </div>
+        )}
 
         {/* Tools panel (far right) */}
         <ToolsPanel />

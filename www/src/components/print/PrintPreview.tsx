@@ -1,4 +1,4 @@
-import { Printer, X, ZoomIn, ZoomOut, ChevronLeft, Users, Plus, Trash2, Check } from 'lucide-react';
+import { Printer, X, ZoomIn, ZoomOut, ChevronLeft, Users, Plus, Trash2, Check, FileDown } from 'lucide-react';
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { usePrintStore } from '@/stores/printStore';
@@ -73,6 +73,13 @@ export function PrintPreview() {
   const [newPrinterType, setNewPrinterType] = useState('Laser');
 
   const configuredPrinters = hospitalConfig.printers;
+
+  // Escape key to close
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setShowPrintPreview(false); };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [setShowPrintPreview]);
   const activePrinters = configuredPrinters.filter(p => p.isActive);
   const defaultPrinter = activePrinters.find(p => p.isDefault) || activePrinters[0];
   const [selectedPrinter, setSelectedPrinter] = useState(defaultPrinter?.name || '');
@@ -174,12 +181,12 @@ export function PrintPreview() {
         const cellBg = src ? '#000' : '#f5f5f5';
         const areaStyle = currentLayout.areas && areaNames[i] ? `grid-area:${areaNames[i]};` : '';
         return src
-          ? `<div style="${areaStyle}background:${cellBg};display:flex;align-items:center;justify-content:center;overflow:hidden"><img src="${src}" style="width:100%;height:100%;object-fit:contain" /></div>`
-          : `<div style="${areaStyle}background:${cellBg};display:flex;align-items:center;justify-content:center;overflow:hidden"></div>`;
+          ? `<div style="${areaStyle}background:${cellBg};display:flex;align-items:center;justify-content:center;overflow:hidden;border:1px solid #666"><img src="${src}" style="width:100%;height:100%;object-fit:contain" /></div>`
+          : `<div style="${areaStyle}background:${cellBg};display:flex;align-items:center;justify-content:center;overflow:hidden;border:1px solid #666"></div>`;
       }).join('');
       return `<div class="page">${settings.headerEnabled ? buildHeaderHtml() : ''}${patientBarHtml()}<div class="grid">${imgsHtml}</div>${hospitalConfig.enableFooter ? buildFooterHtml() : ''}</div>`;
     }).join('');
-    return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>DICOM Print - ${patientName}</title><style>@page{size:${localPaperSize} ${isLandscape ? 'landscape' : 'portrait'};margin:10mm}*{box-sizing:border-box}body{margin:0;padding:0;font-family:Arial,Helvetica,sans-serif}.page{page-break-after:always;page-break-inside:avoid;display:flex;flex-direction:column;height:calc(100vh);overflow:hidden}.page:last-child{page-break-after:auto}.grid{display:grid;grid-template-columns:${gridCols};grid-template-rows:${gridRows};${gridAreas}gap:1px;background:#444;padding:0;flex:1;min-height:0}img{display:block}@media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}</style></head><body>${pagesHtml}</body></html>`;
+    return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>DICOM Print - ${patientName}</title><style>@page{size:${localPaperSize} ${isLandscape ? 'landscape' : 'portrait'};margin:10mm}*{box-sizing:border-box}body{margin:0;padding:0;font-family:Arial,Helvetica,sans-serif}.page{page-break-after:always;page-break-inside:avoid;display:flex;flex-direction:column;height:calc(100vh);overflow:hidden;border:1px solid #444}.page:last-child{page-break-after:auto}.grid{display:grid;grid-template-columns:${gridCols};grid-template-rows:${gridRows};${gridAreas}gap:0;padding:0;flex:1;min-height:0}img{display:block}@media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}</style></head><body>${pagesHtml}</body></html>`;
   }, [allPageCaptures, currentLayout, settings, hospitalConfig, patientName, patientId, studyDate, localPaperSize, isLandscape]);
 
   const buildPcpndtHtml = () => {
@@ -223,8 +230,24 @@ export function PrintPreview() {
     setShowPrintPreview(false);
   };
 
+  const handleSavePdf = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (allPageCaptures.length === 0 && printType === 'image') { alert('Still capturing pages, please wait.'); return; }
+    updateSettings({ paperSize: localPaperSize, orientation: localOrientation, copies: localCopies });
+    const pagesToPrint = selectedPages();
+    const htmlContent = printType === 'pcpndt' ? buildPcpndtHtml() : buildPrintHtml(pagesToPrint);
+    const electronAPI = (window as any).electronAPI;
+    if (electronAPI?.printReportDialog) {
+      try { await electronAPI.printReportDialog({ htmlContent, paperSize: localPaperSize }); } catch (err) { console.error('PDF save error:', err); }
+    } else {
+      // Fallback: open in new window for browser print-to-PDF
+      const printWin = window.open('', '_blank');
+      if (printWin) { printWin.document.write(htmlContent); printWin.document.close(); setTimeout(() => { printWin.print(); }, 600); }
+    }
+  };
+
   const previewGridStyle: React.CSSProperties = {
-    display: 'grid', gap: '1px', flex: 1, minHeight: 0, padding: 0, background: '#444',
+    display: 'grid', gap: 0, flex: 1, minHeight: 0, padding: 0,
     ...(currentLayout.areas ? { gridTemplateAreas: currentLayout.areas } : {}),
     gridTemplateColumns: getLayoutGridTemplate(currentLayout).columns,
     gridTemplateRows: getLayoutGridTemplate(currentLayout).rows,
@@ -246,7 +269,7 @@ export function PrintPreview() {
       <div className="flex items-center justify-between px-3 py-1.5 bg-app-header-bg border-b border-app-border flex-shrink-0 flex-wrap gap-2">
         <div className="flex items-center gap-2">
           <button type="button" onClick={e => { e.stopPropagation(); setShowPrintPreview(false); navigate('/'); }} className="px-2 py-1 text-xs border border-app-border text-app-text-secondary bg-app-bg rounded hover:bg-app-hover flex items-center gap-1"><Users className="w-3 h-3" /> Patients</button>
-          <button type="button" onClick={e => { e.stopPropagation(); setShowPrintPreview(false); }} className="px-2 py-1 text-xs border border-app-border text-app-text-secondary bg-app-bg rounded hover:bg-app-hover flex items-center gap-1"><ChevronLeft className="w-3 h-3" /> Viewer</button>
+          <button type="button" onClick={e => { e.stopPropagation(); setShowPrintPreview(false); }} className="px-2 py-1 text-xs border border-app-border text-app-text-secondary bg-app-bg rounded hover:bg-app-hover flex items-center gap-1"><ChevronLeft className="w-3 h-3" /> Back</button>
           <span className="text-xs text-app-text-muted">|</span>
           <Printer className="w-5 h-5 text-app-accent" />
           <span className="text-sm font-bold text-app-text">Print Preview</span>
@@ -281,6 +304,9 @@ export function PrintPreview() {
             <button type="button" onClick={e => { e.stopPropagation(); setPrintType('image'); }} className={`px-2 py-1 text-[10px] font-semibold transition-colors ${printType === 'image' ? 'bg-app-accent text-white' : 'bg-app-bg text-app-text-secondary hover:bg-app-hover'}`}>DICOM</button>
             <button type="button" onClick={e => { e.stopPropagation(); setPrintType('pcpndt'); }} className={`px-2 py-1 text-[10px] font-semibold transition-colors ${printType === 'pcpndt' ? 'bg-app-accent text-white' : 'bg-app-bg text-app-text-secondary hover:bg-app-hover'}`}>PCPNDT</button>
           </div>
+          <button type="button" onClick={handleSavePdf} disabled={capturing} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold border-2 border-blue-500 text-blue-500 bg-app-bg rounded hover:bg-blue-500 hover:text-white disabled:opacity-50 transition-colors">
+            <FileDown className="w-4 h-4" />Save PDF
+          </button>
           <button type="button" onClick={handlePrint} disabled={printing || capturing || printCountRemaining <= 0 || activePrinters.length === 0} className="flex items-center gap-2 px-5 py-1.5 text-xs font-bold bg-app-accent text-white rounded hover:brightness-110 disabled:opacity-50 transition-colors">
             <Printer className="w-4 h-4" />{printing ? 'Printing…' : capturing ? 'Capturing…' : `Print${pagesToShow.length > 1 ? ` (${pagesToShow.length}p)` : ''}`}
           </button>
@@ -351,7 +377,7 @@ export function PrintPreview() {
             const pageCaps = allPageCaptures[pageNum - 1] || [];
             return (
               <div key={`preview-page-${pageNum}`} className="flex-shrink-0 flex flex-col items-center mb-4">
-                <div className="text-[10px] text-app-text-muted py-1 text-center">Page {pageNum} of {totalPages} — {localPaperSize} {localOrientation}</div>
+                <div className="text-xs text-app-text-muted py-1 text-center">Page {pageNum} of {totalPages} — {localPaperSize} {localOrientation}</div>
                 <div className="flex flex-col border border-gray-600 shadow-xl" style={{ width: `min(calc(98vw * ${zoom}), calc((100vh - ${toolbarH}px - 50px) * ${zoom} * ${(pw/ph).toFixed(4)}))`, aspectRatio: `${pw} / ${ph}` }}>
                   {settings.headerEnabled && (
                     <div style={{ padding: '4px 12px' }} className="border-b border-gray-700 flex items-center justify-between bg-gray-900 flex-shrink-0">
@@ -371,7 +397,7 @@ export function PrintPreview() {
                         const src = pageCaps[i];
                         const aStyle: React.CSSProperties = currentLayout.areas && areaNames[i] ? { gridArea: areaNames[i] } : {};
                         return (
-                          <div key={i} className="bg-black overflow-hidden" style={aStyle}>
+                          <div key={i} className="bg-black overflow-hidden border border-gray-600" style={aStyle}>
                             {src ? (<img src={src} className="w-full h-full object-contain" alt={`Page ${pageNum} Image ${i + 1}`} />) : (<span className="text-gray-600 text-[10px] select-none flex items-center justify-center w-full h-full">Empty</span>)}
                           </div>
                         );

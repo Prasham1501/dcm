@@ -71,7 +71,7 @@ export function StudiesPage() {
           >
             <ArrowLeft className="w-4 h-4" />
           </button>
-          <span className="text-sm font-bold text-app-accent">MediView Pro</span>
+          <span className="text-sm font-bold text-app-accent">Accurate</span>
           <span className="text-xs text-app-text-muted">|</span>
           <span className="text-sm font-semibold text-app-text">Studies</span>
         </div>

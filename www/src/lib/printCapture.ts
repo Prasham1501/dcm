@@ -98,6 +98,44 @@ export function captureCornerstoneElementForPrint(element: HTMLElement | null, o
   if (!element) return null;
 
   try {
+    // Composite all canvases inside the cornerstone element.
+    // The base image canvas + the cornerstoneTools annotation overlay canvas(es)
+    // are separate layers. Drawing them all gives us the full viewport appearance
+    // including length, angle, ellipse, arrow, ROI measurements.
+    const canvases = element.querySelectorAll('canvas');
+    if (canvases.length > 0) {
+      // Use the first (base) canvas dimensions as reference
+      const baseCanvas = canvases[0];
+      const baseW = baseCanvas.width || baseCanvas.clientWidth || 512;
+      const baseH = baseCanvas.height || baseCanvas.clientHeight || 512;
+
+      // Use display dimensions × devicePixelRatio for high-quality output
+      const dpr = window.devicePixelRatio || 1;
+      const displayW = element.clientWidth || baseW;
+      const displayH = element.clientHeight || baseH;
+      const w = Math.round(displayW * dpr);
+      const h = Math.round(displayH * dpr);
+
+      const output = document.createElement('canvas');
+      output.width = w;
+      output.height = h;
+      const ctx = output.getContext('2d');
+      if (ctx) {
+        // Draw each canvas layer in order (base image first, then tool overlays)
+        canvases.forEach(c => {
+          try {
+            ctx.drawImage(c, 0, 0, w, h);
+          } catch { /* cross-origin or empty canvas — skip */ }
+        });
+
+        // Draw custom text/stamp overlays on top
+        drawOverlays(output, overlays);
+
+        return output.toDataURL('image/png');
+      }
+    }
+
+    // Fallback: use cornerstone.renderToCanvas (no tool annotations)
     const enabledElement = cornerstone.getEnabledElement(element);
     if (enabledElement?.image) {
       const image = enabledElement.image;
@@ -115,11 +153,7 @@ export function captureCornerstoneElementForPrint(element: HTMLElement | null, o
 
       drawOverlays(canvas, overlays);
 
-      return canvas.toDataURL('image/jpeg', 0.95);
-    }
-
-    if (enabledElement?.canvas) {
-      return enabledElement.canvas.toDataURL('image/png');
+      return canvas.toDataURL('image/png');
     }
   } catch {
     const canvas = element.querySelector('canvas');

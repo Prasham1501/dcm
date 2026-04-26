@@ -19,7 +19,7 @@ export function PrintManagementPage() {
           <button onClick={() => navigate('/')} className="p-1 text-app-accent hover:bg-app-hover rounded">
             <ArrowLeft className="w-4 h-4" />
           </button>
-          <span className="text-sm font-bold text-app-accent">MediView Pro</span>
+          <span className="text-sm font-bold text-app-accent">Accurate</span>
           <span className="text-xs text-app-text-muted">|</span>
           <span className="text-sm font-semibold text-app-text">Print Management</span>
         </div>

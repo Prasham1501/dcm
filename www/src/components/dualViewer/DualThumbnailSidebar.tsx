@@ -1,20 +1,20 @@
 /**
- * CRThumbnailSidebar - Shows image thumbnails for the CR viewer.
- * Renders pixel data manually from cornerstone-loaded images.
- * Supports dragging thumbnails into viewports.
+ * DualThumbnailSidebar — Shows image thumbnails for a specific panel.
+ * Pass panelId="left" or panelId="right" to pin it to that panel.
  */
-import { useCallback, useRef, useEffect, useState } from 'react';
-import { useCRViewerStore } from '@/stores/crViewerStore';
+import { useRef, useEffect, useState } from 'react';
+import { useDualViewerStore, type PanelId } from '@/stores/dualViewerStore';
 import { cornerstone } from '@/lib/cornerstoneSetup';
 
-export function CRThumbnailSidebar() {
-  const { 
-    images, currentPage, currentLayout, setCurrentPage,
-    isArrangeMode, toggleArrangeViewport, arrangeClickOrder
-  } = useCRViewerStore();
+interface Props {
+  panelId: PanelId;
+}
+
+export function DualThumbnailSidebar({ panelId }: Props) {
+  const panel = useDualViewerStore((s) => s.panels[panelId]);
+  const { images, currentPage, currentLayout } = panel;
   const hasImages = images.length > 0;
 
-  // Store rendered data URLs
   const [thumbDataUrls, setThumbDataUrls] = useState<Map<string, string>>(new Map());
   const renderingRef = useRef<Set<string>>(new Set());
 
@@ -103,26 +103,26 @@ export function CRThumbnailSidebar() {
   };
 
   const handleThumbClick = (i: number) => {
-    if (isArrangeMode) {
-    } else {
-      const pageNum = Math.floor(i / currentLayout.spots) + 1;
-      setCurrentPage(pageNum);
-    }
+    const pageNum = Math.floor(i / currentLayout.spots) + 1;
+    useDualViewerStore.getState().panels[panelId].currentPage !== pageNum &&
+      useDualViewerStore.setState((state) => ({
+        panels: {
+          ...state.panels,
+          [panelId]: { ...state.panels[panelId], currentPage: pageNum },
+        },
+      }));
   };
 
-  // Double-click a thumbnail to load it into the currently selected viewport
-  const handleThumbDoubleClick = (imgUrl: string) => {
-    if (isArrangeMode) return;
-    const { selectedViewport, setViewportImage } = useCRViewerStore.getState();
-    setViewportImage(imgUrl, selectedViewport);
-  };
+  const borderClass = panelId === 'left' ? 'border-r' : 'border-l';
 
   return (
-    <div className="w-52 2xl:w-56 flex flex-col bg-app-surface border-l border-app-border overflow-y-auto custom-scrollbar shadow-inner">
-      <div className="p-2.5 border-b border-app-border bg-app-bg/50">
-        <span className="text-xs font-bold text-app-accent uppercase tracking-wider">Preview</span>
+    <div className={`w-36 flex flex-col bg-app-surface ${borderClass} border-app-border overflow-y-auto custom-scrollbar shadow-inner`}>
+      <div className="p-2 border-b border-app-border bg-app-bg/50">
+        <span className="text-[10px] font-bold text-app-accent uppercase tracking-wider">
+          Preview ({panelId.toUpperCase()})
+        </span>
       </div>
-      
+
       {images.map((img, i) => {
         const pageForImage = Math.floor(i / currentLayout.spots) + 1;
         const isOnCurrentPage = pageForImage === currentPage;
@@ -135,14 +135,12 @@ export function CRThumbnailSidebar() {
             draggable
             onDragStart={(e) => handleDragStart(e, img.imageUrl)}
             onClick={() => handleThumbClick(i)}
-            onDoubleClick={() => handleThumbDoubleClick(img.imageUrl)}
           >
             <div className="flex justify-between items-center px-1 mb-0.5">
-              <span className={`text-[10px] font-bold ${isOnCurrentPage ? 'text-app-accent' : 'text-app-text-muted'}`}>
+              <span className={`text-[9px] font-bold ${isOnCurrentPage ? 'text-app-accent' : 'text-app-text-muted'}`}>
                 {img.instanceNumber}
               </span>
             </div>
-
             <div className={`aspect-[4/3] border rounded overflow-hidden bg-black ${isOnCurrentPage ? 'border-app-accent/50' : 'border-app-border'}`}>
               {dataUrl ? (
                 <img src={dataUrl} className="w-full h-full object-contain" alt="" />

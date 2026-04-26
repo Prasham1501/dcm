@@ -40,7 +40,7 @@ export function NetworkReceiverTab() {
           path: result.path,
           port: result.port,
           ip: result.ip || '127.0.0.1',
-          aet: result.aet || 'MEDIVIEW',
+          aet: result.aet || 'ACCURATE',
           isRunning: result.isRunning ?? true,
         });
         setEditPath(result.path);
@@ -229,7 +229,7 @@ export function NetworkReceiverTab() {
           <li>On your USG/DICOM device, go to <strong>Settings → DICOM Network</strong></li>
           <li>Set the destination IP address to: <code className="text-app-accent font-mono bg-app-surface px-1 rounded">{config?.ip || '...'}</code></li>
           <li>Set the destination port to: <code className="text-app-accent font-mono bg-app-surface px-1 rounded">{config?.port || '...'}</code></li>
-          <li>Set the AE Title to: <code className="text-app-accent font-mono bg-app-surface px-1 rounded">{config?.aet || 'MEDIVIEW'}</code></li>
+          <li>Set the AE Title to: <code className="text-app-accent font-mono bg-app-surface px-1 rounded">{config?.aet || 'ACCURATE'}</code></li>
           <li>Ensure both machines are on the <strong>same network</strong> (LAN/WiFi)</li>
           <li>Send DICOM images from the device — files appear below automatically</li>
         </ol>

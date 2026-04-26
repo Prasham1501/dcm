@@ -29,7 +29,7 @@ export function LoginPage() {
           <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-accent text-white">
             <Heart className="h-6 w-6" />
           </div>
-          <h1 className="text-xl font-semibold text-foreground">MediView Pro</h1>
+          <h1 className="text-xl font-semibold text-foreground">Accurate</h1>
           <p className="text-sm text-foreground-muted">Sign in to continue</p>
         </div>
 

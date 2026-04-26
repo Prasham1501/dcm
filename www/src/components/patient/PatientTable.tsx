@@ -5,7 +5,7 @@ import { openCRViewerPopup } from '@/stores/crViewerStore';
 import { useReportStore } from '@/stores/reportStore';
 import type { Patient } from '@/types/patient';
 import { PatientContextMenu } from './PatientContextMenu';
-import { FileText, Printer } from 'lucide-react';
+import { FileText, Printer, Merge, Undo2 } from 'lucide-react';
 
 export function PatientTable() {
   const navigate = useNavigate();
@@ -13,6 +13,13 @@ export function PatientTable() {
   const { getReportsForPatient } = useReportStore();
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; patient: Patient } | null>(null);
   const tableRef = useRef<HTMLDivElement>(null);
+
+  // Merge state
+  const [showMergeDialog, setShowMergeDialog] = useState(false);
+  const [mergePatients, setMergePatients] = useState<Patient[]>([]);
+  const [mergePrimaryId, setMergePrimaryId] = useState<string>('');
+  const [mergeUndo, setMergeUndo] = useState<{ removedPatient: Patient; mergedInto: string; originalFilePaths: string[] } | null>(null);
+  const mergeUndoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Open standalone report editor window for a patient
   const handleOpenReport = useCallback(async (e: React.MouseEvent, patient: Patient) => {
@@ -34,6 +41,65 @@ export function PatientTable() {
     // Fallback: navigate in current window
     navigate('/report-editor');
   }, [navigate]);
+
+  // Open merge dialog for 2 selected patients
+  const handleMergeClick = useCallback(() => {
+    const selected = filteredPatients.filter(p => selectedPatients.has(p.id));
+    if (selected.length !== 2) return;
+    setMergePatients(selected);
+    setMergePrimaryId(selected[0].id);
+    setShowMergeDialog(true);
+  }, [filteredPatients, selectedPatients]);
+
+  const handleMergeConfirm = useCallback(() => {
+    if (mergePatients.length !== 2 || !mergePrimaryId) return;
+    const primary = mergePatients.find(p => p.id === mergePrimaryId)!;
+    const secondary = mergePatients.find(p => p.id !== mergePrimaryId)!;
+    const { editPatient, deletePatient } = usePatientStore.getState();
+
+    // Save original state for undo
+    const originalFilePaths = [...(primary.filePaths || [])];
+    const mergedFilePaths = [...(primary.filePaths || []), ...(secondary.filePaths || [])];
+    const mergedImages = (primary.images || 0) + (secondary.images || 0);
+
+    // Merge file paths into primary
+    editPatient(primary.id, {
+      filePaths: mergedFilePaths,
+      images: mergedImages,
+    });
+
+    // Remove secondary from list (soft delete — just remove from local state)
+    const { patients } = usePatientStore.getState();
+    const filtered = patients.filter(p => p.id !== secondary.id);
+    usePatientStore.setState({
+      patients: filtered,
+      filteredPatients: filtered,
+      selectedPatients: new Set(),
+      selectedPatient: null,
+    });
+
+    // Set undo state with 10 second timer
+    setMergeUndo({ removedPatient: secondary, mergedInto: primary.id, originalFilePaths });
+    if (mergeUndoTimerRef.current) clearTimeout(mergeUndoTimerRef.current);
+    mergeUndoTimerRef.current = setTimeout(() => setMergeUndo(null), 10000);
+
+    setShowMergeDialog(false);
+  }, [mergePatients, mergePrimaryId]);
+
+  const handleMergeUndo = useCallback(() => {
+    if (!mergeUndo) return;
+    const { editPatient } = usePatientStore.getState();
+    // Restore primary's original file paths
+    editPatient(mergeUndo.mergedInto, { filePaths: mergeUndo.originalFilePaths, images: mergeUndo.originalFilePaths.length });
+    // Re-add removed patient
+    const { patients } = usePatientStore.getState();
+    usePatientStore.setState({
+      patients: [...patients, mergeUndo.removedPatient],
+      filteredPatients: [...patients, mergeUndo.removedPatient],
+    });
+    setMergeUndo(null);
+    if (mergeUndoTimerRef.current) clearTimeout(mergeUndoTimerRef.current);
+  }, [mergeUndo]);
 
   const handleRowClick = useCallback((patient: Patient, e: React.MouseEvent) => {
     if (e.ctrlKey || e.metaKey) {
@@ -58,9 +124,12 @@ export function PatientTable() {
 
   const handleContextMenu = useCallback((e: React.MouseEvent, patient: Patient) => {
     e.preventDefault();
-    selectPatient(patient);
+    // If the right-clicked patient is already in the multi-selection, preserve it
+    if (!selectedPatients.has(patient.id)) {
+      selectPatient(patient);
+    }
     setContextMenu({ x: e.clientX, y: e.clientY, patient });
-  }, [selectPatient]);
+  }, [selectPatient, selectedPatients]);
 
   // Close context menu on click outside
   useEffect(() => {
@@ -96,7 +165,7 @@ export function PatientTable() {
             {columns.map((col) => (
               <th
                 key={col.key}
-                className={`${col.width} px-3 2xl:px-4 py-2.5 2xl:py-3 text-left font-bold text-app-accent uppercase tracking-wide border-r border-app-border last:border-r-0 select-none`}
+                className={`${col.width} px-3 2xl:px-4 py-2.5 2xl:py-3 text-center font-bold text-app-accent uppercase tracking-wide border-r border-app-border last:border-r-0 select-none`}
               >
                 {col.label}
               </th>
@@ -118,23 +187,23 @@ export function PatientTable() {
                     : 'hover:bg-app-hover text-app-text'
                 }`}
               >
-                <td className="px-3 py-2 border-r border-app-border text-center font-semibold">
+                <td className="px-3 py-2 text-center border-r border-app-border font-semibold">
                   {patient.printed ? (
                     <span className="text-green-600">Y</span>
                   ) : (
                     <span></span>
                   )}
                 </td>
-                <td className="px-3 py-2 border-r border-app-border font-semibold">{patient.patientId}</td>
-                <td className="px-3 py-2 border-r border-app-border font-semibold">{patient.patientName}</td>
-                <td className="px-3 py-2 border-r border-app-border font-semibold">{patient.age}</td>
-                <td className="px-3 py-2 border-r border-app-border font-semibold">{patient.sex}</td>
-                <td className="px-3 py-2 border-r border-app-border font-semibold">{patient.studyDate}</td>
-                <td className="px-3 py-2 border-r border-app-border font-semibold">{patient.studyDescription}</td>
-                <td className="px-3 py-2 border-r border-app-border text-center font-semibold">{patient.images}</td>
-                <td className="px-3 py-2 border-r border-app-border font-semibold">{patient.modality}</td>
-                <td className="px-3 py-2 border-r border-app-border font-semibold">{patient.accessionNumber}</td>
-                <td className="px-3 py-2 border-r border-app-border font-semibold">{patient.referringPhysician}</td>
+                <td className="px-3 py-2 text-center border-r border-app-border font-semibold">{patient.patientId}</td>
+                <td className="px-3 py-2 text-center border-r border-app-border font-semibold">{patient.patientName}</td>
+                <td className="px-3 py-2 text-center border-r border-app-border font-semibold">{patient.age}</td>
+                <td className="px-3 py-2 text-center border-r border-app-border font-semibold">{patient.sex}</td>
+                <td className="px-3 py-2 text-center border-r border-app-border font-semibold">{patient.studyDate}</td>
+                <td className="px-3 py-2 text-center border-r border-app-border font-semibold">{patient.studyDescription}</td>
+                <td className="px-3 py-2 text-center border-r border-app-border font-semibold">{patient.images}</td>
+                <td className="px-3 py-2 text-center border-r border-app-border font-semibold">{patient.modality}</td>
+                <td className="px-3 py-2 text-center border-r border-app-border font-semibold">{patient.accessionNumber}</td>
+                <td className="px-3 py-2 text-center border-r border-app-border font-semibold">{patient.referringPhysician}</td>
                 <td className="px-3 py-2 text-center">
                   {(() => {
                     const pid = patient.patientId || patient.id;
@@ -179,18 +248,92 @@ export function PatientTable() {
 
       {/* Selection hint bar */}
       <div className="sticky bottom-0 flex items-center justify-between px-3 py-1 bg-app-surface border-t border-app-border text-[10px] text-app-text-muted select-none">
-        <span>
-          {multiCount > 1
-            ? <span className="text-app-accent font-semibold">{multiCount} records selected</span>
-            : multiCount === 1
-              ? <span>{selectedPatient?.patientName ?? '1 record selected'}</span>
-              : <span>No selection</span>
-          }
-        </span>
+        <div className="flex items-center gap-2">
+          <span>
+            {multiCount > 1
+              ? <span className="text-app-accent font-semibold">{multiCount} records selected</span>
+              : multiCount === 1
+                ? <span>{selectedPatient?.patientName ?? '1 record selected'}</span>
+                : <span>No selection</span>
+            }
+          </span>
+          {multiCount === 2 && (
+            <button
+              onClick={handleMergeClick}
+              className="flex items-center gap-1 px-2 py-0.5 text-[10px] font-bold border border-blue-500 text-blue-500 bg-app-bg rounded hover:bg-blue-500 hover:text-white transition-colors"
+            >
+              <Merge className="w-3 h-3" />
+              Merge
+            </button>
+          )}
+        </div>
         <span className="opacity-60">
           Click to select · <kbd className="border border-app-border rounded px-1 bg-app-bg">Ctrl</kbd>+Click to multi-select · Click selected row to deselect
         </span>
       </div>
+
+      {/* Merge undo toast */}
+      {mergeUndo && (
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 px-4 py-2.5 bg-gray-900 border border-gray-600 rounded-lg shadow-xl text-white text-sm">
+          <span>Records merged successfully</span>
+          <button
+            onClick={handleMergeUndo}
+            className="flex items-center gap-1 px-3 py-1 text-xs font-bold bg-blue-600 text-white rounded hover:bg-blue-500 transition-colors"
+          >
+            <Undo2 className="w-3.5 h-3.5" />
+            Undo
+          </button>
+          <span className="text-[10px] text-gray-400">10s</span>
+        </div>
+      )}
+
+      {/* Merge dialog */}
+      {showMergeDialog && mergePatients.length === 2 && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => setShowMergeDialog(false)}>
+          <div className="bg-app-surface border border-app-border rounded-lg shadow-2xl p-5 w-[420px]" onClick={e => e.stopPropagation()}>
+            <h3 className="text-sm font-bold text-app-text mb-3">Merge Records</h3>
+            <p className="text-xs text-app-text-muted mb-3">Select which patient record to keep. The other record's images will be merged into it.</p>
+            <div className="space-y-2 mb-4">
+              {mergePatients.map(p => (
+                <label
+                  key={p.id}
+                  className={`flex items-center gap-3 p-2.5 rounded border cursor-pointer transition-colors ${
+                    mergePrimaryId === p.id
+                      ? 'border-app-accent bg-app-accent/10'
+                      : 'border-app-border hover:bg-app-hover'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="merge-primary"
+                    checked={mergePrimaryId === p.id}
+                    onChange={() => setMergePrimaryId(p.id)}
+                    className="accent-[var(--app-accent)]"
+                  />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-xs font-bold text-app-text truncate">{p.patientName}</div>
+                    <div className="text-[10px] text-app-text-muted">ID: {p.patientId} · {p.images || 0} images · {p.studyDate}</div>
+                  </div>
+                </label>
+              ))}
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={handleMergeConfirm}
+                className="flex-1 px-3 py-2 text-xs font-bold bg-app-accent text-white rounded hover:opacity-90 transition-colors"
+              >
+                Merge Records
+              </button>
+              <button
+                onClick={() => setShowMergeDialog(false)}
+                className="px-3 py-2 text-xs font-semibold border border-app-border text-app-text-secondary rounded hover:bg-app-hover transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {contextMenu && (
         <PatientContextMenu

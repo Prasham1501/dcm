@@ -6,7 +6,8 @@
  * - Draggable stamps
  */
 import { useEffect, useRef, useCallback, memo, useState } from 'react';
-import { cornerstone } from '@/lib/cornerstoneSetup';
+import { createPortal } from 'react-dom';
+import { cornerstone, cornerstoneTools } from '@/lib/cornerstoneSetup';
 import { useCRViewerStore } from '@/stores/crViewerStore';
 import { useStampStore } from '@/stores/stampStore';
 
@@ -49,6 +50,10 @@ function CRViewportInner({
   const [textInput, setTextInput] = useState('');
   const [textColor, setTextColor] = useState('#ffff00');
   const [textFontSize, setTextFontSize] = useState(14);
+
+  // Right-click context menu state
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
+  const rightClickMoved = useRef(false);
 
   // Right-click W/L drag state
   const rightDragRef = useRef<{
@@ -169,6 +174,7 @@ function CRViewportInner({
         if (!el || !enabledRef.current) return;
         const dx = e.clientX - rightDragRef.current.startX;
         const dy = e.clientY - rightDragRef.current.startY;
+        if (Math.abs(dx) > 3 || Math.abs(dy) > 3) rightClickMoved.current = true;
         const newWW = Math.max(1, rightDragRef.current.startWW + dx * 3.0);
         const newWC = rightDragRef.current.startWC + dy * 2.0;
         try {
@@ -204,7 +210,9 @@ function CRViewportInner({
 
     const handleGlobalMouseUp = (e: MouseEvent) => {
       if (e.button === 2) {
+        // Context menu is now handled by onContextMenu event
         rightDragRef.current = null;
+        rightButtonDownRef.current = false;
         document.body.style.cursor = '';
       }
       if (e.button === 0) {
@@ -297,12 +305,27 @@ function CRViewportInner({
     return () => window.removeEventListener('cr-custom-reset', handler);
   }, [viewportIndex]);
 
+  // ---- CUSTOM CONTEXT MENU ----
+  const handleContextMenu = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    if (!rightClickMoved.current) {
+      setContextMenu({ x: e.clientX, y: e.clientY });
+    }
+    rightButtonDownRef.current = false;
+    rightDragRef.current = null;
+    document.body.style.cursor = '';
+  }, []);
+
   // ---- MOUSE DOWN on container (right-click = W/L drag) ----
+  const rightButtonDownRef = useRef(false);
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    if (contextMenu) setContextMenu(null);
     if (e.button !== 2) return;
+    e.preventDefault();
+    rightClickMoved.current = false;
+    rightButtonDownRef.current = true;
     const el = elementRef.current;
     if (!el || !enabledRef.current) return;
-    e.preventDefault();
     try {
       const vp = cornerstone.getViewport(el);
       if (vp?.voi) {
@@ -366,7 +389,7 @@ function CRViewportInner({
       ref={containerRef}
       className={`w-full h-full relative bg-black overflow-hidden ${(isStampMode || isTextMode) ? 'cursor-crosshair' : 'cursor-default'}`}
       onMouseDownCapture={handleMouseDown}
-      onContextMenu={(e) => e.preventDefault()}
+      onContextMenu={handleContextMenu}
       onClickCapture={handleClick}
     >
       {/* Cornerstone render target */}
@@ -611,6 +634,48 @@ function CRViewportInner({
         <div className="absolute inset-0 flex items-center justify-center text-gray-600 text-xs select-none pointer-events-none z-10">
           No image
         </div>
+      )}
+
+      {/* Right-click context menu (portal to body) */}
+      {contextMenu && createPortal(
+        <>
+          <div className="fixed inset-0 z-[60]" onClick={() => setContextMenu(null)} onContextMenu={(e) => { e.preventDefault(); setContextMenu(null); }} />
+          <div
+            className="fixed z-[61] bg-gray-900/95 border border-gray-600 rounded-lg shadow-2xl py-1 min-w-[160px] backdrop-blur-sm"
+            style={{ left: contextMenu.x, top: contextMenu.y }}
+          >
+            {[
+              { label: 'Pan', tool: 'Pan' },
+              { label: 'Zoom', tool: 'Zoom' },
+              { label: 'Window/Level', tool: 'Wwwc' },
+              { label: 'Length', tool: 'Length' },
+              { label: 'Angle', tool: 'Angle' },
+              { label: 'Ellipse', tool: 'EllipticalRoi' },
+            ].map((item) => (
+              <button
+                key={item.tool}
+                onClick={() => {
+                  try { cornerstoneTools.setToolActive(item.tool, { mouseButtonMask: 1 }); } catch { /* ignore */ }
+                  setContextMenu(null);
+                }}
+                className="w-full text-left px-3 py-1.5 text-xs text-gray-200 hover:bg-blue-600/40 transition-colors"
+              >
+                {item.label}
+              </button>
+            ))}
+            <div className="border-t border-gray-700 my-1" />
+            <button
+              onClick={() => {
+                window.dispatchEvent(new CustomEvent('cr-custom-reset', { detail: { viewportIndex } }));
+                setContextMenu(null);
+              }}
+              className="w-full text-left px-3 py-1.5 text-xs text-gray-200 hover:bg-blue-600/40 transition-colors"
+            >
+              Reset Viewport
+            </button>
+          </div>
+        </>,
+        document.body
       )}
     </div>
   );

@@ -157,6 +157,13 @@ export function ThumbnailSidebar() {
     setCurrentPage(pageNum);
   }, [currentLayout.spots, setCurrentPage, isArrangeMode, toggleArrangeImageSelection]);
 
+  // Double-click a thumbnail to load it into the currently selected viewport
+  const handleThumbDoubleClick = useCallback((imgUrl: string) => {
+    if (isArrangeMode) return;
+    const { selectedViewport, setViewportImageOverride } = useViewerStore.getState();
+    setViewportImageOverride(selectedViewport, imgUrl);
+  }, [isArrangeMode]);
+
   // Drag start
   const handleDragStart = useCallback((e: React.DragEvent, imgIndex: number) => {
     const img = images[imgIndex];
@@ -215,7 +222,8 @@ export function ThumbnailSidebar() {
             draggable={!isArrangeMode}
             onDragStart={(e) => { if (!isArrangeMode) handleDragStart(e, i); }}
             onClick={() => handleThumbClick(i, img.imageUrl)}
-            title={`Image ${img.instanceNumber}${isArrangeMode ? '' : ' — drag to viewport'}`}
+            onDoubleClick={() => handleThumbDoubleClick(img.imageUrl)}
+            title={`Image ${img.instanceNumber}${isArrangeMode ? '' : ' — drag to viewport, double-click to load into selected viewport'}`}
           >
             <div className="flex justify-between items-center px-0.5 relative z-10 w-full mb-0.5">
               <span className={`text-[8px] sm:text-[10px] font-bold ${isOnCurrentPage ? 'text-blue-400' : 'text-gray-500'}`}>

@@ -5,10 +5,12 @@
  * Uses capture-phase events so stamp/text always work even when cornerstone tools were used.
  */
 import { useEffect, useRef, useCallback, memo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { cornerstone, cornerstoneTools } from '@/lib/cornerstoneSetup';
 import { useViewerStore } from '@/stores/viewerStore';
 import { useCustomAnnotationStore, type TextAnnotation, type DrawPath } from '@/stores/customAnnotationStore';
 import { useStampStore } from '@/stores/stampStore';
+import { resetViewport } from '@/lib/viewerTools';
 
 
 // ---- Draw path annotation ---- (interfaces moved to store)
@@ -43,6 +45,7 @@ function DicomViewportInner({
   const currentImageIdRef = useRef<string | null>(null);
 
   // Right-click W/L drag state
+  const rightButtonDownRef = useRef(false);
   const rightDragRef = useRef<{
     startX: number;
     startY: number;
@@ -97,6 +100,10 @@ function DicomViewportInner({
 
   const [annotations, setAnnotations] = useState<TextAnnotation[]>([]);
   const [drawPaths, setDrawPaths] = useState<DrawPath[]>([]);
+
+  // Right-click context menu state
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
+  const rightClickMoved = useRef(false);
 
   useEffect(() => {
     if (imageId) {
@@ -367,6 +374,8 @@ function DicomViewportInner({
       if (rightDragRef.current) {
         const dx = e.clientX - rightDragRef.current.startX;
         const dy = e.clientY - rightDragRef.current.startY;
+        // Mark as dragged if moved more than 3px (to distinguish from right-click)
+        if (Math.abs(dx) > 3 || Math.abs(dy) > 3) rightClickMoved.current = true;
         const newWW = Math.max(1, rightDragRef.current.startWW + dx * 3.0);
         const newWC = rightDragRef.current.startWC + dy * 2.0;
 
@@ -422,7 +431,9 @@ function DicomViewportInner({
 
     const handleGlobalMouseUp = (e: MouseEvent) => {
       if (e.button === 2) {
+        // Context menu is now handled by onContextMenu event
         rightDragRef.current = null;
+        rightButtonDownRef.current = false;
         document.body.style.cursor = '';
       }
       if (e.button === 0) {
@@ -695,10 +706,25 @@ function DicomViewportInner({
     });
   }
 
-  // ---- REACT MOUSE DOWN (right-click + viewport selection) ----
+  // ---- CUSTOM CONTEXT MENU (fires reliably on right-click) ----
+  const handleContextMenu = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    // Only show if no W/L drag occurred (moved < 3px)
+    if (!rightClickMoved.current) {
+      setContextMenu({ x: e.clientX, y: e.clientY });
+    }
+    rightButtonDownRef.current = false;
+    rightDragRef.current = null;
+    document.body.style.cursor = '';
+  }, []);
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    // Close context menu on any click
+    if (contextMenu) setContextMenu(null);
+
     if (e.button === 2) {
       e.preventDefault();
+      rightClickMoved.current = false;
+      rightButtonDownRef.current = true;
       const el = elementRef.current;
       if (!el || !enabledRef.current) return;
       try {
@@ -813,8 +839,8 @@ function DicomViewportInner({
     <div
       ref={containerRef}
       className={`absolute inset-0 bg-black overflow-hidden ${cursorClass}`}
-      onMouseDown={handleMouseDown}
-      onContextMenu={(e) => e.preventDefault()}
+      onMouseDownCapture={handleMouseDown}
+      onContextMenu={handleContextMenu}
       onDragOver={handleDragOver}
       onDrop={handleDrop}
     >
@@ -824,7 +850,6 @@ function DicomViewportInner({
         data-viewport-index={viewportIndex}
         className="absolute inset-0"
         style={{ width: '100%', height: '100%' }}
-        onContextMenu={(e) => e.preventDefault()}
       />
 
       {/* Draw canvas overlay (for hold-to-draw) */}
@@ -1091,6 +1116,54 @@ function DicomViewportInner({
             )}
           </div>
         </div>
+      )}
+
+      {/* Right-click context menu (portal to body to avoid overflow clipping) */}
+      {contextMenu && createPortal(
+        <>
+          <div className="fixed inset-0 z-[60]" onClick={() => setContextMenu(null)} onContextMenu={(e) => { e.preventDefault(); setContextMenu(null); }} />
+          <div
+            className="fixed z-[61] bg-gray-900/95 border border-gray-600 rounded-lg shadow-2xl py-1 min-w-[160px] backdrop-blur-sm"
+            style={{ left: contextMenu.x, top: contextMenu.y }}
+          >
+            {[
+              { label: 'Pan', tool: 'pan' },
+              { label: 'Zoom', tool: 'zoom' },
+              { label: 'Window/Level', tool: 'wwwc' },
+              { label: 'Length', tool: 'length' },
+              { label: 'Angle', tool: 'angle' },
+              { label: 'Rectangle ROI', tool: 'rectangleRoi' },
+              { label: 'Elliptical ROI', tool: 'ellipticalRoi' },
+            ].map((item) => (
+              <button
+                key={item.tool}
+                onClick={() => {
+                  useViewerStore.getState().setActiveTool(item.tool);
+                  setContextMenu(null);
+                }}
+                className={`w-full text-left px-3 py-1.5 text-xs hover:bg-blue-600/40 transition-colors ${
+                  activeTool === item.tool ? 'text-blue-400 font-semibold' : 'text-gray-200'
+                }`}
+              >
+                {item.label}
+              </button>
+            ))}
+            <div className="border-t border-gray-700 my-1" />
+            <button
+              onClick={() => {
+                const el = elementRef.current;
+                if (el && enabledRef.current && imageId) {
+                  resetViewport(el);
+                }
+                setContextMenu(null);
+              }}
+              className="w-full text-left px-3 py-1.5 text-xs text-gray-200 hover:bg-blue-600/40 transition-colors"
+            >
+              Reset Viewport
+            </button>
+          </div>
+        </>,
+        document.body
       )}
     </div>
   );

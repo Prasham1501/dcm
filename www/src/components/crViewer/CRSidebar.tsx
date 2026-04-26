@@ -9,6 +9,7 @@ import { useState } from 'react';
 import {
   ChevronUp, ChevronDown,
   RotateCcw, Undo2, FileText, CheckSquare, Move, Trash2, Type,
+  Minus, ArrowLeft, Square, Circle, Ruler, Triangle,
 } from 'lucide-react';
 
 // All annotation tools that may be active in CR viewports
@@ -54,19 +55,37 @@ export function CRSidebar() {
   } = useCRViewerStore();
 
   const [panActive, setPanActive] = useState(false);
+  const [activeCSTool, setActiveCSTool] = useState<string | null>(null);
+
+  const activateCSTool = (toolName: string) => {
+    if (activeCSTool === toolName) {
+      // Deactivate
+      try { cornerstoneTools.setToolPassive(toolName); } catch { /* ignore */ }
+      setActiveCSTool(null);
+    } else {
+      // Deactivate previous
+      if (activeCSTool) {
+        try { cornerstoneTools.setToolPassive(activeCSTool); } catch { /* ignore */ }
+      }
+      if (panActive) {
+        try { cornerstoneTools.setToolPassive('Pan'); } catch { /* ignore */ }
+        setPanActive(false);
+      }
+      try { cornerstoneTools.setToolActive(toolName, { mouseButtonMask: 1 }); } catch { /* ignore */ }
+      setActiveCSTool(toolName);
+    }
+  };
 
   const togglePan = () => {
     if (panActive) {
-      // Deactivate Pan — disable it on all mouse buttons
-      try {
-        cornerstoneTools.setToolPassive('Pan');
-      } catch { /* ignore */ }
+      try { cornerstoneTools.setToolPassive('Pan'); } catch { /* ignore */ }
       setPanActive(false);
     } else {
-      // Activate Pan for left mouse button
-      try {
-        cornerstoneTools.setToolActive('Pan', { mouseButtonMask: 1 });
-      } catch { /* ignore */ }
+      if (activeCSTool) {
+        try { cornerstoneTools.setToolPassive(activeCSTool); } catch { /* ignore */ }
+        setActiveCSTool(null);
+      }
+      try { cornerstoneTools.setToolActive('Pan', { mouseButtonMask: 1 }); } catch { /* ignore */ }
       setPanActive(true);
     }
   };
@@ -127,6 +146,43 @@ export function CRSidebar() {
         variant={isTextMode ? 'accent' : 'default'}
       />
 
+      {/* Measurement / Shape tools */}
+      <SidebarButton
+        onClick={() => activateCSTool('Length')}
+        label="Line"
+        title="Length measurement tool"
+        icon={Minus}
+        variant={activeCSTool === 'Length' ? 'accent' : 'default'}
+      />
+      <SidebarButton
+        onClick={() => activateCSTool('ArrowAnnotate')}
+        label="Arrow"
+        title="Arrow annotation tool"
+        icon={ArrowLeft}
+        variant={activeCSTool === 'ArrowAnnotate' ? 'accent' : 'default'}
+      />
+      <SidebarButton
+        onClick={() => activateCSTool('RectangleRoi')}
+        label="Square"
+        title="Rectangle ROI tool"
+        icon={Square}
+        variant={activeCSTool === 'RectangleRoi' ? 'accent' : 'default'}
+      />
+      <SidebarButton
+        onClick={() => activateCSTool('EllipticalRoi')}
+        label="Ellipse"
+        title="Elliptical ROI tool"
+        icon={Circle}
+        variant={activeCSTool === 'EllipticalRoi' ? 'accent' : 'default'}
+      />
+      <SidebarButton
+        onClick={() => activateCSTool('Angle')}
+        label="Angle"
+        title="Angle measurement tool"
+        icon={Triangle}
+        variant={activeCSTool === 'Angle' ? 'accent' : 'default'}
+      />
+
       {/* Prev */}
       <SidebarButton
         onClick={prevPage}
@@ -134,23 +190,6 @@ export function CRSidebar() {
         title="Previous page"
         icon={ChevronUp}
       />
-
-      {/* Navigation arrows */}
-      <button
-        onClick={prevPage}
-        disabled={currentPage <= 1}
-        className="w-8 h-8 2xl:w-10 2xl:h-10 flex items-center justify-center rounded-full border border-app-accent text-app-accent hover:bg-app-accent hover:text-white disabled:opacity-30 transition-colors"
-      >
-        <ChevronUp className="w-4 h-4 2xl:w-5 2xl:h-5" />
-      </button>
-
-      <button
-        onClick={nextPage}
-        disabled={currentPage >= totalPages}
-        className="w-8 h-8 2xl:w-10 2xl:h-10 flex items-center justify-center rounded-full border border-app-accent text-app-accent hover:bg-app-accent hover:text-white disabled:opacity-30 transition-colors"
-      >
-        <ChevronDown className="w-4 h-4 2xl:w-5 2xl:h-5" />
-      </button>
 
       {/* Next */}
       <SidebarButton

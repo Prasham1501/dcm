@@ -4,7 +4,7 @@
  * Opens in a popup window (Electron) or same window (browser fallback).
  * Reads launch data from localStorage when opened as a popup.
  */
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useCRViewerStore } from '@/stores/crViewerStore';
 import { useReportStore } from '@/stores/reportStore';
@@ -13,7 +13,7 @@ import { CRViewportGrid } from '@/components/crViewer/CRViewportGrid';
 import { CRSidebar } from '@/components/crViewer/CRSidebar';
 import { CRThumbnailSidebar } from '@/components/crViewer/CRThumbnailSidebar';
 import { InlineReportPanel } from '@/components/report/InlineReportPanel';
-import { ChevronLeft, X } from 'lucide-react';
+import { ChevronLeft, X, PanelRightClose, PanelRightOpen } from 'lucide-react';
 import { useThemeStore } from '@/stores/themeStore';
 import { Sun, Moon } from 'lucide-react';
 
@@ -60,6 +60,7 @@ export function CRViewerPage() {
   const { patientName, patientId, studyDate, totalImages, currentPage, totalPages, loadStudy } = useCRViewerStore();
   const { mode, toggleTheme } = useThemeStore();
   const showInlineReport = useReportStore((s) => s.showInlineReport);
+  const [showThumbnails, setShowThumbnails] = useState(true);
   const launchChecked = useRef(false);
 
   // Check for launch data in localStorage (when opened as popup window)
@@ -154,6 +155,13 @@ export function CRViewerPage() {
             <span className="text-app-accent font-bold ml-1">({totalImages})</span>
           </span>
           <button
+            onClick={() => setShowThumbnails(!showThumbnails)}
+            className="p-1 rounded hover:bg-app-hover transition-colors text-app-text-secondary"
+            title={showThumbnails ? 'Hide thumbnails' : 'Show thumbnails'}
+          >
+            {showThumbnails ? <PanelRightClose className="w-4 h-4" /> : <PanelRightOpen className="w-4 h-4" />}
+          </button>
+          <button
             onClick={toggleTheme}
             className="p-1 rounded hover:bg-app-hover transition-colors text-app-text-secondary"
             title={mode === 'light' ? 'Dark mode' : 'Light mode'}
@@ -172,7 +180,7 @@ export function CRViewerPage() {
         <div className={`flex overflow-hidden ${showInlineReport ? 'w-[60%]' : 'flex-1'}`}>
           <CRViewportGrid />
           <div className="flex h-full border-l border-app-border">
-            <CRThumbnailSidebar />
+            {showThumbnails && <CRThumbnailSidebar />}
             <CRSidebar />
           </div>
         </div>

@@ -43,6 +43,32 @@ const mysqlDir = isDev ? path.join(__dirname, 'mysql') : path.join(appPath, 'mys
 const mysqldPath = path.join(mysqlDir, 'bin', 'mysqld.exe');
 const mysqlClientPath = path.join(mysqlDir, 'bin', 'mysql.exe');
 const userDataPath = app.getPath('userData');
+
+// ===== 30-Day Trial License =====
+const TRIAL_DAYS = 30;
+const trialFile = path.join(userDataPath, '.trial');
+
+function getTrialInfo() {
+    let installDate;
+    try {
+        if (fs.existsSync(trialFile)) {
+            const data = JSON.parse(fs.readFileSync(trialFile, 'utf8'));
+            installDate = new Date(data.installDate);
+        }
+    } catch { /* corrupt file — treat as new install */ }
+
+    if (!installDate || isNaN(installDate.getTime())) {
+        installDate = new Date();
+        try {
+            fs.writeFileSync(trialFile, JSON.stringify({ installDate: installDate.toISOString() }), 'utf8');
+        } catch { /* ignore write errors */ }
+    }
+
+    const now = new Date();
+    const elapsed = Math.floor((now - installDate) / (1000 * 60 * 60 * 24));
+    const remaining = Math.max(0, TRIAL_DAYS - elapsed);
+    return { installDate, elapsed, remaining, expired: remaining <= 0 };
+}
 const mysqlDataDir = path.join(userDataPath, 'mysql-data');
 const mysqlDataSubDir = path.join(mysqlDataDir, 'data');
 const orthancDir = isDev ? path.join(__dirname, 'orthanc') : path.join(appPath, 'orthanc');
@@ -115,7 +141,7 @@ function createMainWindow() {
         minWidth: 1024,
         minHeight: 768,
         show: false,
-        title: "MediView Pro",
+        title: `Accurate — Trial (${getTrialInfo().remaining} days remaining)`,
         icon: path.join(__dirname, 'icon.ico'),
         webPreferences: {
             nodeIntegration: false,
@@ -165,8 +191,8 @@ function createMainWindow() {
                     label: 'About',
                     click: () => dialog.showMessageBox(mainWindow, {
                         type: 'info',
-                        title: 'About MediView Pro',
-                        message: 'MediView Pro',
+                        title: 'About Accurate',
+                        message: 'Accurate',
                         detail: 'Version 1.0.0 - Modern Desktop Edition\n\nProfessional DICOM viewing and analysis for healthcare professionals.\n\nFeatures:\n• Multi-format DICOM viewing\n• Network file receiving from USG/medical devices\n• Advanced image analysis tools\n• Offline operation\n• Secure file management'
                     })
                 }
@@ -391,7 +417,7 @@ function generateOrthancConfig() {
         Plugins: [pluginsDir],
         DicomPort: 3458,
         DicomServerEnabled: true,
-        DicomAet: 'MEDIVIEW',
+        DicomAet: 'ACCURATE',
         DicomCheckCalledAet: false,
         AuthenticationEnabled: true,
         RegisteredUsers: { orthanc: 'orthanc', admin: 'admin123' },
@@ -937,13 +963,28 @@ function stopDicomServer() {
 // =====================================================
 // App Lifecycle
 // =====================================================
-app.whenReady().then(startApp);
+app.whenReady().then(() => {
+    const trial = getTrialInfo();
+    if (trial.expired) {
+        dialog.showErrorBox('Trial Expired', 'Your 30-day trial of Accurate has expired.\nPlease contact support to purchase a license.');
+        app.quit();
+        return;
+    }
+    startApp();
+});
 app.on('window-all-closed', () => { stopDicomServer(); stopDicomNetworkReceiver(); stopPhpServer(); stopOrthanc(); stopMySQL(); app.quit(); });
 app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) startApp(); });
 app.on('before-quit', () => { stopDicomServer(); stopDicomNetworkReceiver(); stopPhpServer(); stopOrthanc(); stopMySQL(); });
 
 // =====================================================
 // IPC Handlers
+// =====================================================
+
+// Trial info
+ipcMain.handle('get-trial-info', () => {
+    const trial = getTrialInfo();
+    return { remaining: trial.remaining, expired: trial.expired, totalDays: TRIAL_DAYS };
+});
 // =====================================================
 
 // Get system printers
@@ -1517,7 +1558,7 @@ ipcMain.handle('get-dicom-modalities', async () => {
 // association negotiation and C-STORE reception.
 // =====================================================
 const DICOM_LISTEN_PORT = 10104;
-const DICOM_AE_TITLE = 'MEDIVIEW';
+const DICOM_AE_TITLE = 'ACCURATE';
 const DICOM_MAX_PDU = 131072; // 128KB — compatible with most devices
 let dicomNetworkServer = null;
 const dicomSettingsPath = path.join(userDataPath, 'dicom-scp-settings.json');
@@ -1647,7 +1688,7 @@ function buildAssociateAC(rqBuffer) {
     implUidBytes.copy(implSub, 4);
 
     // Implementation Version Name
-    const implVerName = 'MEDIVIEW_SCP';
+    const implVerName = 'ACCURATE_SCP';
     const implVerBytes = Buffer.from(implVerName, 'ascii');
     const implVerSub = Buffer.alloc(4 + implVerBytes.length);
     implVerSub[0] = 0x55; implVerSub[1] = 0x00;
@@ -1855,7 +1896,7 @@ function buildFileMetaHeader(sopClassUid, sopInstanceUid, transferSyntax) {
     // (0002,0012) Implementation Class UID — UI
     parts.push(addShortVR(0x0002, 0x0012, 'UI', '1.2.826.0.1.3680043.8.498.1'));
     // (0002,0013) Implementation Version Name — SH
-    const verName = 'MEDIVIEW_SCP ';
+    const verName = 'ACCURATE_SCP ';
     parts.push(addShortVR(0x0002, 0x0013, 'SH', Buffer.from(verName.length % 2 !== 0 ? verName + ' ' : verName, 'ascii')));
 
     const metaContent = Buffer.concat(parts);
@@ -2202,7 +2243,7 @@ ipcMain.handle('get-network-dicom-path', () => {
         path: networkDicomStorage,
         port: DICOM_LISTEN_PORT,
         ip: localIp,
-        aet: 'MEDIVIEW',
+        aet: 'ACCURATE',
         isRunning: dicomNetworkServer !== null,
         success: true
     };
@@ -2817,7 +2858,7 @@ ipcMain.handle('ocr-dicom-file', async (event, { filePath }) => {
 });
 
 // Start network receiver on app startup
-// NOTE: Port 3458 is now owned by Orthanc (DICOM SCP with AE=MEDIVIEW).
+// NOTE: Port 3458 is now owned by Orthanc (DICOM SCP with AE=ACCURATE).
 // The custom TCP receiver is disabled to avoid port conflict.
 function startNetworkReceiverOnAppReady() {
     startDicomNetworkReceiver();

@@ -12,6 +12,7 @@
   --app-border: #c0c0c0;
   --app-accent: #B22222;
   --app-accent-hover: #8B1A1A;
+  --app-accent-text: #B22222;
   --app-text: #1a1a1a;
   --app-text-secondary: #555555;
   --app-text-muted: #999999;
@@ -48,43 +49,44 @@
 
 /* ===== Dark Theme ===== */
 .dark {
-  /* App-specific colors (Dark Accurate) — overridden by JS via CSS vars */
-  --app-bg: var(--app-bg-dark, #1a1a2e);
-  --app-surface: var(--app-surface-dark, #16213e);
-  --app-header-bg: var(--app-header-bg-dark, #0f3460);
-  --app-hover: var(--app-hover-dark, #1a3a5c);
-  --app-border: var(--app-border-dark, #2a4a6b);
-  --app-accent: var(--app-accent-dark, #e94560);
-  --app-accent-hover: var(--app-accent-hover-dark, #c73851);
-  --app-text: #e8e8e8;
-  --app-text-secondary: #aaaaaa;
-  --app-text-muted: #666666;
-  --app-thumbnail-bg: #0a0a1a;
-  --app-statusbar-bg: #0f172a;
-  --app-viewer-bg: #0a0a1a;
+  /* Clean dark theme — neutral slate tones with crimson accent */
+  --app-bg: #121212;
+  --app-surface: #1e1e1e;
+  --app-header-bg: #1a1a1a;
+  --app-hover: #2a2a2a;
+  --app-border: #333333;
+  --app-accent: #e94560;
+  --app-accent-hover: #c73851;
+  --app-accent-text: #ffffff;
+  --app-text: #e4e4e7;
+  --app-text-secondary: #a1a1aa;
+  --app-text-muted: #71717a;
+  --app-thumbnail-bg: #0a0a0a;
+  --app-statusbar-bg: #141414;
+  --app-viewer-bg: #0a0a0a;
 
   /* Legacy semantic colors */
-  --bg-primary: #0f172a;
-  --bg-secondary: #1e293b;
-  --bg-tertiary: #334155;
-  --bg-hover: #475569;
-  --bg-active: #64748b;
-  --text-primary: #f1f5f9;
-  --text-secondary: #cbd5e1;
-  --text-muted: #64748b;
-  --border-primary: #334155;
-  --border-secondary: #475569;
-  --accent: var(--app-accent-dark, #e94560);
-  --accent-hover: var(--app-accent-hover-dark, #c73851);
+  --bg-primary: #121212;
+  --bg-secondary: #1e1e1e;
+  --bg-tertiary: #2a2a2a;
+  --bg-hover: #333333;
+  --bg-active: #404040;
+  --text-primary: #e4e4e7;
+  --text-secondary: #a1a1aa;
+  --text-muted: #71717a;
+  --border-primary: #2a2a2a;
+  --border-secondary: #333333;
+  --accent: #e94560;
+  --accent-hover: #c73851;
   --accent-light: #3d1a2a;
   --danger: #ef4444;
   --danger-hover: #f87171;
   --success: #22c55e;
   --warning: #f59e0b;
-  --sidebar-bg: #0f172a;
-  --sidebar-text: #e2e8f0;
-  --sidebar-hover: #1e293b;
-  --sidebar-active: #3b82f6;
+  --sidebar-bg: #141414;
+  --sidebar-text: #e4e4e7;
+  --sidebar-hover: #1e1e1e;
+  --sidebar-active: #e94560;
 }
 
 /* ===== Base Styles ===== */
@@ -128,6 +130,12 @@
   ::-webkit-scrollbar-thumb:hover {
     background: var(--app-text-muted);
   }
+}
+
+/* Dark mode: accent TEXT should be white, not red.
+   bg-app-accent stays red for buttons. */
+.dark .text-app-accent {
+  color: #ffffff !important;
 }
 
 /* ===== Print styles ===== */

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Printer, X, ZoomIn, ZoomOut, Plus, Trash2, Check } from 'lucide-react';
+import { Printer, X, ZoomIn, ZoomOut, Plus, Trash2, Check, FileDown } from 'lucide-react';
 import { useCRViewerStore } from '@/stores/crViewerStore';
 import { usePrintStore } from '@/stores/printStore';
 import { useHospitalConfigStore, getFormattedAddress, renderPrintSlot } from '@/stores/hospitalConfigStore';
@@ -64,6 +64,13 @@ export function CRPrintPreview({ onClose, initialPageMode = 'all' }: CRPrintPrev
   const [newPrinterType, setNewPrinterType] = useState('Laser');
 
   const configuredPrinters = hospitalConfig.printers;
+
+  // Escape key to close
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [onClose]);
   const activePrinters = configuredPrinters.filter(p => p.isActive);
   const defaultPrinter = activePrinters.find(p => p.isDefault) || activePrinters[0];
   const [selectedPrinter, setSelectedPrinter] = useState(defaultPrinter?.name || '');
@@ -167,11 +174,11 @@ export function CRPrintPreview({ onClose, initialPageMode = 'all' }: CRPrintPrev
     const pagesHtml = pagesToPrint.map((pageNum) => {
       const caps = allPageCaptures[pageNum - 1] || [];
       const imgsHtml = caps.map((src) =>
-        `<div style="background:#000;display:flex;align-items:center;justify-content:center;overflow:hidden">${src ? `<img src="${src}" style="width:100%;height:100%;object-fit:contain" />` : ''}</div>`
+        `<div style="background:#000;display:flex;align-items:center;justify-content:center;overflow:hidden;border:1px solid #666">${src ? `<img src="${src}" style="width:100%;height:100%;object-fit:contain" />` : ''}</div>`
       ).join('');
-      return `<div class="page">${settings.headerEnabled ? buildHeaderHtml() : ''}${patientBarHtml()}<div style="display:grid;grid-template-columns:${gridCols};grid-template-rows:${gridRows};gap:1px;background:#444;padding:0;flex:1;min-height:0">${imgsHtml}</div>${hospitalConfig.enableFooter ? buildFooterHtml() : ''}</div>`;
+      return `<div class="page">${settings.headerEnabled ? buildHeaderHtml() : ''}${patientBarHtml()}<div style="display:grid;grid-template-columns:${gridCols};grid-template-rows:${gridRows};gap:0;padding:0;flex:1;min-height:0">${imgsHtml}</div>${hospitalConfig.enableFooter ? buildFooterHtml() : ''}</div>`;
     }).join('');
-    return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>DICOM Print - ${patientName}</title><style>@page{size:${localPaperSize} ${isLandscape ? 'landscape' : 'portrait'};margin:10mm}*{box-sizing:border-box}body{margin:0;padding:0;font-family:Arial,Helvetica,sans-serif}.page{page-break-after:always;page-break-inside:avoid;display:flex;flex-direction:column;height:calc(100vh);overflow:hidden}.page:last-child{page-break-after:auto}img{display:block}@media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}</style></head><body>${pagesHtml}</body></html>`;
+    return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>DICOM Print - ${patientName}</title><style>@page{size:${localPaperSize} ${isLandscape ? 'landscape' : 'portrait'};margin:10mm}*{box-sizing:border-box}body{margin:0;padding:0;font-family:Arial,Helvetica,sans-serif}.page{page-break-after:always;page-break-inside:avoid;display:flex;flex-direction:column;height:calc(100vh);overflow:hidden;border:1px solid #444}.page:last-child{page-break-after:auto}img{display:block}@media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}</style></head><body>${pagesHtml}</body></html>`;
   }, [allPageCaptures, currentLayout, settings, hospitalConfig, patientName, patientId, studyDate, localPaperSize, isLandscape]);
 
   const handlePrint = async () => {
@@ -206,8 +213,22 @@ export function CRPrintPreview({ onClose, initialPageMode = 'all' }: CRPrintPrev
     onClose();
   };
 
+  const handleSavePdf = async () => {
+    if (allPageCaptures.length === 0) { alert('Still capturing pages, please wait.'); return; }
+    updateSettings({ paperSize: localPaperSize, orientation: localOrientation, copies: localCopies });
+    const pagesToPrint = selectedPages();
+    const htmlContent = buildPrintHtml(pagesToPrint);
+    const electronAPI = (window as any).electronAPI;
+    if (electronAPI?.printReportDialog) {
+      try { await electronAPI.printReportDialog({ htmlContent, paperSize: localPaperSize }); } catch (err) { console.error('PDF save error:', err); }
+    } else {
+      const printWin = window.open('', '_blank');
+      if (printWin) { printWin.document.write(htmlContent); printWin.document.close(); setTimeout(() => { printWin.print(); }, 600); }
+    }
+  };
+
   const previewGridStyle: React.CSSProperties = {
-    display: 'grid', gap: '1px', flex: 1, minHeight: 0, padding: 0, background: '#444',
+    display: 'grid', gap: 0, flex: 1, minHeight: 0, padding: 0,
     gridTemplateColumns: `repeat(${currentLayout.cols}, 1fr)`,
     gridTemplateRows: `repeat(${currentLayout.rows}, 1fr)`,
   };
@@ -225,7 +246,7 @@ export function CRPrintPreview({ onClose, initialPageMode = 'all' }: CRPrintPrev
     <div className="fixed inset-0 bg-black flex flex-col z-[1000]">
       <div className="flex items-center justify-between px-3 py-1.5 bg-app-header-bg border-b border-app-border flex-shrink-0 flex-wrap gap-2">
         <div className="flex items-center gap-2">
-          <button onClick={onClose} className="p-1 rounded hover:bg-app-hover text-app-text-secondary"><X className="w-5 h-5" /></button>
+          <button onClick={onClose} className="px-2 py-1 text-xs border border-app-border text-app-text-secondary bg-app-bg rounded hover:bg-app-hover flex items-center gap-1"><X className="w-3 h-3" /> Back</button>
           <Printer className="w-5 h-5 text-app-accent" />
           <span className="text-sm font-bold text-app-text">Print Preview</span>
           {capturing && <span className="text-[10px] text-yellow-500 animate-pulse">Capturing page {captureProgress}/{captureTotal}…</span>}
@@ -255,6 +276,9 @@ export function CRPrintPreview({ onClose, initialPageMode = 'all' }: CRPrintPrev
             ) : <span className="text-[10px] text-red-400 italic">No printers configured</span>}
             <button onClick={() => setShowPrinterMgr(v => !v)} className={`h-7 px-2 text-[10px] border rounded transition-colors ${showPrinterMgr ? 'border-app-accent bg-app-accent/10 text-app-accent' : 'border-app-border text-app-text-secondary hover:bg-app-hover'}`} title="Manage printers">⚙</button>
           </div>
+          <button onClick={handleSavePdf} disabled={capturing} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold border-2 border-blue-500 text-blue-500 bg-app-bg rounded hover:bg-blue-500 hover:text-white disabled:opacity-50 transition-colors">
+            <FileDown className="w-4 h-4" />Save PDF
+          </button>
           <button onClick={handlePrint} disabled={printing || capturing || printCountRemaining <= 0 || activePrinters.length === 0} className="flex items-center gap-2 px-5 py-1.5 text-xs font-bold bg-app-accent text-white rounded hover:brightness-110 disabled:opacity-50 transition-colors">
             <Printer className="w-4 h-4" />{printing ? 'Printing…' : capturing ? 'Capturing…' : `Print${pagesToShow.length > 1 ? ` (${pagesToShow.length}p)` : ''}`}
           </button>
@@ -307,7 +331,7 @@ export function CRPrintPreview({ onClose, initialPageMode = 'all' }: CRPrintPrev
             const pageCaps = allPageCaptures[pageNum - 1] || [];
             return (
               <div key={`preview-page-${pageNum}`} className="flex-shrink-0 flex flex-col items-center mb-4">
-                <div className="text-[10px] text-app-text-muted py-1 text-center">Page {pageNum} of {totalPages} — {localPaperSize} {localOrientation}</div>
+                <div className="text-xs text-app-text-muted py-1 text-center">Page {pageNum} of {totalPages} — {localPaperSize} {localOrientation}</div>
                 <div className="flex flex-col border border-gray-600 shadow-xl" style={{ width: `min(calc(98vw * ${zoom}), calc((100vh - ${toolbarH}px - 50px) * ${zoom} * ${(pw/ph).toFixed(4)}))`, aspectRatio: `${pw} / ${ph}` }}>
                   {settings.headerEnabled && (
                     <div style={{ padding: '4px 12px' }} className="border-b border-gray-700 flex items-center justify-between bg-gray-900 flex-shrink-0">
@@ -324,7 +348,7 @@ export function CRPrintPreview({ onClose, initialPageMode = 'all' }: CRPrintPrev
                   <div className="flex-1 min-h-0">
                     <div style={previewGridStyle} className="h-full">
                       {pageCaps.map((src, i) => (
-                        <div key={i} className="bg-black overflow-hidden">
+                        <div key={i} className="bg-black overflow-hidden border border-gray-600">
                           {src ? (<img src={src} className="w-full h-full object-contain" alt={`Page ${pageNum} Image ${i + 1}`} />) : (<span className="text-gray-600 text-[10px] select-none flex items-center justify-center w-full h-full">Empty</span>)}
                         </div>
                       ))}
