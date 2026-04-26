@@ -57,6 +57,7 @@ export interface DualStampPlacement {
   viewportIndex: number;
   xPercent: number;
   yPercent: number;
+  type?: 'stamp' | 'text';
 }
 
 // ── Panel Sub-State ──
@@ -115,6 +116,9 @@ interface DualViewerState {
   isStampMode: boolean;
   activeStampId: string | null;
 
+  // Text
+  isTextMode: boolean;
+
   // UI
   isLoading: boolean;
   showLogo: boolean;
@@ -138,6 +142,7 @@ interface DualViewerState {
   setPanelApplyToAll: (panelId: PanelId, v: boolean) => void;
   togglePanelSingleViewport: (panelId: PanelId, viewportIndex: number) => void;
   setPanelViewportImage: (panelId: PanelId, imageUrl: string, viewportIndex: number) => void;
+  deleteImageFromViewport: (panelId: PanelId, viewportIndex: number) => void;
 
   // Active panel
   setActivePanel: (panelId: PanelId) => void;
@@ -149,6 +154,9 @@ interface DualViewerState {
   activeResetAll: () => void;
   activeClear: () => void;
 
+  // Arrange both panels
+  toggleBothArrangeMode: () => void;
+
   // Stamps
   addStamp: (stamp: Omit<DualStamp, 'id' | 'createdAt'>) => void;
   removeStamp: (id: string) => void;
@@ -159,6 +167,10 @@ interface DualViewerState {
   updateStampPlacement: (id: string, xPercent: number, yPercent: number) => void;
   undoStampPlacement: () => void;
   clearStampPlacements: (panelId?: PanelId, viewportIndex?: number) => void;
+
+  // Text
+  setTextMode: (v: boolean) => void;
+  placeTextDirect: (panelId: PanelId, viewportIndex: number, xPercent: number, yPercent: number, text: string, color: string, fontSize: number) => void;
 
   // Logo
   setShowLogo: (v: boolean) => void;
@@ -220,6 +232,7 @@ export const useDualViewerStore = create<DualViewerState>((set, get) => ({
   stampPlacements: [],
   isStampMode: false,
   activeStampId: null,
+  isTextMode: false,
   isLoading: false,
   showLogo: true,
 
@@ -428,8 +441,10 @@ export const useDualViewerStore = create<DualViewerState>((set, get) => ({
       }));
     } else {
       const startIndex = (panel.currentPage - 1) * panel.currentLayout.spots;
-      const image = panel.images[startIndex + viewportIndex];
+      const actualImageIndex = startIndex + viewportIndex;
+      const image = panel.images[actualImageIndex];
       if (!image?.imageUrl) return;
+      const targetPage = actualImageIndex + 1; // 1 spot per page in single layout
 
       set((state) => updatePanel(state, panelId, {
         preDoubleClickLayout: panel.currentLayout,
@@ -437,7 +452,7 @@ export const useDualViewerStore = create<DualViewerState>((set, get) => ({
         doubleClickViewportImage: image.imageUrl,
         currentLayout: singleLayout,
         ...recalcPages(panel.totalImages, singleLayout.spots),
-        currentPage: 1,
+        currentPage: targetPage,
       }));
     }
   },
@@ -460,6 +475,26 @@ export const useDualViewerStore = create<DualViewerState>((set, get) => ({
     set((state) => updatePanel(state, panelId, { images: nextImages }));
   },
 
+  deleteImageFromViewport: (panelId, viewportIndex) => {
+    const panel = get().panels[panelId];
+    const globalIdx = (panel.currentPage - 1) * panel.currentLayout.spots + viewportIndex;
+    const image = panel.images[globalIdx];
+    if (!image) return;
+
+    const newImages = panel.images.filter((_, i) => i !== globalIdx);
+    const newTotal = newImages.length;
+    const spots = panel.currentLayout.spots;
+    const newTotalPages = Math.max(1, Math.ceil(newTotal / spots));
+    const newCurrentPage = Math.min(panel.currentPage, newTotalPages);
+
+    set((state) => updatePanel(state, panelId, {
+      images: newImages,
+      totalImages: newTotal,
+      totalPages: newTotalPages,
+      currentPage: newCurrentPage,
+    }));
+  },
+
   // ── Active Panel ──
 
   setActivePanel: (panelId) => set({ activePanel: panelId }),
@@ -469,6 +504,28 @@ export const useDualViewerStore = create<DualViewerState>((set, get) => ({
   activeSelectAll: () => { const { activePanel } = get(); get().selectAllPanelViewports(activePanel); },
   activeResetAll: () => { const { activePanel } = get(); get().resetPanelAll(activePanel); },
   activeClear: () => { const { activePanel } = get(); get().clearPanelViewport(activePanel); },
+
+  // ── Arrange Both ──
+
+  toggleBothArrangeMode: () => {
+    const { panels } = get();
+    const leftArranging = panels.left.isArrangeMode;
+    const rightArranging = panels.right.isArrangeMode;
+
+    if (leftArranging || rightArranging) {
+      // Apply both
+      if (leftArranging) get().applyPanelArrange('left');
+      if (rightArranging) get().applyPanelArrange('right');
+    } else {
+      // Enter arrange mode on both
+      set((state) => ({
+        panels: {
+          left: { ...state.panels.left, isArrangeMode: true, arrangeClickOrder: [] },
+          right: { ...state.panels.right, isArrangeMode: true, arrangeClickOrder: [] },
+        },
+      }));
+    }
+  },
 
   // ── Stamps ──
 
@@ -544,6 +601,29 @@ export const useDualViewerStore = create<DualViewerState>((set, get) => ({
   },
 
   setShowLogo: (v) => set({ showLogo: v }),
+
+  // ── Text ──
+
+  setTextMode: (v) => set({ isTextMode: v, isStampMode: false }),
+
+  placeTextDirect: (panelId, viewportIndex, xPercent, yPercent, text, color, fontSize) => {
+    const placement: DualStampPlacement = {
+      id: `dsp-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      stampId: 'text',
+      panelId,
+      text,
+      color,
+      fontSize,
+      viewportIndex,
+      xPercent,
+      yPercent,
+      type: 'text',
+    };
+    set((state) => ({
+      stampPlacements: [...state.stampPlacements, placement],
+      isTextMode: false,
+    }));
+  },
 }));
 
 // ── Launch Function ──

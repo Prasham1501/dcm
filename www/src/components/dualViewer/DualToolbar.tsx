@@ -17,7 +17,10 @@ export function DualToolbar() {
     undoStampPlacement, clearStampPlacements, stampPlacements,
   } = useDualViewerStore();
 
+  const leftP = panels.left;
+  const rightP = panels.right;
   const activeP = panels[activePanel];
+  const bothArranging = leftP.isArrangeMode && rightP.isArrangeMode;
 
   const [showStampCreator, setShowStampCreator] = useState(false);
   const [showStampDropdown, setShowStampDropdown] = useState(false);
@@ -29,18 +32,18 @@ export function DualToolbar() {
         {/* Navigation arrows for active panel */}
         <div className="flex items-center gap-0.5">
           <button
-            onClick={() => useDualViewerStore.getState().activePrevPage()}
-            disabled={activeP.currentPage <= 1}
+            onClick={() => { useDualViewerStore.getState().panelPrevPage('left'); useDualViewerStore.getState().panelPrevPage('right'); }}
+            disabled={leftP.currentPage <= 1 && rightP.currentPage <= 1}
             className="p-1 rounded border border-app-border text-app-accent hover:bg-app-hover disabled:opacity-30 transition-colors"
-            title="Previous page (active panel)"
+            title="Previous page (both panels)"
           >
             <ChevronLeft className="w-3.5 h-3.5" />
           </button>
           <button
-            onClick={() => useDualViewerStore.getState().activeNextPage()}
-            disabled={activeP.currentPage >= activeP.totalPages}
+            onClick={() => { useDualViewerStore.getState().panelNextPage('left'); useDualViewerStore.getState().panelNextPage('right'); }}
+            disabled={leftP.currentPage >= leftP.totalPages && rightP.currentPage >= rightP.totalPages}
             className="p-1 rounded border border-app-border text-app-accent hover:bg-app-hover disabled:opacity-30 transition-colors"
-            title="Next page (active panel)"
+            title="Next page (both panels)"
           >
             <ChevronRight className="w-3.5 h-3.5" />
           </button>
@@ -58,6 +61,20 @@ export function DualToolbar() {
         >
           <ListOrdered className="w-3.5 h-3.5" />
           Arrange
+        </button>
+
+        {/* Arrange Both button */}
+        <button
+          onClick={() => useDualViewerStore.getState().toggleBothArrangeMode()}
+          className={`flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded border-2 transition-colors ${
+            bothArranging
+              ? 'border-green-500 bg-green-500/20 text-green-400'
+              : 'border-app-accent text-app-accent bg-app-bg hover:bg-app-accent hover:text-white'
+          }`}
+          title="Arrange images in both panels simultaneously"
+        >
+          <ListOrdered className="w-3.5 h-3.5" />
+          Arrange Both
         </button>
 
         {/* Preview button */}

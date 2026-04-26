@@ -496,10 +496,14 @@ export const useCRViewerStore = create<CRViewerState>((set, get) => ({
     } else {
       // Zoom into 1x1 showing the clicked viewport's image
       const startIndex = (currentPage - 1) * currentLayout.spots;
-      const image = images[startIndex + viewportIndex];
+      const actualImageIndex = startIndex + viewportIndex;
+      const image = images[actualImageIndex];
       const imageUrl = image?.imageUrl || null;
 
       if (!imageUrl) return;
+
+      // In 1-spot layout, each image is its own page, so go to page = imageIndex + 1
+      const targetPage = actualImageIndex + 1;
 
       set({
         preDoubleClickLayout: currentLayout,
@@ -507,7 +511,7 @@ export const useCRViewerStore = create<CRViewerState>((set, get) => ({
         doubleClickViewportImage: imageUrl,
         currentLayout: singleLayout,
         ...recalcPages(get().totalImages, singleLayout.spots),
-        currentPage: 1,
+        currentPage: targetPage,
       });
       const api = (window as any).electronAPI;
       if (api?.resizeCRViewer) {

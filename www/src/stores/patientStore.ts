@@ -64,6 +64,7 @@ interface PatientState {
   folderPath: string;
   syncing: boolean;
   syncError: string | null;
+  syncProgress: { total: number; processed: number } | null;
 
   // Pagination (from API)
   currentPage: number;
@@ -218,6 +219,7 @@ export const usePatientStore = create<PatientState>()(
   folderPath: '',
   syncing: false,
   syncError: null,
+  syncProgress: null,
 
   currentPage: 1,
   totalPages: 1,
@@ -496,47 +498,113 @@ export const usePatientStore = create<PatientState>()(
   },
 
   scanFolder: async (dirPath: string) => {
-    set({ syncing: true, syncError: null, folderPath: dirPath });
+    set({ syncing: true, syncError: null, syncProgress: null, folderPath: dirPath });
     try {
-      // Use Electron DICOM server if available, otherwise Vite dev server
       const isElectron = !!(window as any).electronAPI?.isElectron;
       const scanBase = isElectron ? 'http://localhost:3457' : '';
-      const response = await fetch(`${scanBase}/api/dicom/scan-patients?dir=${encodeURIComponent(dirPath)}`);
-      const data = await response.json();
-      if (!data.success) {
-        throw new Error(data.error || 'Scan failed');
+
+      // Use streaming mode for real-time progress
+      const response = await fetch(`${scanBase}/api/dicom/scan-patients?dir=${encodeURIComponent(dirPath)}&stream=1`);
+
+      if (!response.ok) {
+        throw new Error(`Scan failed: ${response.statusText}`);
       }
 
-      const scannedPatients: Patient[] = data.patients.map((p: any) => ({
-        id: p.id || p.studyInstanceUID,
-        patientId: p.patientId,
-        patientName: p.patientName,
-        age: p.age,
-        sex: (p.sex === 'M' || p.sex === 'F' || p.sex === 'O') ? p.sex : '' as const,
-        studyDate: p.studyDate,
-        studyDescription: p.studyDescription,
-        images: p.images,
-        modality: p.modality,
-        accessionNumber: p.accessionNumber,
-        referringPhysician: p.referringPhysician,
-        printed: false,
-        studyInstanceUID: p.studyInstanceUID,
-        filePaths: p.filePaths,
-      }));
+      const contentType = response.headers.get('content-type') || '';
 
-      // Full replace: discard all old patients (including stale database records
-      // with no filePaths) and use only the freshly scanned results.
-      const { filters } = get();
+      if (contentType.includes('text/event-stream')) {
+        // SSE streaming mode — read progress events
+        const reader = response.body?.getReader();
+        if (!reader) throw new Error('No response body');
 
-      set({
-        patients: scannedPatients,
-        filteredPatients: scannedPatients.filter((p) => matchesFilter(p, filters)),
-        totalRecords: scannedPatients.length,
-        syncing: false,
-        selectedPatient: null,
-      });
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+
+          for (const line of lines) {
+            if (!line.startsWith('data: ')) continue;
+            try {
+              const event = JSON.parse(line.slice(6));
+              if (event.type === 'progress') {
+                set({ syncProgress: { total: event.total, processed: event.processed } });
+              } else if (event.type === 'complete') {
+                if (!event.success) throw new Error('Scan failed');
+
+                const scannedPatients: Patient[] = event.patients.map((p: any) => ({
+                  id: p.id || p.studyInstanceUID,
+                  patientId: p.patientId,
+                  patientName: p.patientName,
+                  age: p.age,
+                  sex: (p.sex === 'M' || p.sex === 'F' || p.sex === 'O') ? p.sex : '' as const,
+                  studyDate: p.studyDate,
+                  studyDescription: p.studyDescription,
+                  images: p.images,
+                  modality: p.modality,
+                  accessionNumber: p.accessionNumber,
+                  referringPhysician: p.referringPhysician,
+                  printed: false,
+                  studyInstanceUID: p.studyInstanceUID,
+                  filePaths: p.filePaths,
+                }));
+
+                const { filters } = get();
+                set({
+                  patients: scannedPatients,
+                  filteredPatients: scannedPatients.filter((p) => matchesFilter(p, filters)),
+                  totalRecords: scannedPatients.length,
+                  syncing: false,
+                  syncProgress: null,
+                  selectedPatient: null,
+                });
+                return;
+              }
+            } catch { /* skip malformed events */ }
+          }
+        }
+
+        // If stream ended without complete event, finish gracefully
+        set({ syncing: false, syncProgress: null });
+      } else {
+        // Fallback: non-streaming JSON response
+        const data = await response.json();
+        if (!data.success) throw new Error(data.error || 'Scan failed');
+
+        const scannedPatients: Patient[] = data.patients.map((p: any) => ({
+          id: p.id || p.studyInstanceUID,
+          patientId: p.patientId,
+          patientName: p.patientName,
+          age: p.age,
+          sex: (p.sex === 'M' || p.sex === 'F' || p.sex === 'O') ? p.sex : '' as const,
+          studyDate: p.studyDate,
+          studyDescription: p.studyDescription,
+          images: p.images,
+          modality: p.modality,
+          accessionNumber: p.accessionNumber,
+          referringPhysician: p.referringPhysician,
+          printed: false,
+          studyInstanceUID: p.studyInstanceUID,
+          filePaths: p.filePaths,
+        }));
+
+        const { filters } = get();
+        set({
+          patients: scannedPatients,
+          filteredPatients: scannedPatients.filter((p) => matchesFilter(p, filters)),
+          totalRecords: scannedPatients.length,
+          syncing: false,
+          syncProgress: null,
+          selectedPatient: null,
+        });
+      }
     } catch (err: any) {
-      set({ syncing: false, syncError: err.message || 'Failed to scan folder' });
+      set({ syncing: false, syncProgress: null, syncError: err.message || 'Failed to scan folder' });
     }
   },
 

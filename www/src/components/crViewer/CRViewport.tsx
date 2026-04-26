@@ -174,7 +174,7 @@ function CRViewportInner({
         if (!el || !enabledRef.current) return;
         const dx = e.clientX - rightDragRef.current.startX;
         const dy = e.clientY - rightDragRef.current.startY;
-        if (Math.abs(dx) > 3 || Math.abs(dy) > 3) rightClickMoved.current = true;
+        if (Math.abs(dx) > 8 || Math.abs(dy) > 8) rightClickMoved.current = true;
         const newWW = Math.max(1, rightDragRef.current.startWW + dx * 3.0);
         const newWC = rightDragRef.current.startWC + dy * 2.0;
         try {
@@ -639,7 +639,7 @@ function CRViewportInner({
       {/* Right-click context menu (portal to body) */}
       {contextMenu && createPortal(
         <>
-          <div className="fixed inset-0 z-[60]" onClick={() => setContextMenu(null)} onContextMenu={(e) => { e.preventDefault(); setContextMenu(null); }} />
+          <div className="fixed inset-0 z-[60]" onMouseDown={() => setContextMenu(null)} onContextMenu={(e) => { e.preventDefault(); setContextMenu(null); }} />
           <div
             className="fixed z-[61] bg-gray-900/95 border border-gray-600 rounded-lg shadow-2xl py-1 min-w-[160px] backdrop-blur-sm"
             style={{ left: contextMenu.x, top: contextMenu.y }}
@@ -649,7 +649,9 @@ function CRViewportInner({
               { label: 'Zoom', tool: 'Zoom' },
               { label: 'Window/Level', tool: 'Wwwc' },
               { label: 'Length', tool: 'Length' },
+              { label: 'Arrow', tool: 'ArrowAnnotate' },
               { label: 'Angle', tool: 'Angle' },
+              { label: 'Rectangle', tool: 'RectangleRoi' },
               { label: 'Ellipse', tool: 'EllipticalRoi' },
             ].map((item) => (
               <button

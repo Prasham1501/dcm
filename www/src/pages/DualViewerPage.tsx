@@ -57,6 +57,26 @@ export function DualViewerPage() {
 
   const isPopup = typeof window !== 'undefined' && (window.opener != null || window.history.length <= 1);
 
+  // Keyboard navigation for pages (arrow keys on active panel)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+
+      if (e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === 'PageDown') {
+        e.preventDefault();
+        useDualViewerStore.getState().panelNextPage('left');
+        useDualViewerStore.getState().panelNextPage('right');
+      } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp' || e.key === 'PageUp') {
+        e.preventDefault();
+        useDualViewerStore.getState().panelPrevPage('left');
+        useDualViewerStore.getState().panelPrevPage('right');
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown, { capture: true });
+    return () => window.removeEventListener('keydown', handleKeyDown, true);
+  }, []);
+
   return (
     <div className="flex flex-col h-screen bg-app-bg">
       {/* Header bar */}
@@ -95,13 +115,13 @@ export function DualViewerPage() {
         {/* Center: Patient info (both panels) */}
         <div className="flex items-center gap-3 text-xs">
           {leftP.patientName && (
-            <span className="font-bold text-green-400 truncate max-w-[150px]" title="Left panel">
+            <span className="font-bold text-app-text-secondary truncate max-w-[150px]" title="Left panel">
               L: {leftP.patientName}
             </span>
           )}
           <span className="text-app-text-muted">vs</span>
           {rightP.patientName && (
-            <span className="font-bold text-green-400 truncate max-w-[150px]" title="Right panel">
+            <span className="font-bold text-app-text-secondary truncate max-w-[150px]" title="Right panel">
               R: {rightP.patientName}
             </span>
           )}
@@ -129,18 +149,30 @@ export function DualViewerPage() {
       {/* Main content: two panels + sidebars (+ optional inline report) */}
       <div className="flex-1 flex overflow-hidden">
         {/* Viewport area — shrinks to 70% when report panel is open */}
-        <div className={`flex overflow-hidden ${showInlineReport ? 'w-[70%]' : 'flex-1'}`}>
-          {/* Left thumbnail */}
-          {showThumbnails && <DualThumbnailSidebar panelId="left" />}
+        <div className={`flex flex-col overflow-hidden ${showInlineReport ? 'w-[70%]' : 'flex-1'}`}>
+          <div className="flex-1 flex overflow-hidden">
+            {/* Left thumbnail */}
+            {showThumbnails && <DualThumbnailSidebar panelId="left" />}
 
-          <DualViewportPanel panelId="left" />
-          <div className="w-1 bg-gray-600 flex-shrink-0" />
-          <DualViewportPanel panelId="right" />
+            <DualViewportPanel panelId="left" />
+            <div className="w-1 bg-gray-600 flex-shrink-0" />
+            <DualViewportPanel panelId="right" />
 
-          {/* Right sidebars — right thumbnail + controls */}
-          <div className="flex h-full border-l border-app-border">
-            {showThumbnails && <DualThumbnailSidebar panelId="right" />}
-            <DualSidebar />
+            {/* Right sidebars — right thumbnail + controls */}
+            <div className="flex h-full border-l border-app-border">
+              {showThumbnails && <DualThumbnailSidebar panelId="right" />}
+              <DualSidebar />
+            </div>
+          </div>
+
+          {/* Bottom bar — patient names below their respective panels */}
+          <div className="flex border-t border-gray-700 bg-gray-900">
+            <div className="flex-1 text-center py-1 text-xs font-semibold text-gray-300 truncate px-2 border-r border-gray-700">
+              {leftP.patientName || 'Left'} — {leftP.studyDate}
+            </div>
+            <div className="flex-1 text-center py-1 text-xs font-semibold text-gray-300 truncate px-2">
+              {rightP.patientName || 'Right'} — {rightP.studyDate}
+            </div>
           </div>
         </div>
 
@@ -150,11 +182,6 @@ export function DualViewerPage() {
             <InlineReportPanel />
           </div>
         )}
-      </div>
-
-      {/* Bottom bar */}
-      <div className="text-center py-1 bg-gray-900 text-gray-200 text-xs border-t border-gray-700 font-semibold">
-        {leftP.patientName || 'Left'} : {leftP.studyDate} | {rightP.patientName || 'Right'} : {rightP.studyDate}
       </div>
     </div>
   );

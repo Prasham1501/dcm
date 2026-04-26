@@ -10,7 +10,7 @@ import { cornerstone, cornerstoneTools } from '@/lib/cornerstoneSetup';
 import { useViewerStore } from '@/stores/viewerStore';
 import { useCustomAnnotationStore, type TextAnnotation, type DrawPath } from '@/stores/customAnnotationStore';
 import { useStampStore } from '@/stores/stampStore';
-import { resetViewport } from '@/lib/viewerTools';
+import { resetViewport, activateTool } from '@/lib/viewerTools';
 
 
 // ---- Draw path annotation ---- (interfaces moved to store)
@@ -375,7 +375,7 @@ function DicomViewportInner({
         const dx = e.clientX - rightDragRef.current.startX;
         const dy = e.clientY - rightDragRef.current.startY;
         // Mark as dragged if moved more than 3px (to distinguish from right-click)
-        if (Math.abs(dx) > 3 || Math.abs(dy) > 3) rightClickMoved.current = true;
+        if (Math.abs(dx) > 8 || Math.abs(dy) > 8) rightClickMoved.current = true;
         const newWW = Math.max(1, rightDragRef.current.startWW + dx * 3.0);
         const newWC = rightDragRef.current.startWC + dy * 2.0;
 
@@ -1121,7 +1121,7 @@ function DicomViewportInner({
       {/* Right-click context menu (portal to body to avoid overflow clipping) */}
       {contextMenu && createPortal(
         <>
-          <div className="fixed inset-0 z-[60]" onClick={() => setContextMenu(null)} onContextMenu={(e) => { e.preventDefault(); setContextMenu(null); }} />
+          <div className="fixed inset-0 z-[60]" onMouseDown={() => setContextMenu(null)} onContextMenu={(e) => { e.preventDefault(); setContextMenu(null); }} />
           <div
             className="fixed z-[61] bg-gray-900/95 border border-gray-600 rounded-lg shadow-2xl py-1 min-w-[160px] backdrop-blur-sm"
             style={{ left: contextMenu.x, top: contextMenu.y }}
@@ -1129,16 +1129,18 @@ function DicomViewportInner({
             {[
               { label: 'Pan', tool: 'pan' },
               { label: 'Zoom', tool: 'zoom' },
-              { label: 'Window/Level', tool: 'wwwc' },
+              { label: 'Window/Level', tool: 'wl' },
               { label: 'Length', tool: 'length' },
+              { label: 'Arrow', tool: 'arrow' },
               { label: 'Angle', tool: 'angle' },
-              { label: 'Rectangle ROI', tool: 'rectangleRoi' },
-              { label: 'Elliptical ROI', tool: 'ellipticalRoi' },
+              { label: 'Rectangle', tool: 'rectangleroi' },
+              { label: 'Ellipse', tool: 'ellipticalroi' },
             ].map((item) => (
               <button
                 key={item.tool}
                 onClick={() => {
                   useViewerStore.getState().setActiveTool(item.tool);
+                  activateTool(item.tool, elementRef.current);
                   setContextMenu(null);
                 }}
                 className={`w-full text-left px-3 py-1.5 text-xs hover:bg-blue-600/40 transition-colors ${

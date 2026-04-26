@@ -6,7 +6,7 @@
  * - Stamp placement + draggable stamps
  * - Panel-scoped CustomEvents to prevent cross-panel sync
  */
-import { useEffect, useRef, useCallback, memo } from 'react';
+import { useEffect, useRef, useCallback, useState, memo } from 'react';
 import { cornerstone } from '@/lib/cornerstoneSetup';
 import { useDualViewerStore, type PanelId } from '@/stores/dualViewerStore';
 
@@ -30,7 +30,7 @@ function DualViewportInner({
 
   const {
     isStampMode, activeStampId, placeStamp, stampPlacements, updateStampPlacement,
-    setPanelViewportImage,
+    setPanelViewportImage, isTextMode, placeTextDirect,
   } = useDualViewerStore();
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
@@ -272,9 +272,19 @@ function DualViewportInner({
     } catch { /* ignore */ }
   }, []);
 
-  // Click — stamp placement or viewport selection
+  // Text input state
+  const [pendingText, setPendingText] = useState<{ xPercent: number; yPercent: number } | null>(null);
+  const [textInput, setTextInput] = useState('');
+  const [textColor, setTextColor] = useState('#ffff00');
+  const [textFontSize, setTextFontSize] = useState(14);
+
+  // Click — stamp placement, text placement, or viewport selection
   const handleClick = useCallback((e: React.MouseEvent) => {
     if (stampDragRef.current) return;
+    // Don't handle clicks on pending text input
+    const target = e.target as HTMLElement;
+    if (target.closest('[data-pending-input]')) return;
+
     if (isStampMode && activeStampId) {
       const rect = containerRef.current?.getBoundingClientRect();
       if (rect) {
@@ -284,8 +294,19 @@ function DualViewportInner({
       }
       return;
     }
+    if (isTextMode && imageId) {
+      const rect = containerRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const xPercent = ((e.clientX - rect.left) / rect.width) * 100;
+      const yPercent = ((e.clientY - rect.top) / rect.height) * 100;
+      setPendingText({ xPercent, yPercent });
+      setTextInput('');
+      setTextColor('#ffff00');
+      setTextFontSize(14);
+      return;
+    }
     onClick(e);
-  }, [isStampMode, activeStampId, placeStamp, panelId, viewportIndex, onClick]);
+  }, [isStampMode, isTextMode, activeStampId, placeStamp, panelId, viewportIndex, onClick, imageId]);
 
   // Filter stamp placements for this viewport in this panel
   const viewportStamps = stampPlacements.filter(
@@ -295,7 +316,7 @@ function DualViewportInner({
   return (
     <div
       ref={containerRef}
-      className={`w-full h-full relative bg-black overflow-hidden ${isStampMode ? 'cursor-crosshair' : 'cursor-default'}`}
+      className={`w-full h-full relative bg-black overflow-hidden ${(isStampMode || isTextMode) ? 'cursor-crosshair' : 'cursor-default'}`}
       onMouseDownCapture={handleMouseDown}
       onContextMenu={(e) => e.preventDefault()}
       onClickCapture={handleClick}
@@ -310,7 +331,7 @@ function DualViewportInner({
         style={{ width: '100%', height: '100%' }}
       />
 
-      {/* Stamp overlays — draggable */}
+      {/* Stamp/text overlays — draggable */}
       {viewportStamps.map((sp) => (
         <div
           key={sp.id}
@@ -334,6 +355,74 @@ function DualViewportInner({
           {sp.text}
         </div>
       ))}
+
+      {/* Pending text input — fixed to top-right */}
+      {pendingText && (
+        <div
+          className="absolute z-40 top-2 right-2"
+          data-pending-input="true"
+          onClick={(e) => e.stopPropagation()}
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          <div className="bg-gray-800 border border-blue-500 rounded-lg p-2 shadow-xl min-w-[180px]">
+            <div className="text-[9px] text-blue-400 font-bold mb-1.5 uppercase">Add Text</div>
+            <div className="space-y-2">
+              <input
+                type="text"
+                value={textInput}
+                onChange={(e) => setTextInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && textInput.trim()) {
+                    placeTextDirect(panelId, viewportIndex, pendingText.xPercent, pendingText.yPercent, textInput.trim(), textColor, textFontSize);
+                    setPendingText(null);
+                  }
+                  if (e.key === 'Escape') setPendingText(null);
+                }}
+                placeholder="Type text..."
+                className="w-full px-2 py-1 text-xs bg-gray-900 text-white border border-gray-600 rounded focus:border-blue-500 focus:outline-none"
+                autoFocus
+              />
+              <div className="flex items-center justify-between">
+                <span className="text-[8px] text-gray-400 uppercase">Size</span>
+                <input type="range" min="8" max="30" value={textFontSize}
+                  onChange={(e) => setTextFontSize(parseInt(e.target.value))}
+                  className="flex-1 mx-2 h-1.5 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-blue-500"
+                />
+                <span className="text-[8px] text-white">{textFontSize}px</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-[8px] text-gray-400 uppercase">Color</span>
+                <div className="flex gap-1.5">
+                  {['#ffff00', '#00ff00', '#ffffff', '#ff0000', '#00ffff'].map(c => (
+                    <button key={c} onClick={() => setTextColor(c)}
+                      className={`w-4 h-4 rounded-full border ${textColor === c ? 'border-white' : 'border-transparent'}`}
+                      style={{ backgroundColor: c }} />
+                  ))}
+                </div>
+              </div>
+              <div className="flex gap-1">
+                <button
+                  onClick={() => {
+                    if (textInput.trim()) {
+                      placeTextDirect(panelId, viewportIndex, pendingText.xPercent, pendingText.yPercent, textInput.trim(), textColor, textFontSize);
+                      setPendingText(null);
+                    }
+                  }}
+                  className="flex-1 px-2 py-1 text-[10px] font-bold bg-blue-600 text-white rounded hover:bg-blue-500 transition-colors"
+                >
+                  Add Text
+                </button>
+                <button
+                  onClick={() => setPendingText(null)}
+                  className="px-2 py-1 text-[10px] font-bold bg-gray-600 text-white rounded hover:bg-gray-500 transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Spot number */}
       <div className="absolute bottom-1 left-1 text-white text-xs font-bold opacity-60 select-none pointer-events-none z-10">
