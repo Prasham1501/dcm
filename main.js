@@ -1017,13 +1017,13 @@ ipcMain.handle('print-report-dialog', async (event, options) => {
         fs.writeFileSync(tempHtml, htmlContent, 'utf8');
 
         printWindow = new BrowserWindow({
-            show: false, width: 800, height: 600,
+            show: false, width: 2480, height: 3508,
             webPreferences: { nodeIntegration: false, contextIsolation: true }
         });
 
         await printWindow.loadFile(tempHtml);
         // Wait for fonts/images to settle
-        await new Promise(r => setTimeout(r, 500));
+        await new Promise(r => setTimeout(r, 1000));
 
         // Map paper size for printToPDF
         const sizeMap = {
@@ -1074,7 +1074,7 @@ ipcMain.handle('print-to-printer', async (event, options) => {
             fs.writeFileSync(tempFile, htmlContent, 'utf8');
 
             const printWindow = new BrowserWindow({
-                show: false, width: 1200, height: 900,
+                show: false, width: 2480, height: 3508,
                 webPreferences: { nodeIntegration: false, contextIsolation: true }
             });
 

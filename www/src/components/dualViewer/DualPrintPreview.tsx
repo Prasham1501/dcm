@@ -7,16 +7,12 @@ import { Printer, X, ZoomIn, ZoomOut } from 'lucide-react';
 import { useDualViewerStore } from '@/stores/dualViewerStore';
 import { usePrintStore } from '@/stores/printStore';
 import { useHospitalConfigStore, getFormattedAddress, renderPrintSlot } from '@/stores/hospitalConfigStore';
-import { cornerstone } from '@/lib/cornerstoneSetup';
+import { captureCornerstoneElementForPrint } from '@/lib/printCapture';
 
 function captureViewport(panelId: string, viewportIndex: number): string | null {
-  const el = document.querySelector(`[data-dual-viewport-index="${panelId}-${viewportIndex}"]`) as HTMLDivElement;
+  const el = document.querySelector(`[data-dual-viewport-index="${panelId}-${viewportIndex}"]`) as HTMLElement;
   if (!el) return null;
-  try {
-    const enabledEl = cornerstone.getEnabledElement(el);
-    if (enabledEl?.canvas) return enabledEl.canvas.toDataURL('image/png');
-  } catch { /* ignore */ }
-  return null;
+  return captureCornerstoneElementForPrint(el);
 }
 
 const PAPER_SIZES = ['A4', 'A3', 'A5', 'Letter', 'Legal'] as const;
@@ -149,7 +145,8 @@ export function DualPrintPreview({ onClose }: DualPrintPreviewProps) {
         <style>
           @page { size: ${localPaperSize} ${isLandscape ? 'landscape' : 'portrait'}; margin: 10mm; }
           body { margin: 0; font-family: Arial, sans-serif; }
-          @media print { body { -webkit-print-color-adjust: exact; } }
+          img { image-rendering: -webkit-optimize-contrast; image-rendering: high-quality; }
+          @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
         </style>
       </head>
       <body>

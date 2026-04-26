@@ -109,18 +109,25 @@ export function captureCornerstoneElementForPrint(element: HTMLElement | null, o
       const baseW = baseCanvas.width || baseCanvas.clientWidth || 512;
       const baseH = baseCanvas.height || baseCanvas.clientHeight || 512;
 
-      // Use display dimensions × devicePixelRatio for high-quality output
+      // For print quality, use the MAXIMUM of:
+      //  - native canvas dimensions (DICOM resolution, often 512–4096)
+      //  - display dimensions × devicePixelRatio
+      // This ensures small viewports still produce high-res captures.
       const dpr = window.devicePixelRatio || 1;
-      const displayW = element.clientWidth || baseW;
-      const displayH = element.clientHeight || baseH;
-      const w = Math.round(displayW * dpr);
-      const h = Math.round(displayH * dpr);
+      const displayW = Math.round((element.clientWidth || baseW) * dpr);
+      const displayH = Math.round((element.clientHeight || baseH) * dpr);
+      const w = Math.max(baseW, displayW);
+      const h = Math.max(baseH, displayH);
 
       const output = document.createElement('canvas');
       output.width = w;
       output.height = h;
       const ctx = output.getContext('2d');
       if (ctx) {
+        // Use high-quality image smoothing for upscale
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+
         // Draw each canvas layer in order (base image first, then tool overlays)
         canvases.forEach(c => {
           try {
