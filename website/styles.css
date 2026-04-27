@@ -1,0 +1,261 @@
+/* Mediview shared theme + motion — original crimson/cyan palette */
+:root {
+  --bg:        #FFFFFF;       /* clean white */
+  --bg-2:      #F8FAFC;
+  --ink:       #0F172A;       /* charcoal */
+  --ink-2:     #1E293B;
+  --muted:     #64748B;
+  --line:      #E2E8F0;
+  --brand:     #DC2626;       /* crimson */
+  --brand-2:   #B91C1C;
+  --brand-soft:#FEE2E2;
+  --gold:      #F59E0B;
+  --teal:      #0891B2;       /* cyan accent for AI */
+  --teal-soft: #CFFAFE;
+  --indigo:    #312E81;
+}
+.dark {
+  --bg:        #0B1220;       /* charcoal */
+  --bg-2:      #111827;
+  --ink:       #F1F5F9;
+  --ink-2:     #E2E8F0;
+  --muted:     #94A3B8;
+  --line:      rgba(255,255,255,0.08);
+  --brand:     #EF4444;
+  --brand-2:   #DC2626;
+  --brand-soft:rgba(220,38,38,0.14);
+  --gold:      #FBBF24;
+  --teal:      #22D3EE;
+  --teal-soft: rgba(34,211,238,0.12);
+}
+
+html { scroll-behavior: smooth; }
+body {
+  font-family: 'Inter', system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+}
+.font-display { font-family: 'Manrope', 'Inter', sans-serif; letter-spacing: -0.025em; }
+.font-grotesk { font-family: 'Manrope', 'Inter', sans-serif; letter-spacing: -0.02em; }
+.font-mono { font-family: 'JetBrains Mono', monospace; }
+
+/* Grain texture for premium feel (subtle in dark) */
+.grain::after {
+  content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 0;
+  opacity: 0.3; mix-blend-mode: multiply;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><filter id='n'><feTurbulence baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.06 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+}
+.dark .grain::after { mix-blend-mode: screen; opacity: 0.2; }
+
+/* Dotted grid */
+.dotgrid {
+  background-image: radial-gradient(rgba(15,23,42,.07) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+.dark .dotgrid { background-image: radial-gradient(rgba(255,255,255,.06) 1px, transparent 1px); }
+
+/* Glass */
+.glass {
+  background: rgba(255,255,255,0.72);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  border: 1px solid rgba(15,23,42,0.06);
+}
+.dark .glass {
+  background: rgba(11,18,32,0.6);
+  border: 1px solid rgba(255,255,255,0.06);
+}
+
+/* Lift hover */
+.lift { transition: transform .45s cubic-bezier(.2,.7,.2,1), box-shadow .45s, border-color .45s; }
+.lift:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 30px 60px -25px color-mix(in srgb, var(--brand) 40%, transparent), 0 0 0 1px color-mix(in srgb, var(--brand) 18%, transparent);
+  border-color: color-mix(in srgb, var(--brand) 40%, transparent);
+}
+.lift-teal:hover {
+  box-shadow: 0 30px 60px -25px rgba(8,145,178,.4), 0 0 0 1px rgba(8,145,178,.28);
+  border-color: rgba(8,145,178,0.4);
+}
+
+/* Shine sweep */
+.shine { position: relative; overflow: hidden; isolation: isolate; }
+.shine::after {
+  content: ""; position: absolute; inset: 0;
+  background: linear-gradient(120deg, transparent 28%, rgba(255,255,255,.45) 50%, transparent 72%);
+  transform: translateX(-130%);
+  transition: transform .9s cubic-bezier(.2,.7,.2,1);
+}
+.shine:hover::after { transform: translateX(130%); }
+
+/* Rim glow */
+.rim-rose { box-shadow: 0 0 0 1px rgba(220,38,38,.3), 0 40px 100px -20px rgba(220,38,38,.5), inset 0 0 0 1px rgba(255,255,255,.06); }
+.rim-teal { box-shadow: 0 0 0 1px rgba(8,145,178,.4), 0 40px 100px -20px rgba(8,145,178,.5), inset 0 0 0 1px rgba(255,255,255,.06); }
+
+/* Gradient text — pb prevents italic descenders (g, y, j, p) being clipped by bg-clip-text */
+.text-grad-rose {
+  background: linear-gradient(120deg, var(--grad-from, #DC2626) 0%, var(--grad-mid, #F59E0B) 50%, var(--grad-to, #DC2626) 100%);
+  background-size: 200% 200%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: gradshift calc(8s * var(--anim-scale, 1)) ease infinite;
+  padding-bottom: 0.12em;
+  display: inline-block;
+  line-height: 1.15;
+}
+h1 .text-grad-rose, h2 .text-grad-rose, h3 .text-grad-rose { padding-right: 0.08em; }
+@keyframes gradshift { 0%,100% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } }
+
+.text-grad-teal {
+  background: linear-gradient(120deg, #0891B2 0%, #22D3EE 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* Floating gradient blobs */
+.blob {
+  position: absolute; border-radius: 9999px; pointer-events: none; filter: blur(80px); opacity: 0.5;
+  animation: blobFloat 24s ease-in-out infinite alternate;
+  will-change: transform;
+}
+.dark .blob { opacity: 0.32; }
+@keyframes blobFloat {
+  0%   { transform: translate3d(0,0,0) scale(1); }
+  50%  { transform: translate3d(40px,-30px,0) scale(1.1); }
+  100% { transform: translate3d(-30px,40px,0) scale(0.95); }
+}
+
+/* Marquee */
+@keyframes marquee { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+.marquee-track { animation: marquee var(--marq-dur, 50s) linear infinite; }
+.marquee-track-fast { animation: marquee calc(var(--marq-dur, 50s) * 0.6) linear infinite; }
+.marquee-track:hover { animation-play-state: paused; }
+
+/* Bob */
+@keyframes bob { 0%,100% { transform: translateY(-6px); } 50% { transform: translateY(6px); } }
+.bob   { animation: bob var(--bob-dur, 5s) ease-in-out infinite; will-change: transform; }
+.bob-2 { animation: bob calc(var(--bob-dur, 5s) * 1.3) ease-in-out infinite; animation-delay: -1.5s; will-change: transform; }
+.bob-3 { animation: bob calc(var(--bob-dur, 5s) * 1.5) ease-in-out infinite; animation-delay: -3s; will-change: transform; }
+.bob-4 { animation: bob calc(var(--bob-dur, 5s) * 1.6) ease-in-out infinite; animation-delay: -4.5s; will-change: transform; }
+
+/* Typewriter caret */
+@keyframes blink { 0%,49% { opacity: 1; } 50%,100% { opacity: 0; } }
+.caret { animation: blink 1s step-end infinite; }
+
+/* Pulse ring */
+@keyframes pulsering { 0% { transform: scale(.8); opacity: .55; } 100% { transform: scale(1.7); opacity: 0; } }
+.pulsering { animation: pulsering 2.6s cubic-bezier(.2,.7,.2,1) infinite; }
+
+/* Spotlight follow */
+.spotlight { position: relative; overflow: hidden; }
+.spotlight::before {
+  content: ""; position: absolute; inset: -1px; pointer-events: none;
+  background: radial-gradient(600px circle at var(--mx,50%) var(--my,50%), rgba(220,38,38,0.18), transparent 40%);
+  opacity: 0; transition: opacity .4s;
+}
+.spotlight:hover::before { opacity: 1; }
+
+/* Reveal mask */
+.mask-reveal {
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent);
+          mask-image: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent);
+}
+
+.tilt-l { transform: rotate(-1deg); }
+.tilt-r { transform: rotate(1deg); }
+
+/* Page transitions */
+@keyframes pageIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+.page-in { animation: pageIn .6s cubic-bezier(.2,.7,.2,1) both; }
+
+.card-hover { transition: transform .5s cubic-bezier(.2,.7,.2,1), filter .5s; }
+.card-hover:hover { transform: scale(1.02); }
+
+/* Reduce motion */
+@media (prefers-reduced-motion: reduce) {
+  .bob, .bob-2, .bob-3, .bob-4, .marquee-track, .marquee-track-fast,
+  .pulsering, .caret, .text-grad-rose, .blob, .page-in { animation: none !important; }
+  html { scroll-behavior: auto; }
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: rgba(15,23,42,.18); border-radius: 10px; }
+.dark ::-webkit-scrollbar-thumb { background: rgba(255,255,255,.12); }
+
+:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; border-radius: 8px; }
+
+details > summary { list-style: none; cursor: pointer; }
+details > summary::-webkit-details-marker { display: none; }
+
+.tabnums { font-variant-numeric: tabular-nums; }
+
+/* AI report — slow scroll loop within the fixed-height frame */
+@keyframes aiReportScroll {
+  0%, 8% { transform: translateY(0); }
+  92%, 100% { transform: translateY(calc(-100% + 520px)); }
+}
+.ai-report-scroll { animation: aiReportScroll 22s ease-in-out infinite alternate; }
+
+.magnetic { transition: transform .2s cubic-bezier(.2,.7,.2,1); will-change: transform; }
+
+/* ---------------- TWEAKS: surface modes ---------------- */
+
+/* Glass surface — kill grain, intensify backdrop-blur, subtle gloss */
+.mv-surface-glass.grain::after { display: none; }
+.mv-surface-glass .glass {
+  background: rgba(255,255,255,0.55);
+  backdrop-filter: blur(28px) saturate(160%);
+  -webkit-backdrop-filter: blur(28px) saturate(160%);
+}
+.mv-surface-glass.dark .glass { background: rgba(11,18,32,0.45); }
+.mv-surface-glass .lift,
+.mv-surface-glass .rim-rose,
+.mv-surface-glass [class*="rounded-2xl"][class*="bg-white"]:not(.glass) {
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+.mv-surface-glass .dotgrid { opacity: 0.25 !important; }
+
+/* Print surface — heavy grain, no animated gradient on text, slight desaturation */
+.mv-surface-print.grain::after { opacity: 0.85; mix-blend-mode: multiply; }
+.mv-surface-print.dark.grain::after { opacity: 0.5; mix-blend-mode: screen; }
+.mv-surface-print .text-grad-rose {
+  background: none !important;
+  -webkit-background-clip: unset;
+  background-clip: unset;
+  color: var(--brand) !important;
+  animation: none !important;
+  padding-bottom: 0;
+}
+.mv-surface-print .blob { opacity: 0.18; filter: blur(60px) saturate(70%); }
+.mv-surface-print .glass {
+  background: var(--bg);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  border: 1px solid var(--line);
+}
+.mv-surface-print .shine::after { display: none; }
+.mv-surface-print .rim-rose { box-shadow: 0 0 0 1px var(--brand), 0 20px 50px -25px rgba(0,0,0,0.35); }
+
+/* Paper surface — default, just ensures grain is on */
+.mv-surface-paper.grain::after { opacity: 0.3; }
+
+/* ---------------- TWEAKS: italic emphasis off ---------------- */
+.mv-no-italic h1 .italic,
+.mv-no-italic h2 .italic,
+.mv-no-italic h3 .italic { font-style: normal; }
+
+/* ---------------- TWEAKS: brand color refresh for inline rose-* utilities ---------------- */
+/* When mood swaps brand, update key inline tints */
+.text-rose, .group:hover .text-rose { color: var(--brand) !important; }
+.bg-rose { background-color: var(--brand) !important; }
+.bg-rose-soft { background-color: var(--brand-soft) !important; }
+.border-rose { border-color: var(--brand) !important; }
+.from-rose-soft { --tw-gradient-from: var(--brand-soft) var(--tw-gradient-from-position) !important; }
+.to-rose-soft { --tw-gradient-to: var(--brand-soft) var(--tw-gradient-to-position) !important; }
+.text-teal { color: var(--teal) !important; }
+.bg-teal { background-color: var(--teal) !important; }
