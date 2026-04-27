@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><title>Invoice — Mediview</title></head>
+<body style="margin:0;padding:0;background:#f1f5f9;font-family:Inter,Arial,sans-serif;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f1f5f9;padding:40px 16px;">
+<tr><td align="center">
+<table width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden;max-width:600px;">
+
+  <tr><td style="background:#DC2626;padding:28px 40px;">
+    <h1 style="margin:0;color:#ffffff;font-size:22px;font-weight:700;">Mediview</h1>
+    <p style="margin:4px 0 0;color:rgba(255,255,255,0.8);font-size:13px;">Payment Confirmation</p>
+  </td></tr>
+
+  <tr><td style="padding:40px;">
+    <h2 style="margin:0 0 8px;color:#0f172a;font-size:20px;">Payment received — Thank you!</h2>
+    <p style="margin:0 0 24px;color:#475569;font-size:15px;line-height:1.6;">Hi {{name}},</p>
+    <p style="margin:0 0 24px;color:#475569;font-size:15px;line-height:1.6;">
+      We've received your payment. Your credits have been added to your wallet and your invoice is ready.
+    </p>
+
+    <!-- Amount box -->
+    <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:20px 24px;margin-bottom:28px;">
+      <table width="100%"><tr>
+        <td>
+          <p style="margin:0;color:#64748b;font-size:13px;">Invoice</p>
+          <p style="margin:4px 0 0;color:#0f172a;font-size:15px;font-weight:700;">{{invoice_number}}</p>
+        </td>
+        <td style="text-align:right;">
+          <p style="margin:0;color:#64748b;font-size:13px;">Amount Paid</p>
+          <p style="margin:4px 0 0;color:#DC2626;font-size:22px;font-weight:700;">{{amount}}</p>
+        </td>
+      </tr></table>
+    </div>
+
+    <p style="margin:0 0 20px;color:#475569;font-size:14px;line-height:1.6;">
+      You can download your PDF invoice anytime from your <strong>Account Dashboard → Invoices</strong>.
+    </p>
+
+    <table cellpadding="0" cellspacing="0"><tr><td>
+      <a href="/dashboard.html#/dashboard/invoices" style="display:inline-block;background:#DC2626;color:#ffffff;text-decoration:none;padding:14px 32px;border-radius:8px;font-size:15px;font-weight:600;">
+        View Invoices
+      </a>
+    </td></tr></table>
+
+    <p style="margin:24px 0 0;color:#94a3b8;font-size:12px;background:#f8fafc;padding:12px;border-radius:6px;">
+      <strong>Tax Note:</strong> Not GST registered. Tax not applicable under Section 22 of the CGST Act, 2017.
+    </p>
+  </td></tr>
+
+  <tr><td style="background:#f8fafc;padding:20px 40px;border-top:1px solid #e2e8f0;">
+    <p style="margin:0;color:#94a3b8;font-size:12px;">© 2026 Mediview. Questions? Contact us at your support email.</p>
+  </td></tr>
+
+</table>
+</td></tr>
+</table>
+</body>
+</html>

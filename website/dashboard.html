@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Mediview Dashboard — Account, billing & support</title>
+<meta name="description" content="Manage your Mediview Pro account: top up print credits, recharge AI, view invoices, raise tickets, and chat with our AI agent." />
+<link rel="icon" type="image/png" href="assets/favicon.png" />
+
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Manrope:wght@500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    darkMode: 'class',
+    theme: {
+      extend: {
+        fontFamily: {
+          sans: ['Inter','ui-sans-serif','system-ui'],
+          display: ['Manrope','Inter','sans-serif'],
+          mono: ['JetBrains Mono','ui-monospace'],
+        },
+        colors: {
+          ink:    'rgb(15 23 42 / <alpha-value>)',
+          ink2:   'rgb(30 41 59 / <alpha-value>)',
+          paper:  'rgb(255 255 255 / <alpha-value>)',
+          paper2: 'rgb(248 250 252 / <alpha-value>)',
+          rose:   { DEFAULT: '#DC2626', dark: '#B91C1C', soft: '#FEE2E2' },
+          gold:   '#F59E0B',
+          teal:   { DEFAULT: '#0891B2', soft: '#CFFAFE' },
+          midnight: '#0B1220',
+          mid2:     '#111827',
+        },
+      },
+    },
+  };
+</script>
+
+<!-- Environment config (override these per environment) -->
+<script>
+  window.MEDIVIEW_API_BASE = '/mediview/api'; // absolute: 'https://mehrgrewal.com/mediview/api'
+  window.MEDIVIEW_API_MODE = 'live'; // 'live' | 'mock'
+</script>
+
+<link rel="stylesheet" href="styles.css" />
+<style>
+  :root { --line: rgb(226 232 240); --muted: rgb(100 116 139); }
+  .dark { --line: rgb(255 255 255 / 0.08); --muted: rgb(148 163 184); }
+  body { background: rgb(248 250 252); }
+  .dark body { background: #0B1220; }
+  #root:empty::before { content: ''; position: fixed; inset: 0; background: inherit; }
+</style>
+
+<!-- Razorpay -->
+<script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+
+<!-- Google Sign-In -->
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+</head>
+<body class="bg-paper2 text-ink dark:bg-midnight dark:text-paper">
+<div id="root"></div>
+
+<!-- Shared icons & primitives from main site -->
+<script type="text/babel" data-presets="env,react" src="components/icons.jsx"></script>
+
+<!-- API + payments -->
+<script src="dashboard/api.js"></script>
+<script src="dashboard/razorpay.js"></script>
+
+<!-- Auth context + pages -->
+<script type="text/babel" data-presets="env,react" src="dashboard/auth-context.jsx"></script>
+<script type="text/babel" data-presets="env,react" src="dashboard/auth-pages.jsx"></script>
+
+<!-- UI primitives + shell -->
+<script type="text/babel" data-presets="env,react" src="dashboard/dash-ui.jsx"></script>
+<script type="text/babel" data-presets="env,react" src="dashboard/dash-shell.jsx"></script>
+
+<!-- Recharge flows -->
+<script type="text/babel" data-presets="env,react" src="dashboard/print-recharge.jsx"></script>
+<script type="text/babel" data-presets="env,react" src="dashboard/ai-recharge.jsx"></script>
+
+<!-- Pages -->
+<script type="text/babel" data-presets="env,react" src="dashboard/pages-overview.jsx"></script>
+<script type="text/babel" data-presets="env,react" src="dashboard/pages-rest.jsx"></script>
+
+<!-- Chat widget -->
+<script type="text/babel" data-presets="env,react" src="dashboard/chat-widget.jsx"></script>
+
+<!-- Admin shell (super_admin only) -->
+<script type="text/babel" data-presets="env,react" src="dashboard/admin-shell.jsx"></script>
+
+<!-- App router -->
+<script type="text/babel" data-presets="env,react">
+const { useState, useEffect } = React;
+
+// --- Tiny hash router ---
+const useHashRoute = () => {
+  const [hash, setHash] = useState(window.location.hash || '#/dashboard');
+  useEffect(() => {
+    const onChange = () => {
+      setHash(window.location.hash || '#/dashboard');
+      window.scrollTo(0, 0);
+    };
+    window.addEventListener('hashchange', onChange);
+    return () => window.removeEventListener('hashchange', onChange);
+  }, []);
+  return hash;
+};
+
+const ROUTES = {
+  '#/dashboard':              () => <PageOverview/>,
+  '#/dashboard/devices':      () => <PageDevices/>,
+  '#/dashboard/licenses':     () => <PageLicenses/>,
+  '#/dashboard/wallet':       () => <PageWallet/>,
+  '#/dashboard/ai':           () => <PageAI/>,
+  '#/dashboard/invoices':     () => <PageInvoices/>,
+  '#/dashboard/tickets':      () => <PageTickets/>,
+  '#/dashboard/bugs':         () => <PageBugs/>,
+  '#/dashboard/team':         () => <PageTeam/>,
+  '#/dashboard/analytics':    () => <PageAnalytics/>,
+  '#/dashboard/audit':        () => <PageAudit/>,
+  '#/dashboard/referrals':    () => <PageReferrals/>,
+  '#/dashboard/settings':     () => <PageSettings/>,
+  '#/dashboard/admin':        () => (typeof AdminShell !== 'undefined' ? <AdminShell/> : <PageOverview/>),
+  '#/dashboard/login':        () => <LoginPage/>,
+  '#/dashboard/signup':       () => <SignupPage/>,
+  '#/dashboard/forgot':       () => <ForgotPage/>,
+  '#/dashboard/reset':        () => <ResetPage/>,
+  '#/dashboard/verify-email': () => <VerifyEmailPage/>,
+  '#/dashboard/accept-invite':() => <AcceptInvitePage/>,
+};
+
+const publicRoutes = [
+  '#/dashboard/login',
+  '#/dashboard/signup',
+  '#/dashboard/forgot',
+  '#/dashboard/reset',
+  '#/dashboard/verify-email',
+  '#/dashboard/accept-invite',
+];
+
+const Router = () => {
+  const hash    = useHashRoute();
+  const { isAuthed } = useAuth();
+  const route   = hash.split('?')[0];
+
+  useEffect(() => {
+    if (!isAuthed && !publicRoutes.includes(route)) window.location.hash = '#/dashboard/login';
+    else if (isAuthed && publicRoutes.includes(route)) window.location.hash = '#/dashboard';
+  }, [isAuthed, route]);
+
+  if (!isAuthed && !publicRoutes.includes(route)) return null;
+  if (isAuthed && publicRoutes.includes(route)) return null;
+
+  const Page = ROUTES[route] || ROUTES['#/dashboard'];
+  return <Page/>;
+};
+
+const App = () => {
+  const { isAuthed } = useAuth();
+  return (
+    <>
+      <Router/>
+      {isAuthed && typeof ChatWidget !== 'undefined' && <ChatWidget/>}
+    </>
+  );
+};
+
+// Dark-mode init
+const applyDark = () => {
+  const dark = localStorage.getItem('mv:dark') === '1' || matchMedia('(prefers-color-scheme: dark)').matches;
+  document.documentElement.classList.toggle('dark', dark);
+};
+applyDark();
+
+ReactDOM.createRoot(document.getElementById('root')).render(
+  <AuthProvider>
+    <ToastProvider>
+      <App/>
+    </ToastProvider>
+  </AuthProvider>
+);
+</script>
+</body>
+</html>
