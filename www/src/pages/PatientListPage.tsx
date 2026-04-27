@@ -1,5 +1,5 @@
-import { useEffect } from 'react';
-import { Outlet } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { Outlet, useNavigate } from 'react-router-dom';
 import { usePatientStore } from '@/stores/patientStore';
 import { PatientSearchBar } from '@/components/patient/PatientSearchBar';
 import { PatientDateFilter } from '@/components/patient/PatientDateFilter';
@@ -11,6 +11,8 @@ import { FolderSyncBar } from '@/components/patient/FolderSyncBar';
 import { PatientStatusBar } from '@/components/patient/PatientStatusBar';
 import { useThemeStore } from '@/stores/themeStore';
 import { useReportStore } from '@/stores/reportStore';
+import { ReportEditor } from '@/components/report/ReportEditor';
+import { Sun, Moon } from 'lucide-react';
 
 // Re-hydrate the report store from localStorage whenever the popup window
 // saves a report (it writes to localStorage in its own JS context, which
@@ -30,10 +32,6 @@ function useReportStoreCrossWindowSync() {
     return () => window.removeEventListener('storage', handleStorage);
   }, []);
 }
-import { ReportEditor } from '@/components/report/ReportEditor';
-import { Sun, Moon } from 'lucide-react';
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 
 export function PatientListPage() {
   useReportStoreCrossWindowSync();
