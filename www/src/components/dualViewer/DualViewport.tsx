@@ -7,8 +7,11 @@
  * - Panel-scoped CustomEvents to prevent cross-panel sync
  */
 import { useEffect, useRef, useCallback, useState, memo } from 'react';
-import { cornerstone } from '@/lib/cornerstoneSetup';
+import { createPortal } from 'react-dom';
+import { cornerstone, cornerstoneTools } from '@/lib/cornerstoneSetup';
 import { useDualViewerStore, type PanelId } from '@/stores/dualViewerStore';
+import { findAnnotationAtPoint, setupAutoDeactivate, markDblClickHandled } from '@/lib/annotationUtils';
+import { AnnotationEditOverlay } from '@/components/shared/AnnotationEditOverlay';
 
 interface DualViewportProps {
   imageId: string | null;
@@ -32,6 +35,11 @@ function DualViewportInner({
     isStampMode, activeStampId, placeStamp, stampPlacements, updateStampPlacement,
     setPanelViewportImage, isTextMode, placeTextDirect,
   } = useDualViewerStore();
+
+  // Editing cornerstone annotation (double-click on shape)
+  const [editingAnnotation, setEditingAnnotation] = useState<{
+    toolName: string; annotationIndex: number; color: string; lineWidth: number; position: { x: number; y: number };
+  } | null>(null);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -111,6 +119,40 @@ function DualViewportInner({
     });
     observer.observe(el);
     return () => observer.disconnect();
+  }, []);
+
+  // ---- AUTO-DEACTIVATE TOOLS AFTER SINGLE USE ----
+  useEffect(() => {
+    const el = elementRef.current;
+    if (!el) return;
+    return setupAutoDeactivate(el, () => {
+      window.dispatchEvent(new CustomEvent('dual-tool-deactivated'));
+    });
+  }, []);
+
+  // ---- DOUBLE-CLICK TO EDIT CORNERSTONE ANNOTATIONS ----
+  useEffect(() => {
+    const el = elementRef.current;
+    if (!el) return;
+    const handleDblClick = (e: MouseEvent) => {
+      const rect = el.getBoundingClientRect();
+      const canvasX = e.clientX - rect.left;
+      const canvasY = e.clientY - rect.top;
+      const found = findAnnotationAtPoint(el, canvasX, canvasY);
+      if (found) {
+        e.stopPropagation();
+        markDblClickHandled();
+        setEditingAnnotation({
+          toolName: found.toolName,
+          annotationIndex: found.annotationIndex,
+          color: found.data.color || '#00ff00',
+          lineWidth: found.data.lineWidth || 1,
+          position: { x: e.clientX, y: e.clientY },
+        });
+      }
+    };
+    el.addEventListener('dblclick', handleDblClick);
+    return () => el.removeEventListener('dblclick', handleDblClick);
   }, []);
 
   // Scroll wheel = zoom
@@ -424,8 +466,22 @@ function DualViewportInner({
         </div>
       )}
 
+      {/* Annotation edit overlay (double-click on shape) */}
+      {editingAnnotation && elementRef.current && createPortal(
+        <AnnotationEditOverlay
+          element={elementRef.current}
+          toolName={editingAnnotation.toolName}
+          annotationIndex={editingAnnotation.annotationIndex}
+          initialColor={editingAnnotation.color}
+          initialLineWidth={editingAnnotation.lineWidth}
+          position={editingAnnotation.position}
+          onClose={() => setEditingAnnotation(null)}
+        />,
+        document.body
+      )}
+
       {/* Spot number */}
-      <div className="absolute bottom-1 left-1 text-white text-xs font-bold opacity-60 select-none pointer-events-none z-10">
+      <div className="absolute bottom-1 left-1 text-white text-base font-mono font-bold opacity-70 select-none pointer-events-none z-10 drop-shadow-md">
         {spotNumber}
       </div>
 

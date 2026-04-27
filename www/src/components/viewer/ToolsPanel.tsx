@@ -7,6 +7,7 @@ import {
   activateTool, applyWLPreset, applyFilter, WL_PRESETS, resetViewport,
   setAnnotationToolColor, applyActionToElements, undoLastAnnotationOnSelected,
   clearAllAnnotationsOnSelected,
+  deleteActiveAnnotationOnSelected,
 } from '@/lib/viewerTools';
 import {
   Stamp, Type, Minus, ArrowLeft, Spline, Ruler,
@@ -137,6 +138,16 @@ export function ToolsPanel() {
     activateTool('pan', null);
   }, []);
 
+  // Listen for auto-deactivate events from viewports
+  useEffect(() => {
+    const handler = () => {
+      setActiveTool('select');
+      activateTool('select', null);
+    };
+    window.addEventListener('viewer-tool-deactivated', handler);
+    return () => window.removeEventListener('viewer-tool-deactivated', handler);
+  }, [setActiveTool]);
+
   // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -165,7 +176,10 @@ export function ToolsPanel() {
       }
 
       if (e.key === 'Delete') {
-        clearAllAnnotationsOnSelected();
+        // Try deleting the selected/active annotation first, fall back to clearing all
+        if (!deleteActiveAnnotationOnSelected()) {
+          clearAllAnnotationsOnSelected();
+        }
       }
     };
     window.addEventListener('keydown', handleKeyDown);

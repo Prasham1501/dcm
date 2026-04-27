@@ -10,6 +10,8 @@ import { createPortal } from 'react-dom';
 import { cornerstone, cornerstoneTools } from '@/lib/cornerstoneSetup';
 import { useCRViewerStore } from '@/stores/crViewerStore';
 import { useStampStore } from '@/stores/stampStore';
+import { findAnnotationAtPoint, setupAutoDeactivate, markDblClickHandled } from '@/lib/annotationUtils';
+import { AnnotationEditOverlay } from '@/components/shared/AnnotationEditOverlay';
 
 
 interface CRViewportProps {
@@ -41,6 +43,11 @@ function CRViewportInner({
 
   // Editing stamp/text state (double-click)
   const [editingStamp, setEditingStamp] = useState<{ id: string; color: string; fontSize: number; text?: string; type?: string } | null>(null);
+
+  // Editing cornerstone annotation (double-click on shape)
+  const [editingAnnotation, setEditingAnnotation] = useState<{
+    toolName: string; annotationIndex: number; color: string; lineWidth: number; position: { x: number; y: number };
+  } | null>(null);
 
   // Pending stamp popup (click-to-place with stamp picker)
   const [pendingStamp, setPendingStamp] = useState<{ xPercent: number; yPercent: number } | null>(null);
@@ -130,6 +137,74 @@ function CRViewportInner({
     });
     observer.observe(el);
     return () => observer.disconnect();
+  }, []);
+
+  // ---- HIDE MEASUREMENT TEXT WHEN hideMeasurements IS ON ----
+  useEffect(() => {
+    const el = elementRef.current;
+    if (!el) return;
+
+    const ROI_TOOLS = ['EllipticalRoi', 'RectangleRoi', 'FreehandRoi', 'Length', 'Angle'];
+
+    const handleRendered = () => {
+      const hide = useCRViewerStore.getState().hideMeasurements;
+      ROI_TOOLS.forEach(toolName => {
+        try {
+          const state = cornerstoneTools.getToolState(el, toolName);
+          if (state?.data) {
+            state.data.forEach((d: any) => {
+              if (d.handles?.textBox) {
+                d.handles.textBox.drawnIndependently = hide;
+                if (hide) {
+                  d.handles.textBox.hasMoved = true;
+                  d.handles.textBox.worldPosition = { x: -99999, y: -99999 };
+                  d.handles.textBox.x = -99999;
+                  d.handles.textBox.y = -99999;
+                }
+              }
+            });
+          }
+        } catch { /* ignore */ }
+      });
+    };
+
+    el.addEventListener('cornerstoneimagerendered', handleRendered);
+    return () => el.removeEventListener('cornerstoneimagerendered', handleRendered);
+  }, []);
+
+  // ---- AUTO-DEACTIVATE TOOLS AFTER SINGLE USE ----
+  useEffect(() => {
+    const el = elementRef.current;
+    if (!el) return;
+    return setupAutoDeactivate(el, () => {
+      // Broadcast deactivation event so CRSidebar can clear its active tool state
+      window.dispatchEvent(new CustomEvent('cr-tool-deactivated'));
+    });
+  }, []);
+
+  // ---- DOUBLE-CLICK TO EDIT ANNOTATIONS ----
+  useEffect(() => {
+    const el = elementRef.current;
+    if (!el) return;
+    const handleDblClick = (e: MouseEvent) => {
+      const rect = el.getBoundingClientRect();
+      const canvasX = e.clientX - rect.left;
+      const canvasY = e.clientY - rect.top;
+      const found = findAnnotationAtPoint(el, canvasX, canvasY);
+      if (found) {
+        e.stopPropagation();
+        markDblClickHandled();
+        setEditingAnnotation({
+          toolName: found.toolName,
+          annotationIndex: found.annotationIndex,
+          color: found.data.color || '#00ff00',
+          lineWidth: found.data.lineWidth || 1,
+          position: { x: e.clientX, y: e.clientY },
+        });
+      }
+    };
+    el.addEventListener('dblclick', handleDblClick);
+    return () => el.removeEventListener('dblclick', handleDblClick);
   }, []);
 
   // ---- MOUSE WHEEL = ZOOM (native, on container) ----
@@ -624,8 +699,22 @@ function CRViewportInner({
         </div>
       )}
 
+      {/* Annotation edit overlay (double-click on shape) */}
+      {editingAnnotation && elementRef.current && createPortal(
+        <AnnotationEditOverlay
+          element={elementRef.current}
+          toolName={editingAnnotation.toolName}
+          annotationIndex={editingAnnotation.annotationIndex}
+          initialColor={editingAnnotation.color}
+          initialLineWidth={editingAnnotation.lineWidth}
+          position={editingAnnotation.position}
+          onClose={() => setEditingAnnotation(null)}
+        />,
+        document.body
+      )}
+
       {/* Spot number indicator */}
-      <div className="absolute bottom-1 left-1 text-white text-xs font-bold opacity-60 select-none pointer-events-none z-10">
+      <div className="absolute bottom-1 left-1 text-white text-base font-mono font-bold opacity-70 select-none pointer-events-none z-10 drop-shadow-md">
         {spotNumber}
       </div>
 

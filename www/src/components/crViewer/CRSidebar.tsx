@@ -5,11 +5,12 @@
 import { useCRViewerStore } from '@/stores/crViewerStore';
 import { useReportStore } from '@/stores/reportStore';
 import { cornerstone, cornerstoneTools } from '@/lib/cornerstoneSetup';
-import { useState } from 'react';
+import { undoLastAnnotationOnElement } from '@/lib/annotationUtils';
+import { useState, useEffect } from 'react';
 import {
   ChevronUp, ChevronDown,
   RotateCcw, Undo2, FileText, CheckSquare, Move, Trash2, Type,
-  Minus, ArrowLeft, Square, Circle, Ruler, Triangle,
+  Minus, ArrowLeft, Square, Circle, Ruler, Triangle, EyeOff, Eye,
 } from 'lucide-react';
 
 // All annotation tools that may be active in CR viewports
@@ -52,10 +53,48 @@ export function CRSidebar() {
     undoStampPlacement, clearStampPlacements,
     deleteImageFromViewport,
     isTextMode, setTextMode,
+    hideMeasurements, setHideMeasurements,
   } = useCRViewerStore();
 
   const [panActive, setPanActive] = useState(false);
   const [activeCSTool, setActiveCSTool] = useState<string | null>(null);
+
+  // Listen for auto-deactivate events from viewports
+  useEffect(() => {
+    const handler = () => setActiveCSTool(null);
+    window.addEventListener('cr-tool-deactivated', handler);
+    return () => window.removeEventListener('cr-tool-deactivated', handler);
+  }, []);
+
+  // Delete key: delete active annotation, fallback to clear all
+  // Ctrl+Z: undo last annotation or stamp
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Delete') {
+        const { deleteActiveAnnotationOnElement } = require('@/lib/annotationUtils');
+        // Try all CR viewports
+        const viewports = document.querySelectorAll('[data-cr-viewport-index]');
+        let deleted = false;
+        viewports.forEach((el) => {
+          if (!deleted && deleteActiveAnnotationOnElement(el as HTMLElement)) deleted = true;
+        });
+        if (!deleted) {
+          clearAllCRAnnotations();
+        }
+      }
+      if (e.ctrlKey && e.key === 'z') {
+        e.preventDefault();
+        const viewports = document.querySelectorAll('[data-cr-viewport-index]');
+        let undone = false;
+        viewports.forEach((el) => {
+          if (!undone && undoLastAnnotationOnElement(el as HTMLElement)) undone = true;
+        });
+        if (!undone) undoStampPlacement();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   const activateCSTool = (toolName: string) => {
     if (activeCSTool === toolName) {
@@ -183,6 +222,21 @@ export function CRSidebar() {
         variant={activeCSTool === 'Angle' ? 'accent' : 'default'}
       />
 
+      {/* Hide/Show Measurements toggle */}
+      <SidebarButton
+        onClick={() => {
+          setHideMeasurements(!hideMeasurements);
+          // Force re-render all viewports
+          document.querySelectorAll('[data-cr-viewport-index]').forEach(el => {
+            try { cornerstone.updateImage(el as HTMLElement); } catch { /* ignore */ }
+          });
+        }}
+        label={hideMeasurements ? 'Show' : 'Hide'}
+        title={hideMeasurements ? 'Show measurement values' : 'Hide measurement values (highlight only)'}
+        icon={hideMeasurements ? Eye : EyeOff}
+        variant={hideMeasurements ? 'accent' : 'default'}
+      />
+
       {/* Prev */}
       <SidebarButton
         onClick={prevPage}
@@ -264,9 +318,17 @@ export function CRSidebar() {
 
       {/* Undo */}
       <SidebarButton
-        onClick={undoStampPlacement}
+        onClick={() => {
+          // Try undo cornerstone annotation on selected viewports, then stamp
+          const indices = selectedViewportIndices.length > 0 ? selectedViewportIndices : [selectedViewport];
+          for (const idx of indices) {
+            const el = document.querySelector(`[data-cr-viewport-index="${idx}"]`) as HTMLElement;
+            if (el && undoLastAnnotationOnElement(el)) return;
+          }
+          undoStampPlacement();
+        }}
         label="Undo"
-        title="Undo last stamp (Ctrl+Z)"
+        title="Undo last annotation or stamp (Ctrl+Z)"
         icon={Undo2}
         variant="default"
       />

@@ -490,6 +490,28 @@ export function clearAllAnnotationsOnSelected(): void {
   });
 }
 
+/**
+ * Delete the currently active/selected annotation from selected viewport(s).
+ * Returns true if any annotation was deleted.
+ */
+export function deleteActiveAnnotationOnSelected(): boolean {
+  const { deleteActiveAnnotationOnElement } = require('@/lib/annotationUtils');
+  const { selectedViewportIndices } = useViewerStore.getState();
+  const elements = selectedViewportIndices
+    .map((i: number) => document.querySelector(`[data-viewport-index="${i}"]`) as HTMLDivElement)
+    .filter(Boolean);
+
+  if (elements.length === 0) {
+    const el = getActiveViewportElement();
+    if (el) elements.push(el);
+  }
+
+  for (const el of elements) {
+    if (deleteActiveAnnotationOnElement(el)) return true;
+  }
+  return false;
+}
+
 // Declare global stamp text
 declare global {
   interface Window {

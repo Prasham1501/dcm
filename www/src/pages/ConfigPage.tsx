@@ -1,13 +1,15 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useUIStore } from '@/stores/uiStore';
 import { GeneralTab } from '@/components/config/GeneralTab';
 import { ServerTab } from '@/components/config/ServerTab';
 import { SendTab } from '@/components/config/SendTab';
 import { ClinicalTab } from '@/components/config/ClinicalTab';
 import { ServiceTab } from '@/components/config/ServiceTab';
 import { NetworkReceiverTab } from '@/components/config/NetworkReceiverTab';
+import { PrintSettingsTab } from '@/components/config/PrintSettingsTab';
 
-const TABS = ['General', 'Server', 'Send', 'Clinical', 'Service', 'Network'] as const;
+const TABS = ['General', 'Print', 'Server', 'Send', 'Clinical', 'Service', 'Network'] as const;
 type TabName = typeof TABS[number];
 
 export function ConfigPage() {
@@ -17,6 +19,7 @@ export function ConfigPage() {
   const renderTab = () => {
     switch (activeTab) {
       case 'General': return <GeneralTab />;
+      case 'Print': return <PrintSettingsTab />;
       case 'Server': return <ServerTab />;
       case 'Send': return <SendTab />;
       case 'Clinical': return <ClinicalTab />;
@@ -27,7 +30,7 @@ export function ConfigPage() {
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-app-bg border-2 border-app-accent rounded-lg shadow-2xl w-[720px] max-h-[520px] flex flex-col">
+      <div className="bg-app-bg border-2 border-app-accent rounded-lg shadow-2xl w-[800px] max-h-[600px] flex flex-col">
         {/* Tab header */}
         <div className="flex items-center border-b-2 border-app-accent">
           {TABS.map((tab) => (
@@ -59,6 +62,14 @@ export function ConfigPage() {
 
         {/* Footer */}
         <div className="flex justify-end gap-2 px-5 py-3 border-t border-app-border">
+          <button
+            onClick={() => {
+              useUIStore.getState().addToast('Settings saved successfully', 'success', 2000);
+            }}
+            className="px-4 py-1.5 text-xs font-semibold border-2 border-green-600 text-green-600 bg-app-bg rounded hover:bg-green-600 hover:text-white transition-colors"
+          >
+            Save
+          </button>
           <button
             onClick={() => navigate(-1)}
             className="px-4 py-1.5 text-xs font-semibold border-2 border-app-accent text-app-accent bg-app-bg rounded hover:bg-app-accent hover:text-white transition-colors"

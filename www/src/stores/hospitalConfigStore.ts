@@ -80,6 +80,37 @@ interface HospitalConfig {
   customFooterCenter: string;
   customFooterRight: string;
 
+  viewportBorderColor: string; // for printing
+
+  // Print settings
+  headerFontSize: number;
+  headerFontColor: string;
+  footerFontSize: number;
+  footerFontColor: string;
+  printBlackBgNonUS: boolean;
+  printBlackBgUS: boolean;
+  printBorderToImage: boolean;
+  printBorderColor: string;
+  printCountWarningAt: number;
+  popupOnImageReceived: boolean;
+  exportFolderNameMode: 'patientName' | 'idNameGenderAge';
+  modalityUS: boolean;
+  metadataPrintRefBy: boolean;
+  metadataPrintStudyName: boolean;
+  metadataPrintAccessNo: boolean;
+  metadataPrintPatientId: boolean;
+  gapBetweenImages: number;
+  sixSpotsSpacing: 'equalSpace' | 'compact';
+  logoLeftEnabled: boolean;
+  logoLeftHeight: number;
+  logoRightPath: string;
+  bannerLandscapePath: string;
+  marginTop: number;
+  marginLeft: number;
+  marginRight: number;
+  marginImageTop: number;
+  marginImageBottom: number;
+
   // Configured printers
   printers: PrinterConfig[];
 
@@ -143,6 +174,37 @@ export const useHospitalConfigStore = create<HospitalConfig>()(
       customFooterLeft: '',
       customFooterCenter: 'Printed by: ADMIN',
       customFooterRight: '',
+
+      viewportBorderColor: '#333333',
+
+      // Print settings
+      headerFontSize: 10,
+      headerFontColor: '#000000',
+      footerFontSize: 8,
+      footerFontColor: '#999999',
+      printBlackBgNonUS: true,
+      printBlackBgUS: false,
+      printBorderToImage: true,
+      printBorderColor: '#ffffff',
+      printCountWarningAt: 50,
+      popupOnImageReceived: false,
+      exportFolderNameMode: 'patientName' as const,
+      modalityUS: false,
+      metadataPrintRefBy: true,
+      metadataPrintStudyName: true,
+      metadataPrintAccessNo: true,
+      metadataPrintPatientId: true,
+      gapBetweenImages: 60,
+      sixSpotsSpacing: 'equalSpace' as const,
+      logoLeftEnabled: false,
+      logoLeftHeight: 0.5,
+      logoRightPath: '',
+      bannerLandscapePath: '',
+      marginTop: 140,
+      marginLeft: 140,
+      marginRight: 140,
+      marginImageTop: 140,
+      marginImageBottom: 140,
 
       printers: [
         { name: 'HP LaserJet Pro M404dn', displayName: 'HP LaserJet Pro', type: 'Laser', isDefault: true, isActive: true },
@@ -262,19 +324,23 @@ export function getFormattedAddress(config: HospitalConfig): string {
 export function renderPrintSlot(
   slot: PrintSlotContent,
   config: HospitalConfig,
-  isCustomText?: string
+  isCustomText?: string,
+  isFooter?: boolean
 ): string {
+  const fontSize = isFooter ? config.footerFontSize : config.headerFontSize;
+  const fontColor = isFooter ? config.footerFontColor : config.headerFontColor;
+  const baseStyle = `font-size:${fontSize}px;color:${fontColor}`;
   switch (slot) {
     case 'logo':
       return config.logoDataUrl
         ? `<img src="${config.logoDataUrl}" style="max-height:40px;max-width:120px;object-fit:contain" />`
         : '';
     case 'name':
-      return `<div style="font-weight:600">${config.hospitalName}</div>`;
+      return `<div style="font-weight:600;${baseStyle}">${config.hospitalName}</div>`;
     case 'address':
-      return `<div>${getFormattedAddress(config)}</div>${config.phone ? `<div>${config.phone}</div>` : ''}`;
+      return `<div style="${baseStyle}">${getFormattedAddress(config)}</div>${config.phone ? `<div style="${baseStyle}">${config.phone}</div>` : ''}`;
     case 'custom':
-      return `<div>${isCustomText || ''}</div>`;
+      return `<div style="${baseStyle}">${isCustomText || ''}</div>`;
     case 'none':
     default:
       return '';

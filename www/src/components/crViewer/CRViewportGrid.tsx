@@ -8,6 +8,7 @@ import { useCRViewerStore } from '@/stores/crViewerStore';
 import { CRViewport } from './CRViewport';
 import { Check } from 'lucide-react';
 import { useAspectGrid } from '@/hooks/useAspectGrid';
+import { wasDblClickHandled } from '@/lib/annotationUtils';
 
 /** Extract unique area letters from a CSS grid-template-areas string */
 function getAreaLetters(areas: string): string[] {
@@ -36,6 +37,7 @@ export function CRViewportGrid() {
   // Double-click: toggle single viewport (zoom in/out)
   const handleViewportDoubleClick = useCallback((index: number) => {
     if (isArrangeMode) return;
+    if (wasDblClickHandled()) return;
     toggleSingleViewport(index);
   }, [isArrangeMode, toggleSingleViewport]);
 

@@ -105,6 +105,9 @@ interface CRViewerState {
   // Scroll mode
   isScrollMode: boolean;
 
+  // Hide measurements
+  hideMeasurements: boolean;
+
   // Loading
   isLoading: boolean;
 
@@ -148,6 +151,9 @@ interface CRViewerState {
   setScrollMode: (v: boolean) => void;
   scrollNext: () => void;
   scrollPrev: () => void;
+
+  // Hide measurements
+  setHideMeasurements: (v: boolean) => void;
 
   // Double-click toggle
   toggleSingleViewport: (viewportIndex: number) => void;
@@ -281,6 +287,7 @@ export const useCRViewerStore = create<CRViewerState>((set, get) => ({
   isTextMode: false,
   showLogo: true,
   isScrollMode: false,
+  hideMeasurements: false,
   isLoading: false,
   applyToAll: false,
 
@@ -538,6 +545,9 @@ export const useCRViewerStore = create<CRViewerState>((set, get) => ({
     const { currentPage } = get();
     if (currentPage > 1) set({ currentPage: currentPage - 1 });
   },
+
+  // Hide measurements
+  setHideMeasurements: (v) => set({ hideMeasurements: v }),
 
   // Stamps
   addStamp: (stamp) => {

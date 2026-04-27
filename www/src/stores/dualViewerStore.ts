@@ -122,6 +122,7 @@ interface DualViewerState {
   // UI
   isLoading: boolean;
   showLogo: boolean;
+  syncMove: boolean;
 
   // Panel actions
   loadPanelStudy: (panelId: PanelId, params: {
@@ -146,6 +147,7 @@ interface DualViewerState {
 
   // Active panel
   setActivePanel: (panelId: PanelId) => void;
+  setSyncMove: (v: boolean) => void;
 
   // Active-panel convenience wrappers
   activeNextPage: () => void;
@@ -235,6 +237,7 @@ export const useDualViewerStore = create<DualViewerState>((set, get) => ({
   isTextMode: false,
   isLoading: false,
   showLogo: true,
+  syncMove: true,
 
   // ── Panel Actions ──
 
@@ -498,6 +501,7 @@ export const useDualViewerStore = create<DualViewerState>((set, get) => ({
   // ── Active Panel ──
 
   setActivePanel: (panelId) => set({ activePanel: panelId }),
+  setSyncMove: (v) => set({ syncMove: v }),
 
   activeNextPage: () => { const { activePanel } = get(); get().panelNextPage(activePanel); },
   activePrevPage: () => { const { activePanel } = get(); get().panelPrevPage(activePanel); },

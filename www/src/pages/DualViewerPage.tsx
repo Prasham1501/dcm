@@ -11,7 +11,7 @@ import { DualViewportPanel } from '@/components/dualViewer/DualViewportPanel';
 import { DualSidebar } from '@/components/dualViewer/DualSidebar';
 import { DualThumbnailSidebar } from '@/components/dualViewer/DualThumbnailSidebar';
 import { InlineReportPanel } from '@/components/report/InlineReportPanel';
-import { ChevronLeft, X, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { ChevronLeft, X, PanelRightClose, PanelRightOpen } from 'lucide-react';
 import { useThemeStore } from '@/stores/themeStore';
 import { Sun, Moon } from 'lucide-react';
 
@@ -63,14 +63,24 @@ export function DualViewerPage() {
       const tag = (e.target as HTMLElement)?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
 
+      const { syncMove, activePanel } = useDualViewerStore.getState();
+
       if (e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === 'PageDown') {
         e.preventDefault();
-        useDualViewerStore.getState().panelNextPage('left');
-        useDualViewerStore.getState().panelNextPage('right');
+        if (syncMove) {
+          useDualViewerStore.getState().panelNextPage('left');
+          useDualViewerStore.getState().panelNextPage('right');
+        } else {
+          useDualViewerStore.getState().panelNextPage(activePanel);
+        }
       } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp' || e.key === 'PageUp') {
         e.preventDefault();
-        useDualViewerStore.getState().panelPrevPage('left');
-        useDualViewerStore.getState().panelPrevPage('right');
+        if (syncMove) {
+          useDualViewerStore.getState().panelPrevPage('left');
+          useDualViewerStore.getState().panelPrevPage('right');
+        } else {
+          useDualViewerStore.getState().panelPrevPage(activePanel);
+        }
       }
     };
     window.addEventListener('keydown', handleKeyDown, { capture: true });
@@ -103,13 +113,6 @@ export function DualViewerPage() {
             </button>
           )}
           <span className="text-xs font-bold text-app-accent uppercase tracking-wide">Dual Viewer</span>
-          <button
-            onClick={() => setShowThumbnails(!showThumbnails)}
-            className="p-1 rounded hover:bg-app-hover transition-colors text-app-text-secondary"
-            title={showThumbnails ? 'Hide thumbnails' : 'Show thumbnails'}
-          >
-            {showThumbnails ? <PanelLeftClose className="w-4 h-4" /> : <PanelLeftOpen className="w-4 h-4" />}
-          </button>
         </div>
 
         {/* Center: Patient info (both panels) */}
@@ -133,6 +136,13 @@ export function DualViewerPage() {
             Page {activeP.currentPage}/{activeP.totalPages}
             <span className="text-app-accent font-semibold ml-1">({activeP.totalImages})</span>
           </span>
+          <button
+            onClick={() => setShowThumbnails(!showThumbnails)}
+            className="p-1 rounded hover:bg-app-hover transition-colors text-app-text-secondary"
+            title={showThumbnails ? 'Hide thumbnails' : 'Show thumbnails'}
+          >
+            {showThumbnails ? <PanelRightClose className="w-4 h-4" /> : <PanelRightOpen className="w-4 h-4" />}
+          </button>
           <button
             onClick={toggleTheme}
             className="p-1 rounded hover:bg-app-hover transition-colors text-app-text-secondary"

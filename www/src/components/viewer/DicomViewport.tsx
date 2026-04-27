@@ -11,6 +11,8 @@ import { useViewerStore } from '@/stores/viewerStore';
 import { useCustomAnnotationStore, type TextAnnotation, type DrawPath } from '@/stores/customAnnotationStore';
 import { useStampStore } from '@/stores/stampStore';
 import { resetViewport, activateTool } from '@/lib/viewerTools';
+import { findAnnotationAtPoint, setupAutoDeactivate, markDblClickHandled } from '@/lib/annotationUtils';
+import { AnnotationEditOverlay } from '@/components/shared/AnnotationEditOverlay';
 
 
 // ---- Draw path annotation ---- (interfaces moved to store)
@@ -76,6 +78,11 @@ function DicomViewportInner({
   const [editingAnn, setEditingAnn] = useState<TextAnnotation | null>(null);
   const [editColor, setEditColor] = useState('#ffff00');
   const [editFontSize, setEditFontSize] = useState(14);
+
+  // Editing cornerstone annotation (double-click on shape)
+  const [editingCSAnnotation, setEditingCSAnnotation] = useState<{
+    toolName: string; annotationIndex: number; color: string; lineWidth: number; position: { x: number; y: number };
+  } | null>(null);
 
   // Drag state for move existing annotations
   const [draggingAnn, setDraggingAnn] = useState<{
@@ -194,6 +201,40 @@ function DicomViewportInner({
     el.addEventListener('cornerstoneimagerendered', handleImageRendered);
     return () => el.removeEventListener('cornerstoneimagerendered', handleImageRendered);
   }, [viewportIndex]);
+
+  // ---- AUTO-DEACTIVATE TOOLS AFTER SINGLE USE ----
+  useEffect(() => {
+    const el = elementRef.current;
+    if (!el) return;
+    return setupAutoDeactivate(el, () => {
+      window.dispatchEvent(new CustomEvent('viewer-tool-deactivated'));
+    });
+  }, []);
+
+  // ---- DOUBLE-CLICK TO EDIT CORNERSTONE ANNOTATIONS ----
+  useEffect(() => {
+    const el = elementRef.current;
+    if (!el) return;
+    const handleDblClick = (e: MouseEvent) => {
+      const rect = el.getBoundingClientRect();
+      const canvasX = e.clientX - rect.left;
+      const canvasY = e.clientY - rect.top;
+      const found = findAnnotationAtPoint(el, canvasX, canvasY);
+      if (found) {
+        e.stopPropagation();
+        markDblClickHandled();
+        setEditingCSAnnotation({
+          toolName: found.toolName,
+          annotationIndex: found.annotationIndex,
+          color: found.data.color || '#00ff00',
+          lineWidth: found.data.lineWidth || 1,
+          position: { x: e.clientX, y: e.clientY },
+        });
+      }
+    };
+    el.addEventListener('dblclick', handleDblClick);
+    return () => el.removeEventListener('dblclick', handleDblClick);
+  }, []);
 
   // Listen for clear-annotations event — directly wipe local state
   useEffect(() => {
@@ -1116,6 +1157,20 @@ function DicomViewportInner({
             )}
           </div>
         </div>
+      )}
+
+      {/* Cornerstone annotation edit overlay (double-click on shape) */}
+      {editingCSAnnotation && elementRef.current && createPortal(
+        <AnnotationEditOverlay
+          element={elementRef.current}
+          toolName={editingCSAnnotation.toolName}
+          annotationIndex={editingCSAnnotation.annotationIndex}
+          initialColor={editingCSAnnotation.color}
+          initialLineWidth={editingCSAnnotation.lineWidth}
+          position={editingCSAnnotation.position}
+          onClose={() => setEditingCSAnnotation(null)}
+        />,
+        document.body
       )}
 
       {/* Right-click context menu (portal to body to avoid overflow clipping) */}

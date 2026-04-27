@@ -8,6 +8,7 @@ import { useCallback, useRef, useEffect, useState } from 'react';
 import { useDualViewerStore, type PanelId } from '@/stores/dualViewerStore';
 import { DualViewport } from './DualViewport';
 import { Check } from 'lucide-react';
+import { wasDblClickHandled } from '@/lib/annotationUtils';
 
 // Module-level drag state keyed by panelId — avoids stale closures
 interface _DualVPDrag { srcSlot: number; imageId: string; startX: number; startY: number }
@@ -207,7 +208,7 @@ export function DualViewportGrid({ panelId }: DualViewportGridProps) {
               data-dual-panel={panelId}
               className={`relative overflow-hidden min-h-0 ${isArrangeMode ? 'cursor-pointer' : imageId ? 'hover:cursor-grab active:cursor-grabbing' : ''}`}
               onMouseDown={(e) => handleViewportMouseDown(i, e)}
-              onDoubleClick={() => useDualViewerStore.getState().togglePanelSingleViewport(panelId, i)}
+              onDoubleClick={() => { if (!wasDblClickHandled()) useDualViewerStore.getState().togglePanelSingleViewport(panelId, i); }}
             >
               <div className={`${isArrangeMode ? 'pointer-events-none' : ''} w-full h-full`}>
                 <DualViewport

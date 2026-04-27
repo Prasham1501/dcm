@@ -5,6 +5,7 @@ import { useAnnotationPersistence, restoreAnnotations } from '@/hooks/useAnnotat
 import { useAspectGrid } from '@/hooks/useAspectGrid';
 import { getStudyKey } from '@/stores/annotationStore';
 import { Check } from 'lucide-react';
+import { wasDblClickHandled } from '@/lib/annotationUtils';
 
 /** Extract unique area letters from a CSS grid-template-areas string */
 function getAreaLetters(areas: string): string[] {
@@ -133,6 +134,7 @@ export function ViewportGrid() {
 
   const handleViewportDoubleClick = useCallback((index: number) => {
     if (isArrangeMode) return;
+    if (wasDblClickHandled()) return;
     toggleSingleViewport(index);
   }, [isArrangeMode, toggleSingleViewport]);
 
@@ -237,7 +239,7 @@ export function ViewportGrid() {
                   />
                 </div>
                 {/* Image order label - bottom left */}
-                <div className="absolute bottom-1 left-1 z-30 text-white text-[10px] font-mono pointer-events-none select-none opacity-60 leading-none">
+                <div className="absolute bottom-1 left-1 z-30 text-white text-base font-mono font-bold pointer-events-none select-none opacity-70 leading-none drop-shadow-md">
                   {(actualImgIndex >= 0 ? actualImgIndex : imgIndex) + 1}/{images.length}
                 </div>
                 {/* Selection border overlay - rendered ON TOP with box-shadow so it can't be clipped */}

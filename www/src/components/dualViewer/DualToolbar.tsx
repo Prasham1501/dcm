@@ -2,17 +2,18 @@
  * DualToolbar — Shared top toolbar for the Dual viewer.
  * Arrange (active panel), Stamp dropdown, Preview, Print.
  */
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useDualViewerStore } from '@/stores/dualViewerStore';
 import {
-  ChevronLeft, ChevronRight, Printer, Eye, ListOrdered, Stamp,
+  ChevronLeft, ChevronRight, Printer, Eye, ListOrdered, Stamp, MoveHorizontal, Move3d, Undo2,
 } from 'lucide-react';
 import { DualStampCreatorModal } from './DualStampCreatorModal';
 import { DualPrintPreview } from './DualPrintPreview';
+import { undoLastAnnotationOnElement, deleteActiveAnnotationOnElement } from '@/lib/annotationUtils';
 
 export function DualToolbar() {
   const {
-    activePanel, panels,
+    activePanel, panels, syncMove, setSyncMove,
     isStampMode, setStampMode, stamps, activeStampId, setActiveStamp,
     undoStampPlacement, clearStampPlacements, stampPlacements,
   } = useDualViewerStore();
@@ -26,28 +27,80 @@ export function DualToolbar() {
   const [showStampDropdown, setShowStampDropdown] = useState(false);
   const [showPrintPreview, setShowPrintPreview] = useState(false);
 
+  // Delete key: delete active annotation from dual viewports
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Delete') {
+        const viewports = document.querySelectorAll('[data-dual-viewport-index]');
+        let deleted = false;
+        viewports.forEach((el) => {
+          if (!deleted && deleteActiveAnnotationOnElement(el as HTMLElement)) deleted = true;
+        });
+      }
+      if (e.ctrlKey && e.key === 'z') {
+        e.preventDefault();
+        const viewports = document.querySelectorAll('[data-dual-viewport-index]');
+        let undone = false;
+        viewports.forEach((el) => {
+          if (!undone && undoLastAnnotationOnElement(el as HTMLElement)) undone = true;
+        });
+        if (!undone) undoStampPlacement();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
   return (
     <>
       <div className="flex items-center gap-1.5 px-2 py-1.5 bg-app-surface border-b border-app-border">
-        {/* Navigation arrows for active panel */}
+        {/* Navigation arrows */}
         <div className="flex items-center gap-0.5">
           <button
-            onClick={() => { useDualViewerStore.getState().panelPrevPage('left'); useDualViewerStore.getState().panelPrevPage('right'); }}
-            disabled={leftP.currentPage <= 1 && rightP.currentPage <= 1}
+            onClick={() => {
+              if (syncMove) {
+                useDualViewerStore.getState().panelPrevPage('left');
+                useDualViewerStore.getState().panelPrevPage('right');
+              } else {
+                useDualViewerStore.getState().panelPrevPage(activePanel);
+              }
+            }}
+            disabled={syncMove ? (leftP.currentPage <= 1 && rightP.currentPage <= 1) : activeP.currentPage <= 1}
             className="p-1 rounded border border-app-border text-app-accent hover:bg-app-hover disabled:opacity-30 transition-colors"
-            title="Previous page (both panels)"
+            title={syncMove ? "Previous page (both panels)" : "Previous page (active panel)"}
           >
             <ChevronLeft className="w-3.5 h-3.5" />
           </button>
           <button
-            onClick={() => { useDualViewerStore.getState().panelNextPage('left'); useDualViewerStore.getState().panelNextPage('right'); }}
-            disabled={leftP.currentPage >= leftP.totalPages && rightP.currentPage >= rightP.totalPages}
+            onClick={() => {
+              if (syncMove) {
+                useDualViewerStore.getState().panelNextPage('left');
+                useDualViewerStore.getState().panelNextPage('right');
+              } else {
+                useDualViewerStore.getState().panelNextPage(activePanel);
+              }
+            }}
+            disabled={syncMove ? (leftP.currentPage >= leftP.totalPages && rightP.currentPage >= rightP.totalPages) : activeP.currentPage >= activeP.totalPages}
             className="p-1 rounded border border-app-border text-app-accent hover:bg-app-hover disabled:opacity-30 transition-colors"
-            title="Next page (both panels)"
+            title={syncMove ? "Next page (both panels)" : "Next page (active panel)"}
           >
             <ChevronRight className="w-3.5 h-3.5" />
           </button>
         </div>
+
+        {/* Sync Move Toggle */}
+        <button
+          onClick={() => setSyncMove(!syncMove)}
+          className={`flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded border-2 transition-colors ${
+            syncMove
+              ? 'border-app-accent bg-app-accent text-white'
+              : 'border-app-border text-app-text-secondary bg-app-surface hover:border-app-accent'
+          }`}
+          title={syncMove ? "Disable simultaneous movement" : "Enable simultaneous movement"}
+        >
+          {syncMove ? <Move3d className="w-3.5 h-3.5" /> : <MoveHorizontal className="w-3.5 h-3.5" />}
+          Sync
+        </button>
 
         {/* Arrange button (active panel) */}
         <button
@@ -61,6 +114,29 @@ export function DualToolbar() {
         >
           <ListOrdered className="w-3.5 h-3.5" />
           Arrange
+        </button>
+
+        {/* Undo */}
+        <button
+          onClick={() => {
+            // Try all viewports: active panel first, then other panel
+            const otherPanel = activePanel === 'left' ? 'right' : 'left';
+            const panelOrder = [activePanel, otherPanel];
+            let undone = false;
+            for (const pId of panelOrder) {
+              if (undone) break;
+              const viewports = document.querySelectorAll(`[data-dual-viewport-index^="${pId}-"]`);
+              viewports.forEach((el) => {
+                if (!undone && undoLastAnnotationOnElement(el as HTMLElement)) undone = true;
+              });
+            }
+            if (!undone) undoStampPlacement();
+          }}
+          className="flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded border-2 border-app-border text-app-text-secondary bg-app-bg hover:bg-app-hover transition-colors"
+          title="Undo last annotation or stamp"
+        >
+          <Undo2 className="w-3.5 h-3.5" />
+          Undo
         </button>
 
         {/* Arrange Both button */}
