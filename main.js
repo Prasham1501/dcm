@@ -528,7 +528,7 @@ async function waitForOrthanc(maxAttempts = 15) {
         try {
             await new Promise((resolve, reject) => {
                 const req = http.request({
-                    host: 'localhost', port: ORTHANC_PORT, path: '/system', timeout: 2000,
+                    host: '127.0.0.1', port: ORTHANC_PORT, path: '/system', timeout: 2000,
                     headers: { Authorization: 'Basic ' + Buffer.from('orthanc:orthanc').toString('base64') }
                 }, res => { res.statusCode === 200 ? resolve(true) : reject(new Error(`Status ${res.statusCode}`)); });
                 req.on('error', reject);
@@ -1810,7 +1810,7 @@ ipcMain.handle('dicom-send-to-modality', async (event, { modalityName, filePaths
             const data = fs.readFileSync(fp);
             await new Promise((resolve, reject) => {
                 const req = http.request({
-                    host: 'localhost', port: ORTHANC_PORT, path: '/instances',
+                    host: '127.0.0.1', port: ORTHANC_PORT, path: '/instances',
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/dicom',
@@ -1834,7 +1834,7 @@ ipcMain.handle('dicom-send-to-modality', async (event, { modalityName, filePaths
         const sendPayload = JSON.stringify(uploaded);
         await new Promise((resolve, reject) => {
             const req = http.request({
-                host: 'localhost', port: ORTHANC_PORT,
+                host: '127.0.0.1', port: ORTHANC_PORT,
                 path: `/modalities/${encodeURIComponent(modalityName)}/store`,
                 method: 'POST',
                 headers: {
@@ -1869,7 +1869,7 @@ ipcMain.handle('dicom-send-to-destination', async (event, { host, port, aeTitle,
         const modalityConfig = JSON.stringify([aeTitle, host, parseInt(port)]);
         await new Promise((resolve, reject) => {
             const req = http.request({
-                host: 'localhost', port: ORTHANC_PORT,
+                host: '127.0.0.1', port: ORTHANC_PORT,
                 path: `/modalities/${encodeURIComponent(modalityAlias)}`,
                 method: 'PUT',
                 headers: {
@@ -1894,7 +1894,7 @@ ipcMain.handle('dicom-send-to-destination', async (event, { host, port, aeTitle,
                 const data = fs.readFileSync(fp);
                 const result = await new Promise((resolve, reject) => {
                     const req = http.request({
-                        host: 'localhost', port: ORTHANC_PORT, path: '/instances',
+                        host: '127.0.0.1', port: ORTHANC_PORT, path: '/instances',
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/dicom',
@@ -1926,7 +1926,7 @@ ipcMain.handle('dicom-send-to-destination', async (event, { host, port, aeTitle,
         const sendPayload = JSON.stringify(uploaded);
         const sendResult = await new Promise((resolve, reject) => {
             const req = http.request({
-                host: 'localhost', port: ORTHANC_PORT,
+                host: '127.0.0.1', port: ORTHANC_PORT,
                 path: `/modalities/${encodeURIComponent(modalityAlias)}/store`,
                 method: 'POST',
                 headers: {
@@ -1964,7 +1964,7 @@ ipcMain.handle('dicom-echo', async (event, { host, port, aeTitle }) => {
         const modalityConfig = JSON.stringify([aeTitle, host, parseInt(port)]);
         await new Promise((resolve, reject) => {
             const req = http.request({
-                host: 'localhost', port: ORTHANC_PORT,
+                host: '127.0.0.1', port: ORTHANC_PORT,
                 path: `/modalities/${encodeURIComponent(modalityAlias)}`,
                 method: 'PUT',
                 headers: {
@@ -1985,7 +1985,7 @@ ipcMain.handle('dicom-echo', async (event, { host, port, aeTitle }) => {
         // Perform C-ECHO
         const echoResult = await new Promise((resolve, reject) => {
             const req = http.request({
-                host: 'localhost', port: ORTHANC_PORT,
+                host: '127.0.0.1', port: ORTHANC_PORT,
                 path: `/modalities/${encodeURIComponent(modalityAlias)}/echo`,
                 method: 'POST',
                 headers: {
@@ -2014,7 +2014,7 @@ ipcMain.handle('get-dicom-modalities', async () => {
     try {
         const result = await new Promise((resolve, reject) => {
             const req = http.request({
-                host: 'localhost', port: ORTHANC_PORT, path: '/modalities',
+                host: '127.0.0.1', port: ORTHANC_PORT, path: '/modalities',
                 headers: { Authorization: 'Basic ' + Buffer.from('orthanc:orthanc').toString('base64') }
             }, (res) => {
                 let body = '';
