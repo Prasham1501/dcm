@@ -293,6 +293,68 @@ export function deleteAnnotation(
 }
 
 /**
+ * Toggle visibility of measurement text (area, length, angle values) on an annotation.
+ * Hides/shows the textBox by moving it off-screen or restoring it.
+ */
+export function toggleAnnotationText(
+  element: HTMLElement,
+  toolName: string,
+  annotationIndex: number,
+  hide: boolean
+): void {
+  try {
+    const state = cornerstoneTools.getToolState(element, toolName);
+    if (!state?.data?.[annotationIndex]) return;
+
+    const annotation = state.data[annotationIndex];
+    if (annotation.handles?.textBox) {
+      if (hide) {
+        // Store original state for restore
+        if (!annotation._savedTextBox) {
+          annotation._savedTextBox = {
+            x: annotation.handles.textBox.x,
+            y: annotation.handles.textBox.y,
+          };
+        }
+        // Set _hidden flag — checked by patched drawLinkedTextBox to skip rendering
+        annotation.handles.textBox._hidden = true;
+        annotation.handles.textBox.hasMoved = true;
+        annotation.handles.textBox.x = -99999;
+        annotation.handles.textBox.y = -99999;
+      } else {
+        // Restore original position and rendering
+        annotation.handles.textBox._hidden = false;
+        if (annotation._savedTextBox) {
+          annotation.handles.textBox.x = annotation._savedTextBox.x;
+          annotation.handles.textBox.y = annotation._savedTextBox.y;
+          delete annotation._savedTextBox;
+        }
+        annotation.handles.textBox.hasMoved = false;
+      }
+    }
+
+    annotation.invalidated = true;
+    cornerstone.updateImage(element);
+  } catch { /* ignore */ }
+}
+
+/**
+ * Check if annotation text is hidden.
+ */
+export function isAnnotationTextHidden(
+  element: HTMLElement,
+  toolName: string,
+  annotationIndex: number
+): boolean {
+  try {
+    const state = cornerstoneTools.getToolState(element, toolName);
+    if (!state?.data?.[annotationIndex]) return false;
+    const annotation = state.data[annotationIndex];
+    return !!annotation._savedTextBox;
+  } catch { return false; }
+}
+
+/**
  * Delete the currently active/selected annotation on an element.
  * Returns true if an annotation was deleted.
  */

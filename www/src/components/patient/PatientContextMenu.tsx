@@ -7,6 +7,7 @@ import { openDualViewerPopup } from '@/stores/dualViewerStore';
 import { usePatientStore } from '@/stores/patientStore';
 import { localFileToImageId } from '@/lib/dicomLoader';
 import { useSendToStore, type SendDestination } from '@/stores/sendToStore';
+import { useReportStore } from '@/stores/reportStore';
 import type { Patient } from '@/types/patient';
 
 interface Props {
@@ -60,6 +61,8 @@ export function PatientContextMenu({ x, y, patient, onClose }: Props) {
   const [sending, setSending] = useState(false);
   const { destinations, addDestination, removeDestination } = useSendToStore();
   const [newDest, setNewDest] = useState({ name: '', host: '', port: 104, aeTitle: 'ORTHANC' });
+  const { openReportEditor, getReportsForPatient } = useReportStore();
+  const hasReport = getReportsForPatient(patient.patientId || patient.id).length > 0;
 
   const openInViewer = (layoutParam?: string) => {
     if (patient.filePaths && patient.filePaths.length > 0) {
@@ -84,7 +87,7 @@ export function PatientContextMenu({ x, y, patient, onClose }: Props) {
     }
   };
 
-  const handleAction = (action: string) => {
+  const handleAction = async (action: string) => {
     switch (action) {
       case 'open':
         openInCRViewer();
@@ -132,6 +135,36 @@ export function PatientContextMenu({ x, y, patient, onClose }: Props) {
       }
       case 'open-cr':
         openInViewer();
+        break;
+      case 'create-report': {
+        if (!patient.filePaths || patient.filePaths.length === 0) { alert('No images to view'); break; }
+        localStorage.setItem('viewer-launch', JSON.stringify({
+          patientName: patient.patientName, patientId: patient.patientId,
+          studyDate: patient.studyDate, filePaths: patient.filePaths, timestamp: Date.now(),
+        }));
+        localStorage.setItem('report-launch', JSON.stringify({
+          patientName: patient.patientName, patientId: patient.patientId || patient.id,
+          studyDate: patient.studyDate, timestamp: Date.now(),
+        }));
+        const api = (window as any).electronAPI;
+        if (api?.openViewerWithReport) {
+          try {
+            await api.openViewerWithReport({
+              isPortrait: false, imageCount: patient.filePaths.length, cols: 2, rows: 2,
+            });
+          } catch (e) {
+            console.warn('Failed to open dual windows:', e);
+            openReportEditor(patient.id, patient.patientName);
+            navigate('/cr-viewer');
+          }
+        } else {
+          openReportEditor(patient.id, patient.patientName);
+          navigate('/cr-viewer');
+        }
+        break;
+      }
+      case 'open-report':
+        navigate('/studies');
         break;
       case 'export': {
         const safeName = (s: string) =>
@@ -252,10 +285,12 @@ export function PatientContextMenu({ x, y, patient, onClose }: Props) {
     { label: 'Open', action: 'open' },
     { label: 'Open in dual format', action: 'open-dual' },
     { label: 'Open in CR format', action: 'open-cr' },
+    { divider: true },
+    { label: 'Create Report', action: 'create-report' },
+    { label: 'Open Report', action: 'open-report', disabled: !hasReport },
+    { divider: true },
     { label: 'Send To', action: 'send-to', hasSubmenu: true },
     { label: 'Export', action: 'export' },
-    { divider: true },
-    { label: 'Recall last print job', action: 'recall-print', disabled: true },
   ];
 
   return (

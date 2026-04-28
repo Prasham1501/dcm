@@ -83,7 +83,7 @@ const DicomThumbnail = memo(function DicomThumbnail({
   return (
     <div
       onClick={onClick}
-      className="w-32 h-28 flex-shrink-0 bg-gray-800 border border-gray-600 rounded cursor-pointer hover:border-blue-500 transition-colors overflow-hidden relative"
+      className="w-24 h-20 2xl:w-28 2xl:h-24 flex-shrink-0 bg-gray-800 border border-gray-600 rounded cursor-pointer hover:border-blue-500 transition-colors overflow-hidden relative"
     >
       <canvas ref={canvasRef} className="w-full h-full" style={{ display: loaded ? 'block' : 'none' }} />
 
@@ -179,11 +179,7 @@ export function ThumbnailStrip() {
   }, [selectedPatient, loadStudyFiles, navigate]);
 
   if (!selectedPatient) {
-    return (
-      <div className="h-36 bg-app-thumbnail-bg border-t border-app-border flex items-center justify-center">
-        <span className="text-xs text-app-text-muted">Select a patient to view thumbnails</span>
-      </div>
-    );
+    return null;
   }
 
   const hasRealFiles = selectedPatient.filePaths && selectedPatient.filePaths.length > 0;
@@ -192,7 +188,7 @@ export function ThumbnailStrip() {
   if (hasRealFiles) {
     const filesToShow = selectedPatient.filePaths!.slice(0, 20);
     return (
-      <div className="h-36 bg-app-thumbnail-bg border-t border-app-border flex items-center gap-1.5 px-2 overflow-x-auto">
+      <div className="h-24 2xl:h-32 bg-app-thumbnail-bg border-t border-app-border flex items-center gap-1 px-1.5 overflow-x-auto">
         {filesToShow.map((fp, i) => (
           <DicomThumbnail
             key={fp}
@@ -203,7 +199,7 @@ export function ThumbnailStrip() {
           />
         ))}
         {selectedPatient.filePaths!.length > 20 && (
-          <div className="w-32 h-28 flex-shrink-0 bg-gray-800 border border-gray-600 rounded flex items-center justify-center text-sm text-gray-400 font-semibold">
+          <div className="w-24 h-20 2xl:w-28 2xl:h-24 flex-shrink-0 bg-gray-800 border border-gray-600 rounded flex items-center justify-center text-xs text-gray-400 font-semibold">
             +{selectedPatient.filePaths!.length - 20}
           </div>
         )}
@@ -213,15 +209,15 @@ export function ThumbnailStrip() {
 
   // Fallback: gray placeholder boxes for mock data
   return (
-    <div className="h-36 bg-app-thumbnail-bg border-t border-app-border flex items-center gap-1.5 px-2 overflow-x-auto">
+    <div className="h-24 2xl:h-32 bg-app-thumbnail-bg border-t border-app-border flex items-center gap-1 px-1.5 overflow-x-auto">
       {Array.from({ length: thumbnailCount }, (_, i) => (
         <div
           key={i}
-          className="w-32 h-28 flex-shrink-0 bg-gray-800 border border-gray-600 rounded flex items-center justify-center cursor-pointer hover:border-blue-500 transition-colors"
+          className="w-24 h-20 2xl:w-28 2xl:h-24 flex-shrink-0 bg-gray-800 border border-gray-600 rounded flex items-center justify-center cursor-pointer hover:border-blue-500 transition-colors"
         >
           <div className="text-center">
-            <div className="w-24 h-20 bg-gray-700 rounded-sm mb-0.5" />
-            <span className="text-[10px] text-gray-400">{i + 1}</span>
+            <div className="w-20 h-14 bg-gray-700 rounded-sm mb-0.5" />
+            <span className="text-[9px] text-gray-400">{i + 1}</span>
           </div>
         </div>
       ))}

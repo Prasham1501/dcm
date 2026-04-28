@@ -42,6 +42,11 @@ export function initCornerstone(): void {
     showSVGCursors: true,
   });
 
+  // Remove handle circles (dots at line endpoints, shape corners, etc.)
+  if (cornerstoneTools.store?.state) {
+    cornerstoneTools.store.state.handleRadius = 0;
+  }
+
   // Register all tools
   const tools = [
     cornerstoneTools.PanTool,

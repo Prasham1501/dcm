@@ -3,7 +3,6 @@ import { Outlet, useNavigate } from 'react-router-dom';
 import { usePatientStore } from '@/stores/patientStore';
 import { PatientSearchBar } from '@/components/patient/PatientSearchBar';
 import { PatientDateFilter } from '@/components/patient/PatientDateFilter';
-import { PatientToolbar } from '@/components/patient/PatientToolbar';
 import { PatientTable } from '@/components/patient/PatientTable';
 import { ThumbnailStrip } from '@/components/patient/ThumbnailStrip';
 import { PatientActionBar } from '@/components/patient/PatientActionBar';
@@ -11,6 +10,7 @@ import { FolderSyncBar } from '@/components/patient/FolderSyncBar';
 import { PatientStatusBar } from '@/components/patient/PatientStatusBar';
 import { useThemeStore } from '@/stores/themeStore';
 import { useReportStore } from '@/stores/reportStore';
+import { usePrintStore } from '@/stores/printStore';
 import { ReportEditor } from '@/components/report/ReportEditor';
 import { Sun, Moon } from 'lucide-react';
 
@@ -38,9 +38,12 @@ export function PatientListPage() {
   const navigate = useNavigate();
   const loadPatients = usePatientStore((s) => s.loadPatients);
   const selectedPatient = usePatientStore((s) => s.selectedPatient);
+  const filteredPatients = usePatientStore((s) => s.filteredPatients);
   const openReportEditor = useReportStore((s) => s.openReportEditor);
   const mode = useThemeStore((s) => s.mode);
   const toggleTheme = useThemeStore((s) => s.toggleTheme);
+  const printCountRemaining = usePrintStore((s) => s.printCountRemaining);
+  const printedCount = filteredPatients.filter((p) => p.printed).length;
 
   useEffect(() => {
     loadPatients();
@@ -65,32 +68,39 @@ export function PatientListPage() {
 
   return (
     <div className="flex flex-col h-screen bg-app-bg">
-      {/* Header with brand */}
-      <div className="flex items-center justify-between px-3 2xl:px-5 py-1.5 2xl:py-2.5 bg-app-header-bg border-b-2 border-app-accent">
-        <div className="flex items-center gap-2">
-          <span className="text-lg 2xl:text-2xl font-bold text-app-accent tracking-wide">
+      {/* Header with brand + stats */}
+      <div className="flex items-center justify-between px-2 2xl:px-5 py-1 2xl:py-2 bg-app-header-bg border-b-2 border-app-accent flex-wrap gap-y-0.5">
+        <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+          <span className="text-base 2xl:text-xl font-bold text-app-accent tracking-wide whitespace-nowrap">
             Accurate
           </span>
-          <span className="text-xs 2xl:text-sm text-app-text-secondary">
-            | License TV5PPH4T | License period left : 224 days.
+          <span className="text-[10px] 2xl:text-xs text-app-text-secondary whitespace-nowrap">
+            | License TV5PPH4T | 224 days left
+          </span>
+          <span className="text-[10px] 2xl:text-xs text-app-text-secondary whitespace-nowrap">
+            | Prints Left: {printCountRemaining}
+          </span>
+          <span className="text-[10px] 2xl:text-xs text-app-text-secondary whitespace-nowrap">
+            | Records: {filteredPatients.length}
+          </span>
+          <span className="text-[10px] 2xl:text-xs text-app-text-secondary whitespace-nowrap">
+            | Printed: {printedCount}
           </span>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1 flex-shrink-0">
           <button
             onClick={toggleTheme}
-            className="p-1.5 rounded hover:bg-app-hover transition-colors text-app-text-secondary"
+            className="p-1 rounded hover:bg-app-hover transition-colors text-app-text-secondary"
             title={mode === 'light' ? 'Switch to dark mode' : 'Switch to light mode'}
           >
-            {mode === 'light' ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
+            {mode === 'light' ? <Moon className="w-3.5 h-3.5" /> : <Sun className="w-3.5 h-3.5" />}
           </button>
-          <button className="text-app-text-secondary hover:text-app-text text-lg px-1">_</button>
+          <button className="text-app-text-secondary hover:text-app-text text-sm px-0.5">_</button>
           <button
             onClick={async () => {
               const p = selectedPatient;
               if (!p) { alert('Select a patient first'); return; }
               if (!p.filePaths || p.filePaths.length === 0) { alert('No images to view'); return; }
-
-              // Store launch data for both viewer and report editor
               localStorage.setItem('viewer-launch', JSON.stringify({
                 patientName: p.patientName, patientId: p.patientId,
                 studyDate: p.studyDate, filePaths: p.filePaths, timestamp: Date.now(),
@@ -99,7 +109,6 @@ export function PatientListPage() {
                 patientName: p.patientName, patientId: p.patientId || p.id,
                 studyDate: p.studyDate, timestamp: Date.now(),
               }));
-
               const api = (window as any).electronAPI;
               if (api?.openViewerWithReport) {
                 try {
@@ -109,15 +118,14 @@ export function PatientListPage() {
                   return;
                 } catch (e) { console.warn('Failed to open dual windows:', e); }
               }
-              // Fallback: open report modal + navigate to viewer
               openReportEditor(p.id, p.patientName);
             }}
-            className="text-app-text-secondary hover:text-app-text text-lg px-1"
+            className="text-app-text-secondary hover:text-app-text text-sm px-0.5"
             title={selectedPatient ? `Report for ${selectedPatient.patientName}` : 'Select a patient first'}
           >
             []
           </button>
-          <button className="text-app-accent hover:text-red-700 text-lg font-bold px-1">x</button>
+          <button className="text-app-accent hover:text-red-700 text-sm font-bold px-0.5">x</button>
         </div>
       </div>
 
@@ -129,9 +137,6 @@ export function PatientListPage() {
 
       {/* Date filters */}
       <PatientDateFilter />
-
-      {/* Toolbar row */}
-      <PatientToolbar />
 
       {/* Patient table - takes remaining space */}
       <PatientTable />

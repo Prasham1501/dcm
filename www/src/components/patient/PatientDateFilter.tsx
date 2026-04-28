@@ -18,7 +18,7 @@ export function PatientDateFilter() {
   const years = Array.from({ length: 10 }, (_, i) => currentYear - i);
 
   return (
-    <div className="flex items-center gap-3 2xl:gap-4 px-3 2xl:px-5 py-1.5 2xl:py-2.5 border-b border-app-border bg-app-surface">
+    <div className="flex items-center gap-2 px-2 py-1 border-b border-app-border bg-app-surface flex-wrap gap-y-0.5">
       {/* Radio presets */}
       {presets.map((preset) => (
         <label key={preset.value} className="flex items-center gap-1 cursor-pointer">

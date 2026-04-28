@@ -176,7 +176,7 @@ export function PatientSearchBar() {
   };
 
   return (
-    <div className="flex items-center gap-1 2xl:gap-2 px-3 2xl:px-5 py-2 2xl:py-3 border-b border-app-border bg-app-surface overflow-x-auto flex-nowrap">
+    <div className="flex items-center gap-1 px-2 py-1 border-b border-app-border bg-app-surface flex-wrap">
       {/* Patient ID */}
       <div className="flex items-center">
         <label htmlFor="filter-patientId" className="text-xs 2xl:text-sm font-semibold text-app-accent mr-1 whitespace-nowrap">

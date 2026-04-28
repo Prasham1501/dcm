@@ -196,21 +196,7 @@ export function PatientActionBar() {
   return (
     <div className="border-t border-app-border bg-app-surface">
       {/* Single row: All action buttons combined */}
-      <div className="flex items-center justify-center gap-1.5 2xl:gap-2.5 px-3 2xl:px-5 py-1.5 2xl:py-2.5 flex-wrap">
-        <ActionButton label="Open" onClick={() => {
-          const p = selectedPatient;
-          if (!p) { alert('Select a patient first'); return; }
-          if (p.filePaths && p.filePaths.length > 0) {
-            openCRViewerPopup({
-              patientName: p.patientName,
-              patientId: p.patientId,
-              studyDate: p.studyDate,
-              filePaths: p.filePaths,
-            }, navigate);
-          } else {
-            alert('No DICOM data found for this patient');
-          }
-        }} />
+      <div className="flex items-center justify-center gap-1 px-2 py-1 flex-wrap">
         <ActionButton
           label="Edit"
           onClick={() => {

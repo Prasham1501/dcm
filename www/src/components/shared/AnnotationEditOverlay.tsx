@@ -5,7 +5,7 @@
  */
 import { useState } from 'react';
 import { X, Plus, Minus, Trash2 } from 'lucide-react';
-import { updateAnnotationStyle, scaleAnnotation, deleteAnnotation } from '@/lib/annotationUtils';
+import { updateAnnotationStyle, deleteAnnotation, toggleAnnotationText, isAnnotationTextHidden } from '@/lib/annotationUtils';
 import { cornerstoneTools } from '@/lib/cornerstoneSetup';
 
 interface AnnotationEditOverlayProps {
@@ -29,6 +29,7 @@ export function AnnotationEditOverlay({
   const [lineWidth, setLineWidth] = useState(() => {
     try { return cornerstoneTools.toolStyle.getToolWidth() || 1; } catch { return initialLineWidth || 1; }
   });
+  const [textHidden, setTextHidden] = useState(() => isAnnotationTextHidden(element, toolName, annotationIndex));
 
   const handleColorChange = (c: string) => {
     setColor(c);
@@ -41,8 +42,9 @@ export function AnnotationEditOverlay({
     updateAnnotationStyle(element, toolName, annotationIndex, { lineWidth: clamped });
   };
 
-  const handleScale = (factor: number) => {
-    scaleAnnotation(element, toolName, annotationIndex, factor);
+  const handleToggleText = (hide: boolean) => {
+    setTextHidden(hide);
+    toggleAnnotationText(element, toolName, annotationIndex, hide);
   };
 
   const handleDelete = () => {
@@ -61,7 +63,7 @@ export function AnnotationEditOverlay({
       className="fixed z-[100] bg-gray-900/95 border border-blue-500/70 rounded-xl p-2.5 shadow-2xl w-[200px] backdrop-blur-sm"
       style={{ left: Math.min(position.x, window.innerWidth - 220), top: Math.min(position.y, window.innerHeight - 300) }}
       onClick={(e) => e.stopPropagation()}
-      onMouseDown={(e) => e.stopPropagation()}
+      onMouseDown={(e) => { if ((e.target as HTMLElement).tagName !== 'INPUT') e.stopPropagation(); }}
     >
       {/* Header */}
       <div className="flex items-center justify-between mb-2">
@@ -116,23 +118,20 @@ export function AnnotationEditOverlay({
         </div>
       </div>
 
-      {/* Size */}
+      {/* Hide Text */}
       <div className="mb-2">
-        <span className="text-[9px] text-gray-400 uppercase font-semibold block mb-1">Size</span>
-        <div className="flex gap-1">
-          <button
-            onClick={() => handleScale(0.85)}
-            className="flex-1 flex items-center justify-center gap-1 px-2 py-1 text-[10px] font-bold bg-gray-700 text-gray-300 rounded hover:bg-gray-600 transition-colors"
-          >
-            <Minus className="w-3 h-3" /> Smaller
-          </button>
-          <button
-            onClick={() => handleScale(1.18)}
-            className="flex-1 flex items-center justify-center gap-1 px-2 py-1 text-[10px] font-bold bg-gray-700 text-gray-300 rounded hover:bg-gray-600 transition-colors"
-          >
-            <Plus className="w-3 h-3" /> Bigger
-          </button>
-        </div>
+        <button
+          onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleToggleText(!textHidden); }}
+          onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
+          className="flex items-center gap-2 w-full px-1.5 py-1 rounded hover:bg-gray-700/50 transition-colors cursor-pointer select-none"
+        >
+          <div className={`w-3.5 h-3.5 rounded border-2 flex items-center justify-center transition-colors ${
+            textHidden ? 'bg-blue-500 border-blue-500' : 'bg-transparent border-gray-500'
+          }`}>
+            {textHidden && <span className="text-white text-[9px] font-bold leading-none">✓</span>}
+          </div>
+          <span className="text-[10px] text-gray-300 font-semibold uppercase tracking-wide">Hide Text</span>
+        </button>
       </div>
 
       {/* Delete */}

@@ -154,12 +154,21 @@ function CRViewportInner({
           if (state?.data) {
             state.data.forEach((d: any) => {
               if (d.handles?.textBox) {
-                d.handles.textBox.drawnIndependently = hide;
-                if (hide) {
+                // Re-enforce per-annotation hiding set via edit overlay
+                if (d._savedTextBox) {
+                  d.handles.textBox._hidden = true;
                   d.handles.textBox.hasMoved = true;
-                  d.handles.textBox.worldPosition = { x: -99999, y: -99999 };
                   d.handles.textBox.x = -99999;
                   d.handles.textBox.y = -99999;
+                  return;
+                }
+                if (hide) {
+                  d.handles.textBox._hidden = true;
+                  d.handles.textBox.hasMoved = true;
+                  d.handles.textBox.x = -99999;
+                  d.handles.textBox.y = -99999;
+                } else {
+                  d.handles.textBox._hidden = false;
                 }
               }
             });

@@ -11,6 +11,7 @@ import { LayoutSelector } from '@/components/viewer/LayoutSelector';
 import { SettingsModal } from '@/components/viewer/SettingsModal';
 import { PrintPreview } from '@/components/print/PrintPreview';
 import { PrinterModal } from '@/components/print/PrinterModal';
+import { ReportEditor } from '@/components/report/ReportEditor';
 import { usePrintStore } from '@/stores/printStore';
 import { useViewerStore } from '@/stores/viewerStore';
 import { useCustomAnnotationStore } from '@/stores/customAnnotationStore';
@@ -132,6 +133,9 @@ export function ViewerPage() {
       {/* Print modals */}
       {showPrintPreview && <PrintPreview />}
       {showPrinterModal && <PrinterModal />}
+
+      {/* Report Editor modal */}
+      <ReportEditor />
     </div>
   );
 }

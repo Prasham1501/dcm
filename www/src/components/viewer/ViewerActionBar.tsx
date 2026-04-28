@@ -7,10 +7,8 @@ import { useViewerStore } from '@/stores/viewerStore';
 import { usePrintStore } from '@/stores/printStore';
 import { cornerstone } from '@/lib/cornerstoneSetup';
 import {
-  X, ImagePlus, PanelTop, Info, ChevronUp, ChevronDown, Printer, Undo2, RotateCcw, CheckSquare, Trash2
+  X, PanelTop, Info, ChevronUp, ChevronDown,
 } from 'lucide-react';
-import { useCustomAnnotationStore } from '@/stores/customAnnotationStore';
-import { resetViewport } from '@/lib/viewerTools';
 import { HeaderFooterModal } from './HeaderFooterModal';
 
 /** Get DICOM metadata tags from the currently displayed image in the selected viewport */
@@ -148,11 +146,9 @@ function getDicomTagNames(): Record<string, string> {
 export function ViewerActionBar() {
   const {
     currentPage, totalPages, totalImages, images,
-    nextPage, prevPage, insertAllViewports,
-    selectAllViewports, selectedViewportIndices, selectedViewport,
-    deleteImageFromViewport,
+    nextPage, prevPage,
   } = useViewerStore();
-  const { settings, setShowPrintPreview } = usePrintStore();
+  const { settings } = usePrintStore();
   const [showDicomInfo, setShowDicomInfo] = useState(false);
   const [showHeaderFooter, setShowHeaderFooter] = useState(false);
   const [dicomTags, setDicomTags] = useState<Record<string, { tag: string; name: string; value: string }> | null>(null);
@@ -168,48 +164,7 @@ export function ViewerActionBar() {
 
   return (
     <>
-      <div className="w-10 2xl:w-14 flex flex-col items-center bg-app-surface border-l border-app-border py-1.5 2xl:py-2 gap-1 2xl:gap-2.5">
-        {/* Global Undo (Ctrl+Z) */}
-        <button
-          type="button"
-          onClick={() => useCustomAnnotationStore.getState().undo()}
-          className="w-7 h-7 2xl:w-10 2xl:h-10 flex items-center justify-center rounded border border-app-border text-app-text-secondary hover:bg-blue-500/20 hover:text-blue-400 hover:border-blue-500/50 transition-colors"
-          title="Undo (Ctrl+Z)"
-        >
-          <Undo2 className="w-4 h-4 2xl:w-5.5 2xl:h-5.5" />
-        </button>
-
-        {/* Global Reset (Replaced Clear All) */}
-        <button
-          type="button"
-          onClick={() => {
-            // Clear custom annotation store FIRST so the dicom-clear-annotations
-            // event (fired inside resetViewport) reads an already-empty store
-            useCustomAnnotationStore.getState().resetAll();
-            // Reset each viewport's cornerstone state (W/L, zoom, rotation, annotations)
-            const viewportEls = document.querySelectorAll('[data-viewport-index]');
-            viewportEls.forEach((el) => {
-              try { resetViewport(el as HTMLDivElement); } catch { /* ignore */ }
-            });
-            useViewerStore.getState().clearViewportOverrides();
-          }}
-          className="w-7 h-7 2xl:w-10 2xl:h-10 flex items-center justify-center rounded border border-app-border text-app-text-secondary hover:bg-red-500/20 hover:text-red-400 hover:border-red-500/50 transition-colors"
-          title="Reset All"
-        >
-          <RotateCcw className="w-4 h-4 2xl:w-5.5 2xl:h-5.5" />
-        </button>
-
-        {/* Insert / Fill All Viewports */}
-        <button
-          type="button"
-          onClick={insertAllViewports}
-          disabled={!hasImages}
-          className="w-7 h-7 2xl:w-10 2xl:h-10 flex items-center justify-center rounded border border-app-border text-app-text-secondary hover:bg-green-500/20 hover:text-green-400 hover:border-green-500/50 transition-colors disabled:opacity-30"
-          title="Insert images into all viewport slots"
-        >
-          <ImagePlus className="w-4 h-4 2xl:w-5.5 2xl:h-5.5" />
-        </button>
-
+      <div className="w-10 2xl:w-12 flex flex-col items-center bg-app-surface border-l border-app-border py-1 gap-1">
         {/* Page indicator */}
         <div className="flex flex-col items-center my-0.5">
           <span className="text-[10px] 2xl:text-xs text-app-text-muted leading-tight">{currentPage}</span>
@@ -221,10 +176,10 @@ export function ViewerActionBar() {
           type="button"
           onClick={prevPage}
           disabled={currentPage <= 1}
-          className="w-7 h-7 2xl:w-10 2xl:h-10 flex items-center justify-center rounded border border-app-border text-app-text-secondary hover:bg-app-hover transition-colors disabled:opacity-30"
+          className="w-7 h-7 flex items-center justify-center rounded border border-app-border text-app-text-secondary hover:bg-app-hover transition-colors disabled:opacity-30"
           title="Previous page"
         >
-          <ChevronUp className="w-4 h-4 2xl:w-5.5 2xl:h-5.5" />
+          <ChevronUp className="w-4 h-4" />
         </button>
 
         {/* Page down */}
@@ -232,36 +187,10 @@ export function ViewerActionBar() {
           type="button"
           onClick={nextPage}
           disabled={currentPage >= totalPages}
-          className="w-7 h-7 2xl:w-10 2xl:h-10 flex items-center justify-center rounded border border-app-border text-app-text-secondary hover:bg-app-hover transition-colors disabled:opacity-30"
+          className="w-7 h-7 flex items-center justify-center rounded border border-app-border text-app-text-secondary hover:bg-app-hover transition-colors disabled:opacity-30"
           title="Next page"
         >
-          <ChevronDown className="w-4 h-4 2xl:w-5.5 2xl:h-5.5" />
-        </button>
-
-        {/* Delete Image(s) */}
-        <button
-          type="button"
-          onClick={() => {
-            const indices = selectedViewportIndices.length > 1
-              ? [...selectedViewportIndices].sort((a, b) => b - a)
-              : [selectedViewport];
-            indices.forEach(vi => deleteImageFromViewport(vi));
-          }}
-          disabled={!hasImages}
-          className="w-7 h-7 2xl:w-10 2xl:h-10 flex items-center justify-center rounded border border-app-border text-app-text-secondary hover:bg-red-500/20 hover:text-red-400 hover:border-red-500/50 transition-colors disabled:opacity-30"
-          title={selectedViewportIndices.length > 1 ? 'Delete all selected images' : 'Delete selected image'}
-        >
-          <Trash2 className="w-4 h-4 2xl:w-5.5 2xl:h-5.5" />
-        </button>
-
-        {/* Select All Viewports */}
-        <button
-          type="button"
-          onClick={selectAllViewports}
-          className="w-7 h-7 2xl:w-10 2xl:h-10 flex items-center justify-center rounded border border-app-border text-app-text-secondary hover:bg-blue-500/20 hover:text-blue-400 hover:border-blue-500/50 transition-colors"
-          title="Select all viewports (Ctrl+A)"
-        >
-          <CheckSquare className="w-4 h-4 2xl:w-5.5 2xl:h-5.5" />
+          <ChevronDown className="w-4 h-4" />
         </button>
 
         {/* Spacer */}
@@ -271,10 +200,10 @@ export function ViewerActionBar() {
         <button
           type="button"
           onClick={() => useViewerStore.getState().setShowLayoutModal(true)}
-          className="w-7 h-7 2xl:w-10 2xl:h-10 flex items-center justify-center rounded border border-app-border text-app-text-secondary hover:bg-app-hover transition-colors"
+          className="w-7 h-7 flex items-center justify-center rounded border border-app-border text-app-text-secondary hover:bg-app-hover transition-colors"
           title="Change layout"
         >
-          <svg className="w-4 h-4 2xl:w-5.5 2xl:h-5.5" viewBox="0 0 16 16" fill="currentColor">
+          <svg className="w-4 h-4" viewBox="0 0 16 16" fill="currentColor">
             <rect x="1" y="1" width="6" height="6" rx="1" />
             <rect x="9" y="1" width="6" height="6" rx="1" />
             <rect x="1" y="9" width="6" height="6" rx="1" />
@@ -286,35 +215,24 @@ export function ViewerActionBar() {
         <button
           type="button"
           onClick={() => setShowHeaderFooter(true)}
-          className={`w-7 h-7 2xl:w-10 2xl:h-10 flex items-center justify-center rounded border transition-colors ${
+          className={`w-7 h-7 flex items-center justify-center rounded border transition-colors ${
             settings.headerEnabled
               ? 'border-app-accent bg-app-accent/20 text-app-accent'
               : 'border-app-border text-app-text-secondary hover:bg-app-hover'
           }`}
-          title={`Header/Footer: ${settings.headerEnabled ? 'ON' : 'OFF'} — click to configure`}
+          title={`Header/Footer: ${settings.headerEnabled ? 'ON' : 'OFF'}`}
         >
-          <PanelTop className="w-4 h-4 2xl:w-5.5 2xl:h-5.5" />
+          <PanelTop className="w-4 h-4" />
         </button>
 
         {/* Image Info */}
         <button
           type="button"
           onClick={handleShowInfo}
-          className="w-7 h-7 2xl:w-10 2xl:h-10 flex items-center justify-center rounded border border-app-border text-app-text-secondary hover:bg-blue-500/20 hover:text-blue-400 hover:border-blue-500/50 transition-colors"
-          title="Show DICOM image information"
+          className="w-7 h-7 flex items-center justify-center rounded border border-app-border text-app-text-secondary hover:bg-blue-500/20 hover:text-blue-400 transition-colors"
+          title="DICOM info"
         >
-          <Info className="w-4 h-4 2xl:w-5.5 2xl:h-5.5" />
-        </button>
-
-        {/* Print shortcut */}
-        <button
-          type="button"
-          onClick={() => setShowPrintPreview(true)}
-          disabled={!hasImages}
-          className="w-7 h-7 2xl:w-10 2xl:h-10 flex items-center justify-center rounded border border-app-border text-app-text-secondary hover:bg-purple-500/20 hover:text-purple-400 hover:border-purple-500/50 transition-colors disabled:opacity-30"
-          title="Print preview"
-        >
-          <Printer className="w-4 h-4 2xl:w-5.5 2xl:h-5.5" />
+          <Info className="w-4 h-4" />
         </button>
       </div>
 

@@ -1,4 +1,4 @@
-import { cornerstone } from '@/lib/cornerstoneSetup';
+import { cornerstone, cornerstoneTools } from '@/lib/cornerstoneSetup';
 
 export interface PrintOverlay {
   text: string;
@@ -98,21 +98,67 @@ export function captureCornerstoneElementForPrint(element: HTMLElement | null, o
   if (!element) return null;
 
   try {
-    // Composite all canvases inside the cornerstone element.
-    // The base image canvas + the cornerstoneTools annotation overlay canvas(es)
-    // are separate layers. Drawing them all gives us the full viewport appearance
-    // including length, angle, ellipse, arrow, ROI measurements.
+    const enabledElement = cornerstone.getEnabledElement(element);
+    const image = enabledElement?.image;
     const canvases = element.querySelectorAll('canvas');
+
+    if (image && canvases.length > 0) {
+      // Use native DICOM image dimensions for high-res output
+      const nativeW = imageDimension(image.columns ?? image.width, 512);
+      const nativeH = imageDimension(image.rows ?? image.height, 512);
+
+      // Output at native DICOM resolution for best print quality
+      const w = nativeW;
+      const h = nativeH;
+
+      const output = document.createElement('canvas');
+      output.width = w;
+      output.height = h;
+      const ctx = output.getContext('2d');
+      if (ctx) {
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+
+        // Step 1: Render the base DICOM image at native resolution (clean, no annotations)
+        const printViewport = buildPrintViewport(enabledElement.viewport || cornerstone.getViewport(element), image);
+        cornerstone.renderToCanvas(output, image, printViewport);
+
+        // Step 2: Set viewport to match print layout, hide handles, re-render with annotations
+        const origViewport = cornerstone.getViewport(element);
+        const store = cornerstoneTools.store;
+        const origHandleRadius = store?.state?.handleRadius ?? 6;
+        try { cornerstone.setViewport(element, printViewport); } catch { /* ignore */ }
+        if (store?.state) store.state.handleRadius = 0;
+        try { cornerstone.updateImage(element); } catch { /* ignore */ }
+
+        // Step 3: Draw all canvases (image + annotations) scaled to native resolution
+        // In cornerstone v1, annotations are drawn on canvas[0] alongside the image
+        for (let i = 0; i < canvases.length; i++) {
+          try {
+            const c = canvases[i];
+            if (c.width > 0 && c.height > 0) {
+              ctx.drawImage(c, 0, 0, w, h);
+            }
+          } catch { /* cross-origin or empty canvas — skip */ }
+        }
+
+        // Step 4: Restore viewport and handle radius
+        try { cornerstone.setViewport(element, origViewport); } catch { /* ignore */ }
+        if (store?.state) store.state.handleRadius = origHandleRadius;
+        try { cornerstone.updateImage(element); } catch { /* ignore */ }
+
+        // Step 4: Draw custom text/stamp overlays on top
+        drawOverlays(output, overlays);
+
+        return output.toDataURL('image/png');
+      }
+    }
+
+    // Fallback for elements without a loaded image but with canvases
     if (canvases.length > 0) {
-      // Use the first (base) canvas dimensions as reference
       const baseCanvas = canvases[0];
       const baseW = baseCanvas.width || baseCanvas.clientWidth || 512;
       const baseH = baseCanvas.height || baseCanvas.clientHeight || 512;
-
-      // For print quality, use the MAXIMUM of:
-      //  - native canvas dimensions (DICOM resolution, often 512–4096)
-      //  - display dimensions × devicePixelRatio
-      // This ensures small viewports still produce high-res captures.
       const dpr = window.devicePixelRatio || 1;
       const displayW = Math.round((element.clientWidth || baseW) * dpr);
       const displayH = Math.round((element.clientHeight || baseH) * dpr);
@@ -124,28 +170,18 @@ export function captureCornerstoneElementForPrint(element: HTMLElement | null, o
       output.height = h;
       const ctx = output.getContext('2d');
       if (ctx) {
-        // Use high-quality image smoothing for upscale
         ctx.imageSmoothingEnabled = true;
         ctx.imageSmoothingQuality = 'high';
-
-        // Draw each canvas layer in order (base image first, then tool overlays)
         canvases.forEach(c => {
-          try {
-            ctx.drawImage(c, 0, 0, w, h);
-          } catch { /* cross-origin or empty canvas — skip */ }
+          try { ctx.drawImage(c, 0, 0, w, h); } catch { /* skip */ }
         });
-
-        // Draw custom text/stamp overlays on top
         drawOverlays(output, overlays);
-
         return output.toDataURL('image/png');
       }
     }
 
     // Fallback: use cornerstone.renderToCanvas (no tool annotations)
-    const enabledElement = cornerstone.getEnabledElement(element);
-    if (enabledElement?.image) {
-      const image = enabledElement.image;
+    if (image) {
       const width = imageDimension(image.columns ?? image.width, 512);
       const height = imageDimension(image.rows ?? image.height, 512);
       const canvas = document.createElement('canvas');
@@ -155,7 +191,7 @@ export function captureCornerstoneElementForPrint(element: HTMLElement | null, o
       cornerstone.renderToCanvas(
         canvas,
         image,
-        buildPrintViewport(enabledElement.viewport || cornerstone.getViewport(element), image),
+        buildPrintViewport(enabledElement!.viewport || cornerstone.getViewport(element), image),
       );
 
       drawOverlays(canvas, overlays);
