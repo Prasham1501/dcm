@@ -52,6 +52,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getReceivedDicomFiles: () => ipcRenderer.invoke('get-received-dicom-files'),
     openFolder: (folderPath) => ipcRenderer.invoke('open-folder', folderPath),
 
+    // DICOM Send
+    dicomSendToDestination: (params) => ipcRenderer.invoke('dicom-send-to-destination', params),
+    dicomEcho: (params) => ipcRenderer.invoke('dicom-echo', params),
+
     // Generic IPC (fallback)
     invoke: (channel, ...args) => ipcRenderer.invoke(channel, ...args),
     on: (channel, callback) => {

@@ -79,16 +79,18 @@ export function DualPrintPreview({ onClose }: DualPrintPreviewProps) {
       gridTemplateRows: 'repeat(' + layout.rows + ', 1fr)',
       width: '100%',
       flex: 1,
+      minHeight: 0,
+      overflow: 'hidden',
     };
     const borderColor = hospitalConfig.viewportBorderColor || '#333';
     return (
-      <div className="flex flex-col h-full border border-gray-200 overflow-hidden">
-        <div className="bg-gray-100 text-center font-bold border-b border-gray-200 text-gray-700 text-[10px] py-0.5 underline">
+      <div className="flex flex-col h-full border border-gray-200 overflow-hidden" style={{ minHeight: 0 }}>
+        <div className="bg-gray-100 text-center font-bold border-b border-gray-200 text-gray-700 text-[10px] py-0.5 underline flex-shrink-0">
           {patientName}
         </div>
         <div style={gridStyle}>
           {captures.map((src, i) => (
-            <div key={i} className="bg-black flex items-center justify-center overflow-hidden border" style={{ borderColor: borderColor }}>
+            <div key={i} className="bg-black flex items-center justify-center overflow-hidden border" style={{ borderColor, minHeight: 0 }}>
               {src ? <img src={src} className="w-full h-full object-contain" alt="" /> : <span className="text-gray-600 text-[10px]">Empty</span>}
             </div>
           ))}
@@ -126,11 +128,11 @@ export function DualPrintPreview({ onClose }: DualPrintPreviewProps) {
       const gridRows = 'repeat(' + layout.rows + ', 1fr)';
       const imgsHtml = captures.map(src => {
         const inner = src ? '<img src="' + src + '" style="width:100%;height:100%;object-fit:contain" />' : '';
-        return '<div style="background:black;display:flex;flex-direction:column;align-items:center;justify-content:center;overflow:hidden;border:1px solid ' + borderCol + '">' + inner + '</div>';
+        return '<div style="background:black;display:flex;align-items:center;justify-content:center;overflow:hidden;min-height:0;border:1px solid ' + borderCol + '">' + inner + '</div>';
       }).join('');
-      return '<div style="flex:1;display:flex;flex-direction:column;height:100%">' +
-        '<div style="padding:4px;text-align:center;font-weight:bold;font-size:12px;background:#eee;border:1px solid #ccc;text-decoration:underline">' + patientName + '</div>' +
-        '<div style="flex:1;display:grid;grid-template-columns:' + gridCols + ';grid-template-rows:' + gridRows + ';gap:2px">' + imgsHtml + '</div>' +
+      return '<div style="flex:1;display:flex;flex-direction:column;min-height:0;overflow:hidden">' +
+        '<div style="padding:4px;text-align:center;font-weight:bold;font-size:12px;background:#eee;border:1px solid #ccc;text-decoration:underline;flex-shrink:0">' + patientName + '</div>' +
+        '<div style="flex:1;display:grid;grid-template-columns:' + gridCols + ';grid-template-rows:' + gridRows + ';gap:2px;min-height:0;overflow:hidden">' + imgsHtml + '</div>' +
         '</div>';
     };
 
@@ -145,7 +147,7 @@ export function DualPrintPreview({ onClose }: DualPrintPreviewProps) {
     printWin.document.write('<div style="height:100vh;display:flex;flex-direction:column">');
     if (settings.headerEnabled) printWin.document.write(buildHeaderHtml());
     printWin.document.write(patientBarHtml);
-    printWin.document.write('<div style="flex:1;display:flex;gap:10px;padding:8px">');
+    printWin.document.write('<div style="flex:1;display:flex;gap:10px;padding:8px;min-height:0;overflow:hidden">');
     printWin.document.write(buildPanelGridHtml(leftCaptures, leftPanel.currentLayout, leftPanel.patientName));
     printWin.document.write(buildPanelGridHtml(rightCaptures, rightPanel.currentLayout, rightPanel.patientName));
     printWin.document.write('</div>');
@@ -194,15 +196,15 @@ export function DualPrintPreview({ onClose }: DualPrintPreviewProps) {
         </div>
       </div>
       <div className="flex-1 overflow-auto p-10 flex justify-center bg-gray-900/50">
-        <div className="bg-white shadow-2xl relative" style={{ width: pw, height: ph, minWidth: pw }}>
-          <div style={{ padding: '8px 15px' }} className="border-b border-gray-200 flex justify-between">
+        <div className="bg-white shadow-2xl relative flex flex-col" style={{ width: pw, height: ph, minWidth: pw, overflow: 'hidden' }}>
+          <div style={{ padding: '8px 15px' }} className="border-b border-gray-200 flex justify-between flex-shrink-0">
             {renderSlotPv(hospitalConfig.headerLayout.left, hospitalConfig.customHeaderLeft)}
             {renderSlotPv(hospitalConfig.headerLayout.center, hospitalConfig.customHeaderCenter)}
             {renderSlotPv(hospitalConfig.headerLayout.right, hospitalConfig.customHeaderRight)}
           </div>
-          <div style={{ display: 'flex', gap: '10px', padding: '8px', height: ph - 160 }}>
-            <div className="flex-1">{renderPanelGrid(leftCaptures, leftPanel.currentLayout, leftPanel.patientName)}</div>
-            <div className="flex-1">{renderPanelGrid(rightCaptures, rightPanel.currentLayout, rightPanel.patientName)}</div>
+          <div style={{ display: 'flex', gap: '10px', padding: '8px', flex: 1, minHeight: 0, overflow: 'hidden' }}>
+            <div className="flex-1" style={{ minHeight: 0, overflow: 'hidden' }}>{renderPanelGrid(leftCaptures, leftPanel.currentLayout, leftPanel.patientName)}</div>
+            <div className="flex-1" style={{ minHeight: 0, overflow: 'hidden' }}>{renderPanelGrid(rightCaptures, rightPanel.currentLayout, rightPanel.patientName)}</div>
           </div>
         </div>
       </div>

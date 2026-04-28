@@ -1857,6 +1857,158 @@ ipcMain.handle('dicom-send-to-modality', async (event, { modalityName, filePaths
     }
 });
 
+// DICOM Send to destination by host/port/aeTitle (auto-registers modality in Orthanc)
+ipcMain.handle('dicom-send-to-destination', async (event, { host, port, aeTitle, filePaths }) => {
+    try {
+        if (!host || !port || !aeTitle || !filePaths || filePaths.length === 0) {
+            return { success: false, error: 'Missing required parameters (host, port, aeTitle, filePaths)' };
+        }
+        const modalityAlias = `send_${aeTitle}_${host}_${port}`.replace(/[^a-zA-Z0-9_]/g, '_');
+
+        // Register modality in Orthanc
+        const modalityConfig = JSON.stringify([aeTitle, host, parseInt(port)]);
+        await new Promise((resolve, reject) => {
+            const req = http.request({
+                host: 'localhost', port: ORTHANC_PORT,
+                path: `/modalities/${encodeURIComponent(modalityAlias)}`,
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Content-Length': Buffer.byteLength(modalityConfig),
+                    Authorization: 'Basic ' + Buffer.from('orthanc:orthanc').toString('base64'),
+                }
+            }, (res) => {
+                let body = '';
+                res.on('data', d => body += d);
+                res.on('end', () => resolve(body));
+            });
+            req.on('error', reject);
+            req.write(modalityConfig);
+            req.end();
+        });
+
+        // Upload local DICOM files to Orthanc
+        const uploaded = [];
+        for (const fp of filePaths) {
+            try {
+                const data = fs.readFileSync(fp);
+                const result = await new Promise((resolve, reject) => {
+                    const req = http.request({
+                        host: 'localhost', port: ORTHANC_PORT, path: '/instances',
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/dicom',
+                            'Content-Length': data.length,
+                            Authorization: 'Basic ' + Buffer.from('orthanc:orthanc').toString('base64'),
+                        }
+                    }, (res) => {
+                        let body = '';
+                        res.on('data', d => body += d);
+                        res.on('end', () => {
+                            try { resolve(JSON.parse(body)); } catch { resolve(null); }
+                        });
+                    });
+                    req.on('error', reject);
+                    req.write(data);
+                    req.end();
+                });
+                if (result && result.ID) uploaded.push(result.ID);
+            } catch (uploadErr) {
+                console.warn(`[DICOM Send] Failed to upload ${fp}:`, uploadErr.message);
+            }
+        }
+
+        if (uploaded.length === 0) {
+            return { success: false, error: 'No files could be uploaded to Orthanc' };
+        }
+
+        // Send uploaded instances to the remote modality via C-STORE
+        const sendPayload = JSON.stringify(uploaded);
+        const sendResult = await new Promise((resolve, reject) => {
+            const req = http.request({
+                host: 'localhost', port: ORTHANC_PORT,
+                path: `/modalities/${encodeURIComponent(modalityAlias)}/store`,
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Content-Length': Buffer.byteLength(sendPayload),
+                    Authorization: 'Basic ' + Buffer.from('orthanc:orthanc').toString('base64'),
+                }
+            }, (res) => {
+                let body = '';
+                res.on('data', d => body += d);
+                res.on('end', () => {
+                    try { resolve(JSON.parse(body)); } catch { resolve({ error: body }); }
+                });
+            });
+            req.on('error', reject);
+            req.write(sendPayload);
+            req.end();
+        });
+
+        return { success: true, sent: uploaded.length, total: filePaths.length, sendResult };
+    } catch (e) {
+        return { success: false, error: e.message };
+    }
+});
+
+// DICOM Echo (C-ECHO) to test connectivity
+ipcMain.handle('dicom-echo', async (event, { host, port, aeTitle }) => {
+    try {
+        if (!host || !port || !aeTitle) {
+            return { success: false, error: 'Missing required parameters (host, port, aeTitle)' };
+        }
+        const modalityAlias = `echo_${aeTitle}_${host}_${port}`.replace(/[^a-zA-Z0-9_]/g, '_');
+
+        // Register modality in Orthanc
+        const modalityConfig = JSON.stringify([aeTitle, host, parseInt(port)]);
+        await new Promise((resolve, reject) => {
+            const req = http.request({
+                host: 'localhost', port: ORTHANC_PORT,
+                path: `/modalities/${encodeURIComponent(modalityAlias)}`,
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Content-Length': Buffer.byteLength(modalityConfig),
+                    Authorization: 'Basic ' + Buffer.from('orthanc:orthanc').toString('base64'),
+                }
+            }, (res) => {
+                let body = '';
+                res.on('data', d => body += d);
+                res.on('end', () => resolve(body));
+            });
+            req.on('error', reject);
+            req.write(modalityConfig);
+            req.end();
+        });
+
+        // Perform C-ECHO
+        const echoResult = await new Promise((resolve, reject) => {
+            const req = http.request({
+                host: 'localhost', port: ORTHANC_PORT,
+                path: `/modalities/${encodeURIComponent(modalityAlias)}/echo`,
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: 'Basic ' + Buffer.from('orthanc:orthanc').toString('base64'),
+                }
+            }, (res) => {
+                let body = '';
+                res.on('data', d => body += d);
+                res.on('end', () => resolve({ statusCode: res.statusCode, body }));
+            });
+            req.on('error', reject);
+            req.end();
+        });
+
+        return echoResult.statusCode === 200
+            ? { success: true, message: 'C-ECHO successful — destination is reachable' }
+            : { success: false, error: `C-ECHO failed (HTTP ${echoResult.statusCode}): ${echoResult.body}` };
+    } catch (e) {
+        return { success: false, error: e.message };
+    }
+});
+
 // Get/Set configured Orthanc modalities for DICOM send
 ipcMain.handle('get-dicom-modalities', async () => {
     try {

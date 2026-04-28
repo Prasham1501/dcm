@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Printer, X, ZoomIn, ZoomOut, Plus, Trash2, Check, FileDown } from 'lucide-react';
+import { Printer, X, ZoomIn, ZoomOut, Plus, Trash2, Check } from 'lucide-react';
 import { useCRViewerStore } from '@/stores/crViewerStore';
 import { usePrintStore } from '@/stores/printStore';
 import { useHospitalConfigStore, getFormattedAddress, renderPrintSlot } from '@/stores/hospitalConfigStore';
@@ -7,7 +7,7 @@ import { usePatientStore } from '@/stores/patientStore';
 import { getAutoOrientationForLayout, getLayoutAreaNames, getLayoutGridTemplate } from '@/lib/layoutUtils';
 import { captureCornerstoneViewportForPrint, waitForViewportImages, PrintOverlay } from '@/lib/printCapture';
 import { fillEmptyPrintSlots } from '@/lib/printPageUtils';
-import { getSystemPrinters } from '@/utils/electronBridge';
+
 
 function captureViewport(viewportIndex: number): string | null {
   const imageId = getViewportImageIds()[viewportIndex];
@@ -66,7 +66,7 @@ export function CRPrintPreview({ onClose, initialPageMode = 'all' }: CRPrintPrev
   const [captureTotal, setCaptureTotal] = useState(0);
 
   const [localPaperSize, setLocalPaperSize] = useState<PaperSize>(settings.paperSize as PaperSize);
-  const [localOrientation, setLocalOrientation] = useState(settings.orientation);
+  const [localOrientation, setLocalOrientation] = useState(() => getAutoOrientationForLayout(currentLayout));
   const [localCopies, setLocalCopies] = useState(settings.copies);
 
   const [pageMode, setPageMode] = useState<'all' | 'current' | 'custom'>(initialPageMode);
@@ -77,20 +77,9 @@ export function CRPrintPreview({ onClose, initialPageMode = 'all' }: CRPrintPrev
   const [newPrinterName, setNewPrinterName] = useState('');
   const [newPrinterDisplay, setNewPrinterDisplay] = useState('');
   const [newPrinterType, setNewPrinterType] = useState('Laser');
-  const [systemPrinters, setSystemPrinters] = useState<SystemPrinter[]>([]);
 
   const configuredPrinters = hospitalConfig.printers;
-  const activeConfiguredPrinters = configuredPrinters.filter(p => p.isActive);
-  const detectedPrinters = systemPrinters
-    .filter((printer) => !configuredPrinters.some((configured) => configured.name === printer.name))
-    .map((printer) => ({
-      name: printer.name,
-      displayName: printer.displayName || printer.name,
-      type: printer.description || 'System Printer',
-      isDefault: printer.isDefault,
-      isActive: true,
-    }));
-  const activePrinters = [...activeConfiguredPrinters, ...detectedPrinters];
+  const activePrinters = configuredPrinters.filter(p => p.isActive);
 
   // Escape key to close
   useEffect(() => {
@@ -100,10 +89,6 @@ export function CRPrintPreview({ onClose, initialPageMode = 'all' }: CRPrintPrev
   }, [onClose]);
   const defaultPrinter = activePrinters.find(p => p.isDefault) || activePrinters[0];
   const [selectedPrinter, setSelectedPrinter] = useState(defaultPrinter?.name || '');
-
-  useEffect(() => {
-    void getSystemPrinters().then(setSystemPrinters).catch(() => setSystemPrinters([]));
-  }, []);
 
   useEffect(() => {
     if (!selectedPrinter || !activePrinters.some((printer) => printer.name === selectedPrinter)) {
@@ -294,20 +279,6 @@ export function CRPrintPreview({ onClose, initialPageMode = 'all' }: CRPrintPrev
     }
   };
 
-  const handleSavePdf = async () => {
-    if (allPageCaptures.length === 0) { alert('Still capturing pages, please wait.'); return; }
-    updateSettings({ paperSize: localPaperSize, orientation: localOrientation, copies: localCopies });
-    const pagesToPrint = selectedPages();
-    const htmlContent = buildPrintHtml(pagesToPrint);
-    const electronAPI = (window as any).electronAPI;
-    if (electronAPI?.printReportDialog) {
-      try { await electronAPI.printReportDialog({ htmlContent, paperSize: localPaperSize }); } catch (err) { console.error('PDF save error:', err); }
-    } else {
-      const printWin = window.open('', '_blank');
-      if (printWin) { printWin.document.write(htmlContent); printWin.document.close(); setTimeout(() => { printWin.print(); }, 600); }
-    }
-  };
-
   const previewGridStyle: React.CSSProperties = {
     display: 'grid',
     gap: '2px',
@@ -364,9 +335,6 @@ export function CRPrintPreview({ onClose, initialPageMode = 'all' }: CRPrintPrev
             ) : <span className="text-[10px] text-red-400 italic">No printers configured</span>}
             <button onClick={() => setShowPrinterMgr(v => !v)} className={`h-7 px-2 text-[10px] border rounded transition-colors ${showPrinterMgr ? 'border-app-accent bg-app-accent/10 text-app-accent' : 'border-app-border text-app-text-secondary hover:bg-app-hover'}`} title="Manage printers">⚙</button>
           </div>
-          <button onClick={handleSavePdf} disabled={capturing} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold border-2 border-blue-500 text-blue-500 bg-app-bg rounded hover:bg-blue-500 hover:text-white disabled:opacity-50 transition-colors">
-            <FileDown className="w-4 h-4" />Save PDF
-          </button>
           <button onClick={handlePrint} disabled={printing || capturing || printCountRemaining <= 0 || activePrinters.length === 0} className="flex items-center gap-2 px-5 py-1.5 text-xs font-bold bg-app-accent text-white rounded hover:brightness-110 disabled:opacity-50 transition-colors">
             <Printer className="w-4 h-4" />{printing ? 'Printing…' : capturing ? 'Capturing…' : `Print${pagesToShow.length > 1 ? ` (${pagesToShow.length}p)` : ''}`}
           </button>

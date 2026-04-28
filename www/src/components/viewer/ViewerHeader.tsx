@@ -22,7 +22,8 @@ export function ViewerHeader({ showThumbnails = true, onToggleThumbnails }: { sh
   } = useViewerStore();
   const { setShowPrintPreview, printCountRemaining } = usePrintStore();
   const { mode, toggleTheme } = useThemeStore();
-  const openReportEditor = useReportStore((s) => s.openReportEditor);
+  const showInlineReport = useReportStore((s) => s.showInlineReport);
+  const setShowInlineReport = useReportStore((s) => s.setShowInlineReport);
   const [copied, setCopied] = useState(false);
   const hasImages = images.length > 0;
 
@@ -188,13 +189,9 @@ export function ViewerHeader({ showThumbnails = true, onToggleThumbnails }: { sh
 
         {/* Report - highlighted */}
         <button
-          onClick={() => {
-            if (patientName) {
-              openReportEditor(patientId || 'unknown', patientName);
-            }
-          }}
-          className="px-2 py-1 text-[10px] 2xl:text-sm font-semibold border-2 border-app-accent text-white bg-app-accent rounded hover:opacity-90 transition-colors flex items-center gap-1"
-          title="Create Report"
+          onClick={() => setShowInlineReport(!showInlineReport)}
+          className={`px-2 py-1 text-[10px] 2xl:text-sm font-semibold border-2 border-app-accent rounded transition-colors flex items-center gap-1 ${showInlineReport ? 'text-white bg-app-accent hover:opacity-90' : 'text-app-accent bg-app-bg hover:bg-app-accent hover:text-white'}`}
+          title={showInlineReport ? 'Hide Report Panel' : 'Show Report Panel'}
         >
           <FileText className="w-3 h-3" />
           Report

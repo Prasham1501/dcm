@@ -37,11 +37,15 @@ export function refitCornerstoneViewport(
     }
 
     const currentViewport = enabledElement.viewport || cornerstone.getViewport(element) || {};
+
+    // Resize first so cornerstone knows the new container dimensions,
+    // then get the default viewport which computes correct fit-to-window scale.
+    cornerstone.resize(element, false);
     const defaultViewport = cornerstone.getDefaultViewportForImage(element, image) || {};
+
     const nextViewport: any = {
       ...defaultViewport,
-      ...currentViewport,
-      scale: defaultViewport.scale ?? currentViewport.scale ?? 1,
+      scale: defaultViewport.scale ?? 1,
       translation: { x: 0, y: 0 },
       voi: preserveVoi ? (currentViewport.voi || defaultViewport.voi || defaultVoi(image)) : defaultVoi(image),
       rotation: preserveRotation ? (currentViewport.rotation || 0) : 0,

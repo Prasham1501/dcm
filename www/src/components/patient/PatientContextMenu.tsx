@@ -227,26 +227,21 @@ export function PatientContextMenu({ x, y, patient, onClose }: Props) {
     }
     setSending(true);
     try {
-      // Send DICOM files to the destination via the local API server
-      const response = await fetch('http://localhost:3457/api/send-dicom', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      const api = (window as any).electronAPI;
+      if (api?.dicomSendToDestination) {
+        const result = await api.dicomSendToDestination({
+          host: dest.host,
+          port: dest.port,
+          aeTitle: dest.aeTitle,
           filePaths: patient.filePaths,
-          destination: {
-            host: dest.host,
-            port: dest.port,
-            aeTitle: dest.aeTitle,
-          },
-          patientName: patient.patientName,
-          patientId: patient.patientId,
-        }),
-      });
-      const result = await response.json();
-      if (result.success) {
-        alert(`Successfully sent ${patient.filePaths.length} file(s) to ${dest.name}`);
+        });
+        if (result.success) {
+          alert(`Successfully sent ${result.sent}/${result.total} file(s) to ${dest.name}`);
+        } else {
+          alert(`Send failed: ${result.error || 'Unknown error'}`);
+        }
       } else {
-        alert(`Send failed: ${result.error || 'Unknown error'}`);
+        alert('DICOM Send requires the Electron desktop app');
       }
     } catch (err: any) {
       alert(`Send failed: ${err.message}`);
