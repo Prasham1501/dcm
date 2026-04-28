@@ -1292,6 +1292,75 @@ ipcMain.handle('get-system-printers', async () => {
     } catch (e) { return { success: false, error: e.message, printers: [] }; }
 });
 
+async function waitForPrintableContent(printWindow, timeoutMs = 5000) {
+    const readinessScript = `
+        (async () => {
+            const images = Array.from(document.images || []);
+            const imagePromises = images.map((img) => {
+                if (img.complete) return Promise.resolve(true);
+                return new Promise((resolve) => {
+                    const done = () => resolve(true);
+                    img.addEventListener('load', done, { once: true });
+                    img.addEventListener('error', done, { once: true });
+                });
+            });
+
+            if (document.fonts && document.fonts.ready) {
+                try { await document.fonts.ready; } catch { }
+            }
+
+            await Promise.all(imagePromises);
+            await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+            return true;
+        })();
+    `;
+
+    return await Promise.race([
+        printWindow.webContents.executeJavaScript(readinessScript, true),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Timed out waiting for printable content')), timeoutMs)),
+    ]);
+}
+
+function buildElectronPrintOptions(printerName, printSettings = {}) {
+    const opts = {
+        silent: true,
+        printBackground: true,
+        color: printSettings.colorMode !== 'grayscale',
+        landscape: printSettings.orientation === 'landscape',
+        copies: printSettings.copies || 1,
+    };
+
+    if (printSettings.margins) {
+        opts.margins = { marginType: printSettings.margins };
+    }
+    if (printerName && printerName !== 'default') {
+        opts.deviceName = printerName;
+    }
+    if (printSettings.paperSize) {
+        opts.pageSize = printSettings.paperSize;
+    }
+
+    return opts;
+}
+
+async function runElectronPrint(webContents, opts, timeoutMs = 15000) {
+    return await new Promise((resolve) => {
+        let settled = false;
+        const timeout = setTimeout(() => {
+            if (settled) return;
+            settled = true;
+            resolve({ success: false, error: 'Print request timed out' });
+        }, timeoutMs);
+
+        webContents.print(opts, (success, errorType) => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timeout);
+            resolve(success ? { success: true } : { success: false, error: errorType || 'Print failed' });
+        });
+    });
+}
+
 // Print report with Chromium print dialog (has built-in preview + all options)
 ipcMain.handle('print-report-dialog', async (event, options) => {
     let tempHtml = null;
@@ -1308,8 +1377,7 @@ ipcMain.handle('print-report-dialog', async (event, options) => {
         });
 
         await printWindow.loadFile(tempHtml);
-        // Wait for fonts/images to settle
-        await new Promise(r => setTimeout(r, 1000));
+        await waitForPrintableContent(printWindow);
 
         // Map paper size for printToPDF
         const sizeMap = {
@@ -1351,68 +1419,41 @@ ipcMain.handle('print-report-dialog', async (event, options) => {
 
 // Print HTML content to printer
 ipcMain.handle('print-to-printer', async (event, options) => {
-    return new Promise(async resolve => {
-        let tempFile = null;
-        try {
-            const { printerName, htmlContent, printSettings = {} } = options;
-            const os = require('os');
-            tempFile = path.join(os.tmpdir(), `dicom_print_${Date.now()}.html`);
-            fs.writeFileSync(tempFile, htmlContent, 'utf8');
+    let tempFile = null;
+    let printWindow = null;
+    try {
+        const { printerName, htmlContent, printSettings = {} } = options;
+        const os = require('os');
+        tempFile = path.join(os.tmpdir(), `dicom_print_${Date.now()}.html`);
+        fs.writeFileSync(tempFile, htmlContent, 'utf8');
 
-            const printWindow = new BrowserWindow({
-                show: false, width: 2480, height: 3508,
-                webPreferences: { nodeIntegration: false, contextIsolation: true }
-            });
+        printWindow = new BrowserWindow({
+            show: false, width: 2480, height: 3508,
+            webPreferences: { nodeIntegration: false, contextIsolation: true }
+        });
 
-            await printWindow.loadFile(tempFile);
-
-            printWindow.webContents.on('did-finish-load', async () => {
-                await new Promise(r => setTimeout(r, 500));
-                const opts = {
-                    silent: true, printBackground: true,
-                    color: printSettings.colorMode !== 'grayscale',
-                    margins: { marginType: printSettings.margins || 'default' },
-                    landscape: printSettings.orientation === 'landscape',
-                    copies: printSettings.copies || 1
-                };
-                if (printerName && printerName !== 'default') opts.deviceName = printerName;
-                if (printSettings.paperSize) opts.pageSize = printSettings.paperSize;
-
-                printWindow.webContents.print(opts, (success, errorType) => {
-                    resolve(success ? { success: true } : { success: false, error: errorType || 'Print failed' });
-                    printWindow.close();
-                    if (tempFile && fs.existsSync(tempFile)) try { fs.unlinkSync(tempFile); } catch { }
-                });
-            });
-        } catch (e) {
-            resolve({ success: false, error: e.message });
-            if (tempFile && fs.existsSync(tempFile)) try { fs.unlinkSync(tempFile); } catch { }
-        }
-    });
+        await printWindow.loadFile(tempFile);
+        await waitForPrintableContent(printWindow);
+        return await runElectronPrint(printWindow.webContents, buildElectronPrintOptions(printerName, printSettings));
+    } catch (e) {
+        return { success: false, error: e.message };
+    } finally {
+        if (printWindow && !printWindow.isDestroyed()) printWindow.close();
+        if (tempFile && fs.existsSync(tempFile)) try { fs.unlinkSync(tempFile); } catch { }
+    }
 });
 
 // Print current window
 ipcMain.handle('print-current-to-printer', async (event, options) => {
-    return new Promise(resolve => {
-        try {
-            const { printerName, printSettings = {} } = options;
-            const win = BrowserWindow.fromWebContents(event.sender);
-            if (!win) { resolve({ success: false, error: 'Window not found' }); return; }
+    try {
+        const { printerName, printSettings = {} } = options;
+        const win = BrowserWindow.fromWebContents(event.sender);
+        if (!win) return { success: false, error: 'Window not found' };
 
-            const opts = {
-                silent: true, printBackground: true,
-                color: printSettings.colorMode !== 'grayscale',
-                landscape: printSettings.orientation === 'landscape',
-                copies: printSettings.copies || 1
-            };
-            if (printerName && printerName !== 'default') opts.deviceName = printerName;
-            if (printSettings.paperSize) opts.pageSize = printSettings.paperSize;
-
-            win.webContents.print(opts, (success, errorType) => {
-                resolve(success ? { success: true } : { success: false, error: errorType || 'Print failed' });
-            });
-        } catch (e) { resolve({ success: false, error: e.message }); }
-    });
+        return await runElectronPrint(win.webContents, buildElectronPrintOptions(printerName, printSettings));
+    } catch (e) {
+        return { success: false, error: e.message };
+    }
 });
 
 // Focus main window
