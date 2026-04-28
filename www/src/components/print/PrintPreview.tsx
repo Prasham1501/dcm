@@ -6,24 +6,16 @@ import { useViewerStore } from '@/stores/viewerStore';
 import { usePatientStore } from '@/stores/patientStore';
 import { useHospitalConfigStore, getFormattedAddress, renderPrintSlot } from '@/stores/hospitalConfigStore';
 import { getAutoOrientationForLayout, getLayoutAreaNames, getLayoutGridTemplate } from '@/lib/layoutUtils';
-import { captureCornerstoneViewportForPrint, PrintOverlay } from '@/lib/printCapture';
+import { captureCornerstoneViewportForPrint, waitForViewportImages, PrintOverlay } from '@/lib/printCapture';
 import { fillEmptyPrintSlots } from '@/lib/printPageUtils';
 import { useCustomAnnotationStore } from '@/stores/customAnnotationStore';
+import { getSystemPrinters } from '@/utils/electronBridge';
 
 function capturePageViewports(spots: number, page: number): Array<string | null> {
-  const store = useViewerStore.getState();
-  const { images, viewportImageOverrides } = store;
-  const startIndex = (page - 1) * spots;
+  const imageIds = getPageViewportImageIds(spots, page);
   const annStore = useCustomAnnotationStore.getState();
 
-  return Array.from({ length: spots }, (_, viewportIndex) => {
-    // Resolve imageId for this viewport (same logic as ViewportGrid)
-    const overrideUrl = viewportImageOverrides[viewportIndex];
-    const defaultImg = images[startIndex + viewportIndex];
-    const rawImageId = overrideUrl || defaultImg?.imageUrl || null;
-    const imageId = rawImageId === 'deleted' ? null : rawImageId;
-
-    // Get text/stamp annotations for this image
+  return imageIds.map((imageId, viewportIndex) => {
     const overlays: PrintOverlay[] = imageId
       ? annStore.getAnnotations(imageId).map(ann => ({
           text: ann.text,
@@ -36,6 +28,19 @@ function capturePageViewports(spots: number, page: number): Array<string | null>
       : [];
 
     return captureCornerstoneViewportForPrint('data-viewport-index', viewportIndex, overlays);
+  });
+}
+
+function getPageViewportImageIds(spots: number, page: number): Array<string | null> {
+  const store = useViewerStore.getState();
+  const { images, viewportImageOverrides } = store;
+  const startIndex = (page - 1) * spots;
+
+  return Array.from({ length: spots }, (_, viewportIndex) => {
+    const overrideUrl = viewportImageOverrides[viewportIndex];
+    const defaultImg = images[startIndex + viewportIndex];
+    const rawImageId = overrideUrl || defaultImg?.imageUrl || null;
+    return rawImageId === 'deleted' ? null : rawImageId;
   });
 }
 
@@ -71,8 +76,20 @@ export function PrintPreview() {
   const [newPrinterName, setNewPrinterName] = useState('');
   const [newPrinterDisplay, setNewPrinterDisplay] = useState('');
   const [newPrinterType, setNewPrinterType] = useState('Laser');
+  const [systemPrinters, setSystemPrinters] = useState<SystemPrinter[]>([]);
 
   const configuredPrinters = hospitalConfig.printers;
+  const activeConfiguredPrinters = configuredPrinters.filter(p => p.isActive);
+  const detectedPrinters = systemPrinters
+    .filter((printer) => !configuredPrinters.some((configured) => configured.name === printer.name))
+    .map((printer) => ({
+      name: printer.name,
+      displayName: printer.displayName || printer.name,
+      type: printer.description || 'System Printer',
+      isDefault: printer.isDefault,
+      isActive: true,
+    }));
+  const activePrinters = [...activeConfiguredPrinters, ...detectedPrinters];
 
   // Escape key to close
   useEffect(() => {
@@ -80,9 +97,18 @@ export function PrintPreview() {
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
   }, [setShowPrintPreview]);
-  const activePrinters = configuredPrinters.filter(p => p.isActive);
   const defaultPrinter = activePrinters.find(p => p.isDefault) || activePrinters[0];
   const [selectedPrinter, setSelectedPrinter] = useState(defaultPrinter?.name || '');
+
+  useEffect(() => {
+    void getSystemPrinters().then(setSystemPrinters).catch(() => setSystemPrinters([]));
+  }, []);
+
+  useEffect(() => {
+    if (!selectedPrinter || !activePrinters.some((printer) => printer.name === selectedPrinter)) {
+      setSelectedPrinter(defaultPrinter?.name || '');
+    }
+  }, [activePrinters, defaultPrinter, selectedPrinter]);
 
   const parsePageList = useCallback((input: string): number[] => {
     const pages = new Set<number>();
@@ -107,22 +133,34 @@ export function PrintPreview() {
   }, [pageMode, currentPage, customPageInput, parsePageList, totalPages]);
 
   useEffect(() => {
+    let cancelled = false;
+
     const captureAllPages = async () => {
       setCapturing(true);
-      const origPage = currentPage;
+      const origPage = useViewerStore.getState().currentPage;
       const rawCaptures: Array<Array<string | null>> = [];
       for (let p = 1; p <= totalPages; p++) {
+        if (cancelled) return;
         setCaptureProgress(p);
         setCurrentPage(p);
-        await new Promise(r => setTimeout(r, 600));
+        await waitForViewportImages('data-viewport-index', getPageViewportImageIds(currentLayout.spots, p));
+        if (cancelled) return;
+        await new Promise(r => setTimeout(r, 75));
         rawCaptures.push(capturePageViewports(currentLayout.spots, p));
       }
       setCurrentPage(origPage);
-      await new Promise(r => setTimeout(r, 300));
-      setAllPageCaptures(fillEmptyPrintSlots(rawCaptures, currentLayout.spots));
-      setCapturing(false);
+      await waitForViewportImages('data-viewport-index', getPageViewportImageIds(currentLayout.spots, origPage));
+      await new Promise(r => setTimeout(r, 75));
+      if (!cancelled) {
+        setAllPageCaptures(fillEmptyPrintSlots(rawCaptures, currentLayout.spots));
+        setCapturing(false);
+      }
     };
-    captureAllPages();
+
+    void captureAllPages();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // Default print orientation follows the requested spot-count rule from the reference software.
@@ -178,15 +216,14 @@ export function PrintPreview() {
       const caps = allPageCaptures[pageNum - 1] || [];
       const imgsHtml = Array.from({ length: currentLayout.spots }).map((_, i) => {
         const src = caps[i];
-        const cellBg = src ? '#000' : '#f5f5f5';
         const areaStyle = currentLayout.areas && areaNames[i] ? `grid-area:${areaNames[i]};` : '';
         return src
-          ? `<div style="${areaStyle}background:${cellBg};display:flex;align-items:center;justify-content:center;overflow:hidden;border:1px solid #666"><img src="${src}" style="width:100%;height:100%;object-fit:contain" /></div>`
-          : `<div style="${areaStyle}background:${cellBg};display:flex;align-items:center;justify-content:center;overflow:hidden;border:1px solid #666"></div>`;
+          ? `<div style="${areaStyle}background:#000;display:flex;align-items:center;justify-content:center;overflow:hidden"><img src="${src}" style="width:100%;height:100%;object-fit:contain" /></div>`
+          : `<div style="${areaStyle}background:#000;display:flex;align-items:center;justify-content:center;overflow:hidden"></div>`;
       }).join('');
       return `<div class="page">${settings.headerEnabled ? buildHeaderHtml() : ''}${patientBarHtml()}<div class="grid">${imgsHtml}</div>${hospitalConfig.enableFooter ? buildFooterHtml() : ''}</div>`;
     }).join('');
-    return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>DICOM Print - ${patientName}</title><style>@page{size:${localPaperSize} ${isLandscape ? 'landscape' : 'portrait'};margin:10mm}*{box-sizing:border-box}body{margin:0;padding:0;font-family:Arial,Helvetica,sans-serif}.page{page-break-after:always;page-break-inside:avoid;display:flex;flex-direction:column;height:calc(100vh);overflow:hidden;border:1px solid #444}.page:last-child{page-break-after:auto}.grid{display:grid;grid-template-columns:${gridCols};grid-template-rows:${gridRows};${gridAreas}gap:0;padding:0;flex:1;min-height:0}img{display:block;image-rendering:-webkit-optimize-contrast;image-rendering:high-quality}@media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}</style></head><body>${pagesHtml}</body></html>`;
+    return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>DICOM Print - ${patientName}</title><style>@page{size:${localPaperSize} ${isLandscape ? 'landscape' : 'portrait'};margin:10mm}*{box-sizing:border-box}body{margin:0;padding:0;font-family:Arial,Helvetica,sans-serif}.page{page-break-after:always;page-break-inside:avoid;display:flex;flex-direction:column;height:calc(100vh);overflow:hidden;border:1px solid #444}.page:last-child{page-break-after:auto}.grid{display:grid;grid-template-columns:${gridCols};grid-template-rows:${gridRows};${gridAreas}gap:2px;padding:2px;flex:1;min-height:0;background:#374151}img{display:block;image-rendering:-webkit-optimize-contrast;image-rendering:high-quality}@media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}</style></head><body>${pagesHtml}</body></html>`;
   }, [allPageCaptures, currentLayout, settings, hospitalConfig, patientName, patientId, studyDate, localPaperSize, isLandscape]);
 
   const buildPcpndtHtml = () => {
@@ -203,31 +240,59 @@ export function PrintPreview() {
     if (printCountRemaining <= 0) { alert('No prints remaining. Please recharge your print count.'); return; }
     if (allPageCaptures.length === 0 && printType === 'image') { alert('Still capturing pages, please wait.'); return; }
     setPrinting(true);
-    updateSettings({ paperSize: localPaperSize, orientation: localOrientation, copies: localCopies, defaultPrinter: selectedPrinter });
-    const pagesToPrint = selectedPages();
-    const htmlContent = printType === 'pcpndt' ? buildPcpndtHtml() : buildPrintHtml(pagesToPrint);
-    const electronAPI = (window as any).electronAPI;
-    if (electronAPI?.printToPrinter && selectedPrinter) {
-      try {
-        const result = await electronAPI.printToPrinter({ printerName: selectedPrinter, htmlContent, printSettings: { paperSize: localPaperSize, orientation: localOrientation, copies: localCopies, colorMode: 'color', margins: 'none' } });
-        if (!result.success) {
+    try {
+      updateSettings({ paperSize: localPaperSize, orientation: localOrientation, copies: localCopies, defaultPrinter: selectedPrinter });
+      const pagesToPrint = selectedPages();
+      const htmlContent = printType === 'pcpndt' ? buildPcpndtHtml() : buildPrintHtml(pagesToPrint);
+      const electronAPI = (window as any).electronAPI;
+      let printStarted = false;
+
+      if (electronAPI?.printToPrinter && selectedPrinter) {
+        const result = await electronAPI.printToPrinter({
+          printerName: selectedPrinter,
+          htmlContent,
+          printSettings: { paperSize: localPaperSize, orientation: localOrientation, copies: localCopies, colorMode: 'color', margins: 'none' },
+        });
+
+        if (result.success) {
+          printStarted = true;
+        } else {
           console.error('Direct print failed:', result.error);
-          if (electronAPI?.printReportDialog) await electronAPI.printReportDialog({ htmlContent, paperSize: localPaperSize });
+          if (electronAPI?.printReportDialog) {
+            const fallbackResult = await electronAPI.printReportDialog({ htmlContent, paperSize: localPaperSize });
+            printStarted = fallbackResult?.success !== false;
+          }
         }
-      } catch (err) { console.error('Print error:', err); }
-    } else if (electronAPI?.printReportDialog) {
-      try { await electronAPI.printReportDialog({ htmlContent, paperSize: localPaperSize }); } catch (err) { console.error('PDF print error:', err); }
-    } else {
-      const printWin = window.open('', '_blank');
-      if (printWin) { printWin.document.write(htmlContent); printWin.document.close(); setTimeout(() => { printWin.print(); }, 600); }
+      } else if (electronAPI?.printReportDialog) {
+        const fallbackResult = await electronAPI.printReportDialog({ htmlContent, paperSize: localPaperSize });
+        printStarted = fallbackResult?.success !== false;
+      } else {
+        const printWin = window.open('', '_blank');
+        if (printWin) {
+          printWin.document.write(htmlContent);
+          printWin.document.close();
+          setTimeout(() => { printWin.print(); }, 600);
+          printStarted = true;
+        }
+      }
+
+      if (!printStarted) {
+        alert('Printing could not be started. Check the selected printer and try again.');
+        return;
+      }
+
+      addPrintJob({ patientName, studyDate, layout: `${currentLayout.spots} Spots`, copies: localCopies, paperSize: localPaperSize });
+      for (let i = 0; i < localCopies; i++) decrementPrintCount();
+      const { patients, editPatient } = usePatientStore.getState();
+      const matchedPatient = patients.find(p => p.patientId === patientId && p.patientName === patientName);
+      if (matchedPatient) editPatient(matchedPatient.id, { printed: true });
+      setShowPrintPreview(false);
+    } catch (err) {
+      console.error('Print error:', err);
+      alert('Printing failed. Check the printer configuration and try again.');
+    } finally {
+      setPrinting(false);
     }
-    addPrintJob({ patientName, studyDate, layout: `${currentLayout.spots} Spots`, copies: localCopies, paperSize: localPaperSize });
-    for (let i = 0; i < localCopies; i++) decrementPrintCount();
-    const { patients, editPatient } = usePatientStore.getState();
-    const matchedPatient = patients.find(p => p.patientId === patientId && p.patientName === patientName);
-    if (matchedPatient) editPatient(matchedPatient.id, { printed: true });
-    setPrinting(false);
-    setShowPrintPreview(false);
   };
 
   const handleSavePdf = async (e: React.MouseEvent) => {
@@ -247,7 +312,7 @@ export function PrintPreview() {
   };
 
   const previewGridStyle: React.CSSProperties = {
-    display: 'grid', gap: 0, flex: 1, minHeight: 0, padding: 0,
+    display: 'grid', gap: '2px', flex: 1, minHeight: 0, padding: '2px', backgroundColor: '#374151',
     ...(currentLayout.areas ? { gridTemplateAreas: currentLayout.areas } : {}),
     gridTemplateColumns: getLayoutGridTemplate(currentLayout).columns,
     gridTemplateRows: getLayoutGridTemplate(currentLayout).rows,
@@ -397,7 +462,7 @@ export function PrintPreview() {
                         const src = pageCaps[i];
                         const aStyle: React.CSSProperties = currentLayout.areas && areaNames[i] ? { gridArea: areaNames[i] } : {};
                         return (
-                          <div key={i} className="bg-black overflow-hidden border border-gray-600" style={aStyle}>
+                          <div key={i} className="bg-black overflow-hidden" style={aStyle}>
                             {src ? (<img src={src} className="w-full h-full object-contain" alt={`Page ${pageNum} Image ${i + 1}`} />) : (<span className="text-gray-600 text-[10px] select-none flex items-center justify-center w-full h-full">Empty</span>)}
                           </div>
                         );

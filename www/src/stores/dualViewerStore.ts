@@ -277,9 +277,15 @@ export const useDualViewerStore = create<DualViewerState>((set, get) => ({
 
   setPanelLayout: (panelId, layout) => {
     const panel = get().panels[panelId];
+    const clearSingleViewState = Boolean(panel.preDoubleClickLayout) || (panel.currentLayout.spots === 1 && layout.spots !== 1);
     set((state) => updatePanel(state, panelId, {
       currentLayout: layout,
       ...recalcPages(panel.totalImages, layout.spots),
+      ...(clearSingleViewState ? {
+        preDoubleClickLayout: null,
+        preDoubleClickPage: 1,
+        doubleClickViewportImage: null,
+      } : {}),
     }));
   },
 

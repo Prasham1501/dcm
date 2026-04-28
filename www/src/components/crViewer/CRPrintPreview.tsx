@@ -4,14 +4,16 @@ import { useCRViewerStore } from '@/stores/crViewerStore';
 import { usePrintStore } from '@/stores/printStore';
 import { useHospitalConfigStore, getFormattedAddress, renderPrintSlot } from '@/stores/hospitalConfigStore';
 import { usePatientStore } from '@/stores/patientStore';
-import { getAutoOrientationForLayout } from '@/lib/layoutUtils';
-import { captureCornerstoneViewportForPrint, PrintOverlay } from '@/lib/printCapture';
+import { getAutoOrientationForLayout, getLayoutAreaNames, getLayoutGridTemplate } from '@/lib/layoutUtils';
+import { captureCornerstoneViewportForPrint, waitForViewportImages, PrintOverlay } from '@/lib/printCapture';
 import { fillEmptyPrintSlots } from '@/lib/printPageUtils';
+import { getSystemPrinters } from '@/utils/electronBridge';
 
 function captureViewport(viewportIndex: number): string | null {
+  const imageId = getViewportImageIds()[viewportIndex];
   const { stampPlacements } = useCRViewerStore.getState();
   const overlays: PrintOverlay[] = stampPlacements
-    .filter(sp => sp.viewportIndex === viewportIndex)
+    .filter(sp => sp.viewportIndex === viewportIndex && imageId)
     .map(sp => ({
       text: sp.text,
       xPercent: sp.xPercent,
@@ -21,6 +23,19 @@ function captureViewport(viewportIndex: number): string | null {
       type: sp.type ?? 'stamp',
     }));
   return captureCornerstoneViewportForPrint('data-cr-viewport-index', viewportIndex, overlays);
+}
+
+function getViewportImageIds(): Array<string | null> {
+  const { currentLayout, currentPage, images } = useCRViewerStore.getState();
+  const startIndex = (currentPage - 1) * currentLayout.spots;
+
+  return Array.from({ length: currentLayout.spots }, (_, viewportIndex) => images[startIndex + viewportIndex]?.imageUrl || null);
+}
+
+function getPageViewportImageIds(spots: number, page: number): Array<string | null> {
+  const { images } = useCRViewerStore.getState();
+  const startIndex = (page - 1) * spots;
+  return Array.from({ length: spots }, (_, viewportIndex) => images[startIndex + viewportIndex]?.imageUrl || null);
 }
 
 const PAPER_SIZES = ['A4', 'A3', 'A5', 'Letter', 'Legal'] as const;
@@ -62,8 +77,20 @@ export function CRPrintPreview({ onClose, initialPageMode = 'all' }: CRPrintPrev
   const [newPrinterName, setNewPrinterName] = useState('');
   const [newPrinterDisplay, setNewPrinterDisplay] = useState('');
   const [newPrinterType, setNewPrinterType] = useState('Laser');
+  const [systemPrinters, setSystemPrinters] = useState<SystemPrinter[]>([]);
 
   const configuredPrinters = hospitalConfig.printers;
+  const activeConfiguredPrinters = configuredPrinters.filter(p => p.isActive);
+  const detectedPrinters = systemPrinters
+    .filter((printer) => !configuredPrinters.some((configured) => configured.name === printer.name))
+    .map((printer) => ({
+      name: printer.name,
+      displayName: printer.displayName || printer.name,
+      type: printer.description || 'System Printer',
+      isDefault: printer.isDefault,
+      isActive: true,
+    }));
+  const activePrinters = [...activeConfiguredPrinters, ...detectedPrinters];
 
   // Escape key to close
   useEffect(() => {
@@ -71,9 +98,18 @@ export function CRPrintPreview({ onClose, initialPageMode = 'all' }: CRPrintPrev
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
   }, [onClose]);
-  const activePrinters = configuredPrinters.filter(p => p.isActive);
   const defaultPrinter = activePrinters.find(p => p.isDefault) || activePrinters[0];
   const [selectedPrinter, setSelectedPrinter] = useState(defaultPrinter?.name || '');
+
+  useEffect(() => {
+    void getSystemPrinters().then(setSystemPrinters).catch(() => setSystemPrinters([]));
+  }, []);
+
+  useEffect(() => {
+    if (!selectedPrinter || !activePrinters.some((printer) => printer.name === selectedPrinter)) {
+      setSelectedPrinter(defaultPrinter?.name || '');
+    }
+  }, [activePrinters, defaultPrinter, selectedPrinter]);
 
   const parsePageList = useCallback((input: string): number[] => {
     const pages = new Set<number>();
@@ -98,23 +134,29 @@ export function CRPrintPreview({ onClose, initialPageMode = 'all' }: CRPrintPrev
   }, [pageMode, currentPage, customPageInput, parsePageList, totalPages]);
 
   useEffect(() => {
+    let cancelled = false;
+
     const captureAllPages = async () => {
       setCapturing(true);
-      const origPage = currentPage;
+      const origPage = useCRViewerStore.getState().currentPage;
       const pagesToCapture = initialPageMode === 'current' ? [currentPage] : Array.from({ length: totalPages }, (_, i) => i + 1);
       setCaptureTotal(pagesToCapture.length);
       const rawCaptures: Array<Array<string | null>> = [];
       for (let idx = 0; idx < pagesToCapture.length; idx++) {
+        if (cancelled) return;
         const p = pagesToCapture[idx];
         setCaptureProgress(idx + 1);
         setCurrentPage(p);
-        await new Promise(r => setTimeout(r, 600));
+        await waitForViewportImages('data-cr-viewport-index', getPageViewportImageIds(currentLayout.spots, p));
+        if (cancelled) return;
+        await new Promise(r => setTimeout(r, 75));
         rawCaptures.push(
           Array.from({ length: currentLayout.spots }, (_, viewportIndex) => captureViewport(viewportIndex)),
         );
       }
       setCurrentPage(origPage);
-      await new Promise(r => setTimeout(r, 300));
+      await waitForViewportImages('data-cr-viewport-index', getPageViewportImageIds(currentLayout.spots, origPage));
+      await new Promise(r => setTimeout(r, 75));
       // Build a full-size array so page indices line up (fill missing pages with empty arrays)
       const fullCaptures: string[][] = [];
       for (let p = 1; p <= totalPages; p++) {
@@ -125,10 +167,16 @@ export function CRPrintPreview({ onClose, initialPageMode = 'all' }: CRPrintPrev
           fullCaptures.push(Array(currentLayout.spots).fill(''));
         }
       }
-      setAllPageCaptures(fullCaptures);
-      setCapturing(false);
+      if (!cancelled) {
+        setAllPageCaptures(fullCaptures);
+        setCapturing(false);
+      }
     };
-    captureAllPages();
+
+    void captureAllPages();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // Default print orientation follows the shared spot-count rule.
@@ -154,6 +202,9 @@ export function CRPrintPreview({ onClose, initialPageMode = 'all' }: CRPrintPrev
   };
 
   const buildPrintHtml = useCallback((pagesToPrint: number[]) => {
+    const grid = getLayoutGridTemplate(currentLayout);
+    const areaNames = getLayoutAreaNames(currentLayout.areas);
+
     const buildHeaderHtml = () => {
       const l = renderPrintSlot(hospitalConfig.headerLayout.left, hospitalConfig as any, hospitalConfig.customHeaderLeft);
       const c = renderPrintSlot(hospitalConfig.headerLayout.center, hospitalConfig as any, hospitalConfig.customHeaderCenter);
@@ -169,16 +220,18 @@ export function CRPrintPreview({ onClose, initialPageMode = 'all' }: CRPrintPrev
     const patientBarHtml = () => settings.patientInfoEnabled
       ? `<div style="padding:4px 15px;background:#f5f5f5;border-bottom:1px solid #ccc;display:flex;justify-content:space-between;font-size:10px"><span><b>Patient:</b> ${patientName}</span><span><b>ID:</b> ${patientId}</span><span><b>Date:</b> ${studyDate}</span></div>`
       : '';
-    const gridCols = `repeat(${currentLayout.cols}, 1fr)`;
-    const gridRows = `repeat(${currentLayout.rows}, 1fr)`;
     const pagesHtml = pagesToPrint.map((pageNum) => {
       const caps = allPageCaptures[pageNum - 1] || [];
-      const imgsHtml = caps.map((src) =>
-        `<div style="background:#000;display:flex;align-items:center;justify-content:center;overflow:hidden;border:1px solid #666">${src ? `<img src="${src}" style="width:100%;height:100%;object-fit:contain" />` : ''}</div>`
-      ).join('');
-      return `<div class="page">${settings.headerEnabled ? buildHeaderHtml() : ''}${patientBarHtml()}<div style="display:grid;grid-template-columns:${gridCols};grid-template-rows:${gridRows};gap:0;padding:0;flex:1;min-height:0">${imgsHtml}</div>${hospitalConfig.enableFooter ? buildFooterHtml() : ''}</div>`;
+      const imgsHtml = Array.from({ length: currentLayout.spots }).map((_, viewportIndex) => {
+        const src = caps[viewportIndex];
+        const areaStyle = currentLayout.areas && areaNames[viewportIndex] ? `grid-area:${areaNames[viewportIndex]};` : '';
+        return src
+          ? `<div style="${areaStyle}background:#000;display:flex;align-items:center;justify-content:center;overflow:hidden"><img src="${src}" style="width:100%;height:100%;object-fit:contain" /></div>`
+          : `<div style="${areaStyle}background:#000;display:flex;align-items:center;justify-content:center;overflow:hidden"></div>`;
+      }).join('');
+      return `<div class="page">${settings.headerEnabled ? buildHeaderHtml() : ''}${patientBarHtml()}<div class="grid">${imgsHtml}</div>${hospitalConfig.enableFooter ? buildFooterHtml() : ''}</div>`;
     }).join('');
-    return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>DICOM Print - ${patientName}</title><style>@page{size:${localPaperSize} ${isLandscape ? 'landscape' : 'portrait'};margin:10mm}*{box-sizing:border-box}body{margin:0;padding:0;font-family:Arial,Helvetica,sans-serif}.page{page-break-after:always;page-break-inside:avoid;display:flex;flex-direction:column;height:calc(100vh);overflow:hidden;border:1px solid #444}.page:last-child{page-break-after:auto}img{display:block;image-rendering:-webkit-optimize-contrast;image-rendering:high-quality}@media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}</style></head><body>${pagesHtml}</body></html>`;
+    return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>DICOM Print - ${patientName}</title><style>@page{size:${localPaperSize} ${isLandscape ? 'landscape' : 'portrait'};margin:10mm}*{box-sizing:border-box}body{margin:0;padding:0;font-family:Arial,Helvetica,sans-serif}.page{page-break-after:always;page-break-inside:avoid;display:flex;flex-direction:column;height:calc(100vh);overflow:hidden;border:1px solid #444}.page:last-child{page-break-after:auto}.grid{display:grid;grid-template-columns:${grid.columns};grid-template-rows:${grid.rows};${grid.areas ? `grid-template-areas:${grid.areas};` : ''}gap:2px;padding:2px;flex:1;min-height:0;background:#374151}img{display:block;image-rendering:-webkit-optimize-contrast;image-rendering:high-quality}@media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}</style></head><body>${pagesHtml}</body></html>`;
   }, [allPageCaptures, currentLayout, settings, hospitalConfig, patientName, patientId, studyDate, localPaperSize, isLandscape]);
 
   const handlePrint = async () => {
@@ -186,31 +239,59 @@ export function CRPrintPreview({ onClose, initialPageMode = 'all' }: CRPrintPrev
     if (printCountRemaining <= 0) { alert('No prints remaining.'); return; }
     if (allPageCaptures.length === 0) { alert('Still capturing pages, please wait.'); return; }
     setPrinting(true);
-    updateSettings({ paperSize: localPaperSize, orientation: localOrientation, copies: localCopies });
-    const pagesToPrint = selectedPages();
-    const htmlContent = buildPrintHtml(pagesToPrint);
-    const electronAPI = (window as any).electronAPI;
-    if (electronAPI?.printToPrinter && selectedPrinter) {
-      try {
-        const result = await electronAPI.printToPrinter({ printerName: selectedPrinter, htmlContent, printSettings: { paperSize: localPaperSize, orientation: localOrientation, copies: localCopies, colorMode: 'color', margins: 'none' } });
-        if (!result.success) {
+    try {
+      updateSettings({ paperSize: localPaperSize, orientation: localOrientation, copies: localCopies });
+      const pagesToPrint = selectedPages();
+      const htmlContent = buildPrintHtml(pagesToPrint);
+      const electronAPI = (window as any).electronAPI;
+      let printStarted = false;
+
+      if (electronAPI?.printToPrinter && selectedPrinter) {
+        const result = await electronAPI.printToPrinter({
+          printerName: selectedPrinter,
+          htmlContent,
+          printSettings: { paperSize: localPaperSize, orientation: localOrientation, copies: localCopies, colorMode: 'color', margins: 'none' },
+        });
+
+        if (result.success) {
+          printStarted = true;
+        } else {
           console.error('Direct print failed:', result.error);
-          if (electronAPI?.printReportDialog) await electronAPI.printReportDialog({ htmlContent, paperSize: localPaperSize });
+          if (electronAPI?.printReportDialog) {
+            const fallbackResult = await electronAPI.printReportDialog({ htmlContent, paperSize: localPaperSize });
+            printStarted = fallbackResult?.success !== false;
+          }
         }
-      } catch (e) { console.error('Print error:', e); }
-    } else if (electronAPI?.printReportDialog) {
-      try { await electronAPI.printReportDialog({ htmlContent, paperSize: localPaperSize }); } catch (e) { console.error('PDF print error:', e); }
-    } else {
-      const printWin = window.open('', '_blank');
-      if (printWin) { printWin.document.write(htmlContent); printWin.document.close(); setTimeout(() => { printWin.print(); }, 600); }
+      } else if (electronAPI?.printReportDialog) {
+        const fallbackResult = await electronAPI.printReportDialog({ htmlContent, paperSize: localPaperSize });
+        printStarted = fallbackResult?.success !== false;
+      } else {
+        const printWin = window.open('', '_blank');
+        if (printWin) {
+          printWin.document.write(htmlContent);
+          printWin.document.close();
+          setTimeout(() => { printWin.print(); }, 600);
+          printStarted = true;
+        }
+      }
+
+      if (!printStarted) {
+        alert('Printing could not be started. Check the selected printer and try again.');
+        return;
+      }
+
+      addPrintJob({ patientName, studyDate, layout: `${currentLayout.spots} Spots`, copies: localCopies, paperSize: localPaperSize });
+      for (let i = 0; i < localCopies; i++) decrementPrintCount();
+      const { patients, editPatient } = usePatientStore.getState();
+      const matchedPatient = patients.find(p => p.patientId === patientId && p.patientName === patientName);
+      if (matchedPatient) editPatient(matchedPatient.id, { printed: true });
+      onClose();
+    } catch (e) {
+      console.error('Print error:', e);
+      alert('Printing failed. Check the printer configuration and try again.');
+    } finally {
+      setPrinting(false);
     }
-    addPrintJob({ patientName, studyDate, layout: `${currentLayout.spots} Spots`, copies: localCopies, paperSize: localPaperSize });
-    for (let i = 0; i < localCopies; i++) decrementPrintCount();
-    const { patients, editPatient } = usePatientStore.getState();
-    const matchedPatient = patients.find(p => p.patientId === patientId && p.patientName === patientName);
-    if (matchedPatient) editPatient(matchedPatient.id, { printed: true });
-    setPrinting(false);
-    onClose();
   };
 
   const handleSavePdf = async () => {
@@ -228,11 +309,18 @@ export function CRPrintPreview({ onClose, initialPageMode = 'all' }: CRPrintPrev
   };
 
   const previewGridStyle: React.CSSProperties = {
-    display: 'grid', gap: 0, flex: 1, minHeight: 0, padding: 0,
-    gridTemplateColumns: `repeat(${currentLayout.cols}, 1fr)`,
-    gridTemplateRows: `repeat(${currentLayout.rows}, 1fr)`,
+    display: 'grid',
+    gap: '2px',
+    flex: 1,
+    minHeight: 0,
+    padding: '2px',
+    backgroundColor: '#374151',
+    ...(currentLayout.areas ? { gridTemplateAreas: currentLayout.areas } : {}),
+    gridTemplateColumns: getLayoutGridTemplate(currentLayout).columns,
+    gridTemplateRows: getLayoutGridTemplate(currentLayout).rows,
   };
   const toolbarH = showPrinterMgr ? 190 : 55;
+  const areaNames = getLayoutAreaNames(currentLayout.areas);
 
   const handleAddPrinter = () => {
     if (!newPrinterName.trim()) return;
@@ -347,11 +435,15 @@ export function CRPrintPreview({ onClose, initialPageMode = 'all' }: CRPrintPrev
                   )}
                   <div className="flex-1 min-h-0">
                     <div style={previewGridStyle} className="h-full">
-                      {pageCaps.map((src, i) => (
-                        <div key={i} className="bg-black overflow-hidden border border-gray-600">
-                          {src ? (<img src={src} className="w-full h-full object-contain" alt={`Page ${pageNum} Image ${i + 1}`} />) : (<span className="text-gray-600 text-[10px] select-none flex items-center justify-center w-full h-full">Empty</span>)}
-                        </div>
-                      ))}
+                      {Array.from({ length: currentLayout.spots }).map((_, i) => {
+                        const src = pageCaps[i];
+                        const areaStyle: React.CSSProperties = currentLayout.areas && areaNames[i] ? { gridArea: areaNames[i] } : {};
+                        return (
+                          <div key={i} className="bg-black overflow-hidden" style={areaStyle}>
+                            {src ? (<img src={src} className="w-full h-full object-contain" alt={`Page ${pageNum} Image ${i + 1}`} />) : (<span className="text-gray-600 text-[10px] select-none flex items-center justify-center w-full h-full">Empty</span>)}
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
                   {hospitalConfig.enableFooter && (

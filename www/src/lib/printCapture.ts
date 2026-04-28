@@ -1,4 +1,4 @@
-import { cornerstone, cornerstoneTools } from '@/lib/cornerstoneSetup';
+import { cornerstone } from '@/lib/cornerstoneSetup';
 
 export interface PrintOverlay {
   text: string;
@@ -14,6 +14,9 @@ function imageDimension(value: unknown, fallback: number): number {
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback;
 }
 
+const MIN_PRINT_EDGE = 1600;
+const MAX_PRINT_EDGE = 2600;
+const DISPLAY_QUALITY_MULTIPLIER = 3;
 function defaultVoi(image: any) {
   const windowCenter = Array.isArray(image.windowCenter) ? image.windowCenter[0] : image.windowCenter;
   const windowWidth = Array.isArray(image.windowWidth) ? image.windowWidth[0] : image.windowWidth;
@@ -27,8 +30,8 @@ function defaultVoi(image: any) {
 function buildPrintViewport(sourceViewport: any, image: any) {
   const viewport = {
     ...(sourceViewport || {}),
-    scale: 1,
-    translation: { x: 0, y: 0 },
+    scale: sourceViewport?.scale || 1,
+    translation: sourceViewport?.translation || { x: 0, y: 0 },
     voi: sourceViewport?.voi || defaultVoi(image),
     rotation: sourceViewport?.rotation || 0,
     hflip: Boolean(sourceViewport?.hflip),
@@ -37,9 +40,78 @@ function buildPrintViewport(sourceViewport: any, image: any) {
     pixelReplication: Boolean(sourceViewport?.pixelReplication),
   };
 
-  // A viewport-scaled displayedArea is the source of the print-preview letterboxing.
   delete (viewport as any).displayedArea;
   return viewport;
+}
+
+function getLiveCaptureSize(captureRoot: HTMLElement, canvases: HTMLCanvasElement[], image: any) {
+  const rootRect = captureRoot.getBoundingClientRect();
+  const cssWidth = Math.max(rootRect.width || captureRoot.clientWidth || 0, 1);
+  const cssHeight = Math.max(rootRect.height || captureRoot.clientHeight || 0, 1);
+  const canvasWidth = Math.max(...canvases.map((canvas) => canvas.width || 0), 0);
+  const canvasHeight = Math.max(...canvases.map((canvas) => canvas.height || 0), 0);
+  const nativeWidth = imageDimension(image?.columns ?? image?.width, canvasWidth || cssWidth);
+  const nativeHeight = imageDimension(image?.rows ?? image?.height, canvasHeight || cssHeight);
+  const sourceLongEdge = Math.max(cssWidth, cssHeight);
+  const targetLongEdge = Math.min(
+    MAX_PRINT_EDGE,
+    Math.max(
+      Math.round(sourceLongEdge * DISPLAY_QUALITY_MULTIPLIER),
+      Math.max(nativeWidth, nativeHeight),
+      canvasWidth,
+      canvasHeight,
+      MIN_PRINT_EDGE,
+    ),
+  );
+  const scaleFactor = targetLongEdge / sourceLongEdge;
+
+  return {
+    rootRect,
+    cssWidth,
+    cssHeight,
+    width: Math.max(1, Math.round(cssWidth * scaleFactor)),
+    height: Math.max(1, Math.round(cssHeight * scaleFactor)),
+    scaleFactor,
+  };
+}
+
+function drawLiveCanvasLayers(
+  output: HTMLCanvasElement,
+  captureRoot: HTMLElement,
+  canvases: HTMLCanvasElement[],
+) {
+  const ctx = output.getContext('2d');
+  if (!ctx) return false;
+
+  const rootRect = captureRoot.getBoundingClientRect();
+  const scaleX = output.width / Math.max(rootRect.width || captureRoot.clientWidth || 1, 1);
+  const scaleY = output.height / Math.max(rootRect.height || captureRoot.clientHeight || 1, 1);
+
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, output.width, output.height);
+
+  let drewAnyLayer = false;
+
+  for (const canvas of canvases) {
+    const rect = canvas.getBoundingClientRect();
+    const width = rect.width * scaleX;
+    const height = rect.height * scaleY;
+    if (width <= 0 || height <= 0) continue;
+
+    const x = (rect.left - rootRect.left) * scaleX;
+    const y = (rect.top - rootRect.top) * scaleY;
+
+    try {
+      ctx.drawImage(canvas, x, y, width, height);
+      drewAnyLayer = true;
+    } catch {
+      // Skip unreadable canvas layers and keep the rest.
+    }
+  }
+
+  return drewAnyLayer;
 }
 
 function drawOverlays(canvas: HTMLCanvasElement, overlays: PrintOverlay[]) {
@@ -52,7 +124,6 @@ function drawOverlays(canvas: HTMLCanvasElement, overlays: PrintOverlay[]) {
   for (const ov of overlays) {
     const x = (ov.xPercent / 100) * w;
     const y = (ov.yPercent / 100) * h;
-    // Scale fontSize relative to canvas (assume viewport ~500px height as baseline)
     const scaledFontSize = Math.round(ov.fontSize * (h / 500));
     const isStamp = ov.type !== 'text';
 
@@ -68,24 +139,19 @@ function drawOverlays(canvas: HTMLCanvasElement, overlays: PrintOverlay[]) {
     const padX = scaledFontSize * 0.4;
     const padY = scaledFontSize * 0.25;
 
-    // Background
     ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
     ctx.fillRect(x - textWidth / 2 - padX, y - textHeight / 2 - padY, textWidth + padX * 2, textHeight + padY * 2);
 
-    // Border for stamps
     if (isStamp) {
       ctx.strokeStyle = ov.color;
       ctx.lineWidth = Math.max(1, scaledFontSize / 7);
       ctx.strokeRect(x - textWidth / 2 - padX, y - textHeight / 2 - padY, textWidth + padX * 2, textHeight + padY * 2);
     }
 
-    // Text shadow
     ctx.shadowColor = 'rgba(0, 0, 0, 0.8)';
     ctx.shadowBlur = 2;
     ctx.shadowOffsetX = 1;
     ctx.shadowOffsetY = 1;
-
-    // Text
     ctx.fillStyle = ov.color;
     if (isStamp) ctx.letterSpacing = `${scaledFontSize * 0.1}px`;
     ctx.fillText(text, x, y);
@@ -100,87 +166,49 @@ export function captureCornerstoneElementForPrint(element: HTMLElement | null, o
   try {
     const enabledElement = cornerstone.getEnabledElement(element);
     const image = enabledElement?.image;
-    const canvases = element.querySelectorAll('canvas');
+    const captureRoot = element.parentElement instanceof HTMLElement ? element.parentElement : element;
+    const canvases = Array.from(captureRoot.querySelectorAll('canvas')).filter(
+      (canvas): canvas is HTMLCanvasElement => canvas instanceof HTMLCanvasElement,
+    );
 
     if (image && canvases.length > 0) {
-      // Use native DICOM image dimensions for high-res output
-      const nativeW = imageDimension(image.columns ?? image.width, 512);
-      const nativeH = imageDimension(image.rows ?? image.height, 512);
-
-      // Output at native DICOM resolution for best print quality
-      const w = nativeW;
-      const h = nativeH;
-
+      const { width, height } = getLiveCaptureSize(captureRoot, canvases, image);
       const output = document.createElement('canvas');
-      output.width = w;
-      output.height = h;
-      const ctx = output.getContext('2d');
-      if (ctx) {
-        ctx.imageSmoothingEnabled = true;
-        ctx.imageSmoothingQuality = 'high';
+      output.width = width;
+      output.height = height;
 
-        // Step 1: Render the base DICOM image at native resolution (clean, no annotations)
-        const printViewport = buildPrintViewport(enabledElement.viewport || cornerstone.getViewport(element), image);
-        cornerstone.renderToCanvas(output, image, printViewport);
-
-        // Step 2: Set viewport to match print layout, hide handles, re-render with annotations
-        const origViewport = cornerstone.getViewport(element);
-        const store = cornerstoneTools.store;
-        const origHandleRadius = store?.state?.handleRadius ?? 6;
-        try { cornerstone.setViewport(element, printViewport); } catch { /* ignore */ }
-        if (store?.state) store.state.handleRadius = 0;
-        try { cornerstone.updateImage(element); } catch { /* ignore */ }
-
-        // Step 3: Draw all canvases (image + annotations) scaled to native resolution
-        // In cornerstone v1, annotations are drawn on canvas[0] alongside the image
-        for (let i = 0; i < canvases.length; i++) {
-          try {
-            const c = canvases[i];
-            if (c.width > 0 && c.height > 0) {
-              ctx.drawImage(c, 0, 0, w, h);
-            }
-          } catch { /* cross-origin or empty canvas — skip */ }
-        }
-
-        // Step 4: Restore viewport and handle radius
-        try { cornerstone.setViewport(element, origViewport); } catch { /* ignore */ }
-        if (store?.state) store.state.handleRadius = origHandleRadius;
-        try { cornerstone.updateImage(element); } catch { /* ignore */ }
-
-        // Step 4: Draw custom text/stamp overlays on top
+      if (drawLiveCanvasLayers(output, captureRoot, canvases)) {
         drawOverlays(output, overlays);
-
         return output.toDataURL('image/png');
       }
     }
 
-    // Fallback for elements without a loaded image but with canvases
     if (canvases.length > 0) {
-      const baseCanvas = canvases[0];
-      const baseW = baseCanvas.width || baseCanvas.clientWidth || 512;
-      const baseH = baseCanvas.height || baseCanvas.clientHeight || 512;
-      const dpr = window.devicePixelRatio || 1;
-      const displayW = Math.round((element.clientWidth || baseW) * dpr);
-      const displayH = Math.round((element.clientHeight || baseH) * dpr);
-      const w = Math.max(baseW, displayW);
-      const h = Math.max(baseH, displayH);
-
+      const sourceWidth = Math.max(...canvases.map((canvas) => canvas.width || canvas.clientWidth || 0), 1);
+      const sourceHeight = Math.max(...canvases.map((canvas) => canvas.height || canvas.clientHeight || 0), 1);
+      const sourceLongEdge = Math.max(sourceWidth, sourceHeight);
+      const scaleFactor = Math.min(
+        DISPLAY_QUALITY_MULTIPLIER,
+        MAX_PRINT_EDGE / Math.max(sourceLongEdge, 1),
+      );
+      const width = Math.max(1, Math.round(sourceWidth * Math.max(1, scaleFactor)));
+      const height = Math.max(1, Math.round(sourceHeight * Math.max(1, scaleFactor)));
       const output = document.createElement('canvas');
-      output.width = w;
-      output.height = h;
+      output.width = width;
+      output.height = height;
       const ctx = output.getContext('2d');
+
       if (ctx) {
         ctx.imageSmoothingEnabled = true;
         ctx.imageSmoothingQuality = 'high';
-        canvases.forEach(c => {
-          try { ctx.drawImage(c, 0, 0, w, h); } catch { /* skip */ }
+        canvases.forEach((canvas) => {
+          try { ctx.drawImage(canvas, 0, 0, width, height); } catch { /* skip */ }
         });
         drawOverlays(output, overlays);
         return output.toDataURL('image/png');
       }
     }
 
-    // Fallback: use cornerstone.renderToCanvas (no tool annotations)
     if (image) {
       const width = imageDimension(image.columns ?? image.width, 512);
       const height = imageDimension(image.rows ?? image.height, 512);
@@ -195,7 +223,6 @@ export function captureCornerstoneElementForPrint(element: HTMLElement | null, o
       );
 
       drawOverlays(canvas, overlays);
-
       return canvas.toDataURL('image/png');
     }
   } catch {
@@ -209,6 +236,41 @@ export function captureCornerstoneElementForPrint(element: HTMLElement | null, o
 export function captureCornerstoneViewportForPrint(indexAttribute: string, viewportIndex: number, overlays: PrintOverlay[] = []): string | null {
   const element = document.querySelector(`[${indexAttribute}="${viewportIndex}"]`) as HTMLElement | null;
   return captureCornerstoneElementForPrint(element, overlays);
+}
+
+export async function waitForViewportImages(
+  indexAttribute: string,
+  expectedImageIds: Array<string | null>,
+  timeoutMs = 4000,
+): Promise<boolean> {
+  const start = performance.now();
+
+  while (performance.now() - start < timeoutMs) {
+    const ready = expectedImageIds.every((expectedImageId, viewportIndex) => {
+      const element = document.querySelector(`[${indexAttribute}="${viewportIndex}"]`) as HTMLElement | null;
+
+      if (!expectedImageId) {
+        return element === null;
+      }
+
+      if (!element) return false;
+
+      try {
+        const enabledElement = cornerstone.getEnabledElement(element);
+        const activeImageId = enabledElement?.image?.imageId ?? null;
+        const canvas = (element.parentElement ?? element).querySelector('canvas');
+        return activeImageId === expectedImageId && !!canvas && canvas.width > 0 && canvas.height > 0;
+      } catch {
+        return false;
+      }
+    });
+
+    if (ready) return true;
+
+    await new Promise((resolve) => window.setTimeout(resolve, 75));
+  }
+
+  return false;
 }
 
 export function captureCornerstoneElementsForPrint(selector: string, indexAttribute: string): string[] {

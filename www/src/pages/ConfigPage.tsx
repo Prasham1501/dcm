@@ -5,11 +5,10 @@ import { GeneralTab } from '@/components/config/GeneralTab';
 import { ServerTab } from '@/components/config/ServerTab';
 import { SendTab } from '@/components/config/SendTab';
 import { ClinicalTab } from '@/components/config/ClinicalTab';
-import { ServiceTab } from '@/components/config/ServiceTab';
 import { NetworkReceiverTab } from '@/components/config/NetworkReceiverTab';
 import { PrintSettingsTab } from '@/components/config/PrintSettingsTab';
 
-const TABS = ['General', 'Print', 'Server', 'Send', 'Clinical', 'Service', 'Network'] as const;
+const TABS = ['General', 'Print', 'Server', 'Send', 'Clinical', 'Network'] as const;
 type TabName = typeof TABS[number];
 
 export function ConfigPage() {
@@ -23,7 +22,6 @@ export function ConfigPage() {
       case 'Server': return <ServerTab />;
       case 'Send': return <SendTab />;
       case 'Clinical': return <ClinicalTab />;
-      case 'Service': return <ServiceTab />;
       case 'Network': return <NetworkReceiverTab />;
     }
   };

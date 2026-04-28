@@ -11,6 +11,7 @@ import { useViewerStore } from '@/stores/viewerStore';
 import { useCustomAnnotationStore, type TextAnnotation, type DrawPath } from '@/stores/customAnnotationStore';
 import { useStampStore } from '@/stores/stampStore';
 import { resetViewport, activateTool } from '@/lib/viewerTools';
+import { refitCornerstoneViewport } from '@/lib/cornerstoneViewport';
 import { findAnnotationAtPoint, setupAutoDeactivate, markDblClickHandled } from '@/lib/annotationUtils';
 import { AnnotationEditOverlay } from '@/components/shared/AnnotationEditOverlay';
 
@@ -45,6 +46,8 @@ function DicomViewportInner({
   const containerRef = useRef<HTMLDivElement>(null);
   const enabledRef = useRef(false);
   const currentImageIdRef = useRef<string | null>(null);
+  const pendingLayoutRefitRef = useRef(false);
+  const layoutKey = useViewerStore((state) => state.currentLayout.id || `${state.currentLayout.cols}x${state.currentLayout.rows}-${state.currentLayout.spots}`);
 
   // Right-click W/L drag state
   const rightButtonDownRef = useRef(false);
@@ -111,6 +114,12 @@ function DicomViewportInner({
   // Right-click context menu state
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
   const rightClickMoved = useRef(false);
+
+  const runLayoutRefit = useCallback(() => {
+    const el = elementRef.current;
+    if (!el || !enabledRef.current || !currentImageIdRef.current) return false;
+    return refitCornerstoneViewport(el);
+  }, []);
 
   useEffect(() => {
     if (imageId) {
@@ -319,17 +328,36 @@ function DicomViewportInner({
     const el = elementRef.current;
     if (!el || !enabledRef.current) return;
     const observer = new ResizeObserver(() => {
-      try { cornerstone.resize(el, true); } catch { /* ignore */ }
       // Also resize draw canvas
       const canvas = drawCanvasRef.current;
       if (canvas && el.parentElement) {
         canvas.width = el.parentElement.clientWidth;
         canvas.height = el.parentElement.clientHeight;
       }
+
+      if (!currentImageIdRef.current) return;
+
+      if (pendingLayoutRefitRef.current) {
+        if (runLayoutRefit()) pendingLayoutRefitRef.current = false;
+        return;
+      }
+
+      try { cornerstone.resize(el, true); } catch { /* ignore */ }
     });
     observer.observe(el);
     return () => observer.disconnect();
-  }, []);
+  }, [runLayoutRefit]);
+
+  useEffect(() => {
+    pendingLayoutRefitRef.current = true;
+    const timeoutId = window.setTimeout(() => {
+      if (pendingLayoutRefitRef.current && runLayoutRefit()) {
+        pendingLayoutRefitRef.current = false;
+      }
+    }, 180);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [layoutKey, runLayoutRefit]);
 
   // ---- MOUSE WHEEL = ZOOM ----
   useEffect(() => {

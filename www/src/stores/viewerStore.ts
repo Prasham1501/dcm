@@ -334,11 +334,19 @@ export const useViewerStore = create<ViewerState>((set, get) => ({
   viewportIndexOverrides: {},
 
   setLayout: (layout) => {
-    const { totalImages } = get();
+    const { totalImages, currentLayout, preDoubleClickLayout } = get();
+    const clearSingleViewState = Boolean(preDoubleClickLayout) || (currentLayout.spots === 1 && layout.spots !== 1);
     set({
       currentLayout: layout,
       orientation: getAutoOrientationForLayout(layout),
       ...recalcPages(totalImages || mockImages.length, layout.spots),
+      ...(clearSingleViewState ? {
+        preDoubleClickLayout: null,
+        preDoubleClickPage: 1,
+        doubleClickViewportImage: null,
+        viewportImageOverrides: {},
+        viewportIndexOverrides: {},
+      } : {}),
     });
     // Resize the popup window to match the new layout's aspect ratio
     const api = (window as any).electronAPI;

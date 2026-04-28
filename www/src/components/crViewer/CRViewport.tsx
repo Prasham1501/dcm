@@ -10,6 +10,7 @@ import { createPortal } from 'react-dom';
 import { cornerstone, cornerstoneTools } from '@/lib/cornerstoneSetup';
 import { useCRViewerStore } from '@/stores/crViewerStore';
 import { useStampStore } from '@/stores/stampStore';
+import { refitCornerstoneViewport, resetCornerstoneViewport } from '@/lib/cornerstoneViewport';
 import { findAnnotationAtPoint, setupAutoDeactivate, markDblClickHandled } from '@/lib/annotationUtils';
 import { AnnotationEditOverlay } from '@/components/shared/AnnotationEditOverlay';
 
@@ -35,6 +36,8 @@ function CRViewportInner({
   const elementRef = useRef<HTMLDivElement>(null);
   const enabledRef = useRef(false);
   const currentImageIdRef = useRef<string | null>(null);
+  const pendingLayoutRefitRef = useRef(false);
+  const layoutKey = useCRViewerStore((state) => state.currentLayout.id || `${state.currentLayout.cols}x${state.currentLayout.rows}-${state.currentLayout.spots}`);
 
   const { 
     isStampMode, isTextMode, stampPlacements, updateStampPlacement, updateStampPlacementProps,
@@ -61,6 +64,12 @@ function CRViewportInner({
   // Right-click context menu state
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
   const rightClickMoved = useRef(false);
+
+  const runLayoutRefit = useCallback(() => {
+    const el = elementRef.current;
+    if (!el || !enabledRef.current || !currentImageIdRef.current) return false;
+    return refitCornerstoneViewport(el);
+  }, []);
 
   // Right-click W/L drag state
   const rightDragRef = useRef<{
@@ -131,13 +140,29 @@ function CRViewportInner({
     const el = elementRef.current;
     if (!el) return;
     const observer = new ResizeObserver(() => {
-      if (enabledRef.current && currentImageIdRef.current) {
-        try { cornerstone.resize(el, true); } catch { /* ignore */ }
+      if (!enabledRef.current || !currentImageIdRef.current) return;
+
+      if (pendingLayoutRefitRef.current) {
+        if (runLayoutRefit()) pendingLayoutRefitRef.current = false;
+        return;
       }
+
+      try { cornerstone.resize(el, true); } catch { /* ignore */ }
     });
     observer.observe(el);
     return () => observer.disconnect();
-  }, []);
+  }, [runLayoutRefit]);
+
+  useEffect(() => {
+    pendingLayoutRefitRef.current = true;
+    const timeoutId = window.setTimeout(() => {
+      if (pendingLayoutRefitRef.current && runLayoutRefit()) {
+        pendingLayoutRefitRef.current = false;
+      }
+    }, 180);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [layoutKey, runLayoutRefit]);
 
   // ---- HIDE MEASUREMENT TEXT WHEN hideMeasurements IS ON ----
   useEffect(() => {
@@ -357,31 +382,7 @@ function CRViewportInner({
       if (!el || !enabledRef.current) return;
 
       try {
-        const enabledEl = cornerstone.getEnabledElement(el);
-        const image = enabledEl?.image;
-        if (image) {
-          const wc = Array.isArray(image.windowCenter) ? image.windowCenter[0] : (image.windowCenter ?? 127);
-          const ww = Array.isArray(image.windowWidth) ? image.windowWidth[0] : (image.windowWidth ?? 255);
-          let defaultScale = 1;
-          try {
-            const defaultVp = cornerstone.getDefaultViewportForImage(el, image);
-            if (defaultVp?.scale) defaultScale = defaultVp.scale;
-          } catch { /* ignore */ }
-          // Explicitly pass a fresh viewport so cornerstone cannot reuse the modified one
-          cornerstone.displayImage(el, image, {
-            scale: defaultScale,
-            translation: { x: 0, y: 0 },
-            voi: { windowCenter: wc, windowWidth: ww },
-            rotation: 0,
-            hflip: false,
-            vflip: false,
-            invert: false,
-            pixelReplication: false,
-            labelmap: false,
-          });
-        } else {
-          cornerstone.resize(el, true);
-        }
+        resetCornerstoneViewport(el);
       } catch { /* ignore */ }
     };
 
