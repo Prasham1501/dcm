@@ -224,7 +224,7 @@ function DicomViewportInner({
     if (!el) return;
     return setupAutoDeactivate(el, () => {
       window.dispatchEvent(new CustomEvent('viewer-tool-deactivated'));
-    });
+    }, 'viewer');
   }, []);
 
   // ---- DOUBLE-CLICK TO EDIT CORNERSTONE ANNOTATIONS ----

@@ -69,7 +69,7 @@ const TOOL_MAP: Record<string, ToolConfig> = {
   settings: { action: handleOpenSettingsModal },
   filters: { action: handleFilters },
   reset: { action: resetViewport },
-  undo: { action: undoLastAnnotation },
+  undo: { action: () => { import('@/stores/undoStore').then(m => m.useUndoStore.getState().undo('viewer')); } },
   cineplay: { action: startCineAction },
   cinestop: { action: stopCineAction },
 };

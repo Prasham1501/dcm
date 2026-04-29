@@ -3,6 +3,7 @@
  * Used across CR Viewer, main Viewer, and Dual Viewer.
  */
 import { cornerstone, cornerstoneTools } from './cornerstoneSetup';
+import { useUndoStore, type UndoScope } from '@/stores/undoStore';
 
 const ANNOTATION_TOOLS = [
   'Length', 'Angle', 'EllipticalRoi', 'RectangleRoi',
@@ -31,7 +32,6 @@ export function undoLastAnnotationOnElement(element: HTMLElement): boolean {
       const state = cornerstoneTools.getToolState(element, toolName);
       if (state?.data?.length > 0) {
         const lastEntry = state.data[state.data.length - 1];
-        // Use creation timestamp if available, otherwise use index-based heuristic
         const ts = lastEntry._timestamp || state.data.length;
         if (ts >= maxTimestamp) {
           maxTimestamp = ts;
@@ -43,11 +43,59 @@ export function undoLastAnnotationOnElement(element: HTMLElement): boolean {
   });
 
   if (lastTool && lastData?.data?.length > 0) {
-    lastData.data.pop();
+    const removed = lastData.data.pop();
     try { cornerstone.updateImage(element); } catch { /* ignore */ }
     return true;
   }
   return false;
+}
+
+/**
+ * Push an undo entry for a cornerstone tool annotation that was just added.
+ * Called from tool-completion event listeners. The restore function re-adds
+ * the removed annotation data if the user undoes past this point.
+ */
+export function pushCornerstoneAnnotationUndo(
+  scope: UndoScope,
+  element: HTMLElement,
+): void {
+  // Capture the current annotation counts so undo knows what to pop.
+  // We snapshot which tool has the newest annotation and its data.
+  let newestTool = '';
+  let maxTs = 0;
+
+  for (const toolName of ANNOTATION_TOOLS) {
+    try {
+      const state = cornerstoneTools.getToolState(element, toolName);
+      if (state?.data?.length > 0) {
+        const entry = state.data[state.data.length - 1];
+        const ts = entry._timestamp || state.data.length;
+        if (ts >= maxTs) {
+          maxTs = ts;
+          newestTool = toolName;
+        }
+      }
+    } catch { /* ignore */ }
+  }
+
+  if (!newestTool) return;
+
+  // Get the annotation data we're protecting
+  const state = cornerstoneTools.getToolState(element, newestTool);
+  const annData = state?.data?.[state.data.length - 1];
+  if (!annData) return;
+
+  // Deep copy the annotation for restoration
+  const savedData = JSON.parse(JSON.stringify(annData));
+  const savedTool = newestTool;
+
+  useUndoStore.getState().push(scope, {
+    label: `cs-${savedTool}`,
+    restore: () => {
+      // Remove the most recent annotation from this element
+      undoLastAnnotationOnElement(element);
+    },
+  });
 }
 
 /**
@@ -382,7 +430,8 @@ export function deleteActiveAnnotationOnElement(element: HTMLElement): boolean {
  */
 export function setupAutoDeactivate(
   element: HTMLElement,
-  onDeactivate: () => void
+  onDeactivate: () => void,
+  undoScope?: UndoScope,
 ): () => void {
   const handler = (e: any) => {
     const toolName = e?.detail?.toolName || e?.detail?.toolType;
@@ -394,6 +443,11 @@ export function setupAutoDeactivate(
           state.data[state.data.length - 1]._timestamp = Date.now();
         }
       } catch { /* ignore */ }
+
+      // Push to unified undo stack
+      if (undoScope) {
+        pushCornerstoneAnnotationUndo(undoScope, element);
+      }
 
       // Deactivate the tool
       try { cornerstoneTools.setToolPassive(toolName); } catch { /* ignore */ }

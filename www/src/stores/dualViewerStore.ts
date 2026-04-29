@@ -5,6 +5,7 @@
  */
 import { create } from 'zustand';
 import { localFileToImageId, prefetchImages } from '@/lib/dicomLoader';
+import { useUndoStore } from '@/stores/undoStore';
 
 // ── Types ──
 
@@ -243,6 +244,7 @@ export const useDualViewerStore = create<DualViewerState>((set, get) => ({
   // ── Panel Actions ──
 
   loadPanelStudy: (panelId, params) => {
+    useUndoStore.getState().clear('dualViewer');
     const imageIds = params.filePaths.map(fp => localFileToImageId(fp));
     const dualImages: DualImage[] = imageIds.map((imageId, i) => ({
       id: `dual-${panelId}-${i}`,
@@ -278,6 +280,18 @@ export const useDualViewerStore = create<DualViewerState>((set, get) => ({
 
   setPanelLayout: (panelId, layout) => {
     const panel = get().panels[panelId];
+    const prevLayout = panel.currentLayout;
+    const prevPage = panel.currentPage;
+    const prevPre = panel.preDoubleClickLayout;
+    useUndoStore.getState().push('dualViewer', {
+      label: 'layout',
+      restore: () => set((state) => updatePanel(state, panelId, {
+        currentLayout: prevLayout,
+        ...recalcPages(state.panels[panelId].totalImages, prevLayout.spots),
+        currentPage: prevPage,
+        preDoubleClickLayout: prevPre,
+      })),
+    });
     const clearSingleViewState = Boolean(panel.preDoubleClickLayout) || (panel.currentLayout.spots === 1 && layout.spots !== 1);
     set((state) => updatePanel(state, panelId, {
       currentLayout: layout,
@@ -340,6 +354,11 @@ export const useDualViewerStore = create<DualViewerState>((set, get) => ({
   },
 
   panelSwapImages: (panelId, idxA, idxB) => {
+    const prevImages = [...get().panels[panelId].images];
+    useUndoStore.getState().push('dualViewer', {
+      label: 'swap',
+      restore: () => set((state) => updatePanel(state, panelId, { images: prevImages })),
+    });
     set((state) => {
       const panel = state.panels[panelId];
       const nextImages = [...panel.images];
@@ -376,6 +395,20 @@ export const useDualViewerStore = create<DualViewerState>((set, get) => ({
       return;
     }
 
+    // Snapshot for undo
+    const prevImages = [...panel.images];
+    const prevLayout = panel.currentLayout;
+    const prevPage = panel.currentPage;
+    useUndoStore.getState().push('dualViewer', {
+      label: 'arrange',
+      restore: () => set((state) => updatePanel(state, panelId, {
+        images: prevImages,
+        currentLayout: prevLayout,
+        ...recalcPages(prevImages.length, prevLayout.spots),
+        currentPage: prevPage,
+      })),
+    });
+
     const startIndex = (panel.currentPage - 1) * panel.currentLayout.spots;
     const selectedCount = panel.arrangeClickOrder.length;
     const arrangedImages: DualImage[] = [];
@@ -400,6 +433,7 @@ export const useDualViewerStore = create<DualViewerState>((set, get) => ({
   resetPanelAll: (panelId) => {
     const panel = get().panels[panelId];
     const defaultLayout = autoSelectLayout(panel.originalImages.length);
+    useUndoStore.getState().clear('dualViewer');
     set((state) => ({
       ...updatePanel(state, panelId, {
         images: [...panel.originalImages],
@@ -443,6 +477,24 @@ export const useDualViewerStore = create<DualViewerState>((set, get) => ({
     const panel = get().panels[panelId];
     const singleLayout = DUAL_LAYOUTS[0];
 
+    // Snapshot for undo
+    const prevLayout = panel.currentLayout;
+    const prevPage = panel.currentPage;
+    const prevPre = panel.preDoubleClickLayout;
+    const prevPrePage = panel.preDoubleClickPage;
+    const prevDcImg = panel.doubleClickViewportImage;
+    useUndoStore.getState().push('dualViewer', {
+      label: 'toggle-zoom',
+      restore: () => set((state) => updatePanel(state, panelId, {
+        currentLayout: prevLayout,
+        ...recalcPages(state.panels[panelId].totalImages, prevLayout.spots),
+        currentPage: prevPage,
+        preDoubleClickLayout: prevPre,
+        preDoubleClickPage: prevPrePage,
+        doubleClickViewportImage: prevDcImg,
+      })),
+    });
+
     if (panel.preDoubleClickLayout) {
       const prevLayout = panel.preDoubleClickLayout;
       const prevPage = panel.preDoubleClickPage;
@@ -474,6 +526,11 @@ export const useDualViewerStore = create<DualViewerState>((set, get) => ({
 
   setPanelViewportImage: (panelId, imageUrl, viewportIndex) => {
     const panel = get().panels[panelId];
+    const prevImages = [...panel.images];
+    useUndoStore.getState().push('dualViewer', {
+      label: 'set-viewport-image',
+      restore: () => set((state) => updatePanel(state, panelId, { images: prevImages })),
+    });
     const targetGlobalIdx = (panel.currentPage - 1) * panel.currentLayout.spots + viewportIndex;
     const sourceIdx = panel.images.findIndex(img => img.imageUrl === imageUrl);
     if (sourceIdx === -1) return;
@@ -495,6 +552,18 @@ export const useDualViewerStore = create<DualViewerState>((set, get) => ({
     const globalIdx = (panel.currentPage - 1) * panel.currentLayout.spots + viewportIndex;
     const image = panel.images[globalIdx];
     if (!image) return;
+
+    // Snapshot for undo
+    const prevImages = [...panel.images];
+    const prevPage = panel.currentPage;
+    useUndoStore.getState().push('dualViewer', {
+      label: 'delete-image',
+      restore: () => set((state) => updatePanel(state, panelId, {
+        images: prevImages,
+        ...recalcPages(prevImages.length, state.panels[panelId].currentLayout.spots),
+        currentPage: prevPage,
+      })),
+    });
 
     const newImages = panel.images.filter((_, i) => i !== globalIdx);
     const newTotal = newImages.length;
@@ -563,9 +632,15 @@ export const useDualViewerStore = create<DualViewerState>((set, get) => ({
   setStampMode: (v) => set({ isStampMode: v, activeStampId: v ? get().activeStampId : null }),
 
   placeStamp: (panelId, imageId, xPercent, yPercent, containerHeight) => {
-    const { activeStampId, stamps } = get();
+    const { activeStampId, stamps, stampPlacements } = get();
     const stamp = stamps.find(s => s.id === activeStampId);
     if (!stamp) return;
+
+    const prevPlacements = [...stampPlacements];
+    useUndoStore.getState().push('dualViewer', {
+      label: 'place-stamp',
+      restore: () => set({ stampPlacements: prevPlacements }),
+    });
 
     const placement: DualStampPlacement = {
       id: `dsp-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
@@ -588,6 +663,11 @@ export const useDualViewerStore = create<DualViewerState>((set, get) => ({
   },
 
   removeStampPlacement: (id) => {
+    const prevPlacements = [...get().stampPlacements];
+    useUndoStore.getState().push('dualViewer', {
+      label: 'remove-stamp',
+      restore: () => set({ stampPlacements: prevPlacements }),
+    });
     set((state) => ({ stampPlacements: state.stampPlacements.filter(s => s.id !== id) }));
   },
 
@@ -628,6 +708,11 @@ export const useDualViewerStore = create<DualViewerState>((set, get) => ({
   setTextMode: (v) => set({ isTextMode: v, isStampMode: false }),
 
   placeTextDirect: (panelId, imageId, xPercent, yPercent, text, color, fontSize, containerHeight) => {
+    const prevPlacements = [...get().stampPlacements];
+    useUndoStore.getState().push('dualViewer', {
+      label: 'place-text',
+      restore: () => set({ stampPlacements: prevPlacements }),
+    });
     const placement: DualStampPlacement = {
       id: `dsp-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       stampId: 'text',

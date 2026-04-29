@@ -160,8 +160,8 @@ export function ToolsPanel() {
       }
 
       if (e.ctrlKey && e.key === 'z') {
-        e.preventDefault();
-        undoLastAnnotationOnSelected();
+        // Handled by ViewerPage unified undo — do nothing here
+        return;
       }
 
       if (e.key === 'Escape') {

@@ -4,6 +4,7 @@
  */
 import { useCRViewerStore } from '@/stores/crViewerStore';
 import { useStampStore } from '@/stores/stampStore';
+import { useUndoStore } from '@/stores/undoStore';
 import { cornerstone, cornerstoneTools } from '@/lib/cornerstoneSetup';
 import { undoLastAnnotationOnElement } from '@/lib/annotationUtils';
 import { useState, useEffect } from 'react';
@@ -93,12 +94,8 @@ export function CRSidebar() {
       }
       if (e.ctrlKey && e.key === 'z') {
         e.preventDefault();
-        const viewports = document.querySelectorAll('[data-cr-viewport-index]');
-        let undone = false;
-        viewports.forEach((el) => {
-          if (!undone && undoLastAnnotationOnElement(el as HTMLElement)) undone = true;
-        });
-        if (!undone) undoStampPlacement();
+        e.stopImmediatePropagation();
+        useUndoStore.getState().undo('crViewer');
       }
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -425,12 +422,7 @@ export function CRSidebar() {
         {/* Undo */}
         <SidebarButton
           onClick={() => {
-            const indices = selectedViewportIndices.length > 0 ? selectedViewportIndices : [selectedViewport];
-            for (const idx of indices) {
-              const el = document.querySelector(`[data-cr-viewport-index="${idx}"]`) as HTMLElement;
-              if (el && undoLastAnnotationOnElement(el)) return;
-            }
-            undoStampPlacement();
+            useUndoStore.getState().undo('crViewer');
           }}
           label="Undo"
           title="Undo last annotation or stamp (Ctrl+Z)"

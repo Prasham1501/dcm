@@ -4,6 +4,7 @@
  */
 import { useState, useEffect } from 'react';
 import { useDualViewerStore } from '@/stores/dualViewerStore';
+import { useUndoStore } from '@/stores/undoStore';
 import { useReportStore } from '@/stores/reportStore';
 import {
   ChevronLeft, ChevronRight, Printer, ListOrdered, MoveHorizontal, Move3d, Undo2, FileText,
@@ -36,12 +37,8 @@ export function DualToolbar() {
       }
       if (e.ctrlKey && e.key === 'z') {
         e.preventDefault();
-        const viewports = document.querySelectorAll('[data-dual-viewport-index]');
-        let undone = false;
-        viewports.forEach((el) => {
-          if (!undone && undoLastAnnotationOnElement(el as HTMLElement)) undone = true;
-        });
-        if (!undone) undoStampPlacement();
+        e.stopImmediatePropagation();
+        useUndoStore.getState().undo('dualViewer');
       }
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -116,18 +113,7 @@ export function DualToolbar() {
         {/* Undo */}
         <button
           onClick={() => {
-            // Try all viewports: active panel first, then other panel
-            const otherPanel = activePanel === 'left' ? 'right' : 'left';
-            const panelOrder = [activePanel, otherPanel];
-            let undone = false;
-            for (const pId of panelOrder) {
-              if (undone) break;
-              const viewports = document.querySelectorAll(`[data-dual-viewport-index^="${pId}-"]`);
-              viewports.forEach((el) => {
-                if (!undone && undoLastAnnotationOnElement(el as HTMLElement)) undone = true;
-              });
-            }
-            if (!undone) undoStampPlacement();
+            useUndoStore.getState().undo('dualViewer');
           }}
           className="flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded border-2 border-app-border text-app-text-secondary bg-app-bg hover:bg-app-hover transition-colors"
           title="Undo last annotation or stamp"

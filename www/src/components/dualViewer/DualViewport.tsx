@@ -155,7 +155,7 @@ function DualViewportInner({
     if (!el) return;
     return setupAutoDeactivate(el, () => {
       window.dispatchEvent(new CustomEvent('dual-tool-deactivated'));
-    });
+    }, 'dualViewer');
   }, []);
 
   // ---- DOUBLE-CLICK TO EDIT CORNERSTONE ANNOTATIONS ----

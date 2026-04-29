@@ -5,6 +5,7 @@
 import { create } from 'zustand';
 import { localFileToImageId, prefetchImages } from '@/lib/dicomLoader';
 import { getAutoOrientationForLayout } from '@/lib/layoutUtils';
+import { useUndoStore } from '@/stores/undoStore';
 
 export interface CRImage {
   id: string;
@@ -294,6 +295,7 @@ export const useCRViewerStore = create<CRViewerState>((set, get) => ({
 
   loadStudy: (params) => {
     set({ isLoading: true });
+    useUndoStore.getState().clear('crViewer');
 
     const imageIds = params.filePaths.map((fp) => localFileToImageId(fp));
     const crImages: CRImage[] = imageIds.map((imageId, i) => ({
@@ -328,7 +330,26 @@ export const useCRViewerStore = create<CRViewerState>((set, get) => ({
   },
 
   setLayout: (layout) => {
-    const { totalImages, currentLayout, preDoubleClickLayout } = get();
+    const { totalImages, currentLayout, preDoubleClickLayout, currentPage } = get();
+    // Snapshot for undo
+    const prevLayout = currentLayout;
+    const prevPage = currentPage;
+    const prevPre = preDoubleClickLayout;
+    useUndoStore.getState().push('crViewer', {
+      label: 'layout',
+      restore: () => {
+        set({
+          currentLayout: prevLayout,
+          ...recalcPages(get().totalImages, prevLayout.spots),
+          currentPage: prevPage,
+          preDoubleClickLayout: prevPre,
+        });
+        const api = (window as any).electronAPI;
+        if (api?.resizeCRViewer) {
+          api.resizeCRViewer({ cols: prevLayout.cols, rows: prevLayout.rows }).catch(() => {});
+        }
+      },
+    });
     const clearSingleViewState = Boolean(preDoubleClickLayout) || (currentLayout.spots === 1 && layout.spots !== 1);
     set({
       currentLayout: layout,
@@ -397,7 +418,33 @@ export const useCRViewerStore = create<CRViewerState>((set, get) => ({
   },
 
   applyArrange: () => {
-    const { arrangeClickOrder, images, currentPage, currentLayout } = get();
+    const { arrangeClickOrder, images, currentPage, currentLayout, viewportImageOverrides, stampPlacements } = get();
+    if (arrangeClickOrder.length === 0) {
+      set({ isArrangeMode: false, arrangeClickOrder: [] });
+      return;
+    }
+
+    // Snapshot for undo
+    const prevImages = [...images];
+    const prevLayout = currentLayout;
+    const prevPage = currentPage;
+    const prevOverrides = { ...viewportImageOverrides };
+    useUndoStore.getState().push('crViewer', {
+      label: 'arrange',
+      restore: () => {
+        set({
+          images: prevImages,
+          currentLayout: prevLayout,
+          viewportImageOverrides: prevOverrides,
+          ...recalcPages(prevImages.length, prevLayout.spots),
+          currentPage: prevPage,
+        });
+        const api = (window as any).electronAPI;
+        if (api?.resizeCRViewer) {
+          api.resizeCRViewer({ cols: prevLayout.cols, rows: prevLayout.rows }).catch(() => {});
+        }
+      },
+    });
     if (arrangeClickOrder.length === 0) {
       set({ isArrangeMode: false, arrangeClickOrder: [] });
       return;
@@ -443,6 +490,7 @@ export const useCRViewerStore = create<CRViewerState>((set, get) => ({
   resetAll: () => {
     const { originalImages } = get();
     const defaultLayout = autoSelectLayout(originalImages.length);
+    useUndoStore.getState().clear('crViewer');
     set({
       images: [...originalImages],
       currentLayout: defaultLayout,
@@ -472,7 +520,13 @@ export const useCRViewerStore = create<CRViewerState>((set, get) => ({
 
   // Resequence: reset overrides to default sequential order
   resequence: () => {
-    const { originalImages, currentLayout } = get();
+    const { originalImages, currentLayout, images, viewportImageOverrides } = get();
+    const prevImages = [...images];
+    const prevOverrides = { ...viewportImageOverrides };
+    useUndoStore.getState().push('crViewer', {
+      label: 'resequence',
+      restore: () => set({ images: prevImages, viewportImageOverrides: prevOverrides }),
+    });
     set({
       images: [...originalImages],
       viewportImageOverrides: {},
@@ -481,6 +535,11 @@ export const useCRViewerStore = create<CRViewerState>((set, get) => ({
   },
 
   swapImages: (idxA, idxB) => {
+    const prevImages = [...get().images];
+    useUndoStore.getState().push('crViewer', {
+      label: 'swap',
+      restore: () => set({ images: prevImages }),
+    });
     set((state) => {
       const nextImages = [...state.images];
       const temp = nextImages[idxA];
@@ -494,6 +553,30 @@ export const useCRViewerStore = create<CRViewerState>((set, get) => ({
   toggleSingleViewport: (viewportIndex) => {
     const { preDoubleClickLayout, currentLayout, currentPage, images } = get();
     const singleLayout = CR_LAYOUTS[0]; // 1 Spot
+
+    // Snapshot for undo
+    const prevLayout = currentLayout;
+    const prevPage = currentPage;
+    const prevPre = preDoubleClickLayout;
+    const prevPrePage = get().preDoubleClickPage;
+    const prevDcImg = get().doubleClickViewportImage;
+    useUndoStore.getState().push('crViewer', {
+      label: 'toggle-zoom',
+      restore: () => {
+        set({
+          currentLayout: prevLayout,
+          ...recalcPages(get().totalImages, prevLayout.spots),
+          currentPage: prevPage,
+          preDoubleClickLayout: prevPre,
+          preDoubleClickPage: prevPrePage,
+          doubleClickViewportImage: prevDcImg,
+        });
+        const api = (window as any).electronAPI;
+        if (api?.resizeCRViewer) {
+          api.resizeCRViewer({ cols: prevLayout.cols, rows: prevLayout.rows }).catch(() => {});
+        }
+      },
+    });
 
     if (preDoubleClickLayout) {
       // Restore previous layout
@@ -582,7 +665,7 @@ export const useCRViewerStore = create<CRViewerState>((set, get) => ({
   setTextMode: (v) => set({ isTextMode: v, isStampMode: false }),
 
   placeStamp: (imageId, xPercent, yPercent, containerHeight) => {
-    const { activeStampId, stamps } = get();
+    const { activeStampId, stamps, stampPlacements } = get();
     const stamp = stamps.find(s => s.id === activeStampId);
     if (!stamp) return;
 
@@ -598,6 +681,12 @@ export const useCRViewerStore = create<CRViewerState>((set, get) => ({
       yPercent,
     };
 
+    const prevPlacements = [...stampPlacements];
+    useUndoStore.getState().push('crViewer', {
+      label: 'place-stamp',
+      restore: () => set({ stampPlacements: prevPlacements }),
+    });
+
     set((state) => ({
       stampPlacements: [...state.stampPlacements, placement],
       // Auto-exit stamp mode so user can drag/move the placed stamp immediately
@@ -607,6 +696,11 @@ export const useCRViewerStore = create<CRViewerState>((set, get) => ({
   },
 
   placeStampDirect: (imageId, xPercent, yPercent, text, color, fontSize, containerHeight) => {
+    const prevPlacements = [...get().stampPlacements];
+    useUndoStore.getState().push('crViewer', {
+      label: 'place-stamp-direct',
+      restore: () => set({ stampPlacements: prevPlacements }),
+    });
     const placement: StampPlacement = {
       id: `sp-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       stampId: 'direct',
@@ -625,6 +719,11 @@ export const useCRViewerStore = create<CRViewerState>((set, get) => ({
   },
 
   placeTextDirect: (imageId, xPercent, yPercent, text, color, fontSize, containerHeight) => {
+    const prevPlacements = [...get().stampPlacements];
+    useUndoStore.getState().push('crViewer', {
+      label: 'place-text',
+      restore: () => set({ stampPlacements: prevPlacements }),
+    });
     const placement: StampPlacement = {
       id: `sp-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       stampId: 'text',
@@ -644,6 +743,11 @@ export const useCRViewerStore = create<CRViewerState>((set, get) => ({
   },
 
   removeStampPlacement: (id) => {
+    const prevPlacements = [...get().stampPlacements];
+    useUndoStore.getState().push('crViewer', {
+      label: 'remove-stamp',
+      restore: () => set({ stampPlacements: prevPlacements }),
+    });
     set((state) => ({
       stampPlacements: state.stampPlacements.filter(s => s.id !== id),
     }));
@@ -691,6 +795,11 @@ export const useCRViewerStore = create<CRViewerState>((set, get) => ({
 
   setViewportImage: (imageUrl, viewportIndex) => {
     const { currentPage, currentLayout, viewportImageOverrides } = get();
+    const prevOverrides = { ...viewportImageOverrides };
+    useUndoStore.getState().push('crViewer', {
+      label: 'set-viewport-image',
+      restore: () => set({ viewportImageOverrides: prevOverrides }),
+    });
     const globalIdx = (currentPage - 1) * currentLayout.spots + viewportIndex;
     set({
       viewportImageOverrides: { ...viewportImageOverrides, [globalIdx]: imageUrl },
@@ -699,6 +808,19 @@ export const useCRViewerStore = create<CRViewerState>((set, get) => ({
 
   deleteImageFromViewport: (viewportIndex) => {
     const { currentPage, currentLayout, images, viewportImageOverrides } = get();
+    // Snapshot for undo
+    const prevImages = [...images];
+    const prevOverrides = { ...viewportImageOverrides };
+    const prevPage = currentPage;
+    useUndoStore.getState().push('crViewer', {
+      label: 'delete-image',
+      restore: () => set({
+        images: prevImages,
+        viewportImageOverrides: prevOverrides,
+        ...recalcPages(prevImages.length, currentLayout.spots),
+        currentPage: prevPage,
+      }),
+    });
     const globalIdx = (currentPage - 1) * currentLayout.spots + viewportIndex;
     
     const overrideUrl = viewportImageOverrides[globalIdx];

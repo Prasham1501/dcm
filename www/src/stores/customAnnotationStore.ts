@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { useUndoStore } from '@/stores/undoStore';
 
 export interface TextAnnotation {
   id: string;
@@ -69,6 +70,12 @@ export const useCustomAnnotationStore = create<CustomAnnotationState>((set, get)
   getDrawPaths: (imageId) => get().drawPaths[imageId] || [],
 
   addText: (imageId, ann, isUndoable = true) => {
+    if (isUndoable) {
+      useUndoStore.getState().push('viewer', {
+        label: 'add-text',
+        restore: () => get().undo(),
+      });
+    }
     set((state) => {
       const list = state.annotations[imageId] || [];
       const nextHistory = isUndoable 
@@ -86,6 +93,12 @@ export const useCustomAnnotationStore = create<CustomAnnotationState>((set, get)
   removeText: (imageId, annId, isUndoable = true) => {
     const ann = (get().annotations[imageId] || []).find(a => a.id === annId);
     if (!ann) return;
+    if (isUndoable) {
+      useUndoStore.getState().push('viewer', {
+        label: 'remove-text',
+        restore: () => get().undo(),
+      });
+    }
 
     set((state) => {
       const list = state.annotations[imageId] || [];
@@ -120,6 +133,12 @@ export const useCustomAnnotationStore = create<CustomAnnotationState>((set, get)
   },
 
   addPath: (imageId, path, isUndoable = true) => {
+    if (isUndoable) {
+      useUndoStore.getState().push('viewer', {
+        label: 'add-path',
+        restore: () => get().undo(),
+      });
+    }
     set((state) => {
       const list = state.drawPaths[imageId] || [];
       const nextHistory = isUndoable 
@@ -137,6 +156,12 @@ export const useCustomAnnotationStore = create<CustomAnnotationState>((set, get)
   removePath: (imageId, pathId, isUndoable = true) => {
     const path = (get().drawPaths[imageId] || []).find(p => p.id === pathId);
     if (!path) return;
+    if (isUndoable) {
+      useUndoStore.getState().push('viewer', {
+        label: 'remove-path',
+        restore: () => get().undo(),
+      });
+    }
 
     set((state) => {
       const list = state.drawPaths[imageId] || [];

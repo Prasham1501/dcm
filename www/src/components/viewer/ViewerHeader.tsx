@@ -4,6 +4,7 @@ import { useViewerStore } from '@/stores/viewerStore';
 import { usePrintStore } from '@/stores/printStore';
 import { useThemeStore } from '@/stores/themeStore';
 import { useCustomAnnotationStore } from '@/stores/customAnnotationStore';
+import { useUndoStore } from '@/stores/undoStore';
 import { useReportStore } from '@/stores/reportStore';
 import { resetViewport } from '@/lib/viewerTools';
 import {
@@ -112,7 +113,7 @@ export function ViewerHeader({ showThumbnails = true, onToggleThumbnails }: { sh
       <div className="flex items-center gap-1 2xl:gap-2 flex-shrink-0">
         {/* Undo */}
         <button
-          onClick={() => useCustomAnnotationStore.getState().undo()}
+          onClick={() => useUndoStore.getState().undo('viewer')}
           className="p-1 rounded border border-app-border text-app-text-secondary hover:bg-blue-500/20 hover:text-blue-400 transition-colors"
           title="Undo (Ctrl+Z)"
         >
@@ -127,6 +128,7 @@ export function ViewerHeader({ showThumbnails = true, onToggleThumbnails }: { sh
               try { resetViewport(el as HTMLDivElement); } catch { /* ignore */ }
             });
             useViewerStore.getState().clearViewportOverrides();
+            useUndoStore.getState().clear('viewer');
           }}
           className="p-1 rounded border border-app-border text-app-text-secondary hover:bg-red-500/20 hover:text-red-400 transition-colors"
           title="Reset All"

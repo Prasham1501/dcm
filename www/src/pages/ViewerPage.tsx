@@ -17,6 +17,7 @@ import { usePrintStore } from '@/stores/printStore';
 import { useViewerStore } from '@/stores/viewerStore';
 import { useReportStore } from '@/stores/reportStore';
 import { useCustomAnnotationStore } from '@/stores/customAnnotationStore';
+import { useUndoStore } from '@/stores/undoStore';
 
 export function ViewerPage() {
   const { showPrintPreview, showPrinterModal } = usePrintStore();
@@ -59,7 +60,8 @@ export function ViewerPage() {
 
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
         e.preventDefault();
-        undo();
+        e.stopImmediatePropagation();
+        useUndoStore.getState().undo('viewer');
       }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') {
         e.preventDefault();

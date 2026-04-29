@@ -213,7 +213,7 @@ function CRViewportInner({
     return setupAutoDeactivate(el, () => {
       // Broadcast deactivation event so CRSidebar can clear its active tool state
       window.dispatchEvent(new CustomEvent('cr-tool-deactivated'));
-    });
+    }, 'crViewer');
   }, []);
 
   // ---- DOUBLE-CLICK TO EDIT ANNOTATIONS ----

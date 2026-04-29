@@ -10,6 +10,7 @@ import {
   scanLocalDirectory,
   prefetchImages,
 } from '@/lib/dicomLoader';
+import { useUndoStore } from '@/stores/undoStore';
 
 const USE_API = import.meta.env.VITE_USE_API === 'true';
 
@@ -334,7 +335,31 @@ export const useViewerStore = create<ViewerState>((set, get) => ({
   viewportIndexOverrides: {},
 
   setLayout: (layout) => {
-    const { totalImages, currentLayout, preDoubleClickLayout, selectedViewport, selectedViewportIndices } = get();
+    const { totalImages, currentLayout, preDoubleClickLayout, selectedViewport, selectedViewportIndices, currentPage, viewportImageOverrides, viewportIndexOverrides } = get();
+    // Snapshot for undo
+    const prevLayout = currentLayout;
+    const prevPage = currentPage;
+    const prevPre = preDoubleClickLayout;
+    const prevOverrides = { ...viewportImageOverrides };
+    const prevIdxOverrides = { ...viewportIndexOverrides };
+    useUndoStore.getState().push('viewer', {
+      label: 'layout',
+      restore: () => {
+        set({
+          currentLayout: prevLayout,
+          orientation: getAutoOrientationForLayout(prevLayout),
+          ...recalcPages(get().totalImages || mockImages.length, prevLayout.spots),
+          currentPage: prevPage,
+          preDoubleClickLayout: prevPre,
+          viewportImageOverrides: prevOverrides,
+          viewportIndexOverrides: prevIdxOverrides,
+        });
+        const api = (window as any).electronAPI;
+        if (api?.resizeViewer) {
+          api.resizeViewer({ cols: prevLayout.cols, rows: prevLayout.rows }).catch(() => {});
+        }
+      },
+    });
     const clearSingleViewState = Boolean(preDoubleClickLayout) || (currentLayout.spots === 1 && layout.spots !== 1);
     // Drop any stale multi-selection or focused viewport that no longer exists
     // in the new layout — otherwise propagation paths (e.g. text/stamp placement
@@ -575,12 +600,35 @@ export const useViewerStore = create<ViewerState>((set, get) => ({
   },
 
   toggleArrangeMode: () => {
-    const { isArrangeMode, arrangeSelectedImages, arrangeClickOrder, viewportImageOverrides, images, currentLayout, currentPage } = get();
+    const { isArrangeMode, arrangeSelectedImages, arrangeClickOrder, viewportImageOverrides, viewportIndexOverrides, images, currentLayout, currentPage } = get();
     if (isArrangeMode) {
       if (arrangeClickOrder.length === 0) {
         set({ isArrangeMode: false, arrangeSelectedImages: [], arrangeClickOrder: [] });
         return;
       }
+
+      // Snapshot for undo
+      const prevLayout = currentLayout;
+      const prevPage = currentPage;
+      const prevOverrides = { ...viewportImageOverrides };
+      const prevIdxOverrides = { ...viewportIndexOverrides };
+      useUndoStore.getState().push('viewer', {
+        label: 'arrange',
+        restore: () => {
+          set({
+            currentLayout: prevLayout,
+            orientation: getAutoOrientationForLayout(prevLayout),
+            ...recalcPages(get().totalImages, prevLayout.spots),
+            currentPage: prevPage,
+            viewportImageOverrides: prevOverrides,
+            viewportIndexOverrides: prevIdxOverrides,
+          });
+          const api = (window as any).electronAPI;
+          if (api?.resizeViewer) {
+            api.resizeViewer({ cols: prevLayout.cols, rows: prevLayout.rows }).catch(() => {});
+          }
+        },
+      });
 
       const startIndex = (currentPage - 1) * currentLayout.spots;
       const selectedCount = arrangeClickOrder.length;
@@ -682,6 +730,21 @@ export const useViewerStore = create<ViewerState>((set, get) => ({
 
   deleteImageFromViewport: (viewportIndex) => {
     const { currentPage, currentLayout, images, viewportImageOverrides, viewportIndexOverrides } = get();
+    // Snapshot for undo
+    const prevImages = [...images];
+    const prevOverrides = { ...viewportImageOverrides };
+    const prevIdxOverrides = { ...viewportIndexOverrides };
+    const prevPage = currentPage;
+    useUndoStore.getState().push('viewer', {
+      label: 'delete-image',
+      restore: () => set({
+        images: prevImages,
+        viewportImageOverrides: prevOverrides,
+        viewportIndexOverrides: prevIdxOverrides,
+        ...recalcPages(prevImages.length, currentLayout.spots),
+        currentPage: prevPage,
+      }),
+    });
     const globalIdx = (currentPage - 1) * currentLayout.spots + viewportIndex;
     
     const overrideUrl = viewportImageOverrides[viewportIndex];
@@ -709,9 +772,38 @@ export const useViewerStore = create<ViewerState>((set, get) => ({
 
   // Double-click toggle: zoom into 1x1 showing clicked image, or restore previous layout
   toggleSingleViewport: (viewportIndex) => {
-    const { preDoubleClickLayout, currentLayout, currentPage, images, viewportImageOverrides } = get();
+    const { preDoubleClickLayout, currentLayout, currentPage, images, viewportImageOverrides, viewportIndexOverrides } = get();
     const allLayouts = LAYOUT_CATEGORIES.flatMap(c => c.layouts);
     const singleLayout = allLayouts.find(l => l.id === '1x1')!;
+
+    // Snapshot for undo
+    const prevLayout = currentLayout;
+    const prevPage = currentPage;
+    const prevPre = preDoubleClickLayout;
+    const prevPrePage = get().preDoubleClickPage;
+    const prevDcImg = get().doubleClickViewportImage;
+    const prevOverrides = { ...viewportImageOverrides };
+    const prevIdxOverrides = { ...viewportIndexOverrides };
+    useUndoStore.getState().push('viewer', {
+      label: 'toggle-zoom',
+      restore: () => {
+        set({
+          currentLayout: prevLayout,
+          orientation: getAutoOrientationForLayout(prevLayout),
+          ...recalcPages(get().totalImages, prevLayout.spots),
+          currentPage: prevPage,
+          preDoubleClickLayout: prevPre,
+          preDoubleClickPage: prevPrePage,
+          doubleClickViewportImage: prevDcImg,
+          viewportImageOverrides: prevOverrides,
+          viewportIndexOverrides: prevIdxOverrides,
+        });
+        const api = (window as any).electronAPI;
+        if (api?.resizeViewer) {
+          api.resizeViewer({ cols: prevLayout.cols, rows: prevLayout.rows }).catch(() => {});
+        }
+      },
+    });
 
     if (preDoubleClickLayout) {
       // Restore previous layout
@@ -769,6 +861,7 @@ export const useViewerStore = create<ViewerState>((set, get) => ({
 
   loadStudy: async (params) => {
     const layout = get().currentLayout;
+    useUndoStore.getState().clear('viewer');
     set({
       patientName: params.patientName,
       patientId: params.patientId,
