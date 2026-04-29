@@ -6,7 +6,7 @@ import { useViewerStore } from '@/stores/viewerStore';
 import { usePatientStore } from '@/stores/patientStore';
 import { useHospitalConfigStore, getFormattedAddress, renderPrintSlot } from '@/stores/hospitalConfigStore';
 import { getAutoOrientationForLayout, getLayoutAreaNames, getLayoutGridTemplate } from '@/lib/layoutUtils';
-import { captureCornerstoneViewportForPrint, waitForViewportImages, PrintOverlay } from '@/lib/printCapture';
+import { captureCornerstoneViewportForPrint, waitForViewportImages, PrintOverlay, PrintDrawPath } from '@/lib/printCapture';
 import { fillEmptyPrintSlots } from '@/lib/printPageUtils';
 import { useCustomAnnotationStore } from '@/stores/customAnnotationStore';
 
@@ -23,11 +23,20 @@ function capturePageViewports(spots: number, page: number): Array<string | null>
           yPercent: ann.yPercent,
           color: ann.color,
           fontSize: ann.fontSize,
+          fontSizePercent: ann.fontSizePercent,
           type: ann.type === 'stamp' ? 'stamp' as const : 'text' as const,
         }))
       : [];
 
-    return captureCornerstoneViewportForPrint('data-viewport-index', viewportIndex, overlays);
+    const drawPaths: PrintDrawPath[] = imageId
+      ? annStore.getDrawPaths(imageId).map(p => ({
+          points: p.points,
+          color: p.color,
+          strokeWidth: p.strokeWidth,
+        }))
+      : [];
+
+    return captureCornerstoneViewportForPrint('data-viewport-index', viewportIndex, overlays, drawPaths);
   });
 }
 

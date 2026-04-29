@@ -101,15 +101,22 @@ function DicomViewportInner({
   const currentDrawPathRef = useRef<{ x: number; y: number }[]>([]);
   const drawCanvasRef = useRef<HTMLCanvasElement>(null);
 
-  // Local sync of store annotations for rendering
+  // Store actions (non-reactive)
   const { 
-    getAnnotations, getDrawPaths, 
     addText, removeText, updateText, 
     addPath, removePath 
   } = useCustomAnnotationStore();
 
-  const [annotations, setAnnotations] = useState<TextAnnotation[]>([]);
-  const [drawPaths, setDrawPaths] = useState<DrawPath[]>([]);
+  // Read annotations/drawPaths directly from the zustand store via selectors.
+  // This eliminates stale-state bugs: when imageId changes (e.g. after
+  // double-click expand/restore), the selector immediately returns the correct
+  // data for the NEW imageId — no local state to go stale.
+  const annotations = useCustomAnnotationStore(
+    (s) => imageId ? (s.annotations[imageId] || []) : []
+  );
+  const drawPaths = useCustomAnnotationStore(
+    (s) => imageId ? (s.drawPaths[imageId] || []) : []
+  );
 
   // Right-click context menu state
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
@@ -121,30 +128,30 @@ function DicomViewportInner({
     return refitCornerstoneViewport(el);
   }, []);
 
-  useEffect(() => {
-    if (imageId) {
-      setAnnotations([...getAnnotations(imageId)]);
-      setDrawPaths([...getDrawPaths(imageId)]);
-    } else {
-      setAnnotations([]);
-      setDrawPaths([]);
-    }
+  /**
+   * Compute fontSizePercent from an absolute px size using the current
+   * container height. Falls back to a sensible default (2.5 cqh) when
+   * the container is not yet laid out.
+   */
+  const pxToFontSizePercent = useCallback((px: number): number => {
+    const h = containerRef.current?.clientHeight;
+    if (!h || h < 10) return 2.5;
+    return (px / h) * 100;
+  }, []);
+
+  /** Resolve the effective cqh value for a TextAnnotation. */
+  const getEffectiveFontSizePercent = useCallback((ann: TextAnnotation): number => {
+    if (ann.fontSizePercent && ann.fontSizePercent > 0) return ann.fontSizePercent;
+    return pxToFontSizePercent(ann.fontSize);
+  }, [pxToFontSizePercent]);
+
+  // Reset pending input when imageId changes
+  const prevImageIdRef = useRef<string | null>(null);
+  if (imageId !== prevImageIdRef.current) {
+    prevImageIdRef.current = imageId;
     setPendingInput(null);
     isDrawingRef.current = false;
-  }, [imageId, getAnnotations, getDrawPaths]);
-
-  // Listen for annotation updates from other viewports (multi-select placement)
-  useEffect(() => {
-    const handler = (e: Event) => {
-      const detail = (e as CustomEvent).detail as { imageId: string };
-      if (detail?.imageId === imageId) {
-        setAnnotations([...getAnnotations(detail.imageId)]);
-        setDrawPaths([...getDrawPaths(detail.imageId)]);
-      }
-    };
-    window.addEventListener('dicom-annotations-updated', handler);
-    return () => window.removeEventListener('dicom-annotations-updated', handler);
-  }, [imageId]);
+  }
 
   // Focus input when it appears
   useEffect(() => {
@@ -245,15 +252,14 @@ function DicomViewportInner({
     return () => el.removeEventListener('dblclick', handleDblClick);
   }, []);
 
-  // Listen for clear-annotations event — directly wipe local state
+  // Listen for clear-annotations event — cancel in-progress drawing
   useEffect(() => {
     const handler = (e: Event) => {
       const detail = (e as CustomEvent).detail;
       const targetEl = detail?.element;
       if (!targetEl || targetEl === elementRef.current) {
-        setAnnotations([]);
-        setDrawPaths([]);
-        // Also cancel any in-progress drawing
+        // Store is already cleared by resetAll(); annotations/drawPaths
+        // selectors will return [] automatically on re-render.
         isDrawingRef.current = false;
         currentDrawPathRef.current = [];
         const canvas = drawCanvasRef.current;
@@ -519,6 +525,12 @@ function DicomViewportInner({
   }, []);
 
   // ---- ANNOTATION DRAGGING ----
+  // During drag we override the position locally for smooth rendering,
+  // then commit to the store on mouseup.
+  const [dragPositionOverride, setDragPositionOverride] = useState<{
+    id: string; xPercent: number; yPercent: number;
+  } | null>(null);
+
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
       if (!draggingAnn || !imageId) return;
@@ -532,18 +544,12 @@ function DicomViewportInner({
       const newXPct = Math.max(0, Math.min(100, draggingAnn.startXPct + dx));
       const newYPct = Math.max(0, Math.min(100, draggingAnn.startYPct + dy));
 
-      const list = getAnnotations(imageId);
-      const ann = list.find(a => a.id === draggingAnn.id);
-      if (ann) {
-        // Just update local state for smooth drag
-        setAnnotations(list.map(a => a.id === ann.id ? { ...a, xPercent: newXPct, yPercent: newYPct } : a));
-      }
+      setDragPositionOverride({ id: draggingAnn.id, xPercent: newXPct, yPercent: newYPct });
     };
 
     const handleMouseUp = (e: MouseEvent) => {
       if (draggingAnn && imageId) {
-        const list = getAnnotations(imageId);
-        const ann = list.find(a => a.id === draggingAnn.id);
+        const ann = annotations.find(a => a.id === draggingAnn.id);
         if (ann) {
           const rect = containerRef.current!.getBoundingClientRect();
           const dx = ((e.clientX - draggingAnn.startX) / rect.width) * 100;
@@ -552,13 +558,11 @@ function DicomViewportInner({
           const finalYPct = Math.max(0, Math.min(100, draggingAnn.startYPct + dy));
 
           const updatedAnn = { ...ann, xPercent: finalXPct, yPercent: finalYPct };
-          // data for history is the OLD state
           updateText(imageId, updatedAnn, ann);
-          
-          // Notify other viewports of movement
           placeTextOnAllSelectedViewports(imageId, updatedAnn);
         }
         setDraggingAnn(null);
+        setDragPositionOverride(null);
       }
     };
 
@@ -570,7 +574,7 @@ function DicomViewportInner({
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [draggingAnn, imageId]);
+  }, [draggingAnn, imageId, annotations]);
 
   // ---- DRAW CANVAS HELPERS ----
   const redrawCanvas = useCallback(() => {
@@ -640,10 +644,10 @@ function DicomViewportInner({
           xPercent, yPercent,
           color: selectedStamp.color,
           fontSize: selectedStamp.fontSize,
+          fontSizePercent: pxToFontSizePercent(selectedStamp.fontSize),
           type: 'stamp',
         };
         addText(imageId, newAnn);
-        setAnnotations([...getAnnotations(imageId)]);
         placeTextOnAllSelectedViewports(imageId, newAnn);
         useViewerStore.getState().setActiveTool('');
         return;
@@ -714,7 +718,6 @@ function DicomViewportInner({
           strokeWidth: 2,
         };
         addPath(imageId, newPath);
-        setDrawPaths([...getDrawPaths(imageId)]);
 
         // Notify other selected viewports
         placeOnAllSelectedViewports(imageId, newPath);
@@ -855,10 +858,10 @@ function DicomViewportInner({
       yPercent: pendingInput.yPercent,
       color: inputColor,
       fontSize: inputFontSize,
+      fontSizePercent: pxToFontSizePercent(inputFontSize),
       type: pendingInput.type,
     };
     addText(imageId, newAnn);
-    setAnnotations([...getAnnotations(imageId)]);
 
     // Apply to all selected viewports too
     placeTextOnAllSelectedViewports(imageId, newAnn);
@@ -866,13 +869,12 @@ function DicomViewportInner({
     setPendingInput(null);
     setInputText('');
     useViewerStore.getState().setActiveTool('');
-  }, [pendingInput, inputText, inputColor, inputFontSize, imageId, addText, getAnnotations]);
+  }, [pendingInput, inputText, inputColor, inputFontSize, imageId, addText, pxToFontSizePercent]);
 
   const handleDeleteAnnotation = useCallback((annId: string) => {
     if (!imageId) return;
     removeText(imageId, annId);
-    setAnnotations([...getAnnotations(imageId)]);
-  }, [imageId, removeText, getAnnotations]);
+  }, [imageId, removeText]);
 
   const handleEditAnnotation = useCallback((ann: TextAnnotation) => {
     setEditingAnn(ann);
@@ -882,17 +884,15 @@ function DicomViewportInner({
 
   const handleSaveEditAnnotation = useCallback(() => {
     if (!editingAnn || !imageId) return;
-    const updated = { ...editingAnn, color: editColor, fontSize: editFontSize };
+    const updated = { ...editingAnn, color: editColor, fontSize: editFontSize, fontSizePercent: pxToFontSizePercent(editFontSize) };
     updateText(imageId, updated);
-    setAnnotations([...getAnnotations(imageId).map(a => a.id === updated.id ? updated : a)]);
     setEditingAnn(null);
-  }, [editingAnn, editColor, editFontSize, imageId, updateText, getAnnotations]);
+  }, [editingAnn, editColor, editFontSize, imageId, updateText, pxToFontSizePercent]);
 
   const handleDeleteDrawPath = useCallback((pathId: string) => {
     if (!imageId) return;
     removePath(imageId, pathId);
-    setDrawPaths([...getDrawPaths(imageId)]);
-  }, [imageId, removePath, getDrawPaths]);
+  }, [imageId, removePath]);
 
   // ---- DRAG-AND-DROP ----
   const handleDragOver = useCallback((e: React.DragEvent) => {
@@ -991,14 +991,19 @@ function DicomViewportInner({
       })}
 
       {/* Text/Stamp annotations overlay */}
-      {annotations.map((ann) => (
+      {annotations.map((ann) => {
+        // Apply drag position override for smooth dragging
+        const isDragging = dragPositionOverride?.id === ann.id;
+        const displayX = isDragging ? dragPositionOverride.xPercent : ann.xPercent;
+        const displayY = isDragging ? dragPositionOverride.yPercent : ann.yPercent;
+        return (
         <div
           key={ann.id}
           data-annotation-overlay="true"
           className="absolute z-20 group select-none"
           style={{
-            left: `${ann.xPercent}%`,
-            top: `${ann.yPercent}%`,
+            left: `${displayX}%`,
+            top: `${displayY}%`,
             transform: 'translate(-50%, -50%)',
             cursor: draggingAnn?.id === ann.id ? 'grabbing' : 'grab',
           }}
@@ -1026,7 +1031,7 @@ function DicomViewportInner({
             }`}
             style={{
               color: ann.color,
-              fontSize: `${ann.fontSize}px`,
+              fontSize: `max(${getEffectiveFontSizePercent(ann)}cqh, 8px)`,
               backgroundColor: 'rgba(0,0,0,0.6)',
               fontFamily: 'Arial, sans-serif',
               textShadow: '1px 1px 2px rgba(0,0,0,0.8)',
@@ -1042,7 +1047,8 @@ function DicomViewportInner({
             ×
           </button>
         </div>
-      ))}
+        );
+      })}
 
       {/* Edit annotation panel (double-click) — fixed to top-right corner, not on top of stamp */}
       {editingAnn && (
@@ -1133,10 +1139,9 @@ function DicomViewportInner({
                   const newAnn: TextAnnotation = {
                     id: `ann-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
                     text, xPercent: pendingInput.xPercent, yPercent: pendingInput.yPercent,
-                    color, fontSize, type: 'stamp',
+                    color, fontSize, fontSizePercent: pxToFontSizePercent(fontSize), type: 'stamp',
                   };
                   addText(imageId, newAnn);
-                  setAnnotations([...getAnnotations(imageId)]);
                   placeTextOnAllSelectedViewports(imageId, newAnn);
                   setPendingInput(null);
                   useViewerStore.getState().setActiveTool('');

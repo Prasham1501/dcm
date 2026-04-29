@@ -3,13 +3,31 @@ import { Printer, X } from 'lucide-react';
 import { useDualViewerStore } from '@/stores/dualViewerStore';
 import { usePrintStore } from '@/stores/printStore';
 import { useHospitalConfigStore, getFormattedAddress, renderPrintSlot } from '@/stores/hospitalConfigStore';
-import { captureCornerstoneElementForPrint } from '@/lib/printCapture';
+import { captureCornerstoneElementForPrint, PrintOverlay } from '@/lib/printCapture';
 
 function captureViewport(panelId: string, viewportIndex: number): string | null {
   const sel = '[data-dual-viewport-index="' + panelId + '-' + viewportIndex + '"]';
   const el = document.querySelector(sel) as HTMLElement;
   if (!el) return null;
-  return captureCornerstoneElementForPrint(el);
+
+  const { panels, stampPlacements } = useDualViewerStore.getState();
+  const panel = panels[panelId as 'left' | 'right'];
+  const startIndex = (panel.currentPage - 1) * panel.currentLayout.spots;
+  const imageId = panel.images[startIndex + viewportIndex]?.imageUrl ?? null;
+
+  const overlays: PrintOverlay[] = stampPlacements
+    .filter(sp => sp.panelId === panelId && sp.imageId === imageId && imageId)
+    .map(sp => ({
+      text: sp.text,
+      xPercent: sp.xPercent,
+      yPercent: sp.yPercent,
+      color: sp.color,
+      fontSize: sp.fontSize,
+      fontSizePercent: sp.fontSizePercent,
+      type: sp.type ?? 'stamp',
+    }));
+
+  return captureCornerstoneElementForPrint(el, overlays);
 }
 
 const PAPER_SIZES = ['A4', 'A3', 'A5', 'Letter', 'Legal'] as const;

@@ -443,7 +443,7 @@ function CRViewportInner({
       // If a stamp is selected in the shared store, place immediately
       const selectedStamp = useStampStore.getState().getSelectedStamp();
       if (selectedStamp) {
-        placeStampDirect(viewportIndex, xPercent, yPercent, selectedStamp.text, selectedStamp.color, selectedStamp.fontSize);
+        placeStampDirect(imageId!, xPercent, yPercent, selectedStamp.text, selectedStamp.color, selectedStamp.fontSize, rect.height);
         return;
       }
       // Otherwise show picker
@@ -466,13 +466,14 @@ function CRViewportInner({
     onClick(e);
   }, [isStampMode, isTextMode, imageId, onClick, viewportIndex, placeStampDirect, editingStamp]);
 
-  // Filter stamp placements for this viewport
-  const viewportStamps = stampPlacements.filter(s => s.viewportIndex === viewportIndex);
+  // Filter stamp placements for this viewport's image
+  const viewportStamps = stampPlacements.filter(s => s.imageId === imageId);
 
   return (
     <div
       ref={containerRef}
       className={`w-full h-full relative bg-black overflow-hidden ${(isStampMode || isTextMode) ? 'cursor-crosshair' : 'cursor-default'}`}
+      style={{ containerType: 'size' }}
       onMouseDownCapture={handleMouseDown}
       onContextMenu={handleContextMenu}
       onClickCapture={handleClick}
@@ -486,7 +487,9 @@ function CRViewportInner({
       />
 
       {/* Stamp overlays — draggable */}
-      {viewportStamps.map((sp) => (
+      {viewportStamps.map((sp) => {
+        const effectivePct = sp.fontSizePercent ?? (sp.fontSize / 500) * 100;
+        return (
         <div
           key={sp.id}
           data-stamp-overlay="true"
@@ -496,7 +499,7 @@ function CRViewportInner({
             top: `${sp.yPercent}%`,
             transform: 'translate(-50%, -50%)',
             color: sp.color,
-            fontSize: `${sp.fontSize}px`,
+            fontSize: `max(${effectivePct}cqh, 8px)`,
             fontWeight: 'bold',
             textShadow: '1px 1px 2px rgba(0,0,0,0.8)',
             whiteSpace: 'nowrap',
@@ -527,7 +530,8 @@ function CRViewportInner({
             {sp.text}
           </span>
         </div>
-      ))}
+        );
+      })}
 
       {/* Edit stamp/text panel (double-click) — fixed to top-right corner */}
       {editingStamp && (() => {
@@ -632,7 +636,8 @@ function CRViewportInner({
             <div className="text-[9px] 2xl:text-[10px] text-blue-400 font-bold mb-1.5 uppercase">Select Stamp to Place</div>
             <CRStampPickerPanel
               onSelect={(text, color, fontSize) => {
-                placeStampDirect(viewportIndex, pendingStamp.xPercent, pendingStamp.yPercent, text, color, fontSize);
+                const ch = containerRef.current?.getBoundingClientRect().height || 500;
+                placeStampDirect(imageId!, pendingStamp.xPercent, pendingStamp.yPercent, text, color, fontSize, ch);
                 setPendingStamp(null);
               }}
               onCancel={() => setPendingStamp(null)}
@@ -658,7 +663,8 @@ function CRViewportInner({
                 onChange={(e) => setTextInput(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && textInput.trim()) {
-                    placeTextDirect(viewportIndex, pendingText.xPercent, pendingText.yPercent, textInput.trim(), textColor, textFontSize);
+                    const ch = containerRef.current?.getBoundingClientRect().height || 500;
+                    placeTextDirect(imageId!, pendingText.xPercent, pendingText.yPercent, textInput.trim(), textColor, textFontSize, ch);
                     setPendingText(null);
                   }
                   if (e.key === 'Escape') setPendingText(null);
@@ -689,7 +695,8 @@ function CRViewportInner({
                 <button
                   onClick={() => {
                     if (textInput.trim()) {
-                      placeTextDirect(viewportIndex, pendingText.xPercent, pendingText.yPercent, textInput.trim(), textColor, textFontSize);
+                      const ch = containerRef.current?.getBoundingClientRect().height || 500;
+                      placeTextDirect(imageId!, pendingText.xPercent, pendingText.yPercent, textInput.trim(), textColor, textFontSize, ch);
                       setPendingText(null);
                     }
                   }}

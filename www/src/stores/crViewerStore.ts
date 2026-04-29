@@ -53,7 +53,8 @@ interface StampPlacement {
   text: string;
   color: string;
   fontSize: number;
-  viewportIndex: number;
+  fontSizePercent?: number;
+  imageId: string;
   xPercent: number;
   yPercent: number;
   type?: 'stamp' | 'text';
@@ -164,9 +165,9 @@ interface CRViewerState {
   setActiveStamp: (id: string | null) => void;
   setStampMode: (v: boolean) => void;
   setTextMode: (v: boolean) => void;
-  placeStamp: (viewportIndex: number, xPercent: number, yPercent: number) => void;
-  placeStampDirect: (viewportIndex: number, xPercent: number, yPercent: number, text: string, color: string, fontSize: number) => void;
-  placeTextDirect: (viewportIndex: number, xPercent: number, yPercent: number, text: string, color: string, fontSize: number) => void;
+  placeStamp: (imageId: string, xPercent: number, yPercent: number, containerHeight?: number) => void;
+  placeStampDirect: (imageId: string, xPercent: number, yPercent: number, text: string, color: string, fontSize: number, containerHeight?: number) => void;
+  placeTextDirect: (imageId: string, xPercent: number, yPercent: number, text: string, color: string, fontSize: number, containerHeight?: number) => void;
   removeStampPlacement: (id: string) => void;
   updateStampPlacement: (id: string, xPercent: number, yPercent: number) => void;
   updateStampPlacementProps: (id: string, props: { color?: string; fontSize?: number; text?: string }) => void;
@@ -458,11 +459,15 @@ export const useCRViewerStore = create<CRViewerState>((set, get) => ({
   },
 
   resetOne: (viewportIndex) => {
-    set((state) => {
-      return {
-        stampPlacements: state.stampPlacements.filter(s => s.viewportIndex !== viewportIndex),
-      };
-    });
+    const { currentPage, currentLayout, images, viewportImageOverrides } = get();
+    const startIndex = (currentPage - 1) * currentLayout.spots;
+    const imgIndex = startIndex + viewportIndex;
+    const overrideUrl = viewportImageOverrides[imgIndex];
+    const imageId = (overrideUrl && overrideUrl !== 'deleted') ? overrideUrl : images[imgIndex]?.imageUrl;
+    if (!imageId) return;
+    set((state) => ({
+      stampPlacements: state.stampPlacements.filter(s => s.imageId !== imageId),
+    }));
   },
 
   // Resequence: reset overrides to default sequential order
@@ -576,7 +581,7 @@ export const useCRViewerStore = create<CRViewerState>((set, get) => ({
 
   setTextMode: (v) => set({ isTextMode: v, isStampMode: false }),
 
-  placeStamp: (viewportIndex, xPercent, yPercent) => {
+  placeStamp: (imageId, xPercent, yPercent, containerHeight) => {
     const { activeStampId, stamps } = get();
     const stamp = stamps.find(s => s.id === activeStampId);
     if (!stamp) return;
@@ -587,7 +592,8 @@ export const useCRViewerStore = create<CRViewerState>((set, get) => ({
       text: stamp.text,
       color: stamp.color,
       fontSize: stamp.fontSize,
-      viewportIndex,
+      fontSizePercent: containerHeight ? (stamp.fontSize / containerHeight) * 100 : undefined,
+      imageId,
       xPercent,
       yPercent,
     };
@@ -600,14 +606,15 @@ export const useCRViewerStore = create<CRViewerState>((set, get) => ({
     }));
   },
 
-  placeStampDirect: (viewportIndex, xPercent, yPercent, text, color, fontSize) => {
+  placeStampDirect: (imageId, xPercent, yPercent, text, color, fontSize, containerHeight) => {
     const placement: StampPlacement = {
       id: `sp-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       stampId: 'direct',
       text,
       color,
       fontSize,
-      viewportIndex,
+      fontSizePercent: containerHeight ? (fontSize / containerHeight) * 100 : undefined,
+      imageId,
       xPercent,
       yPercent,
     };
@@ -617,14 +624,15 @@ export const useCRViewerStore = create<CRViewerState>((set, get) => ({
     }));
   },
 
-  placeTextDirect: (viewportIndex, xPercent, yPercent, text, color, fontSize) => {
+  placeTextDirect: (imageId, xPercent, yPercent, text, color, fontSize, containerHeight) => {
     const placement: StampPlacement = {
       id: `sp-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       stampId: 'text',
       text,
       color,
       fontSize,
-      viewportIndex,
+      fontSizePercent: containerHeight ? (fontSize / containerHeight) * 100 : undefined,
+      imageId,
       xPercent,
       yPercent,
       type: 'text',
@@ -665,8 +673,14 @@ export const useCRViewerStore = create<CRViewerState>((set, get) => ({
 
   clearStampPlacements: (viewportIndex) => {
     if (viewportIndex !== undefined) {
+      const { currentPage, currentLayout, images, viewportImageOverrides } = get();
+      const startIndex = (currentPage - 1) * currentLayout.spots;
+      const imgIndex = startIndex + viewportIndex;
+      const overrideUrl = viewportImageOverrides[imgIndex];
+      const imageId = (overrideUrl && overrideUrl !== 'deleted') ? overrideUrl : images[imgIndex]?.imageUrl;
+      if (!imageId) return;
       set((state) => ({
-        stampPlacements: state.stampPlacements.filter(s => s.viewportIndex !== viewportIndex),
+        stampPlacements: state.stampPlacements.filter(s => s.imageId !== imageId),
       }));
     } else {
       set({ stampPlacements: [] });

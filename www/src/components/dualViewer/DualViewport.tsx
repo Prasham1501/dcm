@@ -338,10 +338,10 @@ function DualViewportInner({
 
     if (isStampMode && activeStampId) {
       const rect = containerRef.current?.getBoundingClientRect();
-      if (rect) {
+      if (rect && imageId) {
         const xPercent = ((e.clientX - rect.left) / rect.width) * 100;
         const yPercent = ((e.clientY - rect.top) / rect.height) * 100;
-        placeStamp(panelId, viewportIndex, xPercent, yPercent);
+        placeStamp(panelId, imageId, xPercent, yPercent, rect.height);
       }
       return;
     }
@@ -361,13 +361,14 @@ function DualViewportInner({
 
   // Filter stamp placements for this viewport in this panel
   const viewportStamps = stampPlacements.filter(
-    s => s.panelId === panelId && s.viewportIndex === viewportIndex
+    s => s.panelId === panelId && s.imageId === imageId
   );
 
   return (
     <div
       ref={containerRef}
       className={`w-full h-full relative bg-black overflow-hidden ${(isStampMode || isTextMode) ? 'cursor-crosshair' : 'cursor-default'}`}
+      style={{ containerType: 'size' }}
       onMouseDownCapture={handleMouseDown}
       onContextMenu={(e) => e.preventDefault()}
       onClickCapture={handleClick}
@@ -383,14 +384,16 @@ function DualViewportInner({
       />
 
       {/* Stamp/text overlays — draggable */}
-      {viewportStamps.map((sp) => (
+      {viewportStamps.map((sp) => {
+        const effectivePct = sp.fontSizePercent ?? (sp.fontSize / 500) * 100;
+        return (
         <div
           key={sp.id}
           className="absolute z-10 select-none"
           style={{
             left: `${sp.xPercent}%`, top: `${sp.yPercent}%`,
             transform: 'translate(-50%, -50%)',
-            color: sp.color, fontSize: `${sp.fontSize}px`, fontWeight: 'bold',
+            color: sp.color, fontSize: `max(${effectivePct}cqh, 8px)`, fontWeight: 'bold',
             textShadow: '1px 1px 2px rgba(0,0,0,0.8)', whiteSpace: 'nowrap', cursor: 'grab',
           }}
           onMouseDown={(e) => {
@@ -405,7 +408,8 @@ function DualViewportInner({
         >
           {sp.text}
         </div>
-      ))}
+        );
+      })}
 
       {/* Pending text input — fixed to top-right */}
       {pendingText && (
@@ -424,7 +428,8 @@ function DualViewportInner({
                 onChange={(e) => setTextInput(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && textInput.trim()) {
-                    placeTextDirect(panelId, viewportIndex, pendingText.xPercent, pendingText.yPercent, textInput.trim(), textColor, textFontSize);
+                    const ch = containerRef.current?.getBoundingClientRect().height || 500;
+                    placeTextDirect(panelId, imageId!, pendingText.xPercent, pendingText.yPercent, textInput.trim(), textColor, textFontSize, ch);
                     setPendingText(null);
                   }
                   if (e.key === 'Escape') setPendingText(null);
@@ -455,7 +460,8 @@ function DualViewportInner({
                 <button
                   onClick={() => {
                     if (textInput.trim()) {
-                      placeTextDirect(panelId, viewportIndex, pendingText.xPercent, pendingText.yPercent, textInput.trim(), textColor, textFontSize);
+                      const ch = containerRef.current?.getBoundingClientRect().height || 500;
+                      placeTextDirect(panelId, imageId!, pendingText.xPercent, pendingText.yPercent, textInput.trim(), textColor, textFontSize, ch);
                       setPendingText(null);
                     }
                   }}

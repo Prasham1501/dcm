@@ -13,29 +13,40 @@ function captureViewport(viewportIndex: number): string | null {
   const imageId = getViewportImageIds()[viewportIndex];
   const { stampPlacements } = useCRViewerStore.getState();
   const overlays: PrintOverlay[] = stampPlacements
-    .filter(sp => sp.viewportIndex === viewportIndex && imageId)
+    .filter(sp => sp.imageId === imageId && imageId)
     .map(sp => ({
       text: sp.text,
       xPercent: sp.xPercent,
       yPercent: sp.yPercent,
       color: sp.color,
       fontSize: sp.fontSize,
+      fontSizePercent: sp.fontSizePercent,
       type: sp.type ?? 'stamp',
     }));
   return captureCornerstoneViewportForPrint('data-cr-viewport-index', viewportIndex, overlays);
 }
 
 function getViewportImageIds(): Array<string | null> {
-  const { currentLayout, currentPage, images } = useCRViewerStore.getState();
+  const { currentLayout, currentPage, images, viewportImageOverrides } = useCRViewerStore.getState();
   const startIndex = (currentPage - 1) * currentLayout.spots;
 
-  return Array.from({ length: currentLayout.spots }, (_, viewportIndex) => images[startIndex + viewportIndex]?.imageUrl || null);
+  return Array.from({ length: currentLayout.spots }, (_, viewportIndex) => {
+    const globalIdx = startIndex + viewportIndex;
+    const override = viewportImageOverrides[globalIdx];
+    if (override && override !== 'deleted') return override;
+    return images[globalIdx]?.imageUrl || null;
+  });
 }
 
 function getPageViewportImageIds(spots: number, page: number): Array<string | null> {
-  const { images } = useCRViewerStore.getState();
+  const { images, viewportImageOverrides } = useCRViewerStore.getState();
   const startIndex = (page - 1) * spots;
-  return Array.from({ length: spots }, (_, viewportIndex) => images[startIndex + viewportIndex]?.imageUrl || null);
+  return Array.from({ length: spots }, (_, viewportIndex) => {
+    const globalIdx = startIndex + viewportIndex;
+    const override = viewportImageOverrides[globalIdx];
+    if (override && override !== 'deleted') return override;
+    return images[globalIdx]?.imageUrl || null;
+  });
 }
 
 const PAPER_SIZES = ['A4', 'A3', 'A5', 'Letter', 'Legal'] as const;

@@ -54,7 +54,8 @@ export interface DualStampPlacement {
   text: string;
   color: string;
   fontSize: number;
-  viewportIndex: number;
+  fontSizePercent?: number;
+  imageId: string;
   xPercent: number;
   yPercent: number;
   type?: 'stamp' | 'text';
@@ -164,7 +165,7 @@ interface DualViewerState {
   removeStamp: (id: string) => void;
   setActiveStamp: (id: string | null) => void;
   setStampMode: (v: boolean) => void;
-  placeStamp: (panelId: PanelId, viewportIndex: number, xPercent: number, yPercent: number) => void;
+  placeStamp: (panelId: PanelId, imageId: string, xPercent: number, yPercent: number, containerHeight?: number) => void;
   removeStampPlacement: (id: string) => void;
   updateStampPlacement: (id: string, xPercent: number, yPercent: number) => void;
   undoStampPlacement: () => void;
@@ -172,7 +173,7 @@ interface DualViewerState {
 
   // Text
   setTextMode: (v: boolean) => void;
-  placeTextDirect: (panelId: PanelId, viewportIndex: number, xPercent: number, yPercent: number, text: string, color: string, fontSize: number) => void;
+  placeTextDirect: (panelId: PanelId, imageId: string, xPercent: number, yPercent: number, text: string, color: string, fontSize: number, containerHeight?: number) => void;
 
   // Logo
   setShowLogo: (v: boolean) => void;
@@ -422,9 +423,14 @@ export const useDualViewerStore = create<DualViewerState>((set, get) => ({
       ? panel.selectedViewportIndices
       : [panel.selectedViewport];
 
+    const startIndex = (panel.currentPage - 1) * panel.currentLayout.spots;
+    const imageIdsToClear = indicesToClear
+      .map(vi => panel.images[startIndex + vi]?.imageUrl)
+      .filter(Boolean) as string[];
+
     set((state) => ({
       stampPlacements: state.stampPlacements.filter(
-        s => !(s.panelId === panelId && indicesToClear.includes(s.viewportIndex))
+        s => !(s.panelId === panelId && imageIdsToClear.includes(s.imageId))
       ),
     }));
   },
@@ -556,7 +562,7 @@ export const useDualViewerStore = create<DualViewerState>((set, get) => ({
   setActiveStamp: (id) => set({ activeStampId: id }),
   setStampMode: (v) => set({ isStampMode: v, activeStampId: v ? get().activeStampId : null }),
 
-  placeStamp: (panelId, viewportIndex, xPercent, yPercent) => {
+  placeStamp: (panelId, imageId, xPercent, yPercent, containerHeight) => {
     const { activeStampId, stamps } = get();
     const stamp = stamps.find(s => s.id === activeStampId);
     if (!stamp) return;
@@ -568,7 +574,8 @@ export const useDualViewerStore = create<DualViewerState>((set, get) => ({
       text: stamp.text,
       color: stamp.color,
       fontSize: stamp.fontSize,
-      viewportIndex,
+      fontSizePercent: containerHeight ? (stamp.fontSize / containerHeight) * 100 : undefined,
+      imageId,
       xPercent,
       yPercent,
     };
@@ -596,9 +603,13 @@ export const useDualViewerStore = create<DualViewerState>((set, get) => ({
 
   clearStampPlacements: (panelId, viewportIndex) => {
     if (panelId !== undefined && viewportIndex !== undefined) {
+      const panel = get().panels[panelId];
+      const startIndex = (panel.currentPage - 1) * panel.currentLayout.spots;
+      const imageId = panel.images[startIndex + viewportIndex]?.imageUrl;
+      if (!imageId) return;
       set((state) => ({
         stampPlacements: state.stampPlacements.filter(
-          s => !(s.panelId === panelId && s.viewportIndex === viewportIndex)
+          s => !(s.panelId === panelId && s.imageId === imageId)
         ),
       }));
     } else if (panelId !== undefined) {
@@ -616,7 +627,7 @@ export const useDualViewerStore = create<DualViewerState>((set, get) => ({
 
   setTextMode: (v) => set({ isTextMode: v, isStampMode: false }),
 
-  placeTextDirect: (panelId, viewportIndex, xPercent, yPercent, text, color, fontSize) => {
+  placeTextDirect: (panelId, imageId, xPercent, yPercent, text, color, fontSize, containerHeight) => {
     const placement: DualStampPlacement = {
       id: `dsp-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       stampId: 'text',
@@ -624,7 +635,8 @@ export const useDualViewerStore = create<DualViewerState>((set, get) => ({
       text,
       color,
       fontSize,
-      viewportIndex,
+      fontSizePercent: containerHeight ? (fontSize / containerHeight) * 100 : undefined,
+      imageId,
       xPercent,
       yPercent,
       type: 'text',

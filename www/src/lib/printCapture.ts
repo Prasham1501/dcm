@@ -1,4 +1,4 @@
-import { cornerstone } from '@/lib/cornerstoneSetup';
+import { cornerstone, cornerstoneTools } from '@/lib/cornerstoneSetup';
 
 export interface PrintOverlay {
   text: string;
@@ -6,7 +6,14 @@ export interface PrintOverlay {
   yPercent: number;
   color: string;
   fontSize: number;
+  fontSizePercent?: number;
   type?: 'stamp' | 'text';
+}
+
+export interface PrintDrawPath {
+  points: { x: number; y: number }[]; // percent-based (0–100)
+  color: string;
+  strokeWidth: number;
 }
 
 function imageDimension(value: unknown, fallback: number): number {
@@ -47,7 +54,6 @@ function buildPrintViewport(sourceViewport: any, image: any, scaleFactor = 1) {
     pixelReplication: Boolean(sourceViewport?.pixelReplication),
   };
 
-  delete (viewport as any).displayedArea;
   return viewport;
 }
 
@@ -82,36 +88,32 @@ function getLiveCaptureSize(captureRoot: HTMLElement, canvases: HTMLCanvasElemen
   };
 }
 
-// Render the active cornerstone image to a fresh canvas at print resolution.
-// Uses native DICOM pixel data via cornerstone.renderToCanvas, preserving the
-// user's viewport (windowing, pan, zoom, rotation, flip).
+// Scale the live viewport canvas to print resolution.
+// cornerstone.renderToCanvas ignores the viewport scale and renders fit-to-canvas,
+// so we upscale the live canvas instead — this preserves the exact zoom, pan,
+// windowing, and all CornerstoneTools annotations the user sees on screen.
 function renderImageAtPrintResolution(
-  element: HTMLElement,
+  _element: HTMLElement,
   enabledElement: any,
-  image: any,
-  cssWidth: number,
-  cssHeight: number,
+  _image: any,
+  _cssWidth: number,
+  _cssHeight: number,
   outputWidth: number,
   outputHeight: number,
 ): HTMLCanvasElement | null {
+  const liveCanvas = enabledElement?.canvas;
+  if (!liveCanvas || !(liveCanvas instanceof HTMLCanvasElement)) return null;
   try {
-    const sourceViewport = enabledElement?.viewport || cornerstone.getViewport(element);
-    const scaleFactor = outputWidth / Math.max(cssWidth, 1);
-    const printViewport = buildPrintViewport(sourceViewport, image, scaleFactor);
-
     const target = document.createElement('canvas');
     target.width = outputWidth;
     target.height = outputHeight;
-
     const ctx = target.getContext('2d');
-    if (ctx) {
-      ctx.imageSmoothingEnabled = true;
-      ctx.imageSmoothingQuality = 'high';
-      ctx.fillStyle = '#000';
-      ctx.fillRect(0, 0, outputWidth, outputHeight);
-    }
-
-    cornerstone.renderToCanvas(target, image, printViewport);
+    if (!ctx) return null;
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, outputWidth, outputHeight);
+    ctx.drawImage(liveCanvas, 0, 0, outputWidth, outputHeight);
     return target;
   } catch {
     return null;
@@ -154,6 +156,108 @@ function compositeOverlayCanvases(
   }
 }
 
+// CornerstoneTools v6 draws annotations (Length, Angle, Arrow, Ellipse, etc.)
+// on the SAME canvas as the image.  renderToCanvas() only renders the clean
+// DICOM image — tool annotations are lost.  To recover them we pixel-diff
+// the live canvas (image+tools) against a clean render (image only), then
+// composite just the tool-annotation pixels onto the high-res output.
+function compositeToolAnnotations(
+  output: HTMLCanvasElement,
+  element: HTMLElement,
+  enabledElement: any,
+  cssWidth: number,
+  cssHeight: number,
+) {
+  const ctx = output.getContext('2d');
+  if (!ctx) return;
+
+  // Collect all tool state for this element
+  const toolNames = [
+    'Length', 'Angle', 'ArrowAnnotate', 'EllipticalRoi', 'RectangleRoi',
+    'Probe', 'Bidirectional', 'CobbAngle', 'FreehandRoi', 'TextMarker',
+    'ScaledEllipticalRoi',
+  ];
+
+  let hasAnnotations = false;
+  for (const toolName of toolNames) {
+    try {
+      const state = cornerstoneTools.getToolState(element, toolName);
+      if (state?.data?.length > 0) {
+        hasAnnotations = true;
+        break;
+      }
+    } catch { /* ignore */ }
+  }
+
+  if (!hasAnnotations) return;
+
+  const liveCanvas = enabledElement?.canvas;
+  if (!liveCanvas || !(liveCanvas instanceof HTMLCanvasElement)) return;
+  if (liveCanvas.width <= 0 || liveCanvas.height <= 0) return;
+
+  const w = liveCanvas.width;
+  const h = liveCanvas.height;
+
+  // --- Obtain clean pixels (image-only, no tools) ---
+  const liveCtx = liveCanvas.getContext('2d');
+  if (!liveCtx) return;
+
+  let liveData: ImageData;
+  try {
+    liveData = liveCtx.getImageData(0, 0, w, h);
+  } catch { return; }
+
+  let cleanData: ImageData | null = null;
+
+  // Render clean image (no tool annotations) via renderToCanvas at live canvas size.
+  // setToolDisabledForElement does NOT prevent CornerstoneTools v3 from drawing
+  // annotations, so we always use renderToCanvas as the clean reference.
+  const cleanCanvas = document.createElement('canvas');
+  cleanCanvas.width = w;
+  cleanCanvas.height = h;
+  try {
+    const vp = enabledElement?.viewport || cornerstone.getViewport(element);
+    cornerstone.renderToCanvas(cleanCanvas, enabledElement.image, vp);
+    const cleanCtx = cleanCanvas.getContext('2d');
+    if (cleanCtx) cleanData = cleanCtx.getImageData(0, 0, w, h);
+  } catch { /* ignore */ }
+
+  if (!cleanData) return;
+
+  // --- Pixel diff: extract tool-annotation pixels ---
+  const toolImage = ctx.createImageData(w, h);
+  const cd = cleanData.data;
+  const ld = liveData.data;
+  const td = toolImage.data;
+  const DIFF_THRESHOLD = 50; // high enough to skip rendering-noise, low enough to catch tool anti-aliasing
+
+  for (let i = 0; i < cd.length; i += 4) {
+    const dr = Math.abs(ld[i] - cd[i]);
+    const dg = Math.abs(ld[i + 1] - cd[i + 1]);
+    const db = Math.abs(ld[i + 2] - cd[i + 2]);
+    if (dr + dg + db > DIFF_THRESHOLD) {
+      td[i] = ld[i];
+      td[i + 1] = ld[i + 1];
+      td[i + 2] = ld[i + 2];
+      td[i + 3] = ld[i + 3];
+    }
+  }
+
+  // Draw tool-only pixels onto a temp canvas, then scale onto the output
+  const toolCanvas = document.createElement('canvas');
+  toolCanvas.width = w;
+  toolCanvas.height = h;
+  const toolCtx = toolCanvas.getContext('2d');
+  if (!toolCtx) return;
+  toolCtx.putImageData(toolImage, 0, 0);
+
+  // Scale onto the high-res output with smooth interpolation so that
+  // stretched lines and text stay thin / anti-aliased instead of blocky.
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(toolCanvas, 0, 0, output.width, output.height);
+}
+
 function drawLiveCanvasLayers(
   output: HTMLCanvasElement,
   captureRoot: HTMLElement,
@@ -193,7 +297,32 @@ function drawLiveCanvasLayers(
   return drewAnyLayer;
 }
 
-function drawOverlays(canvas: HTMLCanvasElement, overlays: PrintOverlay[]) {
+function drawPathsOnCanvas(canvas: HTMLCanvasElement, paths: PrintDrawPath[]) {
+  if (!paths.length) return;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+  const w = canvas.width;
+  const h = canvas.height;
+
+  for (const path of paths) {
+    if (path.points.length < 2) continue;
+    ctx.save();
+    ctx.strokeStyle = path.color;
+    // strokeWidth is in px at screen resolution; scale proportionally to print canvas
+    ctx.lineWidth = Math.max(1, (path.strokeWidth / 100) * Math.min(w, h) * 2);
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    ctx.moveTo((path.points[0].x / 100) * w, (path.points[0].y / 100) * h);
+    for (let i = 1; i < path.points.length; i++) {
+      ctx.lineTo((path.points[i].x / 100) * w, (path.points[i].y / 100) * h);
+    }
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
+function drawOverlays(canvas: HTMLCanvasElement, overlays: PrintOverlay[], viewportCssHeight = 500) {
   if (!overlays.length) return;
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
@@ -203,7 +332,8 @@ function drawOverlays(canvas: HTMLCanvasElement, overlays: PrintOverlay[]) {
   for (const ov of overlays) {
     const x = (ov.xPercent / 100) * w;
     const y = (ov.yPercent / 100) * h;
-    const scaledFontSize = Math.round(ov.fontSize * (h / 500));
+    const effectivePct = ov.fontSizePercent ?? (ov.fontSize / Math.max(viewportCssHeight, 100)) * 100;
+    const scaledFontSize = Math.round((effectivePct / 100) * h);
     const isStamp = ov.type !== 'text';
 
     ctx.save();
@@ -239,27 +369,36 @@ function drawOverlays(canvas: HTMLCanvasElement, overlays: PrintOverlay[]) {
   }
 }
 
-export function captureCornerstoneElementForPrint(element: HTMLElement | null, overlays: PrintOverlay[] = []): string | null {
+export function captureCornerstoneElementForPrint(element: HTMLElement | null, overlays: PrintOverlay[] = [], drawPaths: PrintDrawPath[] = []): string | null {
   if (!element) return null;
 
   try {
     const enabledElement = cornerstone.getEnabledElement(element);
     const image = enabledElement?.image;
+
+    // Force cornerstoneTools to redraw annotations before capture
+    try { cornerstone.updateImage(element); } catch { /* ignore */ }
+
     const captureRoot = element.parentElement instanceof HTMLElement ? element.parentElement : element;
     const canvases = Array.from(captureRoot.querySelectorAll('canvas')).filter(
       (canvas): canvas is HTMLCanvasElement => canvas instanceof HTMLCanvasElement,
     );
+    const rootCssHeight = Math.max(
+      captureRoot.getBoundingClientRect().height || captureRoot.clientHeight || 500,
+      1,
+    );
 
-    // Primary path: re-render the image at print resolution from the native
-    // DICOM pixel data, then composite tool overlays on top. This avoids the
-    // resolution loss that comes from upscaling the on-screen canvas.
+    // Primary path: upscale the live canvas to print resolution. This preserves
+    // the exact viewport state (zoom, pan, windowing) and all CornerstoneTools
+    // annotations already rendered on screen.
     if (image) {
       const { cssWidth, cssHeight, width, height } = getLiveCaptureSize(captureRoot, canvases, image);
       const imageCanvas = renderImageAtPrintResolution(element, enabledElement, image, cssWidth, cssHeight, width, height);
 
       if (imageCanvas) {
         compositeOverlayCanvases(imageCanvas, captureRoot, enabledElement?.canvas || null, canvases);
-        drawOverlays(imageCanvas, overlays);
+        drawPathsOnCanvas(imageCanvas, drawPaths);
+        drawOverlays(imageCanvas, overlays, cssHeight);
         return imageCanvas.toDataURL('image/png');
       }
     }
@@ -272,7 +411,8 @@ export function captureCornerstoneElementForPrint(element: HTMLElement | null, o
       output.height = height;
 
       if (drawLiveCanvasLayers(output, captureRoot, canvases)) {
-        drawOverlays(output, overlays);
+        drawPathsOnCanvas(output, drawPaths);
+        drawOverlays(output, overlays, rootCssHeight);
         return output.toDataURL('image/png');
       }
     }
@@ -299,7 +439,8 @@ export function captureCornerstoneElementForPrint(element: HTMLElement | null, o
         canvases.forEach((canvas) => {
           try { ctx.drawImage(canvas, 0, 0, width, height); } catch { /* skip */ }
         });
-        drawOverlays(output, overlays);
+        drawPathsOnCanvas(output, drawPaths);
+        drawOverlays(output, overlays, rootCssHeight);
         return output.toDataURL('image/png');
       }
     }
@@ -311,9 +452,9 @@ export function captureCornerstoneElementForPrint(element: HTMLElement | null, o
   return null;
 }
 
-export function captureCornerstoneViewportForPrint(indexAttribute: string, viewportIndex: number, overlays: PrintOverlay[] = []): string | null {
+export function captureCornerstoneViewportForPrint(indexAttribute: string, viewportIndex: number, overlays: PrintOverlay[] = [], drawPaths: PrintDrawPath[] = []): string | null {
   const element = document.querySelector(`[${indexAttribute}="${viewportIndex}"]`) as HTMLElement | null;
-  return captureCornerstoneElementForPrint(element, overlays);
+  return captureCornerstoneElementForPrint(element, overlays, drawPaths);
 }
 
 export async function waitForViewportImages(
