@@ -334,12 +334,19 @@ export const useViewerStore = create<ViewerState>((set, get) => ({
   viewportIndexOverrides: {},
 
   setLayout: (layout) => {
-    const { totalImages, currentLayout, preDoubleClickLayout } = get();
+    const { totalImages, currentLayout, preDoubleClickLayout, selectedViewport, selectedViewportIndices } = get();
     const clearSingleViewState = Boolean(preDoubleClickLayout) || (currentLayout.spots === 1 && layout.spots !== 1);
+    // Drop any stale multi-selection or focused viewport that no longer exists
+    // in the new layout — otherwise propagation paths (e.g. text/stamp placement
+    // to all selected viewports) would write to images at out-of-range indices.
+    const clampedSelected = Math.min(selectedViewport, layout.spots - 1);
+    const clampedIndices = selectedViewportIndices.filter((i) => i < layout.spots);
     set({
       currentLayout: layout,
       orientation: getAutoOrientationForLayout(layout),
       ...recalcPages(totalImages || mockImages.length, layout.spots),
+      selectedViewport: clampedSelected >= 0 ? clampedSelected : 0,
+      selectedViewportIndices: clampedIndices.length > 0 ? clampedIndices : [0],
       ...(clearSingleViewState ? {
         preDoubleClickLayout: null,
         preDoubleClickPage: 1,
@@ -720,6 +727,9 @@ export const useViewerStore = create<ViewerState>((set, get) => ({
         doubleClickViewportImage: null,
         viewportImageOverrides: {},
         viewportIndexOverrides: {},
+        // Restore single-viewport focus so annotations don't propagate to other slots
+        selectedViewport: viewportIndex < prevLayout.spots ? viewportIndex : 0,
+        selectedViewportIndices: [viewportIndex < prevLayout.spots ? viewportIndex : 0],
       });
       const api = (window as any).electronAPI;
       if (api?.resizeViewer) {
@@ -745,6 +755,10 @@ export const useViewerStore = create<ViewerState>((set, get) => ({
         currentPage: 1,
         viewportImageOverrides: { 0: imageUrl },
         viewportIndexOverrides: origIdx >= 0 ? { 0: origIdx } : {},
+        // Collapse multi-selection: 1x1 has only one viewport, and stale indices
+        // would otherwise make text/draw tools write into off-screen images.
+        selectedViewport: 0,
+        selectedViewportIndices: [0],
       });
       const api = (window as any).electronAPI;
       if (api?.resizeViewer) {

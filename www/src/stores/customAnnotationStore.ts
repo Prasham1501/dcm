@@ -6,7 +6,20 @@ export interface TextAnnotation {
   xPercent: number;
   yPercent: number;
   color: string;
+  /**
+   * Legacy absolute pixel size (kept for backward compatibility with annotations
+   * created before scaling support landed). New code SHOULD prefer
+   * `fontSizePercent`, which scales with the viewport container.
+   */
   fontSize: number;
+  /**
+   * Font size expressed as a percentage of the viewport container's HEIGHT.
+   * Rendered with CSS container query units (`cqh`) so the text shrinks/grows
+   * proportionally when the layout changes (e.g. 1x1 zoom → multi-spot grid).
+   * Optional for backward compat — when missing we derive a reasonable value
+   * from the legacy `fontSize` at display time.
+   */
+  fontSizePercent?: number;
   type: 'text' | 'stamp';
 }
 

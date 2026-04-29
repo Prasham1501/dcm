@@ -14,9 +14,13 @@ function imageDimension(value: unknown, fallback: number): number {
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback;
 }
 
-const MIN_PRINT_EDGE = 1600;
-const MAX_PRINT_EDGE = 2600;
-const DISPLAY_QUALITY_MULTIPLIER = 3;
+// Industry-standard medical print quality:
+// - 300 DPI on an A4 quadrant (~12.5 cm) ≈ 1500 px; full A4 long edge ≈ 3500 px.
+// - Cap to 4000 px so dataURL stays manageable in memory.
+const MIN_PRINT_EDGE = 2000;
+const MAX_PRINT_EDGE = 4000;
+const DISPLAY_QUALITY_MULTIPLIER = 4;
+
 function defaultVoi(image: any) {
   const windowCenter = Array.isArray(image.windowCenter) ? image.windowCenter[0] : image.windowCenter;
   const windowWidth = Array.isArray(image.windowWidth) ? image.windowWidth[0] : image.windowWidth;
@@ -27,11 +31,14 @@ function defaultVoi(image: any) {
   };
 }
 
-function buildPrintViewport(sourceViewport: any, image: any) {
+function buildPrintViewport(sourceViewport: any, image: any, scaleFactor = 1) {
+  const baseScale = sourceViewport?.scale || 1;
+  const baseTx = sourceViewport?.translation || { x: 0, y: 0 };
+
   const viewport = {
     ...(sourceViewport || {}),
-    scale: sourceViewport?.scale || 1,
-    translation: sourceViewport?.translation || { x: 0, y: 0 },
+    scale: baseScale * scaleFactor,
+    translation: { x: baseTx.x * scaleFactor, y: baseTx.y * scaleFactor },
     voi: sourceViewport?.voi || defaultVoi(image),
     rotation: sourceViewport?.rotation || 0,
     hflip: Boolean(sourceViewport?.hflip),
@@ -73,6 +80,78 @@ function getLiveCaptureSize(captureRoot: HTMLElement, canvases: HTMLCanvasElemen
     height: Math.max(1, Math.round(cssHeight * scaleFactor)),
     scaleFactor,
   };
+}
+
+// Render the active cornerstone image to a fresh canvas at print resolution.
+// Uses native DICOM pixel data via cornerstone.renderToCanvas, preserving the
+// user's viewport (windowing, pan, zoom, rotation, flip).
+function renderImageAtPrintResolution(
+  element: HTMLElement,
+  enabledElement: any,
+  image: any,
+  cssWidth: number,
+  cssHeight: number,
+  outputWidth: number,
+  outputHeight: number,
+): HTMLCanvasElement | null {
+  try {
+    const sourceViewport = enabledElement?.viewport || cornerstone.getViewport(element);
+    const scaleFactor = outputWidth / Math.max(cssWidth, 1);
+    const printViewport = buildPrintViewport(sourceViewport, image, scaleFactor);
+
+    const target = document.createElement('canvas');
+    target.width = outputWidth;
+    target.height = outputHeight;
+
+    const ctx = target.getContext('2d');
+    if (ctx) {
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+      ctx.fillStyle = '#000';
+      ctx.fillRect(0, 0, outputWidth, outputHeight);
+    }
+
+    cornerstone.renderToCanvas(target, image, printViewport);
+    return target;
+  } catch {
+    return null;
+  }
+}
+
+// Composite remaining canvas layers (tool annotations, measurements, etc.)
+// from the live DOM on top of the high-resolution image canvas.
+function compositeOverlayCanvases(
+  output: HTMLCanvasElement,
+  captureRoot: HTMLElement,
+  imageCanvas: HTMLCanvasElement | null,
+  canvases: HTMLCanvasElement[],
+) {
+  const ctx = output.getContext('2d');
+  if (!ctx) return;
+
+  const rootRect = captureRoot.getBoundingClientRect();
+  const scaleX = output.width / Math.max(rootRect.width || captureRoot.clientWidth || 1, 1);
+  const scaleY = output.height / Math.max(rootRect.height || captureRoot.clientHeight || 1, 1);
+
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+
+  for (const canvas of canvases) {
+    if (canvas === imageCanvas) continue;
+    const rect = canvas.getBoundingClientRect();
+    const width = rect.width * scaleX;
+    const height = rect.height * scaleY;
+    if (width <= 0 || height <= 0) continue;
+
+    const x = (rect.left - rootRect.left) * scaleX;
+    const y = (rect.top - rootRect.top) * scaleY;
+
+    try {
+      ctx.drawImage(canvas, x, y, width, height);
+    } catch {
+      // Skip unreadable canvas layers.
+    }
+  }
 }
 
 function drawLiveCanvasLayers(
@@ -171,6 +250,21 @@ export function captureCornerstoneElementForPrint(element: HTMLElement | null, o
       (canvas): canvas is HTMLCanvasElement => canvas instanceof HTMLCanvasElement,
     );
 
+    // Primary path: re-render the image at print resolution from the native
+    // DICOM pixel data, then composite tool overlays on top. This avoids the
+    // resolution loss that comes from upscaling the on-screen canvas.
+    if (image) {
+      const { cssWidth, cssHeight, width, height } = getLiveCaptureSize(captureRoot, canvases, image);
+      const imageCanvas = renderImageAtPrintResolution(element, enabledElement, image, cssWidth, cssHeight, width, height);
+
+      if (imageCanvas) {
+        compositeOverlayCanvases(imageCanvas, captureRoot, enabledElement?.canvas || null, canvases);
+        drawOverlays(imageCanvas, overlays);
+        return imageCanvas.toDataURL('image/png');
+      }
+    }
+
+    // Fallback 1: composite live canvas layers (still upscaled from screen res).
     if (image && canvases.length > 0) {
       const { width, height } = getLiveCaptureSize(captureRoot, canvases, image);
       const output = document.createElement('canvas');
@@ -183,6 +277,7 @@ export function captureCornerstoneElementForPrint(element: HTMLElement | null, o
       }
     }
 
+    // Fallback 2: stack on-screen canvases at near-native size.
     if (canvases.length > 0) {
       const sourceWidth = Math.max(...canvases.map((canvas) => canvas.width || canvas.clientWidth || 0), 1);
       const sourceHeight = Math.max(...canvases.map((canvas) => canvas.height || canvas.clientHeight || 0), 1);
@@ -207,23 +302,6 @@ export function captureCornerstoneElementForPrint(element: HTMLElement | null, o
         drawOverlays(output, overlays);
         return output.toDataURL('image/png');
       }
-    }
-
-    if (image) {
-      const width = imageDimension(image.columns ?? image.width, 512);
-      const height = imageDimension(image.rows ?? image.height, 512);
-      const canvas = document.createElement('canvas');
-      canvas.width = width;
-      canvas.height = height;
-
-      cornerstone.renderToCanvas(
-        canvas,
-        image,
-        buildPrintViewport(enabledElement!.viewport || cornerstone.getViewport(element), image),
-      );
-
-      drawOverlays(canvas, overlays);
-      return canvas.toDataURL('image/png');
     }
   } catch {
     const canvas = element.querySelector('canvas');

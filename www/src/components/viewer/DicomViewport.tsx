@@ -733,11 +733,21 @@ function DicomViewportInner({
   }, [imageId, redrawCanvas]);
 
   // ---- MULTI-VIEWPORT ANNOTATION HELPERS ----
-  function placeOnAllSelectedViewports(sourceImageId: string, drawPath: DrawPath) {
-    const { selectedViewportIndices, selectedViewport } = useViewerStore.getState();
-    if (selectedViewportIndices.length <= 1) return;
+  // Both helpers must filter against currentLayout.spots: stale indices from a
+  // prior larger layout would otherwise resolve to whatever cornerstone element
+  // happens to live at that DOM position, writing the annotation onto an image
+  // the user did not target.
+  function getValidPropagationIndices(): number[] {
+    const { selectedViewportIndices, currentLayout } = useViewerStore.getState();
+    if (selectedViewportIndices.length <= 1) return [];
+    return selectedViewportIndices.filter((i) => i >= 0 && i < currentLayout.spots && i !== viewportIndex);
+  }
 
-    selectedViewportIndices.forEach((vpIdx) => {
+  function placeOnAllSelectedViewports(sourceImageId: string, drawPath: DrawPath) {
+    const targetIndices = getValidPropagationIndices();
+    if (targetIndices.length === 0) return;
+
+    targetIndices.forEach((vpIdx) => {
       const vpEl = document.querySelector(`[data-viewport-index="${vpIdx}"]`) as HTMLDivElement;
       if (!vpEl) return;
       try {
@@ -755,10 +765,10 @@ function DicomViewportInner({
   }
 
   function placeTextOnAllSelectedViewports(sourceImageId: string, ann: TextAnnotation) {
-    const { selectedViewportIndices } = useViewerStore.getState();
-    if (selectedViewportIndices.length <= 1) return;
+    const targetIndices = getValidPropagationIndices();
+    if (targetIndices.length === 0) return;
 
-    selectedViewportIndices.forEach((vpIdx) => {
+    targetIndices.forEach((vpIdx) => {
       const vpEl = document.querySelector(`[data-viewport-index="${vpIdx}"]`) as HTMLDivElement;
       if (!vpEl) return;
       try {
@@ -908,6 +918,11 @@ function DicomViewportInner({
     <div
       ref={containerRef}
       className={`absolute inset-0 bg-black overflow-hidden ${cursorClass}`}
+      // CSS containment so child text annotations can size themselves with
+      // `cqh` units (% of this container's HEIGHT). This is what makes
+      // text labels scale proportionally between 1x1 zoom and small
+      // multi-spot grid cells.
+      style={{ containerType: 'size' } as React.CSSProperties}
       onMouseDownCapture={handleMouseDown}
       onContextMenu={handleContextMenu}
       onDragOver={handleDragOver}

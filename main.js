@@ -388,7 +388,7 @@ async function runMigrations() {
     const dbName = 'dicom_viewer_pro';
     const cmd = isDev && !fs.existsSync(mysqlClientPath)
         ? 'C:\\xampp\\mysql\\bin\\mysql.exe -u root -h 127.0.0.1 -P 3306'
-        : `"${mysqlClientPath}" -u root --port=${MYSQL_PORT} --ssl-mode=DISABLED`;
+        : `"${mysqlClientPath}" -u root --port=${MYSQL_PORT} --skip-ssl`;
 
     // Create database
     try {
@@ -1328,6 +1328,11 @@ function buildElectronPrintOptions(printerName, printSettings = {}) {
         color: printSettings.colorMode !== 'grayscale',
         landscape: printSettings.orientation === 'landscape',
         copies: printSettings.copies || 1,
+        // Industry-standard medical print resolution. Electron passes this to the
+        // platform print spooler (CUPS / Windows printer driver) which uses it as
+        // the rasterization DPI, eliminating the soft/posterized look of 72 DPI.
+        dpi: { horizontal: 300, vertical: 300 },
+        scaleFactor: 100,
     };
 
     if (printSettings.margins) {
@@ -1371,9 +1376,16 @@ ipcMain.handle('print-report-dialog', async (event, options) => {
         tempHtml = path.join(os.tmpdir(), `report_print_${Date.now()}.html`);
         fs.writeFileSync(tempHtml, htmlContent, 'utf8');
 
+        // 2480x3508 is A4 @ 300 DPI. zoomFactor pushes rendering pixel ratio so
+        // Chromium lays out the page at high DPI before rasterizing for print.
         printWindow = new BrowserWindow({
             show: false, width: 2480, height: 3508,
-            webPreferences: { nodeIntegration: false, contextIsolation: true }
+            webPreferences: {
+                nodeIntegration: false,
+                contextIsolation: true,
+                zoomFactor: 1.0,
+                backgroundThrottling: false,
+            }
         });
 
         await printWindow.loadFile(tempHtml);
@@ -1389,11 +1401,13 @@ ipcMain.handle('print-report-dialog', async (event, options) => {
         };
         const dims = sizeMap[paperSize] || sizeMap.A4;
 
-        // Generate PDF from the rendered HTML
+        // Generate PDF from the rendered HTML at print-grade resolution.
+        // scale: 1.0 prevents Chromium from downsampling embedded raster images.
         const pdfBuffer = await printWindow.webContents.printToPDF({
             pageSize: { width: dims.width, height: dims.height },
             preferCSSPageSize: true,
             printBackground: true,
+            scale: 1.0,
             margins: { top: 0, bottom: 0, left: 0, right: 0 },
         });
 
@@ -1427,9 +1441,16 @@ ipcMain.handle('print-to-printer', async (event, options) => {
         tempFile = path.join(os.tmpdir(), `dicom_print_${Date.now()}.html`);
         fs.writeFileSync(tempFile, htmlContent, 'utf8');
 
+        // 2480x3508 is A4 @ 300 DPI. zoomFactor pushes rendering pixel ratio so
+        // Chromium lays out the page at high DPI before rasterizing for print.
         printWindow = new BrowserWindow({
             show: false, width: 2480, height: 3508,
-            webPreferences: { nodeIntegration: false, contextIsolation: true }
+            webPreferences: {
+                nodeIntegration: false,
+                contextIsolation: true,
+                zoomFactor: 1.0,
+                backgroundThrottling: false,
+            }
         });
 
         await printWindow.loadFile(tempFile);
