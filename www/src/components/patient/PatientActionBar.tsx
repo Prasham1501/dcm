@@ -48,6 +48,9 @@ export function PatientActionBar() {
     createPatient,
     deleteSelected,
     importPatients,
+    importFolder,
+    syncing,
+    syncProgress,
     patients,
   } = usePatientStore();
 
@@ -55,31 +58,33 @@ export function PatientActionBar() {
   const [showEditModal, setShowEditModal] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [importing, setImporting] = useState(false);
   const backupInputRef = useRef<HTMLInputElement>(null);
 
-  const handleImportDicom = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files || files.length === 0) return;
-    const today = new Date();
-    const studyDate = `${String(today.getDate()).padStart(2, '0')}-${String(today.getMonth() + 1).padStart(2, '0')}-${today.getFullYear()}`;
-    const newPatients = Array.from(files).map((file) => ({
-      id: (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : `imp-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-      patientId: `IMP${Date.now()}`,
-      patientName: file.name.replace(/\.(dcm|dicom)$/i, ''),
-      age: '',
-      sex: '' as const,
-      studyDate,
-      studyDescription: 'Imported DICOM',
-      images: 1,
-      modality: 'OT',
-      accessionNumber: '',
-      referringPhysician: '',
-      printed: false,
-    }));
-    importPatients(newPatients);
-    alert(`Imported ${newPatients.length} file(s)`);
-    e.target.value = '';
+  const handleImportDicom = async () => {
+    const api = (window as any).electronAPI;
+    const isElectron = !!api?.isElectron;
+    if (!isElectron) {
+      alert('DICOM import requires the desktop application. Please use the Electron app.');
+      return;
+    }
+    setImporting(true);
+    try {
+      const result = await importFolder();
+      if (result === null) {
+        // User cancelled the dialog or an error occurred
+        const err = usePatientStore.getState().syncError;
+        if (err) alert('Import error: ' + err);
+      } else if (result.imported === 0 && result.studies === 0) {
+        alert('No DICOM files found in the selected folder.\n\nMake sure the folder contains .dcm files.');
+      } else {
+        alert(`Import complete!\n\n• ${result.studies} study/studies detected\n• ${result.imported} image(s) imported\n\nImages are grouped by Patient ID and Study automatically.`);
+      }
+    } catch (err: any) {
+      console.error('[Import] Failed:', err);
+      alert('Import failed: ' + (err.message || 'Unknown error'));
+    }
+    setImporting(false);
   };
 
   const handleReadBackup = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -205,7 +210,7 @@ export function PatientActionBar() {
           }}
         />
         <ActionButton label="Create new" onClick={() => setShowCreateModal(true)} />
-        <ActionButton label="Import dicom" onClick={() => fileInputRef.current?.click()} />
+        <ActionButton label={importing || syncing ? `Importing${syncProgress ? ` (${syncProgress.processed}/${syncProgress.total})` : '...'}` : 'Import dicom'} onClick={handleImportDicom} />
         <ActionButton label="Select all" onClick={selectAll} />
         <ActionButton
           label="Delete selected"
@@ -253,14 +258,6 @@ export function PatientActionBar() {
       </div>
 
       {/* Hidden file inputs */}
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept=".dcm,.dicom"
-        multiple
-        className="hidden"
-        onChange={handleImportDicom}
-      />
       <input
         ref={backupInputRef}
         type="file"

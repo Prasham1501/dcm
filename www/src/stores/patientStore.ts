@@ -95,6 +95,7 @@ interface PatientState {
   deleteSelected: () => void;
   importPatients: (newPatients: Patient[]) => void;
   exportSelected: () => Patient[];
+  importFolder: () => Promise<{ imported: number; studies: number } | null>;
   importToManagedStorage: (filePaths: string[], destDir?: string) => Promise<{ imported: string[]; errors: string[]; managedDir: string }>;
 }
 
@@ -665,6 +666,171 @@ export const usePatientStore = create<PatientState>()(
   exportSelected: () => {
     const { patients, selectedPatients } = get();
     return patients.filter((p) => selectedPatients.has(p.id));
+  },
+
+  importFolder: async () => {
+    const api = (window as any).electronAPI;
+    if (!api?.invoke) {
+      console.error('[importFolder] electronAPI.invoke not available');
+      return null;
+    }
+
+    // Open folder picker via Electron dialog
+    let dirPath: string | null = null;
+    try {
+      const result = await api.invoke('show-open-dialog', {
+        properties: ['openDirectory'],
+        title: 'Select DICOM Folder to Import',
+      });
+      console.log('[importFolder] dialog result:', result);
+      if (!result || result.canceled || !result.filePaths?.length) return null;
+      dirPath = result.filePaths[0];
+    } catch (dialogErr) {
+      console.error('[importFolder] show-open-dialog failed:', dialogErr);
+      return null;
+    }
+    if (!dirPath) return null;
+    console.log('[importFolder] scanning:', dirPath);
+
+    set({ syncing: true, syncError: null, syncProgress: null });
+
+    try {
+      const scanBase = 'http://localhost:3457';
+      const response = await fetch(
+        `${scanBase}/api/dicom/scan-patients?dir=${encodeURIComponent(dirPath)}&stream=1`
+      );
+      if (!response.ok) throw new Error(`Scan failed: ${response.statusText}`);
+
+      const contentType = response.headers.get('content-type') || '';
+      let scannedPatients: Patient[] = [];
+
+      if (contentType.includes('text/event-stream')) {
+        const reader = response.body?.getReader();
+        if (!reader) throw new Error('No response body');
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+
+          for (const line of lines) {
+            if (!line.startsWith('data: ')) continue;
+            try {
+              const event = JSON.parse(line.slice(6));
+              if (event.type === 'progress') {
+                set({ syncProgress: { total: event.total, processed: event.processed } });
+              } else if (event.type === 'complete') {
+                if (!event.success) throw new Error('Scan failed');
+                scannedPatients = event.patients.map((p: any) => ({
+                  id: p.id || p.studyInstanceUID,
+                  patientId: p.patientId,
+                  patientName: p.patientName,
+                  age: p.age,
+                  sex: (p.sex === 'M' || p.sex === 'F' || p.sex === 'O') ? p.sex : '' as const,
+                  studyDate: p.studyDate,
+                  studyDescription: p.studyDescription,
+                  images: p.images,
+                  modality: p.modality,
+                  accessionNumber: p.accessionNumber,
+                  referringPhysician: p.referringPhysician,
+                  printed: false,
+                  studyInstanceUID: p.studyInstanceUID,
+                  filePaths: p.filePaths,
+                }));
+              }
+            } catch { /* skip malformed events */ }
+          }
+        }
+      } else {
+        const data = await response.json();
+        if (!data.success) throw new Error(data.error || 'Scan failed');
+        scannedPatients = data.patients.map((p: any) => ({
+          id: p.id || p.studyInstanceUID,
+          patientId: p.patientId,
+          patientName: p.patientName,
+          age: p.age,
+          sex: (p.sex === 'M' || p.sex === 'F' || p.sex === 'O') ? p.sex : '' as const,
+          studyDate: p.studyDate,
+          studyDescription: p.studyDescription,
+          images: p.images,
+          modality: p.modality,
+          accessionNumber: p.accessionNumber,
+          referringPhysician: p.referringPhysician,
+          printed: false,
+          studyInstanceUID: p.studyInstanceUID,
+          filePaths: p.filePaths,
+        }));
+      }
+
+      if (scannedPatients.length === 0) {
+        console.log('[importFolder] No DICOM files found');
+        set({ syncing: false, syncProgress: null });
+        return { imported: 0, studies: 0 };
+      }
+
+      console.log('[importFolder] Scanned', scannedPatients.length, 'studies:',
+        scannedPatients.map(p => ({ name: p.patientName, id: p.patientId, uid: p.studyInstanceUID, files: p.filePaths?.length }))
+      );
+
+      // Merge with existing patients:
+      // - If a study with the same StudyInstanceUID exists, merge filePaths
+      // - If a patient has the same PatientID but different study, add as separate entry
+      // - Otherwise add as new
+      const { patients: existing, filters } = get();
+      const existingByStudyUID = new Map<string, Patient>();
+      for (const p of existing) {
+        if (p.studyInstanceUID) existingByStudyUID.set(p.studyInstanceUID, p);
+      }
+
+      let importedFiles = 0;
+      const newEntries: Patient[] = [];
+
+      for (const scanned of scannedPatients) {
+        const existingStudy = scanned.studyInstanceUID
+          ? existingByStudyUID.get(scanned.studyInstanceUID)
+          : undefined;
+
+        if (existingStudy) {
+          // Same study exists — merge filePaths (add any new files)
+          const existingPaths = new Set(existingStudy.filePaths || []);
+          const newPaths = (scanned.filePaths || []).filter((fp: string) => !existingPaths.has(fp));
+          if (newPaths.length > 0) {
+            const mergedPaths = [...(existingStudy.filePaths || []), ...newPaths];
+            const idx = existing.findIndex((p) => p.id === existingStudy.id);
+            if (idx >= 0) {
+              existing[idx] = {
+                ...existing[idx],
+                filePaths: mergedPaths,
+                images: mergedPaths.length,
+              };
+            }
+            importedFiles += newPaths.length;
+          }
+        } else {
+          // New study — add as new entry
+          newEntries.push(scanned);
+          importedFiles += (scanned.filePaths?.length || 0);
+        }
+      }
+
+      const patients = [...existing, ...newEntries];
+      set({
+        patients,
+        filteredPatients: patients.filter((p) => matchesFilter(p, filters)),
+        totalRecords: patients.length,
+        syncing: false,
+        syncProgress: null,
+      });
+
+      return { imported: importedFiles, studies: scannedPatients.length };
+    } catch (err: any) {
+      set({ syncing: false, syncProgress: null, syncError: err.message || 'Import failed' });
+      return null;
+    }
   },
 
   importToManagedStorage: async (filePaths, destDir) => {
