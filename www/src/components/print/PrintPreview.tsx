@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { usePrintStore } from '@/stores/printStore';
 import { useViewerStore } from '@/stores/viewerStore';
 import { usePatientStore } from '@/stores/patientStore';
-import { useHospitalConfigStore, getFormattedAddress, renderPrintSlot } from '@/stores/hospitalConfigStore';
+import { useHospitalConfigStore, getFormattedAddress, renderPrintSlot, buildBrandHeaderHtml } from '@/stores/hospitalConfigStore';
 import { getAutoOrientationForLayout, getLayoutAreaNames, getLayoutGridTemplate } from '@/lib/layoutUtils';
 import { captureCornerstoneViewportForPrint, waitForViewportImages, PrintOverlay, PrintDrawPath } from '@/lib/printCapture';
 import { fillEmptyPrintSlots } from '@/lib/printPageUtils';
@@ -176,10 +176,7 @@ export function PrintPreview() {
   };
 
   const buildHeaderHtml = () => {
-    const l = renderPrintSlot(hospitalConfig.headerLayout.left, hospitalConfig as any, hospitalConfig.customHeaderLeft);
-    const c = renderPrintSlot(hospitalConfig.headerLayout.center, hospitalConfig as any, hospitalConfig.customHeaderCenter);
-    const r = renderPrintSlot(hospitalConfig.headerLayout.right, hospitalConfig as any, hospitalConfig.customHeaderRight);
-    return `<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 15px;border-bottom:1px solid #ccc;font-size:10px"><div>${l}</div><div style="text-align:center">${c}</div><div style="text-align:right">${r}</div></div>`;
+    return buildBrandHeaderHtml(hospitalConfig as any);
   };
 
   const buildFooterHtml = () => {
@@ -202,6 +199,41 @@ export function PrintPreview() {
       default: return null;
     }
   };
+
+  const services = (hospitalConfig.servicesList || '').split('|').filter(Boolean);
+
+  const renderBrandHeaderPv = () => (
+    <div style={{ display: 'flex', alignItems: 'center', padding: `${3 * zoom}px ${8 * zoom}px`, gap: 6 * zoom, borderBottom: '2px solid #2563eb' }} className="bg-white flex-shrink-0">
+      <div style={{ flex: '0 0 auto', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+        {hospitalConfig.logoDataUrl ? (
+          <img src={hospitalConfig.logoDataUrl} style={{ width: 35 * zoom, height: 35 * zoom, borderRadius: '50%', objectFit: 'cover', border: '1px solid #ddd' }} alt="Logo" />
+        ) : (
+          <span style={{ fontSize: 6 * zoom }} className="text-gray-400">[Logo]</span>
+        )}
+      </div>
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', textAlign: 'center', lineHeight: 1.3 }}>
+        <div style={{ marginBottom: 1 * zoom }}>
+          <span style={{ fontSize: 11 * zoom, fontWeight: 800, color: '#1e3a5f' }}>{hospitalConfig.hospitalName}</span>
+          {hospitalConfig.brandNameSecondary && <span style={{ fontSize: 11 * zoom, fontWeight: 400, color: '#2563eb', marginLeft: 3 * zoom }}>{hospitalConfig.brandNameSecondary}</span>}
+        </div>
+        {services.length > 0 && (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 2 * zoom, fontSize: 6 * zoom, fontWeight: 600, color: '#1a1a1a', flexWrap: 'wrap', marginBottom: 1 * zoom }}>
+            {services.map((s, i) => (
+              <span key={i}>{i > 0 && <span style={{ margin: `0 ${2 * zoom}px`, color: '#999' }}>|</span>}{s.trim()}</span>
+            ))}
+          </div>
+        )}
+        <div style={{ fontSize: 5 * zoom, color: '#2563eb', textTransform: 'uppercase', letterSpacing: 0.5 }}>{getFormattedAddress(hospitalConfig as any).toUpperCase()}</div>
+        {(hospitalConfig.phone || hospitalConfig.email || hospitalConfig.website) && (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 * zoom, fontSize: 6 * zoom, color: '#333', flexWrap: 'wrap', marginTop: 1 * zoom }}>
+            {hospitalConfig.phone && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2 * zoom }}><span style={{ color: '#16a34a' }}>☎</span>{hospitalConfig.phone}</span>}
+            {hospitalConfig.email && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2 * zoom }}><span style={{ color: '#ca8a04' }}>✉</span>{hospitalConfig.email}</span>}
+            {hospitalConfig.website && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2 * zoom }}><span style={{ color: '#2563eb' }}>🌐</span>{hospitalConfig.website}</span>}
+          </div>
+        )}
+      </div>
+    </div>
+  );
 
   const buildPrintHtml = useCallback((pagesToPrint: number[]) => {
     const { gridCols, gridRows, gridAreas } = buildGridCss();
@@ -419,13 +451,7 @@ export function PrintPreview() {
               <div key={`preview-page-${pageNum}`} className="flex-shrink-0 flex flex-col items-center mb-4">
                 <div className="text-xs text-app-text-muted py-1 text-center">Page {pageNum} of {totalPages} — {localPaperSize} {localOrientation}</div>
                 <div className="flex flex-col border border-gray-600 shadow-xl" style={{ width: `min(calc(98vw * ${zoom}), calc((100vh - ${toolbarH}px - 50px) * ${zoom} * ${(pw/ph).toFixed(4)}))`, aspectRatio: `${pw} / ${ph}` }}>
-                  {settings.headerEnabled && (
-                    <div style={{ padding: '4px 12px' }} className="border-b border-gray-700 flex items-center justify-between bg-gray-900 flex-shrink-0">
-                      <div>{renderSlotPv(hospitalConfig.headerLayout.left, hospitalConfig.customHeaderLeft)}</div>
-                      <div className="text-center">{renderSlotPv(hospitalConfig.headerLayout.center, hospitalConfig.customHeaderCenter)}</div>
-                      <div className="text-right">{renderSlotPv(hospitalConfig.headerLayout.right, hospitalConfig.customHeaderRight)}</div>
-                    </div>
-                  )}
+                  {settings.headerEnabled && renderBrandHeaderPv()}
                   {settings.patientInfoEnabled && (
                     <div style={{ padding: '3px 12px', fontSize: '10px' }} className="bg-gray-900 border-b border-gray-700 flex justify-between text-gray-300 font-medium flex-shrink-0">
                       <span>Patient: {patientName}</span><span>ID: {patientId}</span><span>Date: {studyDate}</span><span>Page {pageNum}/{totalPages}</span>

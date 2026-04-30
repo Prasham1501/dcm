@@ -60,7 +60,7 @@ export function CRViewerPage() {
   const { patientName, patientId, studyDate, totalImages, currentPage, totalPages, loadStudy } = useCRViewerStore();
   const { mode, toggleTheme } = useThemeStore();
   const showInlineReport = useReportStore((s) => s.showInlineReport);
-  const [showThumbnails, setShowThumbnails] = useState(true);
+  const [showThumbnails, setShowThumbnails] = useState(false);
   const launchChecked = useRef(false);
 
   // Check for launch data in localStorage (when opened as popup window)

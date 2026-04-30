@@ -21,7 +21,7 @@ export function DualViewerPage() {
   const { mode, toggleTheme } = useThemeStore();
   const showInlineReport = useReportStore((s) => s.showInlineReport);
   const launchChecked = useRef(false);
-  const [showThumbnails, setShowThumbnails] = useState(true);
+  const [showThumbnails, setShowThumbnails] = useState(false);
 
   const leftP = panels.left;
   const rightP = panels.right;

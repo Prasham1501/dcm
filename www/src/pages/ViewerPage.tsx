@@ -25,7 +25,7 @@ export function ViewerPage() {
   const showInlineReport = useReportStore((s) => s.showInlineReport);
   const [searchParams] = useSearchParams();
   const undo = useCustomAnnotationStore((s) => s.undo);
-  const [showThumbnails, setShowThumbnails] = useState(true);
+  const [showThumbnails, setShowThumbnails] = useState(false);
   const launchChecked = useRef(false);
 
   // Check for launch data in localStorage (when opened as popup window)

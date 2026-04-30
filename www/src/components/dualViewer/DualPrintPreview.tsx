@@ -2,7 +2,7 @@ import { useState, useEffect, CSSProperties } from 'react';
 import { Printer, X } from 'lucide-react';
 import { useDualViewerStore } from '@/stores/dualViewerStore';
 import { usePrintStore } from '@/stores/printStore';
-import { useHospitalConfigStore, getFormattedAddress, renderPrintSlot } from '@/stores/hospitalConfigStore';
+import { useHospitalConfigStore, getFormattedAddress, renderPrintSlot, buildBrandHeaderHtml } from '@/stores/hospitalConfigStore';
 import { captureCornerstoneElementForPrint, PrintOverlay } from '@/lib/printCapture';
 
 function captureViewport(panelId: string, viewportIndex: number): string | null {
@@ -89,6 +89,41 @@ export function DualPrintPreview({ onClose }: DualPrintPreviewProps) {
     }
   };
 
+  const services = (hospitalConfig.servicesList || '').split('|').filter(Boolean);
+
+  const renderBrandHeaderPv = () => (
+    <div style={{ display: 'flex', alignItems: 'center', padding: '4px 10px', gap: 8, borderBottom: '2px solid #2563eb' }} className="flex-shrink-0">
+      <div style={{ flex: '0 0 auto', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+        {hospitalConfig.logoDataUrl ? (
+          <img src={hospitalConfig.logoDataUrl} style={{ width: 40, height: 40, borderRadius: '50%', objectFit: 'cover', border: '1px solid #ddd' }} alt="Logo" />
+        ) : (
+          <span style={{ fontSize: 7 }} className="text-gray-400">[Logo]</span>
+        )}
+      </div>
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', textAlign: 'center', lineHeight: 1.3 }}>
+        <div style={{ marginBottom: 1 }}>
+          <span style={{ fontSize: 12, fontWeight: 800, color: '#1e3a5f' }}>{hospitalConfig.hospitalName}</span>
+          {hospitalConfig.brandNameSecondary && <span style={{ fontSize: 12, fontWeight: 400, color: '#2563eb', marginLeft: 4 }}>{hospitalConfig.brandNameSecondary}</span>}
+        </div>
+        {services.length > 0 && (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 2, fontSize: 7, fontWeight: 600, color: '#1a1a1a', flexWrap: 'wrap', marginBottom: 1 }}>
+            {services.map((s, i) => (
+              <span key={i}>{i > 0 && <span style={{ margin: '0 2px', color: '#999' }}>|</span>}{s.trim()}</span>
+            ))}
+          </div>
+        )}
+        <div style={{ fontSize: 6, color: '#2563eb', textTransform: 'uppercase', letterSpacing: 0.5 }}>{getFormattedAddress(hospitalConfig as any).toUpperCase()}</div>
+        {(hospitalConfig.phone || hospitalConfig.email || hospitalConfig.website) && (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, fontSize: 7, color: '#333', flexWrap: 'wrap', marginTop: 2 }}>
+            {hospitalConfig.phone && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}><span style={{ color: '#16a34a' }}>☎</span>{hospitalConfig.phone}</span>}
+            {hospitalConfig.email && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}><span style={{ color: '#ca8a04' }}>✉</span>{hospitalConfig.email}</span>}
+            {hospitalConfig.website && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}><span style={{ color: '#2563eb' }}>🌐</span>{hospitalConfig.website}</span>}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
   const renderPanelGrid = (captures: (string | null)[], layout: typeof leftPanel.currentLayout, patientName: string) => {
     const gridStyle: CSSProperties = {
       display: 'grid',
@@ -128,10 +163,7 @@ export function DualPrintPreview({ onClose }: DualPrintPreviewProps) {
     const borderCol = hospitalConfig.viewportBorderColor || '#ddd';
 
     const buildHeaderHtml = () => {
-      const l = renderPrintSlot(hospitalConfig.headerLayout.left, hospitalConfig as any, hospitalConfig.customHeaderLeft);
-      const c = renderPrintSlot(hospitalConfig.headerLayout.center, hospitalConfig as any, hospitalConfig.customHeaderCenter);
-      const r = renderPrintSlot(hospitalConfig.headerLayout.right, hospitalConfig as any, hospitalConfig.customHeaderRight);
-      return '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 15px;border-bottom:1px solid #ccc;font-size:10px"><div>' + l + '</div><div style="text-align:center">' + c + '</div><div style="text-align:right">' + r + '</div></div>';
+      return buildBrandHeaderHtml(hospitalConfig as any);
     };
 
     const buildFooterHtml = () => {
@@ -215,11 +247,7 @@ export function DualPrintPreview({ onClose }: DualPrintPreviewProps) {
       </div>
       <div className="flex-1 overflow-auto p-10 flex justify-center bg-gray-900/50">
         <div className="bg-white shadow-2xl relative flex flex-col" style={{ width: pw, height: ph, minWidth: pw, overflow: 'hidden' }}>
-          <div style={{ padding: '8px 15px' }} className="border-b border-gray-200 flex justify-between flex-shrink-0">
-            {renderSlotPv(hospitalConfig.headerLayout.left, hospitalConfig.customHeaderLeft)}
-            {renderSlotPv(hospitalConfig.headerLayout.center, hospitalConfig.customHeaderCenter)}
-            {renderSlotPv(hospitalConfig.headerLayout.right, hospitalConfig.customHeaderRight)}
-          </div>
+          {renderBrandHeaderPv()}
           <div style={{ display: 'flex', gap: '10px', padding: '8px', flex: 1, minHeight: 0, overflow: 'hidden' }}>
             <div className="flex-1" style={{ minHeight: 0, overflow: 'hidden' }}>{renderPanelGrid(leftCaptures, leftPanel.currentLayout, leftPanel.patientName)}</div>
             <div className="flex-1" style={{ minHeight: 0, overflow: 'hidden' }}>{renderPanelGrid(rightCaptures, rightPanel.currentLayout, rightPanel.patientName)}</div>
