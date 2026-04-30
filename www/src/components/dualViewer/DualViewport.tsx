@@ -389,6 +389,7 @@ function DualViewportInner({
         return (
         <div
           key={sp.id}
+          data-stamp-overlay="true"
           className="absolute z-10 select-none"
           style={{
             left: `${sp.xPercent}%`, top: `${sp.yPercent}%`,
