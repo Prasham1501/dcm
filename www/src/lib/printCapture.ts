@@ -88,32 +88,47 @@ function getLiveCaptureSize(captureRoot: HTMLElement, canvases: HTMLCanvasElemen
   };
 }
 
-// Scale the live viewport canvas to print resolution.
-// cornerstone.renderToCanvas ignores the viewport scale and renders fit-to-canvas,
-// so we upscale the live canvas instead — this preserves the exact zoom, pan,
-// windowing, and all CornerstoneTools annotations the user sees on screen.
+// Render the DICOM image at full print resolution using cornerstone.renderToCanvas.
+// This rasterizes from source pixel data straight onto the high-res target instead
+// of upscaling the small on-screen canvas — eliminating the bicubic-stretch blur.
+// Viewport scale is canvas-relative (scale=1 always fits) so it stays unchanged.
+// Translation is in display pixels relative to the canvas, so it must be scaled by
+// the output:source ratio to preserve the user's pan visually.
 function renderImageAtPrintResolution(
-  _element: HTMLElement,
+  element: HTMLElement,
   enabledElement: any,
-  _image: any,
+  image: any,
   _cssWidth: number,
   _cssHeight: number,
   outputWidth: number,
   outputHeight: number,
 ): HTMLCanvasElement | null {
   const liveCanvas = enabledElement?.canvas;
-  if (!liveCanvas || !(liveCanvas instanceof HTMLCanvasElement)) return null;
+  if (!image || !liveCanvas || !(liveCanvas instanceof HTMLCanvasElement)) return null;
+
   try {
     const target = document.createElement('canvas');
     target.width = outputWidth;
     target.height = outputHeight;
     const ctx = target.getContext('2d');
-    if (!ctx) return null;
-    ctx.imageSmoothingEnabled = true;
-    ctx.imageSmoothingQuality = 'high';
-    ctx.fillStyle = '#000';
-    ctx.fillRect(0, 0, outputWidth, outputHeight);
-    ctx.drawImage(liveCanvas, 0, 0, outputWidth, outputHeight);
+    if (ctx) {
+      ctx.fillStyle = '#000';
+      ctx.fillRect(0, 0, outputWidth, outputHeight);
+    }
+
+    const sourceViewport = enabledElement?.viewport || cornerstone.getViewport(element);
+    const liveDeviceW = Math.max(liveCanvas.width || 0, 1);
+    const liveDeviceH = Math.max(liveCanvas.height || 0, 1);
+    const txScaleX = outputWidth / liveDeviceW;
+    const txScaleY = outputHeight / liveDeviceH;
+    const baseTx = sourceViewport?.translation || { x: 0, y: 0 };
+    const printViewport = {
+      ...(sourceViewport || {}),
+      translation: { x: baseTx.x * txScaleX, y: baseTx.y * txScaleY },
+      voi: sourceViewport?.voi || defaultVoi(image),
+    };
+
+    cornerstone.renderToCanvas(target, image, printViewport);
     return target;
   } catch {
     return null;
@@ -388,14 +403,15 @@ export function captureCornerstoneElementForPrint(element: HTMLElement | null, o
       1,
     );
 
-    // Primary path: upscale the live canvas to print resolution. This preserves
-    // the exact viewport state (zoom, pan, windowing) and all CornerstoneTools
-    // annotations already rendered on screen.
+    // Primary path: render the image at full print resolution via cornerstone,
+    // then layer cornerstone-tool annotations (Length/Angle/ROI), other canvas
+    // overlays (active draw stroke, etc.), stored draw paths, and text/stamps.
     if (image) {
       const { cssWidth, cssHeight, width, height } = getLiveCaptureSize(captureRoot, canvases, image);
       const imageCanvas = renderImageAtPrintResolution(element, enabledElement, image, cssWidth, cssHeight, width, height);
 
       if (imageCanvas) {
+        compositeToolAnnotations(imageCanvas, element, enabledElement, cssWidth, cssHeight);
         compositeOverlayCanvases(imageCanvas, captureRoot, enabledElement?.canvas || null, canvases);
         drawPathsOnCanvas(imageCanvas, drawPaths);
         drawOverlays(imageCanvas, overlays, cssHeight);
