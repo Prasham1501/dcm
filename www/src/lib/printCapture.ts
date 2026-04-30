@@ -89,11 +89,10 @@ function getLiveCaptureSize(captureRoot: HTMLElement, canvases: HTMLCanvasElemen
 }
 
 // Render the DICOM image at full print resolution using cornerstone.renderToCanvas.
-// This rasterizes from source pixel data straight onto the high-res target instead
-// of upscaling the small on-screen canvas — eliminating the bicubic-stretch blur.
-// Viewport scale is canvas-relative (scale=1 always fits) so it stays unchanged.
-// Translation is in display pixels relative to the canvas, so it must be scaled by
-// the output:source ratio to preserve the user's pan visually.
+// Cornerstone interprets viewport scale and translation in canvas device pixels, so
+// both must be multiplied by (output / live-device) to preserve the user's framing
+// at higher resolution. This rasterizes from source pixel data onto the high-res
+// target instead of upscaling the small on-screen canvas — eliminating bicubic blur.
 function renderImageAtPrintResolution(
   element: HTMLElement,
   enabledElement: any,
@@ -117,15 +116,27 @@ function renderImageAtPrintResolution(
     }
 
     const sourceViewport = enabledElement?.viewport || cornerstone.getViewport(element);
-    const liveDeviceW = Math.max(liveCanvas.width || 0, 1);
-    const liveDeviceH = Math.max(liveCanvas.height || 0, 1);
-    const txScaleX = outputWidth / liveDeviceW;
-    const txScaleY = outputHeight / liveDeviceH;
-    const baseTx = sourceViewport?.translation || { x: 0, y: 0 };
-    const printViewport = {
-      ...(sourceViewport || {}),
-      translation: { x: baseTx.x * txScaleX, y: baseTx.y * txScaleY },
+    // Cornerstone viewport.scale is ABSOLUTE (= fitScale × userZoom), where
+    // fitScale = min(canvas.w / imgCols, canvas.h / imgRows).
+    // renderToCanvas() internally calls getDefaultViewport(targetCanvas, image)
+    // which computes the correct fitScale for the target canvas, then
+    // Object.assigns our viewport on top.  If we pass the live canvas's
+    // absolute scale it overwrites the default → image renders at live-canvas
+    // pixel size on the much larger print canvas = tiny.
+    //
+    // Fix: omit scale & translation so the default fit-to-target-canvas stays.
+    // Only override appearance properties (voi, rotation, flip, invert).
+    const printViewport: Record<string, unknown> = {
       voi: sourceViewport?.voi || defaultVoi(image),
+      rotation: sourceViewport?.rotation || 0,
+      hflip: Boolean(sourceViewport?.hflip),
+      vflip: Boolean(sourceViewport?.vflip),
+      invert: Boolean(sourceViewport?.invert),
+      pixelReplication: Boolean(sourceViewport?.pixelReplication),
+      modalityLUT: sourceViewport?.modalityLUT,
+      voiLUT: sourceViewport?.voiLUT,
+      colormap: sourceViewport?.colormap,
+      labelmap: sourceViewport?.labelmap,
     };
 
     cornerstone.renderToCanvas(target, image, printViewport);
