@@ -254,14 +254,15 @@ export function CRPrintPreview({ onClose, initialPageMode = 'all' }: CRPrintPrev
     const patientBarHtml = () => settings.patientInfoEnabled
       ? `<div style="padding:4px 15px;background:#f5f5f5;border-bottom:1px solid #ccc;display:flex;justify-content:space-between;font-size:10px"><span><b>Patient:</b> ${patientName}</span><span><b>ID:</b> ${patientId}</span><span><b>Date:</b> ${studyDate}</span></div>`
       : '';
+    const borderCol = hospitalConfig.viewportBorderColor || '#333';
     const pagesHtml = pagesToPrint.map((pageNum) => {
       const caps = allPageCaptures[pageNum - 1] || [];
       const imgsHtml = Array.from({ length: currentLayout.spots }).map((_, viewportIndex) => {
         const src = caps[viewportIndex];
         const areaStyle = currentLayout.areas && areaNames[viewportIndex] ? `grid-area:${areaNames[viewportIndex]};` : '';
         return src
-          ? `<div style="${areaStyle}background:#000;display:flex;align-items:center;justify-content:center;overflow:hidden"><img src="${src}" style="width:100%;height:100%;object-fit:contain" /></div>`
-          : `<div style="${areaStyle}background:#000;display:flex;align-items:center;justify-content:center;overflow:hidden"></div>`;
+          ? `<div style="${areaStyle}background:#000;display:flex;align-items:center;justify-content:center;overflow:hidden;border:1px solid ${borderCol}"><img src="${src}" style="width:100%;height:100%;object-fit:contain" /></div>`
+          : `<div style="${areaStyle}background:#000;display:flex;align-items:center;justify-content:center;overflow:hidden;border:1px solid ${borderCol}"></div>`;
       }).join('');
       return `<div class="page">${settings.headerEnabled ? buildHeaderHtml() : ''}${patientBarHtml()}<div class="grid">${imgsHtml}</div>${hospitalConfig.enableFooter ? buildFooterHtml() : ''}</div>`;
     }).join('');
@@ -455,7 +456,7 @@ export function CRPrintPreview({ onClose, initialPageMode = 'all' }: CRPrintPrev
                         const src = pageCaps[i];
                         const areaStyle: React.CSSProperties = currentLayout.areas && areaNames[i] ? { gridArea: areaNames[i] } : {};
                         return (
-                          <div key={i} className="bg-black overflow-hidden" style={areaStyle}>
+                          <div key={i} className="bg-black overflow-hidden" style={{ ...areaStyle, border: `1px solid ${hospitalConfig.viewportBorderColor || '#333'}` }}>
                             {src ? (<img src={src} className="w-full h-full object-contain" alt={`Page ${pageNum} Image ${i + 1}`} />) : (<span className="text-gray-600 text-[10px] select-none flex items-center justify-center w-full h-full">Empty</span>)}
                           </div>
                         );

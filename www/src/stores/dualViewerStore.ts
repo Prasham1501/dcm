@@ -133,6 +133,7 @@ interface DualViewerState {
   setPanelLayout: (panelId: PanelId, layout: DualLayout) => void;
   panelNextPage: (panelId: PanelId) => void;
   panelPrevPage: (panelId: PanelId) => void;
+  setPanelPage: (panelId: PanelId, page: number) => void;
   setPanelSelectedViewport: (panelId: PanelId, index: number) => void;
   togglePanelViewportSelection: (panelId: PanelId, index: number) => void;
   selectAllPanelViewports: (panelId: PanelId) => void;
@@ -315,6 +316,14 @@ export const useDualViewerStore = create<DualViewerState>((set, get) => ({
     const panel = get().panels[panelId];
     if (panel.currentPage > 1) {
       set((state) => updatePanel(state, panelId, { currentPage: panel.currentPage - 1 }));
+    }
+  },
+
+  setPanelPage: (panelId, page) => {
+    const panel = get().panels[panelId];
+    const clamped = Math.max(1, Math.min(page, panel.totalPages));
+    if (clamped !== panel.currentPage) {
+      set((state) => updatePanel(state, panelId, { currentPage: clamped }));
     }
   },
 

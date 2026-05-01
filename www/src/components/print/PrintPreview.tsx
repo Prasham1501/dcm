@@ -247,14 +247,15 @@ export function PrintPreview() {
   const buildPrintHtml = useCallback((pagesToPrint: number[]) => {
     const { gridCols, gridRows, gridAreas } = buildGridCss();
     const areaNames = getLayoutAreaNames(currentLayout.areas);
+    const borderCol = hospitalConfig.viewportBorderColor || '#333';
     const pagesHtml = pagesToPrint.map((pageNum) => {
       const caps = allPageCaptures[pageNum - 1] || [];
       const imgsHtml = Array.from({ length: currentLayout.spots }).map((_, i) => {
         const src = caps[i];
         const areaStyle = currentLayout.areas && areaNames[i] ? `grid-area:${areaNames[i]};` : '';
         return src
-          ? `<div style="${areaStyle}background:#000;display:flex;align-items:center;justify-content:center;overflow:hidden"><img src="${src}" style="width:100%;height:100%;object-fit:contain" /></div>`
-          : `<div style="${areaStyle}background:#000;display:flex;align-items:center;justify-content:center;overflow:hidden"></div>`;
+          ? `<div style="${areaStyle}background:#000;display:flex;align-items:center;justify-content:center;overflow:hidden;border:1px solid ${borderCol}"><img src="${src}" style="width:100%;height:100%;object-fit:contain" /></div>`
+          : `<div style="${areaStyle}background:#000;display:flex;align-items:center;justify-content:center;overflow:hidden;border:1px solid ${borderCol}"></div>`;
       }).join('');
       return `<div class="page">${settings.headerEnabled ? buildHeaderHtml() : ''}${patientBarHtml()}<div class="grid">${imgsHtml}</div>${hospitalConfig.enableFooter ? buildFooterHtml() : ''}</div>`;
     }).join('');
@@ -477,7 +478,7 @@ export function PrintPreview() {
                         const src = pageCaps[i];
                         const aStyle: React.CSSProperties = currentLayout.areas && areaNames[i] ? { gridArea: areaNames[i] } : {};
                         return (
-                          <div key={i} className="bg-black overflow-hidden" style={aStyle}>
+                          <div key={i} className="bg-black overflow-hidden" style={{ ...aStyle, border: `1px solid ${hospitalConfig.viewportBorderColor || '#333'}` }}>
                             {src ? (<img src={src} className="w-full h-full object-contain" alt={`Page ${pageNum} Image ${i + 1}`} />) : (<span className="text-gray-600 text-[10px] select-none flex items-center justify-center w-full h-full">Empty</span>)}
                           </div>
                         );
