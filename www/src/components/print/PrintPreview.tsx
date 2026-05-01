@@ -61,6 +61,15 @@ const PAPER_DIMS: Record<string, { w: number; h: number }> = {
   A5: { w: 420, h: 595 }, Letter: { w: 612, h: 792 }, Legal: { w: 612, h: 1008 },
 };
 
+// Physical dimensions in millimetres, used to pin the printed .page box to
+// real paper size. Avoids relying on `100vh` which can resolve to the renderer
+// window viewport (not the print sheet) under high-DPI Windows.
+const PAPER_DIMS_MM: Record<string, { w: number; h: number }> = {
+  A4: { w: 210, h: 297 }, A3: { w: 297, h: 420 },
+  A5: { w: 148, h: 210 }, Letter: { w: 215.9, h: 279.4 }, Legal: { w: 215.9, h: 355.6 },
+};
+const PAGE_MARGIN_MM = 10;
+
 export function PrintPreview() {
   const navigate = useNavigate();
   const { settings, updateSettings, setShowPrintPreview, addPrintJob, decrementPrintCount, printCountRemaining } = usePrintStore();
@@ -249,7 +258,12 @@ export function PrintPreview() {
       }).join('');
       return `<div class="page">${settings.headerEnabled ? buildHeaderHtml() : ''}${patientBarHtml()}<div class="grid">${imgsHtml}</div>${hospitalConfig.enableFooter ? buildFooterHtml() : ''}</div>`;
     }).join('');
-    return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>DICOM Print - ${patientName}</title><style>@page{size:${localPaperSize} ${isLandscape ? 'landscape' : 'portrait'};margin:10mm}*{box-sizing:border-box}html,body{margin:0;padding:0;font-family:Arial,Helvetica,sans-serif;background:#fff}.page{page-break-after:always;page-break-inside:avoid;display:flex;flex-direction:column;height:100vh;overflow:hidden;border:1px solid #444}.page:last-child{page-break-after:auto}.grid{display:grid;grid-template-columns:${gridCols};grid-template-rows:${gridRows};${gridAreas}gap:2px;padding:2px;flex:1;min-height:0;background:#000}.cell{background:#000;display:flex;align-items:center;justify-content:center;overflow:hidden}img{display:block;width:100%;height:100%;object-fit:contain;image-rendering:-webkit-optimize-contrast;image-rendering:crisp-edges;image-rendering:high-quality;-ms-interpolation-mode:bicubic}@media print{html,body{-webkit-print-color-adjust:exact;print-color-adjust:exact;color-adjust:exact}img{image-rendering:-webkit-optimize-contrast;image-rendering:crisp-edges}}</style></head><body>${pagesHtml}</body></html>`;
+    const paperMm = PAPER_DIMS_MM[localPaperSize] || PAPER_DIMS_MM.A4;
+    const sheetW = isLandscape ? paperMm.h : paperMm.w;
+    const sheetH = isLandscape ? paperMm.w : paperMm.h;
+    const pageW = sheetW - PAGE_MARGIN_MM * 2;
+    const pageH = sheetH - PAGE_MARGIN_MM * 2;
+    return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>DICOM Print - ${patientName}</title><style>@page{size:${localPaperSize} ${isLandscape ? 'landscape' : 'portrait'};margin:${PAGE_MARGIN_MM}mm}*{box-sizing:border-box}html,body{margin:0;padding:0;font-family:Arial,Helvetica,sans-serif;background:#fff;width:${pageW}mm}.page{page-break-after:always;page-break-inside:avoid;display:flex;flex-direction:column;width:${pageW}mm;height:${pageH}mm;overflow:hidden;border:1px solid #444}.page:last-child{page-break-after:auto}.grid{display:grid;grid-template-columns:${gridCols};grid-template-rows:${gridRows};${gridAreas}gap:2px;padding:2px;flex:1;min-height:0;background:#000}.cell{background:#000;display:flex;align-items:center;justify-content:center;overflow:hidden}img{display:block;width:100%;height:100%;object-fit:contain;image-rendering:-webkit-optimize-contrast;image-rendering:crisp-edges;image-rendering:high-quality;-ms-interpolation-mode:bicubic}@media print{html,body{-webkit-print-color-adjust:exact;print-color-adjust:exact;color-adjust:exact}img{image-rendering:-webkit-optimize-contrast;image-rendering:crisp-edges}}</style></head><body>${pagesHtml}</body></html>`;
   }, [allPageCaptures, currentLayout, settings, hospitalConfig, patientName, patientId, studyDate, localPaperSize, isLandscape]);
 
   const buildPcpndtHtml = () => {

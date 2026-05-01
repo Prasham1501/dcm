@@ -1322,17 +1322,17 @@ async function waitForPrintableContent(printWindow, timeoutMs = 5000) {
 }
 
 function buildElectronPrintOptions(printerName, printSettings = {}) {
+    // Do NOT set `dpi` or `scaleFactor` here. On Windows displays with >100%
+    // DPI scaling, Chromium re-applies those values as a layout scale on top
+    // of the printable area and the page renders at half size, centred on the
+    // sheet. Print quality already comes from the printer driver's native DPI;
+    // we only need to tell Electron WHAT to print and on WHICH paper.
     const opts = {
         silent: true,
         printBackground: true,
         color: printSettings.colorMode !== 'grayscale',
         landscape: printSettings.orientation === 'landscape',
         copies: printSettings.copies || 1,
-        // Industry-standard medical print resolution. Electron passes this to the
-        // platform print spooler (CUPS / Windows printer driver) which uses it as
-        // the rasterization DPI, eliminating the soft/posterized look of 72 DPI.
-        dpi: { horizontal: 300, vertical: 300 },
-        scaleFactor: 100,
     };
 
     if (printSettings.margins) {
