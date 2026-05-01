@@ -10,6 +10,7 @@ import { ConfigPage } from '@/pages/ConfigPage';
 import { StudiesPage } from '@/pages/StudiesPage';
 import { PrintManagementPage } from '@/pages/PrintManagementPage';
 import { ReportEditorPage } from '@/pages/ReportEditorPage';
+import { ToastContainer } from '@/components/shared/Toast';
 
 export default function App() {
   const { mode } = useThemeStore();
@@ -38,6 +39,8 @@ export default function App() {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
+    <>
+    <ToastContainer />
     <Routes>
       <Route path="/" element={<PatientListPage />}>
         <Route path="config" element={<ConfigPage />} />
@@ -53,5 +56,6 @@ export default function App() {
       <Route path="/report-editor" element={<ReportEditorPage />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
+    </>
   );
 }

@@ -1,30 +1,7 @@
-import { useRef } from 'react';
-import { useHospitalConfigStore, type PrintSlotContent } from '@/stores/hospitalConfigStore';
-
-const SLOT_OPTIONS: { value: PrintSlotContent; label: string }[] = [
-  { value: 'logo', label: 'Logo' },
-  { value: 'name', label: 'Hospital Name' },
-  { value: 'address', label: 'Address' },
-  { value: 'custom', label: 'Custom Text' },
-  { value: 'none', label: 'None' },
-];
+import { useHospitalConfigStore } from '@/stores/hospitalConfigStore';
 
 export function GeneralTab() {
   const config = useHospitalConfigStore();
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === 'string') {
-        config.setLogo(reader.result);
-      }
-    };
-    reader.readAsDataURL(file);
-    e.target.value = '';
-  };
 
   return (
     <div className="space-y-5">
@@ -35,6 +12,8 @@ export function GeneralTab() {
         </h3>
         <div className="grid grid-cols-2 gap-3">
           <FormField label="Hospital Name" value={config.hospitalName} onChange={(v) => config.updateField('hospitalName', v)} />
+          <FormField label="Secondary Name" value={config.brandNameSecondary} onChange={(v) => config.updateField('brandNameSecondary', v)} />
+          <FormField label="Services (pipe separated)" value={config.servicesList} onChange={(v) => config.updateField('servicesList', v)} />
           <FormSelect
             label="Timezone"
             value={config.timezone}
@@ -68,92 +47,6 @@ export function GeneralTab() {
           <div className="grid grid-cols-2 gap-3">
             <FormField label="Phone" value={config.phone} onChange={(v) => config.updateField('phone', v)} />
             <FormField label="Email" value={config.email} onChange={(v) => config.updateField('email', v)} />
-          </div>
-        </div>
-      </div>
-
-      {/* Logo */}
-      <div>
-        <h3 className="text-sm font-bold text-app-accent mb-3 pb-1 border-b border-app-border">
-          Logo Settings
-        </h3>
-        <div className="flex items-start gap-4">
-          <div className="w-28 h-20 border border-app-border rounded flex items-center justify-center bg-app-surface text-app-text-muted text-xs overflow-hidden">
-            {config.logoDataUrl ? (
-              <img src={config.logoDataUrl} alt="Logo" className="max-w-full max-h-full object-contain" />
-            ) : (
-              'No Logo'
-            )}
-          </div>
-          <div className="space-y-2">
-            <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleLogoUpload} />
-            <div className="flex gap-2">
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                className="px-3 py-1 text-xs font-semibold border-2 border-app-accent text-app-accent bg-app-bg rounded hover:bg-app-accent hover:text-white transition-colors"
-              >
-                Upload Logo
-              </button>
-              {config.logoDataUrl && (
-                <button
-                  onClick={() => config.removeLogo()}
-                  className="px-3 py-1 text-xs font-semibold border-2 border-red-500 text-red-500 bg-app-bg rounded hover:bg-red-500 hover:text-white transition-colors"
-                >
-                  Remove
-                </button>
-              )}
-            </div>
-            <div className="space-y-1">
-              <label className="flex items-center gap-2 text-xs text-app-text">
-                <input type="checkbox" checked={config.showLogoInHeader} onChange={(e) => config.updateField('showLogoInHeader', e.target.checked)} className="accent-app-accent" />
-                Show logo in header
-              </label>
-              <label className="flex items-center gap-2 text-xs text-app-text">
-                <input type="checkbox" checked={config.showLogoInFooter} onChange={(e) => config.updateField('showLogoInFooter', e.target.checked)} className="accent-app-accent" />
-                Show logo in footer
-              </label>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Header Layout */}
-      <div>
-        <h3 className="text-sm font-bold text-app-accent mb-3 pb-1 border-b border-app-border">
-          Print Header Layout
-        </h3>
-        <div className="grid grid-cols-3 gap-3">
-          <FormSelect label="Left" value={config.headerLayout.left} onChange={(v) => config.updateHeaderLayout('left', v as PrintSlotContent)} options={SLOT_OPTIONS} />
-          <FormSelect label="Center" value={config.headerLayout.center} onChange={(v) => config.updateHeaderLayout('center', v as PrintSlotContent)} options={SLOT_OPTIONS} />
-          <FormSelect label="Right" value={config.headerLayout.right} onChange={(v) => config.updateHeaderLayout('right', v as PrintSlotContent)} options={SLOT_OPTIONS} />
-        </div>
-        <div className="mt-2">
-          <FormField label="Custom Header Text" value={config.customHeaderText} onChange={(v) => config.updateField('customHeaderText', v)} />
-        </div>
-      </div>
-
-      {/* Footer Layout */}
-      <div>
-        <h3 className="text-sm font-bold text-app-accent mb-3 pb-1 border-b border-app-border flex items-center justify-between">
-          <span>Print Footer Layout</span>
-          <label className="flex items-center gap-2 text-xs font-medium text-app-text cursor-pointer">
-            <input
-              type="checkbox"
-              checked={config.enableFooter}
-              onChange={(e) => config.updateField('enableFooter', e.target.checked)}
-              className="accent-app-accent"
-            />
-            Enable Footer
-          </label>
-        </h3>
-        <div className={config.enableFooter ? '' : 'opacity-40 pointer-events-none'}>
-          <div className="grid grid-cols-3 gap-3">
-            <FormSelect label="Left" value={config.footerLayout.left} onChange={(v) => config.updateFooterLayout('left', v as PrintSlotContent)} options={SLOT_OPTIONS} />
-            <FormSelect label="Center" value={config.footerLayout.center} onChange={(v) => config.updateFooterLayout('center', v as PrintSlotContent)} options={SLOT_OPTIONS} />
-            <FormSelect label="Right" value={config.footerLayout.right} onChange={(v) => config.updateFooterLayout('right', v as PrintSlotContent)} options={SLOT_OPTIONS} />
-          </div>
-          <div className="mt-2">
-            <FormField label="Custom Footer Text" value={config.customFooterText} onChange={(v) => config.updateField('customFooterText', v)} />
           </div>
         </div>
       </div>

@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Printer, X, ZoomIn, ZoomOut, Plus, Trash2, Check } from 'lucide-react';
 import { useDualViewerStore } from '@/stores/dualViewerStore';
 import { usePrintStore } from '@/stores/printStore';
-import { useHospitalConfigStore, getFormattedAddress, renderPrintSlot, buildBrandHeaderHtml } from '@/stores/hospitalConfigStore';
+import { useHospitalConfigStore, getFormattedAddress, renderPrintSlot, buildBrandHeaderHtml, buildFooterHtml as buildFooterHtmlFn } from '@/stores/hospitalConfigStore';
 import { usePatientStore } from '@/stores/patientStore';
 import { captureCornerstoneElementForPrint, PrintOverlay } from '@/lib/printCapture';
 import { fillEmptyPrintSlots } from '@/lib/printPageUtils';
@@ -239,30 +239,45 @@ export function DualPrintPreview({ onClose }: DualPrintPreviewProps) {
     }
   };
 
-  const renderBrandHeaderPv = () => (
-    <div style={{ display: 'flex', alignItems: 'center', padding: `${3 * zoom}px ${8 * zoom}px`, gap: 6 * zoom, borderBottom: '2px solid #2563eb' }} className="bg-white flex-shrink-0">
+  const renderBrandHeaderPv = () => {
+    const logoPos = hospitalConfig.headerLogoPosition || 'left';
+    const logoRadius = hospitalConfig.headerLogoShape === 'square' ? '6px' : '50%';
+    const logoSz = (hospitalConfig.headerLogoSize || 60) * zoom * 0.6;
+    const nameAlign = hospitalConfig.headerNameAlign || 'left';
+    const svcAlign = hospitalConfig.headerServicesAlign || 'left';
+    const addrAlign = hospitalConfig.headerAddressAlign || 'left';
+    const contactAlign = hospitalConfig.headerContactAlign || 'left';
+    const alignFlex = (a: string) => a === 'left' ? 'flex-start' : a === 'right' ? 'flex-end' : 'center';
+    return (
+    <div style={{ display: 'flex', alignItems: 'center', padding: `${3 * zoom}px ${8 * zoom}px`, gap: 6 * zoom, borderBottom: `2px solid ${hospitalConfig.headerBorderBottomColor || '#2563eb'}`, background: hospitalConfig.headerBgColor || '#fff', flexDirection: logoPos === 'right' ? 'row-reverse' : 'row' }} className="flex-shrink-0">
+      {hospitalConfig.headerShowLogo !== false && (
       <div style={{ flex: '0 0 auto', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
         {hospitalConfig.logoDataUrl ? (
-          <img src={hospitalConfig.logoDataUrl} style={{ width: 35 * zoom, height: 35 * zoom, borderRadius: '50%', objectFit: 'cover', border: '1px solid #ddd' }} alt="Logo" />
+          <img src={hospitalConfig.logoDataUrl} style={{ width: logoSz, height: logoSz, borderRadius: logoRadius, objectFit: 'cover', border: '1px solid #ddd' }} alt="Logo" />
         ) : (
           <span style={{ fontSize: 6 * zoom }} className="text-gray-400">[Logo]</span>
         )}
       </div>
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', textAlign: 'center', lineHeight: 1.3 }}>
-        <div style={{ marginBottom: 1 * zoom }}>
-          <span style={{ fontSize: 11 * zoom, fontWeight: 800, color: '#1e3a5f' }}>{hospitalConfig.hospitalName}</span>
-          {hospitalConfig.brandNameSecondary && <span style={{ fontSize: 11 * zoom, fontWeight: 400, color: '#2563eb', marginLeft: 3 * zoom }}>{hospitalConfig.brandNameSecondary}</span>}
+      )}
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', lineHeight: 1.3 }}>
+        {hospitalConfig.headerShowName !== false && (
+        <div style={{ marginBottom: 1 * zoom, textAlign: nameAlign as any }}>
+          <span style={{ fontSize: hospitalConfig.headerNameFontSize * zoom * 0.7, fontWeight: 800, color: hospitalConfig.headerNameColor || '#1e3a5f' }}>{hospitalConfig.hospitalName}</span>
+          {hospitalConfig.brandNameSecondary && <span style={{ fontSize: hospitalConfig.headerNameFontSize * zoom * 0.7, fontWeight: 400, color: hospitalConfig.headerSecondaryNameColor || '#2563eb', marginLeft: 3 * zoom }}>{hospitalConfig.brandNameSecondary}</span>}
         </div>
-        {services.length > 0 && (
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 2 * zoom, fontSize: 6 * zoom, fontWeight: 600, color: '#1a1a1a', flexWrap: 'wrap', marginBottom: 1 * zoom }}>
+        )}
+        {hospitalConfig.headerShowServices !== false && services.length > 0 && (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: alignFlex(svcAlign), gap: 2 * zoom, fontSize: hospitalConfig.headerServicesFontSize * zoom * 0.7, fontWeight: 600, color: hospitalConfig.headerServicesColor || '#1a1a1a', flexWrap: 'wrap', marginBottom: 1 * zoom }}>
             {services.map((s, i) => (
               <span key={i}>{i > 0 && <span style={{ margin: `0 ${2 * zoom}px`, color: '#999' }}>|</span>}{s.trim()}</span>
             ))}
           </div>
         )}
-        <div style={{ fontSize: 5 * zoom, color: '#2563eb', textTransform: 'uppercase', letterSpacing: 0.5 }}>{getFormattedAddress(hospitalConfig as any).toUpperCase()}</div>
-        {(hospitalConfig.phone || hospitalConfig.email || hospitalConfig.website) && (
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 * zoom, fontSize: 6 * zoom, color: '#333', flexWrap: 'wrap', marginTop: 1 * zoom }}>
+        {hospitalConfig.headerShowAddress !== false && (
+        <div style={{ fontSize: hospitalConfig.headerAddressFontSize * zoom * 0.7, color: hospitalConfig.headerAddressColor || '#2563eb', textTransform: 'uppercase', letterSpacing: 0.5, textAlign: addrAlign as any }}>{getFormattedAddress(hospitalConfig as any).toUpperCase()}</div>
+        )}
+        {hospitalConfig.headerShowContact !== false && (hospitalConfig.phone || hospitalConfig.email || hospitalConfig.website) && (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: alignFlex(contactAlign), gap: 6 * zoom, fontSize: hospitalConfig.headerContactFontSize * zoom * 0.7, color: hospitalConfig.headerContactColor || '#333', flexWrap: 'wrap', marginTop: 1 * zoom }}>
             {hospitalConfig.phone && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2 * zoom }}><span style={{ color: '#16a34a' }}>☎</span>{hospitalConfig.phone}</span>}
             {hospitalConfig.email && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2 * zoom }}><span style={{ color: '#ca8a04' }}>✉</span>{hospitalConfig.email}</span>}
             {hospitalConfig.website && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2 * zoom }}><span style={{ color: '#2563eb' }}>🌐</span>{hospitalConfig.website}</span>}
@@ -270,22 +285,19 @@ export function DualPrintPreview({ onClose }: DualPrintPreviewProps) {
         )}
       </div>
     </div>
-  );
+  );};
 
   const buildPrintHtml = useCallback((pagesToPrint: number[]) => {
     const leftGridCols = `repeat(${leftPanel.currentLayout.cols}, 1fr)`;
     const leftGridRows = `repeat(${leftPanel.currentLayout.rows}, 1fr)`;
     const rightGridCols = `repeat(${rightPanel.currentLayout.cols}, 1fr)`;
     const rightGridRows = `repeat(${rightPanel.currentLayout.rows}, 1fr)`;
-    const borderCol = hospitalConfig.viewportBorderColor || '#333';
+    const borderCol = hospitalConfig.printBorderEnabled ? (hospitalConfig.printBorderColor || '#333') : 'transparent';
+    const blackBg = hospitalConfig.printBlackBg;
+    const pageBg = blackBg ? '#000' : '#fff';
 
     const buildHeaderHtml = () => buildBrandHeaderHtml(hospitalConfig as any);
-    const buildFooterHtml = () => {
-      const l = renderPrintSlot(hospitalConfig.footerLayout.left, hospitalConfig as any, hospitalConfig.customFooterLeft, true);
-      const c = renderPrintSlot(hospitalConfig.footerLayout.center, hospitalConfig as any, hospitalConfig.customFooterCenter, true);
-      const r = renderPrintSlot(hospitalConfig.footerLayout.right, hospitalConfig as any, hospitalConfig.customFooterRight, true);
-      return `<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 15px;border-top:1px solid #ccc;font-size:8px;color:#666"><div>${l}</div><div style="text-align:center">${c}</div><div style="text-align:right">${r}</div></div>`;
-    };
+    const buildPrintFooterHtml = () => buildFooterHtmlFn(hospitalConfig as any);
     const patientBarHtml = () => settings.patientInfoEnabled
       ? `<div style="padding:4px 15px;background:#f5f5f5;border-bottom:1px solid #ccc;display:flex;justify-content:center;font-size:10px"><span><b>Comparison:</b> ${leftPanel.patientName} vs ${rightPanel.patientName} | <b>Date:</b> ${leftPanel.studyDate}</span></div>`
       : '';
@@ -304,16 +316,17 @@ export function DualPrintPreview({ onClose }: DualPrintPreviewProps) {
     const pagesHtml = pagesToPrint.map((pageNum) => {
       const leftCaps = allLeftCaptures[pageNum - 1] || [];
       const rightCaps = allRightCaptures[pageNum - 1] || [];
-      return `<div class="page">${settings.headerEnabled ? buildHeaderHtml() : ''}${patientBarHtml()}<div style="flex:1;display:flex;gap:10px;padding:8px;min-height:0;overflow:hidden">${buildPanelGridHtml(leftCaps, leftGridCols, leftGridRows, leftPanel.patientName)}${buildPanelGridHtml(rightCaps, rightGridCols, rightGridRows, rightPanel.patientName)}</div>${hospitalConfig.enableFooter ? buildFooterHtml() : ''}</div>`;
+      return `<div class="page" style="background:${pageBg}">${settings.headerEnabled ? buildHeaderHtml() : ''}${patientBarHtml()}<div style="flex:1;display:flex;gap:10px;padding:8px;min-height:0;overflow:hidden">${buildPanelGridHtml(leftCaps, leftGridCols, leftGridRows, leftPanel.patientName)}${buildPanelGridHtml(rightCaps, rightGridCols, rightGridRows, rightPanel.patientName)}</div>${hospitalConfig.enableFooter ? buildPrintFooterHtml() : ''}</div>`;
     }).join('');
 
     const paperMm = PAPER_DIMS_MM[localPaperSize] || PAPER_DIMS_MM.A4;
     const sheetW = isLandscape ? paperMm.h : paperMm.w;
     const sheetH = isLandscape ? paperMm.w : paperMm.h;
-    const pageW = sheetW - PAGE_MARGIN_MM * 2;
-    const pageH = sheetH - PAGE_MARGIN_MM * 2;
+    const marginMm = blackBg ? 0 : PAGE_MARGIN_MM;
+    const pageW = sheetW - marginMm * 2;
+    const pageH = sheetH - marginMm * 2;
 
-    return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>DICOM Print - ${leftPanel.patientName} vs ${rightPanel.patientName}</title><style>@page{size:${localPaperSize} ${isLandscape ? 'landscape' : 'portrait'};margin:${PAGE_MARGIN_MM}mm}*{box-sizing:border-box}html,body{margin:0;padding:0;font-family:Arial,Helvetica,sans-serif;width:${pageW}mm}.page{page-break-after:always;page-break-inside:avoid;display:flex;flex-direction:column;width:${pageW}mm;height:${pageH}mm;overflow:hidden;border:1px solid #444}.page:last-child{page-break-after:auto}img{display:block;image-rendering:-webkit-optimize-contrast;image-rendering:high-quality}@media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}</style></head><body>${pagesHtml}</body></html>`;
+    return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>DICOM Print - ${leftPanel.patientName} vs ${rightPanel.patientName}</title><style>@page{size:${localPaperSize} ${isLandscape ? 'landscape' : 'portrait'};margin:${marginMm}mm}*{box-sizing:border-box}html,body{margin:0;padding:0;font-family:Arial,Helvetica,sans-serif;background:${pageBg};width:${pageW}mm}.page{page-break-after:always;page-break-inside:avoid;display:flex;flex-direction:column;width:${pageW}mm;height:${pageH}mm;overflow:hidden}.page:last-child{page-break-after:auto}img{display:block;image-rendering:-webkit-optimize-contrast;image-rendering:high-quality}@media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}</style></head><body>${pagesHtml}</body></html>`;
   }, [allLeftCaptures, allRightCaptures, leftPanel, rightPanel, settings, hospitalConfig, localPaperSize, isLandscape]);
 
   const handlePrint = async () => {
@@ -377,12 +390,12 @@ export function DualPrintPreview({ onClose }: DualPrintPreviewProps) {
     }
   };
 
-  const renderPanelGrid = (captures: string[], layout: typeof leftPanel.currentLayout, patientName: string) => {
-    const borderColor = hospitalConfig.viewportBorderColor || '#333';
+  const renderPanelGrid = (captures: string[], layout: typeof leftPanel.currentLayout, panelPatientName: string) => {
+    const borderColor = hospitalConfig.printBorderEnabled ? (hospitalConfig.printBorderColor || '#333') : 'transparent';
     return (
       <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
         <div className="bg-gray-100 text-center font-bold border-b border-gray-200 text-gray-700 text-[10px] py-0.5 underline flex-shrink-0">
-          {patientName}
+          {panelPatientName}
         </div>
         <div style={{
           display: 'grid', gap: '2px', flex: 1, minHeight: 0, padding: '2px', backgroundColor: '#374151',
@@ -496,7 +509,7 @@ export function DualPrintPreview({ onClose }: DualPrintPreviewProps) {
             return (
               <div key={`preview-page-${pageNum}`} className="flex-shrink-0 flex flex-col items-center mb-4">
                 <div className="text-xs text-app-text-muted py-1 text-center">Page {pageNum} of {totalDualPages} — {localPaperSize} {localOrientation}</div>
-                <div className="flex flex-col border border-gray-600 shadow-xl" style={{ width: `min(calc(98vw * ${zoom}), calc((100vh - ${toolbarH}px - 50px) * ${zoom} * ${(pw/ph).toFixed(4)}))`, aspectRatio: `${pw} / ${ph}` }}>
+                <div className="flex flex-col border border-gray-600 shadow-xl" style={{ width: `min(calc(98vw * ${zoom}), calc((100vh - ${toolbarH}px - 50px) * ${zoom} * ${(pw/ph).toFixed(4)}))`, aspectRatio: `${pw} / ${ph}`, background: hospitalConfig.printBlackBg ? '#000' : '#fff' }}>
                   {settings.headerEnabled && renderBrandHeaderPv()}
                   {settings.patientInfoEnabled && (
                     <div style={{ padding: '3px 12px', fontSize: '10px' }} className="bg-gray-900 border-b border-gray-700 flex justify-center text-gray-300 font-medium flex-shrink-0">
@@ -508,7 +521,7 @@ export function DualPrintPreview({ onClose }: DualPrintPreviewProps) {
                     {renderPanelGrid(rightCaps, rightPanel.currentLayout, rightPanel.patientName)}
                   </div>
                   {hospitalConfig.enableFooter && (
-                    <div style={{ padding: '3px 12px', fontSize: '9px' }} className="border-t border-gray-700 flex justify-between items-center bg-gray-900 text-gray-400 flex-shrink-0">
+                    <div style={{ padding: '3px 12px', fontSize: '9px', borderTop: `1px solid ${hospitalConfig.footerBorderTopColor || '#555'}`, background: hospitalConfig.footerBgColor || undefined }} className="flex justify-between items-center text-gray-400 flex-shrink-0">
                       <div>{renderSlotPv(hospitalConfig.footerLayout.left, hospitalConfig.customFooterLeft)}</div>
                       <div className="text-center">{renderSlotPv(hospitalConfig.footerLayout.center, hospitalConfig.customFooterCenter)}</div>
                       <div className="text-right">{renderSlotPv(hospitalConfig.footerLayout.right, hospitalConfig.customFooterRight)}</div>

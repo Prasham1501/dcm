@@ -91,9 +91,8 @@ interface HospitalConfig {
   headerFontColor: string;
   footerFontSize: number;
   footerFontColor: string;
-  printBlackBgNonUS: boolean;
-  printBlackBgUS: boolean;
-  printBorderToImage: boolean;
+  printBlackBg: boolean;
+  printBorderEnabled: boolean;
   printBorderColor: string;
   printCountWarningAt: number;
   popupOnImageReceived: boolean;
@@ -103,6 +102,41 @@ interface HospitalConfig {
   metadataPrintStudyName: boolean;
   metadataPrintAccessNo: boolean;
   metadataPrintPatientId: boolean;
+  metadataPrintAge: boolean;
+  metadataPrintSex: boolean;
+  metadataPrintModality: boolean;
+
+  // Header customization
+  headerBgColor: string;
+  headerBorderBottomColor: string;
+  headerShowLogo: boolean;
+  headerLogoSize: number;
+  headerLogoPosition: 'left' | 'center' | 'right';
+  headerLogoShape: 'circle' | 'square';
+  headerShowName: boolean;
+  headerNameFontSize: number;
+  headerNameColor: string;
+  headerNameAlign: 'left' | 'center' | 'right';
+  headerSecondaryNameColor: string;
+  headerShowServices: boolean;
+  headerServicesFontSize: number;
+  headerServicesColor: string;
+  headerServicesAlign: 'left' | 'center' | 'right';
+  headerShowAddress: boolean;
+  headerAddressFontSize: number;
+  headerAddressColor: string;
+  headerAddressAlign: 'left' | 'center' | 'right';
+  headerShowContact: boolean;
+  headerContactFontSize: number;
+  headerContactColor: string;
+  headerContactAlign: 'left' | 'center' | 'right';
+
+  // Footer customization
+  footerBgColor: string;
+  footerBorderTopColor: string;
+
+  // Patient metadata display in print
+  metadataPrintPatientName: boolean;
   gapBetweenImages: number;
   sixSpotsSpacing: 'equalSpace' | 'compact';
   logoLeftEnabled: boolean;
@@ -188,10 +222,9 @@ export const useHospitalConfigStore = create<HospitalConfig>()(
       headerFontColor: '#000000',
       footerFontSize: 8,
       footerFontColor: '#999999',
-      printBlackBgNonUS: true,
-      printBlackBgUS: false,
-      printBorderToImage: true,
-      printBorderColor: '#ffffff',
+      printBlackBg: false,
+      printBorderEnabled: true,
+      printBorderColor: '#333333',
       printCountWarningAt: 50,
       popupOnImageReceived: false,
       exportFolderNameMode: 'patientName' as const,
@@ -200,6 +233,40 @@ export const useHospitalConfigStore = create<HospitalConfig>()(
       metadataPrintStudyName: true,
       metadataPrintAccessNo: true,
       metadataPrintPatientId: true,
+      metadataPrintAge: true,
+      metadataPrintSex: true,
+      metadataPrintModality: true,
+
+      // Header customization
+      headerBgColor: '#ffffff',
+      headerBorderBottomColor: '#2563eb',
+      headerShowLogo: true,
+      headerLogoSize: 60,
+      headerLogoPosition: 'left' as const,
+      headerLogoShape: 'circle' as const,
+      headerShowName: true,
+      headerNameFontSize: 18,
+      headerNameColor: '#1e3a5f',
+      headerNameAlign: 'left' as const,
+      headerSecondaryNameColor: '#2563eb',
+      headerShowServices: true,
+      headerServicesFontSize: 10,
+      headerServicesColor: '#1a1a1a',
+      headerServicesAlign: 'left' as const,
+      headerShowAddress: true,
+      headerAddressFontSize: 8,
+      headerAddressColor: '#2563eb',
+      headerAddressAlign: 'left' as const,
+      headerShowContact: true,
+      headerContactFontSize: 9,
+      headerContactColor: '#333333',
+      headerContactAlign: 'left' as const,
+
+      // Footer customization
+      footerBgColor: '#ffffff',
+      footerBorderTopColor: '#cccccc',
+
+      metadataPrintPatientName: true,
       gapBetweenImages: 60,
       sixSpotsSpacing: 'equalSpace' as const,
       logoLeftEnabled: false,
@@ -367,25 +434,71 @@ export function buildBrandHeaderHtml(config: HospitalConfig): string {
   const servicesHtml = services.map(s => `<span>${s.trim()}</span>`).join('<span style="margin:0 4px;color:#999">|</span>');
   const address = getFormattedAddress(config).toUpperCase();
 
-  const logoHtml = config.logoDataUrl
-    ? `<img src="${config.logoDataUrl}" style="width:60px;height:60px;border-radius:50%;object-fit:cover;border:1px solid #ddd" />`
+  const logoSize = config.headerLogoSize || 60;
+  const logoRadius = config.headerLogoShape === 'square' ? '6px' : '50%';
+  const logoHtml = (config.headerShowLogo !== false && config.logoDataUrl)
+    ? `<img src="${config.logoDataUrl}" style="width:${logoSize}px;height:${logoSize}px;border-radius:${logoRadius};object-fit:cover;border:1px solid #ddd" />`
     : '';
 
   const contactParts: string[] = [];
   if (config.phone) contactParts.push(`<span style="display:inline-flex;align-items:center;gap:3px">${HEADER_ICONS.phone}<span>${config.phone}</span></span>`);
   if (config.email) contactParts.push(`<span style="display:inline-flex;align-items:center;gap:3px">${HEADER_ICONS.email}<span>${config.email}</span></span>`);
   if (config.website) contactParts.push(`<span style="display:inline-flex;align-items:center;gap:3px">${HEADER_ICONS.globe}<span>${config.website}</span></span>`);
-  const contactHtml = contactParts.length > 0
-    ? `<div style="display:flex;align-items:center;justify-content:center;gap:10px;font-size:9px;color:#333;flex-wrap:wrap;margin-top:2px">${contactParts.join('')}</div>`
+  const contactFs = config.headerContactFontSize || 9;
+  const contactCol = config.headerContactColor || '#333';
+  const contactAlign = config.headerContactAlign || 'left';
+  const contactJustify = contactAlign === 'left' ? 'flex-start' : contactAlign === 'right' ? 'flex-end' : 'center';
+  const contactHtml = (config.headerShowContact !== false && contactParts.length > 0)
+    ? `<div style="display:flex;align-items:center;justify-content:${contactJustify};gap:10px;font-size:${contactFs}px;color:${contactCol};flex-wrap:wrap;margin-top:2px">${contactParts.join('')}</div>`
     : '';
 
-  return `<div style="display:flex;align-items:center;padding:6px 12px;border-bottom:2px solid #2563eb;font-family:Arial,Helvetica,sans-serif;gap:10px">
-    <div style="flex:0 0 auto;display:flex;justify-content:center;align-items:center">${logoHtml}</div>
-    <div style="flex:1;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;line-height:1.3">
-      <div style="margin-bottom:2px"><span style="font-size:18px;font-weight:800;color:#1e3a5f">${config.hospitalName}</span>${config.brandNameSecondary ? `<span style="font-size:18px;font-weight:400;color:#2563eb;margin-left:5px">${config.brandNameSecondary}</span>` : ''}</div>
-      ${services.length > 0 ? `<div style="display:flex;align-items:center;justify-content:center;gap:3px;font-size:10px;font-weight:600;color:#1a1a1a;flex-wrap:wrap;margin-bottom:2px">${HEADER_ICONS.scanner}<span style="margin-right:2px"></span>${servicesHtml}</div>` : ''}
-      ${address ? `<div style="font-size:8px;color:#2563eb;text-transform:uppercase;letter-spacing:0.5px">${address}</div>` : ''}
-      ${contactHtml}
-    </div>
+  const bgCol = config.headerBgColor || '#ffffff';
+  const borderCol = config.headerBorderBottomColor || '#2563eb';
+  const nameFs = config.headerNameFontSize || 18;
+  const nameCol = config.headerNameColor || '#1e3a5f';
+  const secCol = config.headerSecondaryNameColor || '#2563eb';
+  const nameAlign = config.headerNameAlign || 'left';
+  const svcFs = config.headerServicesFontSize || 10;
+  const svcCol = config.headerServicesColor || '#1a1a1a';
+  const svcAlign = config.headerServicesAlign || 'left';
+  const svcJustify = svcAlign === 'left' ? 'flex-start' : svcAlign === 'right' ? 'flex-end' : 'center';
+  const addrFs = config.headerAddressFontSize || 8;
+  const addrCol = config.headerAddressColor || '#2563eb';
+  const addrAlign = config.headerAddressAlign || 'left';
+  const logoPos = config.headerLogoPosition || 'left';
+
+  const logoDivHtml = logoHtml ? `<div style="flex:0 0 auto;display:flex;justify-content:center;align-items:center">${logoHtml}</div>` : '';
+
+  const namePart = config.headerShowName !== false
+    ? `<div style="margin-bottom:2px;text-align:${nameAlign}"><span style="font-size:${nameFs}px;font-weight:800;color:${nameCol}">${config.hospitalName}</span>${config.brandNameSecondary ? `<span style="font-size:${nameFs}px;font-weight:400;color:${secCol};margin-left:5px">${config.brandNameSecondary}</span>` : ''}</div>`
+    : '';
+  const svcPart = (config.headerShowServices !== false && services.length > 0)
+    ? `<div style="display:flex;align-items:center;justify-content:${svcJustify};gap:3px;font-size:${svcFs}px;font-weight:600;color:${svcCol};flex-wrap:wrap;margin-bottom:2px">${HEADER_ICONS.scanner}<span style="margin-right:2px"></span>${servicesHtml}</div>`
+    : '';
+  const addrPart = (config.headerShowAddress !== false && address)
+    ? `<div style="font-size:${addrFs}px;color:${addrCol};text-transform:uppercase;letter-spacing:0.5px;text-align:${addrAlign}">${address}</div>`
+    : '';
+
+  const textDivHtml = `<div style="flex:1;display:flex;flex-direction:column;justify-content:center;align-items:stretch;line-height:1.3">
+      ${namePart}${svcPart}${addrPart}${contactHtml}
+    </div>`;
+
+  let innerHtml: string;
+  if (logoPos === 'right') innerHtml = `${textDivHtml}${logoDivHtml}`;
+  else if (logoPos === 'center') innerHtml = `<div style="flex:1"></div>${logoDivHtml}<div style="flex:1">${namePart}${svcPart}${addrPart}${contactHtml}</div>`;
+  else innerHtml = `${logoDivHtml}${textDivHtml}`;
+
+  return `<div style="display:flex;align-items:center;padding:6px 12px;border-bottom:2px solid ${borderCol};background:${bgCol};font-family:Arial,Helvetica,sans-serif;gap:10px">
+    ${innerHtml}
   </div>`;
+}
+
+/** Build customized footer HTML for print output */
+export function buildFooterHtml(config: HospitalConfig): string {
+  const l = renderPrintSlot(config.footerLayout.left, config, config.customFooterLeft, true);
+  const c = renderPrintSlot(config.footerLayout.center, config, config.customFooterCenter, true);
+  const r = renderPrintSlot(config.footerLayout.right, config, config.customFooterRight, true);
+  const bgCol = config.footerBgColor || '#ffffff';
+  const borderCol = config.footerBorderTopColor || '#cccccc';
+  return `<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 15px;border-top:1px solid ${borderCol};background:${bgCol};font-size:8px;color:#666"><div>${l}</div><div style="text-align:center">${c}</div><div style="text-align:right">${r}</div></div>`;
 }
