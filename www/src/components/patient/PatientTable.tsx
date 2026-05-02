@@ -5,7 +5,7 @@ import { openCRViewerPopup } from '@/stores/crViewerStore';
 import { useReportStore } from '@/stores/reportStore';
 import type { Patient } from '@/types/patient';
 import { PatientContextMenu } from './PatientContextMenu';
-import { FileText, Printer, Merge, Undo2 } from 'lucide-react';
+import { FileText, Printer, Undo2 } from 'lucide-react';
 
 export function PatientTable() {
   const navigate = useNavigate();
@@ -257,15 +257,6 @@ export function PatientTable() {
                 : <span>No selection</span>
             }
           </span>
-          {multiCount === 2 && (
-            <button
-              onClick={handleMergeClick}
-              className="flex items-center gap-1 px-2 py-0.5 text-[10px] font-bold border border-blue-500 text-blue-500 bg-app-bg rounded hover:bg-blue-500 hover:text-white transition-colors"
-            >
-              <Merge className="w-3 h-3" />
-              Merge
-            </button>
-          )}
         </div>
         <span className="opacity-60">
           Click to select · <kbd className="border border-app-border rounded px-1 bg-app-bg">Ctrl</kbd>+Click to multi-select · Click selected row to deselect
@@ -341,6 +332,8 @@ export function PatientTable() {
           y={contextMenu.y}
           patient={contextMenu.patient}
           onClose={() => setContextMenu(null)}
+          canMerge={multiCount === 2}
+          onMerge={handleMergeClick}
         />
       )}
     </div>

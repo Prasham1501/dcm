@@ -3,7 +3,16 @@ export function fillEmptyPrintSlots(
   spotsPerPage: number,
 ): string[][] {
   return pageCaptures.map((page) => {
-    // Preserve empty viewports so the preview/printout matches the live viewer.
-    return Array.from({ length: spotsPerPage }, (_, slotIndex) => page[slotIndex] || '');
+    const slots: string[] = Array.from({ length: spotsPerPage }, (_, i) => page[i] || '');
+    // Find the last slot that actually has an image; gaps before it are preserved.
+    let lastFilled = -1;
+    for (let i = slots.length - 1; i >= 0; i--) {
+      if (slots[i]) { lastFilled = i; break; }
+    }
+    if (lastFilled >= 0 && lastFilled < slots.length - 1) {
+      const lastImage = slots[lastFilled];
+      for (let i = lastFilled + 1; i < slots.length; i++) slots[i] = lastImage;
+    }
+    return slots;
   });
 }

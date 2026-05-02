@@ -15,6 +15,8 @@ interface Props {
   y: number;
   patient: Patient;
   onClose: () => void;
+  onMerge?: () => void;
+  canMerge?: boolean;
 }
 
 /** Render a DICOM imageId to a JPEG Blob using the Cornerstone canvas. */
@@ -53,7 +55,7 @@ async function dicomToJpeg(imageId: string): Promise<Blob | null> {
   }
 }
 
-export function PatientContextMenu({ x, y, patient, onClose }: Props) {
+export function PatientContextMenu({ x, y, patient, onClose, onMerge, canMerge = false }: Props) {
   const menuRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
   const [showSendTo, setShowSendTo] = useState(false);
@@ -165,6 +167,9 @@ export function PatientContextMenu({ x, y, patient, onClose }: Props) {
       }
       case 'open-report':
         navigate('/studies');
+        break;
+      case 'merge':
+        if (onMerge) onMerge();
         break;
       case 'export': {
         const safeName = (s: string) =>
@@ -280,6 +285,7 @@ export function PatientContextMenu({ x, y, patient, onClose }: Props) {
     { label: 'Open', action: 'open' },
     { label: 'Open in dual format', action: 'open-dual' },
     { label: 'Open in CR format', action: 'open-cr' },
+    ...(canMerge ? [{ divider: true } as const, { label: 'Merge', action: 'merge' } as const] : []),
     { divider: true },
     { label: 'Create Report', action: 'create-report' },
     { label: 'Open Report', action: 'open-report', disabled: !hasReport },

@@ -500,5 +500,7 @@ export function buildFooterHtml(config: HospitalConfig): string {
   const r = renderPrintSlot(config.footerLayout.right, config, config.customFooterRight, true);
   const bgCol = config.footerBgColor || '#ffffff';
   const borderCol = config.footerBorderTopColor || '#cccccc';
-  return `<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 15px;border-top:1px solid ${borderCol};background:${bgCol};font-size:8px;color:#666"><div>${l}</div><div style="text-align:center">${c}</div><div style="text-align:right">${r}</div></div>`;
+  const fontSize = config.footerFontSize || 8;
+  const fontColor = config.footerFontColor || '#666666';
+  return `<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 15px;border-top:1px solid ${borderCol};background:${bgCol};font-size:${fontSize}px;color:${fontColor}"><div>${l}</div><div style="text-align:center">${c}</div><div style="text-align:right">${r}</div></div>`;
 }

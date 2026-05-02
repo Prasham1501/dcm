@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Printer, X, ZoomIn, ZoomOut, Plus, Trash2, Check } from 'lucide-react';
 import { useDualViewerStore } from '@/stores/dualViewerStore';
 import { usePrintStore } from '@/stores/printStore';
-import { useHospitalConfigStore, getFormattedAddress, renderPrintSlot, buildBrandHeaderHtml, buildFooterHtml as buildFooterHtmlFn } from '@/stores/hospitalConfigStore';
+import { useHospitalConfigStore, getFormattedAddress, renderPrintSlot, buildBrandHeaderHtml } from '@/stores/hospitalConfigStore';
 import { usePatientStore } from '@/stores/patientStore';
 import { captureCornerstoneElementForPrint, PrintOverlay } from '@/lib/printCapture';
 import { fillEmptyPrintSlots } from '@/lib/printPageUtils';
@@ -88,7 +88,7 @@ interface DualPrintPreviewProps { onClose: () => void; }
 
 export function DualPrintPreview({ onClose }: DualPrintPreviewProps) {
   const { settings, updateSettings, addPrintJob, decrementPrintCount, printCountRemaining } = usePrintStore();
-  const { panels, setPanelPage } = useDualViewerStore();
+  const { panels, setPanelPage, dualFooterEnabled, dualFooterLayout, dualFooterFontSize, dualFooterFontColor, dualFooterBgColor, dualFooterBorderTopColor, dualFooterCustomLeft, dualFooterCustomCenter, dualFooterCustomRight } = useDualViewerStore();
   const hospitalConfig = useHospitalConfigStore();
 
   const leftPanel = panels.left;
@@ -228,13 +228,15 @@ export function DualPrintPreview({ onClose }: DualPrintPreviewProps) {
   const services = (hospitalConfig.servicesList || '').split('|').filter(Boolean);
 
   const renderSlotPv = (slot: string, customText: string) => {
+    const fs = (dualFooterFontSize || 8) * zoom;
+    const fc = dualFooterFontColor || '#666';
     switch (slot) {
       case 'logo': return hospitalConfig.logoDataUrl
         ? <img src={hospitalConfig.logoDataUrl} style={{ maxHeight: 30 * zoom, maxWidth: 80 * zoom, objectFit: 'contain' }} alt="Logo" />
-        : <span style={{ fontSize: 8 * zoom }} className="text-gray-400">[No Logo]</span>;
-      case 'name': return <span style={{ fontSize: 9 * zoom, fontWeight: 600 }} className="text-gray-700">{hospitalConfig.hospitalName}</span>;
-      case 'address': return <span style={{ fontSize: 7 * zoom }} className="text-gray-500">{getFormattedAddress(hospitalConfig as any)}{hospitalConfig.phone && ` | ${hospitalConfig.phone}`}</span>;
-      case 'custom': return <span style={{ fontSize: 8 * zoom }} className="text-gray-500">{customText}</span>;
+        : <span style={{ fontSize: fs, color: fc, opacity: 0.6 }}>[No Logo]</span>;
+      case 'name': return <span style={{ fontSize: fs, fontWeight: 600, color: fc }}>{hospitalConfig.hospitalName}</span>;
+      case 'address': return <span style={{ fontSize: fs, color: fc }}>{getFormattedAddress(hospitalConfig as any)}{hospitalConfig.phone && ` | ${hospitalConfig.phone}`}</span>;
+      case 'custom': return <span style={{ fontSize: fs, color: fc }}>{customText}</span>;
       default: return null;
     }
   };
@@ -297,26 +299,50 @@ export function DualPrintPreview({ onClose }: DualPrintPreviewProps) {
     const pageBg = blackBg ? '#000' : '#fff';
 
     const buildHeaderHtml = () => buildBrandHeaderHtml(hospitalConfig as any);
-    const buildPrintFooterHtml = () => buildFooterHtmlFn(hospitalConfig as any);
-    const patientBarHtml = () => settings.patientInfoEnabled
-      ? `<div style="padding:4px 15px;background:#f5f5f5;border-bottom:1px solid #ccc;display:flex;justify-content:center;font-size:10px"><span><b>Comparison:</b> ${leftPanel.patientName} vs ${rightPanel.patientName} | <b>Date:</b> ${leftPanel.studyDate}</span></div>`
-      : '';
+    const buildPrintFooterHtml = () => {
+      const l = renderPrintSlot(dualFooterLayout.left as any, hospitalConfig as any, dualFooterCustomLeft, true);
+      const c = renderPrintSlot(dualFooterLayout.center as any, hospitalConfig as any, dualFooterCustomCenter, true);
+      const r = renderPrintSlot(dualFooterLayout.right as any, hospitalConfig as any, dualFooterCustomRight, true);
+      const bgCol = dualFooterBgColor || '#ffffff';
+      const borderCol = dualFooterBorderTopColor || '#cccccc';
+      const fontSize = dualFooterFontSize || 8;
+      const fontColor = dualFooterFontColor || '#666666';
+      return `<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 15px;border-top:1px solid ${borderCol};background:${bgCol};font-size:${fontSize}px;color:${fontColor}"><div>${l}</div><div style="text-align:center">${c}</div><div style="text-align:right">${r}</div></div>`;
+    };
 
-    const buildPanelGridHtml = (captures: string[], gridCols: string, gridRows: string, patientName: string) => {
+    const buildPanelMetadataHtml = (panel: typeof leftPanel) => {
+      if (!settings.patientInfoEnabled) return '';
+      const matched = usePatientStore.getState().patients.find(p => p.patientId === panel.patientId && p.patientName === panel.patientName);
+      const parts: string[] = [];
+      if (hospitalConfig.metadataPrintPatientName !== false) parts.push(`<span><b>Patient:</b> ${panel.patientName}</span>`);
+      if (hospitalConfig.metadataPrintAge && matched?.age) parts.push(`<span><b>Age:</b> ${matched.age}</span>`);
+      if (hospitalConfig.metadataPrintSex && matched?.sex) parts.push(`<span><b>Sex:</b> ${matched.sex}</span>`);
+      if (hospitalConfig.metadataPrintPatientId) parts.push(`<span><b>ID:</b> ${panel.patientId}</span>`);
+      parts.push(`<span><b>Date:</b> ${panel.studyDate}</span>`);
+      if (hospitalConfig.metadataPrintModality && matched?.modality) parts.push(`<span><b>Modality:</b> ${matched.modality}</span>`);
+      if (hospitalConfig.metadataPrintStudyName && matched?.studyDescription) parts.push(`<span><b>Study:</b> ${matched.studyDescription}</span>`);
+      if (hospitalConfig.metadataPrintAccessNo && matched?.accessionNumber) parts.push(`<span><b>Acc#:</b> ${matched.accessionNumber}</span>`);
+      if (hospitalConfig.metadataPrintRefBy && matched?.referringPhysician) parts.push(`<span><b>Ref:</b> ${matched.referringPhysician}</span>`);
+      return `<div style="padding:4px 10px;background:#111827;color:#d1d5db;border-bottom:1px solid #374151;display:flex;flex-wrap:wrap;gap:6px;font-size:9px;flex-shrink:0">${parts.join('')}</div>`;
+    };
+
+    const buildPanelGridHtml = (captures: string[], gridCols: string, gridRows: string, panel: typeof leftPanel) => {
       const imgsHtml = captures.map(src => {
         const inner = src ? `<img src="${src}" style="width:100%;height:100%;object-fit:contain" />` : '';
         return `<div style="background:#000;display:flex;align-items:center;justify-content:center;overflow:hidden;min-height:0;border:1px solid ${borderCol}">${inner}</div>`;
       }).join('');
-      return `<div style="flex:1;display:flex;flex-direction:column;min-height:0;overflow:hidden">` +
-        `<div style="padding:4px;text-align:center;font-weight:bold;font-size:12px;background:#eee;border:1px solid #ccc;text-decoration:underline;flex-shrink:0">${patientName}</div>` +
-        `<div style="flex:1;display:grid;grid-template-columns:${gridCols};grid-template-rows:${gridRows};gap:2px;min-height:0;overflow:hidden">${imgsHtml}</div>` +
+      return `<div style="flex:1;display:flex;flex-direction:column;min-height:0;overflow:hidden;border-right:1px dashed #555">` +
+        `${settings.headerEnabled ? buildHeaderHtml() : ''}` +
+        `${buildPanelMetadataHtml(panel)}` +
+        `<div style="flex:1;display:grid;grid-template-columns:${gridCols};grid-template-rows:${gridRows};gap:2px;min-height:0;overflow:hidden;padding:4px">${imgsHtml}</div>` +
+        `${dualFooterEnabled ? buildPrintFooterHtml() : ''}` +
         `</div>`;
     };
 
     const pagesHtml = pagesToPrint.map((pageNum) => {
       const leftCaps = allLeftCaptures[pageNum - 1] || [];
       const rightCaps = allRightCaptures[pageNum - 1] || [];
-      return `<div class="page" style="background:${pageBg}">${settings.headerEnabled ? buildHeaderHtml() : ''}${patientBarHtml()}<div style="flex:1;display:flex;gap:10px;padding:8px;min-height:0;overflow:hidden">${buildPanelGridHtml(leftCaps, leftGridCols, leftGridRows, leftPanel.patientName)}${buildPanelGridHtml(rightCaps, rightGridCols, rightGridRows, rightPanel.patientName)}</div>${hospitalConfig.enableFooter ? buildPrintFooterHtml() : ''}</div>`;
+      return `<div class="page" style="background:${pageBg}"><div style="flex:1;display:flex;gap:0;min-height:0;overflow:hidden">${buildPanelGridHtml(leftCaps, leftGridCols, leftGridRows, leftPanel)}${buildPanelGridHtml(rightCaps, rightGridCols, rightGridRows, rightPanel)}</div></div>`;
     }).join('');
 
     const paperMm = PAPER_DIMS_MM[localPaperSize] || PAPER_DIMS_MM.A4;
@@ -327,7 +353,7 @@ export function DualPrintPreview({ onClose }: DualPrintPreviewProps) {
     const pageH = sheetH - marginMm * 2;
 
     return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>DICOM Print - ${leftPanel.patientName} vs ${rightPanel.patientName}</title><style>@page{size:${localPaperSize} ${isLandscape ? 'landscape' : 'portrait'};margin:${marginMm}mm}*{box-sizing:border-box}html,body{margin:0;padding:0;font-family:Arial,Helvetica,sans-serif;background:${pageBg};width:${pageW}mm}.page{page-break-after:always;page-break-inside:avoid;display:flex;flex-direction:column;width:${pageW}mm;height:${pageH}mm;overflow:hidden}.page:last-child{page-break-after:auto}img{display:block;image-rendering:-webkit-optimize-contrast;image-rendering:high-quality}@media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}</style></head><body>${pagesHtml}</body></html>`;
-  }, [allLeftCaptures, allRightCaptures, leftPanel, rightPanel, settings, hospitalConfig, localPaperSize, isLandscape]);
+  }, [allLeftCaptures, allRightCaptures, leftPanel, rightPanel, settings, hospitalConfig, localPaperSize, isLandscape, dualFooterEnabled, dualFooterLayout, dualFooterFontSize, dualFooterFontColor, dualFooterBgColor, dualFooterBorderTopColor, dualFooterCustomLeft, dualFooterCustomCenter, dualFooterCustomRight]);
 
   const handlePrint = async () => {
     if (activePrinters.length === 0) { alert('No printers configured. Please add a printer in Config or Printer Settings.'); return; }
@@ -390,15 +416,35 @@ export function DualPrintPreview({ onClose }: DualPrintPreviewProps) {
     }
   };
 
-  const renderPanelGrid = (captures: string[], layout: typeof leftPanel.currentLayout, panelPatientName: string) => {
+  const renderPanelMetadataPv = (panel: typeof leftPanel) => {
+    if (!settings.patientInfoEnabled) return null;
+    const matched = usePatientStore.getState().patients.find(p => p.patientId === panel.patientId && p.patientName === panel.patientName);
+    return (
+      <div style={{ padding: '3px 10px', fontSize: '9px' }} className="bg-gray-900 border-b border-gray-700 flex flex-wrap gap-x-2.5 gap-y-0.5 text-gray-300 font-medium flex-shrink-0">
+        {hospitalConfig.metadataPrintPatientName !== false && <span>Patient: {panel.patientName}</span>}
+        {hospitalConfig.metadataPrintAge && matched?.age && <span>Age: {matched.age}</span>}
+        {hospitalConfig.metadataPrintSex && matched?.sex && <span>Sex: {matched.sex}</span>}
+        {hospitalConfig.metadataPrintPatientId && <span>ID: {panel.patientId}</span>}
+        <span>Date: {panel.studyDate}</span>
+        {hospitalConfig.metadataPrintModality && matched?.modality && <span>Mod: {matched.modality}</span>}
+        {hospitalConfig.metadataPrintStudyName && matched?.studyDescription && <span>Study: {matched.studyDescription}</span>}
+        {hospitalConfig.metadataPrintAccessNo && matched?.accessionNumber && <span>Acc#: {matched.accessionNumber}</span>}
+        {hospitalConfig.metadataPrintRefBy && matched?.referringPhysician && <span>Ref: {matched.referringPhysician}</span>}
+      </div>
+    );
+  };
+
+  const renderPanelGrid = (captures: string[], layout: typeof leftPanel.currentLayout, panel: typeof leftPanel, isLast: boolean) => {
     const borderColor = hospitalConfig.printBorderEnabled ? (hospitalConfig.printBorderColor || '#333') : 'transparent';
     return (
-      <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
-        <div className="bg-gray-100 text-center font-bold border-b border-gray-200 text-gray-700 text-[10px] py-0.5 underline flex-shrink-0">
-          {panelPatientName}
-        </div>
+      <div
+        className="flex flex-col flex-1 min-h-0 overflow-hidden"
+        style={{ borderRight: isLast ? 'none' : '1px dashed #555' }}
+      >
+        {settings.headerEnabled && renderBrandHeaderPv()}
+        {renderPanelMetadataPv(panel)}
         <div style={{
-          display: 'grid', gap: '2px', flex: 1, minHeight: 0, padding: '2px', backgroundColor: '#374151',
+          display: 'grid', gap: '2px', flex: 1, minHeight: 0, padding: '4px', backgroundColor: '#374151',
           gridTemplateColumns: `repeat(${layout.cols}, 1fr)`,
           gridTemplateRows: `repeat(${layout.rows}, 1fr)`,
         }} className="h-full">
@@ -408,6 +454,22 @@ export function DualPrintPreview({ onClose }: DualPrintPreviewProps) {
             </div>
           ))}
         </div>
+        {dualFooterEnabled && (
+          <div
+            style={{
+              padding: '3px 12px',
+              fontSize: `${dualFooterFontSize || 8}px`,
+              color: dualFooterFontColor || '#666',
+              borderTop: `1px solid ${dualFooterBorderTopColor || '#555'}`,
+              background: dualFooterBgColor || undefined,
+            }}
+            className="flex justify-between items-center flex-shrink-0"
+          >
+            <div>{renderSlotPv(dualFooterLayout.left, dualFooterCustomLeft)}</div>
+            <div className="text-center">{renderSlotPv(dualFooterLayout.center, dualFooterCustomCenter)}</div>
+            <div className="text-right">{renderSlotPv(dualFooterLayout.right, dualFooterCustomRight)}</div>
+          </div>
+        )}
       </div>
     );
   };
@@ -510,23 +572,10 @@ export function DualPrintPreview({ onClose }: DualPrintPreviewProps) {
               <div key={`preview-page-${pageNum}`} className="flex-shrink-0 flex flex-col items-center mb-4">
                 <div className="text-xs text-app-text-muted py-1 text-center">Page {pageNum} of {totalDualPages} — {localPaperSize} {localOrientation}</div>
                 <div className="flex flex-col border border-gray-600 shadow-xl" style={{ width: `min(calc(98vw * ${zoom}), calc((100vh - ${toolbarH}px - 50px) * ${zoom} * ${(pw/ph).toFixed(4)}))`, aspectRatio: `${pw} / ${ph}`, background: hospitalConfig.printBlackBg ? '#000' : '#fff' }}>
-                  {settings.headerEnabled && renderBrandHeaderPv()}
-                  {settings.patientInfoEnabled && (
-                    <div style={{ padding: '3px 12px', fontSize: '10px' }} className="bg-gray-900 border-b border-gray-700 flex justify-center text-gray-300 font-medium flex-shrink-0">
-                      <span><b>Comparison:</b> {leftPanel.patientName} vs {rightPanel.patientName} | <b>Date:</b> {leftPanel.studyDate} | <b>Page</b> {pageNum}/{totalDualPages}</span>
-                    </div>
-                  )}
-                  <div style={{ display: 'flex', gap: '4px', padding: '4px', flex: 1, minHeight: 0, overflow: 'hidden' }}>
-                    {renderPanelGrid(leftCaps, leftPanel.currentLayout, leftPanel.patientName)}
-                    {renderPanelGrid(rightCaps, rightPanel.currentLayout, rightPanel.patientName)}
+                  <div style={{ display: 'flex', gap: 0, flex: 1, minHeight: 0, overflow: 'hidden' }}>
+                    {renderPanelGrid(leftCaps, leftPanel.currentLayout, leftPanel, false)}
+                    {renderPanelGrid(rightCaps, rightPanel.currentLayout, rightPanel, true)}
                   </div>
-                  {hospitalConfig.enableFooter && (
-                    <div style={{ padding: '3px 12px', fontSize: '9px', borderTop: `1px solid ${hospitalConfig.footerBorderTopColor || '#555'}`, background: hospitalConfig.footerBgColor || undefined }} className="flex justify-between items-center text-gray-400 flex-shrink-0">
-                      <div>{renderSlotPv(hospitalConfig.footerLayout.left, hospitalConfig.customFooterLeft)}</div>
-                      <div className="text-center">{renderSlotPv(hospitalConfig.footerLayout.center, hospitalConfig.customFooterCenter)}</div>
-                      <div className="text-right">{renderSlotPv(hospitalConfig.footerLayout.right, hospitalConfig.customFooterRight)}</div>
-                    </div>
-                  )}
                 </div>
               </div>
             );

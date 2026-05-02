@@ -6,6 +6,7 @@
 import { create } from 'zustand';
 import { localFileToImageId, prefetchImages } from '@/lib/dicomLoader';
 import { useUndoStore } from '@/stores/undoStore';
+import { useHospitalConfigStore } from '@/stores/hospitalConfigStore';
 
 // ── Types ──
 
@@ -121,6 +122,17 @@ interface DualViewerState {
   // Text
   isTextMode: boolean;
 
+  // Footer (independent from hospitalConfigStore)
+  dualFooterEnabled: boolean;
+  dualFooterLayout: { left: string; center: string; right: string };
+  dualFooterFontSize: number;
+  dualFooterFontColor: string;
+  dualFooterBgColor: string;
+  dualFooterBorderTopColor: string;
+  dualFooterCustomLeft: string;
+  dualFooterCustomCenter: string;
+  dualFooterCustomRight: string;
+
   // UI
   isLoading: boolean;
   showLogo: boolean;
@@ -179,6 +191,10 @@ interface DualViewerState {
 
   // Logo
   setShowLogo: (v: boolean) => void;
+
+  // Footer actions
+  updateDualFooterField: (key: string, value: any) => void;
+  updateDualFooterLayout: (slot: 'left' | 'center' | 'right', value: string) => void;
 }
 
 // ── Helpers ──
@@ -230,7 +246,24 @@ function updatePanel(
 
 // ── Store ──
 
-export const useDualViewerStore = create<DualViewerState>((set, get) => ({
+function getInitialFooterFromConfig() {
+  const hc = useHospitalConfigStore.getState();
+  return {
+    dualFooterEnabled: hc.enableFooter ?? false,
+    dualFooterLayout: { left: hc.footerLayout?.left || 'custom', center: hc.footerLayout?.center || 'none', right: hc.footerLayout?.right || 'custom' },
+    dualFooterFontSize: hc.footerFontSize || 8,
+    dualFooterFontColor: hc.footerFontColor || '#999999',
+    dualFooterBgColor: hc.footerBgColor || '#ffffff',
+    dualFooterBorderTopColor: hc.footerBorderTopColor || '#cccccc',
+    dualFooterCustomLeft: hc.customFooterLeft || '',
+    dualFooterCustomCenter: hc.customFooterCenter || 'Printed by: ADMIN',
+    dualFooterCustomRight: hc.customFooterRight || '',
+  };
+}
+
+export const useDualViewerStore = create<DualViewerState>((set, get) => {
+  const initFooter = getInitialFooterFromConfig();
+  return ({
   panels: { left: createDefaultPanelState(), right: createDefaultPanelState() },
   activePanel: 'left',
   stamps: loadSavedStamps(),
@@ -238,6 +271,8 @@ export const useDualViewerStore = create<DualViewerState>((set, get) => ({
   isStampMode: false,
   activeStampId: null,
   isTextMode: false,
+  ...initFooter,
+
   isLoading: false,
   showLogo: true,
   syncMove: true,
@@ -712,6 +747,9 @@ export const useDualViewerStore = create<DualViewerState>((set, get) => ({
 
   setShowLogo: (v) => set({ showLogo: v }),
 
+  updateDualFooterField: (key, value) => set((s) => ({ ...s, [key]: value })),
+  updateDualFooterLayout: (slot, value) => set((s) => ({ dualFooterLayout: { ...s.dualFooterLayout, [slot]: value } })),
+
   // ── Text ──
 
   setTextMode: (v) => set({ isTextMode: v, isStampMode: false }),
@@ -740,7 +778,7 @@ export const useDualViewerStore = create<DualViewerState>((set, get) => ({
       isTextMode: false,
     }));
   },
-}));
+})});
 
 // ── Launch Function ──
 

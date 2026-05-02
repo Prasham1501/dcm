@@ -192,13 +192,15 @@ export function CRPrintPreview({ onClose, initialPageMode = 'all' }: CRPrintPrev
   const ph = isLandscape ? dims.w : dims.h;
 
   const renderSlotPv = (slot: string, customText: string) => {
+    const fs = (hospitalConfig.footerFontSize || 8) * zoom;
+    const fc = hospitalConfig.footerFontColor || '#666';
     switch (slot) {
       case 'logo': return hospitalConfig.logoDataUrl
         ? <img src={hospitalConfig.logoDataUrl} style={{ maxHeight: 30 * zoom, maxWidth: 80 * zoom, objectFit: 'contain' }} alt="Logo" />
-        : <span style={{ fontSize: 8 * zoom }} className="text-gray-400">[No Logo]</span>;
-      case 'name': return <span style={{ fontSize: 9 * zoom, fontWeight: 600 }} className="text-gray-700">{hospitalConfig.hospitalName}</span>;
-      case 'address': return <span style={{ fontSize: 7 * zoom }} className="text-gray-500">{getFormattedAddress(hospitalConfig as any)}{hospitalConfig.phone && ` | ${hospitalConfig.phone}`}</span>;
-      case 'custom': return <span style={{ fontSize: 8 * zoom }} className="text-gray-500">{customText}</span>;
+        : <span style={{ fontSize: fs, color: fc, opacity: 0.6 }}>[No Logo]</span>;
+      case 'name': return <span style={{ fontSize: fs, fontWeight: 600, color: fc }}>{hospitalConfig.hospitalName}</span>;
+      case 'address': return <span style={{ fontSize: fs, color: fc }}>{getFormattedAddress(hospitalConfig as any)}{hospitalConfig.phone && ` | ${hospitalConfig.phone}`}</span>;
+      case 'custom': return <span style={{ fontSize: fs, color: fc }}>{customText}</span>;
       default: return null;
     }
   };
@@ -268,15 +270,15 @@ export function CRPrintPreview({ onClose, initialPageMode = 'all' }: CRPrintPrev
       const matchedPatient = usePatientStore.getState().patients.find(p => p.patientId === patientId && p.patientName === patientName);
       const parts: string[] = [];
       if (hospitalConfig.metadataPrintPatientName !== false) parts.push(`<span><b>Patient:</b> ${patientName}</span>`);
-      if (hospitalConfig.metadataPrintPatientId) parts.push(`<span><b>ID:</b> ${patientId}</span>`);
-      parts.push(`<span><b>Date:</b> ${studyDate}</span>`);
       if (hospitalConfig.metadataPrintAge && matchedPatient?.age) parts.push(`<span><b>Age:</b> ${matchedPatient.age}</span>`);
       if (hospitalConfig.metadataPrintSex && matchedPatient?.sex) parts.push(`<span><b>Sex:</b> ${matchedPatient.sex}</span>`);
+      if (hospitalConfig.metadataPrintPatientId) parts.push(`<span><b>ID:</b> ${patientId}</span>`);
+      parts.push(`<span><b>Date:</b> ${studyDate}</span>`);
       if (hospitalConfig.metadataPrintModality && matchedPatient?.modality) parts.push(`<span><b>Modality:</b> ${matchedPatient.modality}</span>`);
       if (hospitalConfig.metadataPrintStudyName && matchedPatient?.studyDescription) parts.push(`<span><b>Study:</b> ${matchedPatient.studyDescription}</span>`);
       if (hospitalConfig.metadataPrintAccessNo && matchedPatient?.accessionNumber) parts.push(`<span><b>Acc#:</b> ${matchedPatient.accessionNumber}</span>`);
       if (hospitalConfig.metadataPrintRefBy && matchedPatient?.referringPhysician) parts.push(`<span><b>Ref:</b> ${matchedPatient.referringPhysician}</span>`);
-      return `<div style="padding:4px 15px;background:#f5f5f5;border-bottom:1px solid #ccc;display:flex;justify-content:space-between;flex-wrap:wrap;gap:4px;font-size:10px">${parts.join('')}</div>`;
+      return `<div style="padding:4px 15px;background:#111827;color:#d1d5db;border-bottom:1px solid #374151;display:flex;justify-content:space-between;flex-wrap:wrap;gap:4px;font-size:10px">${parts.join('')}</div>`;
     };
     const borderCol = hospitalConfig.printBorderEnabled ? (hospitalConfig.printBorderColor || '#333') : 'transparent';
     const blackBg = hospitalConfig.printBlackBg;
@@ -477,10 +479,10 @@ export function CRPrintPreview({ onClose, initialPageMode = 'all' }: CRPrintPrev
                   {settings.patientInfoEnabled && (
                     <div style={{ padding: '3px 12px', fontSize: '10px' }} className="bg-gray-900 border-b border-gray-700 flex flex-wrap gap-x-3 gap-y-0.5 text-gray-300 font-medium flex-shrink-0">
                       {hospitalConfig.metadataPrintPatientName !== false && <span>Patient: {patientName}</span>}
-                      {hospitalConfig.metadataPrintPatientId && <span>ID: {patientId}</span>}
-                      <span>Date: {studyDate}</span>
                       {hospitalConfig.metadataPrintAge && matchedPatient?.age && <span>Age: {matchedPatient.age}</span>}
                       {hospitalConfig.metadataPrintSex && matchedPatient?.sex && <span>Sex: {matchedPatient.sex}</span>}
+                      {hospitalConfig.metadataPrintPatientId && <span>ID: {patientId}</span>}
+                      <span>Date: {studyDate}</span>
                       {hospitalConfig.metadataPrintModality && matchedPatient?.modality && <span>Mod: {matchedPatient.modality}</span>}
                       {hospitalConfig.metadataPrintStudyName && matchedPatient?.studyDescription && <span>Study: {matchedPatient.studyDescription}</span>}
                       {hospitalConfig.metadataPrintAccessNo && matchedPatient?.accessionNumber && <span>Acc#: {matchedPatient.accessionNumber}</span>}
@@ -502,7 +504,16 @@ export function CRPrintPreview({ onClose, initialPageMode = 'all' }: CRPrintPrev
                     </div>
                   </div>
                   {hospitalConfig.enableFooter && (
-                    <div style={{ padding: '3px 12px', fontSize: '9px', borderTop: `1px solid ${hospitalConfig.footerBorderTopColor || '#555'}`, background: hospitalConfig.footerBgColor || undefined }} className="flex justify-between items-center text-gray-400 flex-shrink-0">
+                    <div
+                      style={{
+                        padding: '3px 12px',
+                        fontSize: `${hospitalConfig.footerFontSize || 8}px`,
+                        color: hospitalConfig.footerFontColor || '#666',
+                        borderTop: `1px solid ${hospitalConfig.footerBorderTopColor || '#555'}`,
+                        background: hospitalConfig.footerBgColor || undefined,
+                      }}
+                      className="flex justify-between items-center flex-shrink-0"
+                    >
                       <div>{renderSlotPv(hospitalConfig.footerLayout.left, hospitalConfig.customFooterLeft)}</div>
                       <div className="text-center">{renderSlotPv(hospitalConfig.footerLayout.center, hospitalConfig.customFooterCenter)}</div>
                       <div className="text-right">{renderSlotPv(hospitalConfig.footerLayout.right, hospitalConfig.customFooterRight)}</div>
