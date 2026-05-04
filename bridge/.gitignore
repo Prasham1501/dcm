@@ -5,3 +5,10 @@ installer-output/
 *.log
 .DS_Store
 Thumbs.db
+
+# Data
+received/
+render-test/
+tmp/
+logs/
+config.json
