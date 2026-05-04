@@ -1,0 +1,66 @@
+{
+  "name": "accurate-bridge",
+  "version": "1.0.0",
+  "description": "Accurate Bridge - DICOM Print Bridge for paper printers",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "concurrently \"cd ui && npm run dev\" \"electron . --dev\"",
+    "setup": "npm install && cd ui && npm install && npm run build",
+    "postinstall": "cd ui && npm install",
+    "build:ui": "cd ui && npm run build",
+    "build:win": "npm run build:ui && electron-builder --win",
+    "pack": "electron-builder --dir"
+  },
+  "author": "Accurate Team",
+  "license": "MIT",
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "electron": "^28.0.0",
+    "electron-builder": "^24.9.1"
+  },
+  "dependencies": {
+    "dicom-parser": "^1.8.21",
+    "pngjs": "^7.0.0"
+  },
+  "build": {
+    "appId": "com.accurate.bridge",
+    "productName": "Accurate Bridge",
+    "icon": "icon.ico",
+    "directories": {
+      "output": "installer-output",
+      "app": "."
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "icon.ico",
+      "package.json",
+      "src/**/*",
+      "ui/dist/**/*"
+    ],
+    "win": {
+      "icon": "icon.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": true,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Accurate Bridge",
+      "installerIcon": "icon.ico",
+      "uninstallerIcon": "icon.ico",
+      "installerHeaderIcon": "icon.ico",
+      "deleteAppDataOnUninstall": false,
+      "runAfterFinish": true
+    },
+    "compression": "normal"
+  }
+}
