@@ -83,17 +83,15 @@ class JobQueue extends EventEmitter {
   }
 
   _move(files, targetRoot) {
-    try {
-      const ymd = new Date().toISOString().slice(0, 10);
-      const dir = path.join(targetRoot, ymd);
-      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    // Fire-and-forget; don't block the print pipeline
+    const ymd = new Date().toISOString().slice(0, 10);
+    const dir = path.join(targetRoot, ymd);
+    fs.promises.mkdir(dir, { recursive: true }).then(() => {
       for (const f of files) {
-        try {
-          const dest = path.join(dir, path.basename(f.filepath));
-          if (fs.existsSync(f.filepath)) fs.renameSync(f.filepath, dest);
-        } catch (e) { this.logger.warn(`[Queue] move failed: ${e.message}`); }
+        fs.promises.rename(f.filepath, path.join(dir, path.basename(f.filepath)))
+          .catch(() => {});
       }
-    } catch (e) { this.logger.warn(`[Queue] move root failed: ${e.message}`); }
+    }).catch(e => this.logger.warn(`[Queue] move root failed: ${e.message}`));
   }
 }
 

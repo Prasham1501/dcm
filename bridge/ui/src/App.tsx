@@ -1,15 +1,17 @@
 import { useEffect, useState } from 'react';
-import { Settings, FileText, Info, Moon, Sun, Minus } from 'lucide-react';
+import { Settings, FileText, Info, Moon, Sun, Minus, Palette } from 'lucide-react';
 import { useConfigStore } from './stores/configStore';
 import { SlotsPage } from './pages/SlotsPage';
 import { LogsPage } from './pages/LogsPage';
 import { AboutPage } from './pages/AboutPage';
+import { BrandingPage } from './pages/BrandingPage';
 import { StatusBar } from './components/StatusBar';
 
-type Tab = 'slots' | 'logs' | 'about';
+type Tab = 'slots' | 'branding' | 'logs' | 'about';
 
 const TABS: { id: Tab; label: string; icon: typeof Settings }[] = [
   { id: 'slots', label: 'Printer Slots', icon: Settings },
+  { id: 'branding', label: 'Branding', icon: Palette },
   { id: 'logs', label: 'Logs', icon: FileText },
   { id: 'about', label: 'About', icon: Info },
 ];
@@ -84,6 +86,7 @@ export function App() {
       {/* Page */}
       <main className="flex-1 overflow-auto bg-app-bg">
         {tab === 'slots' && <SlotsPage />}
+        {tab === 'branding' && <BrandingPage />}
         {tab === 'logs' && <LogsPage />}
         {tab === 'about' && <AboutPage />}
       </main>

@@ -143,6 +143,12 @@ function scanImplicitVR(buf, datasetStart) {
     else if (group === 0x0008 && elem === 0x0060) t.modality            = _readStr(buf, dpos, vlen);
     else if (group === 0x0010 && elem === 0x0010) t.patientName         = _readStr(buf, dpos, vlen);
     else if (group === 0x0010 && elem === 0x0020) t.patientId           = _readStr(buf, dpos, vlen);
+    else if (group === 0x0010 && elem === 0x0030) t.patientDob          = _readStr(buf, dpos, vlen);
+    else if (group === 0x0010 && elem === 0x0040) t.patientSex          = _readStr(buf, dpos, vlen);
+    else if (group === 0x0010 && elem === 0x1010) t.patientAge          = _readStr(buf, dpos, vlen);
+    else if (group === 0x0008 && elem === 0x0050) t.accessionNumber     = _readStr(buf, dpos, vlen);
+    else if (group === 0x0008 && elem === 0x0090) t.referringPhysician  = _readStr(buf, dpos, vlen);
+    else if (group === 0x0008 && elem === 0x1030) t.studyDescription    = _readStr(buf, dpos, vlen);
     else if (group === 0x0020 && elem === 0x000D) t.studyUid            = _readStr(buf, dpos, vlen);
     else if (group === 0x0020 && elem === 0x000E) t.seriesUid           = _readStr(buf, dpos, vlen);
     else if (group === 0x0020 && elem === 0x0013) t.instanceNumber      = parseInt(_readStr(buf, dpos, vlen)) || 0;
@@ -198,14 +204,20 @@ function readMetadata(filepath) {
   const { transferSyntax, datasetStart } = readMetaHeader(buf);
 
   const buildFromScan = (t) => ({
-    studyUid:      t.studyUid      || '',
-    seriesUid:     t.seriesUid     || '',
-    sopInstanceUid: t.sopInstanceUid || '',
-    instanceNumber: t.instanceNumber || 0,
-    patientName:   t.patientName   || '',
-    patientId:     t.patientId     || '',
-    studyDate:     t.studyDate     || '',
-    modality:      t.modality      || '',
+    studyUid:         t.studyUid         || '',
+    seriesUid:        t.seriesUid        || '',
+    sopInstanceUid:   t.sopInstanceUid   || '',
+    instanceNumber:   t.instanceNumber   || 0,
+    patientName:      t.patientName      || '',
+    patientId:        t.patientId        || '',
+    patientDob:       t.patientDob       || '',
+    patientSex:       t.patientSex       || '',
+    patientAge:       t.patientAge       || '',
+    studyDate:        t.studyDate        || '',
+    modality:         t.modality         || '',
+    accessionNumber:  t.accessionNumber  || '',
+    referringPhysician: t.referringPhysician || '',
+    studyDescription: t.studyDescription || '',
     transferSyntax,
   });
 
@@ -216,14 +228,20 @@ function readMetadata(filepath) {
   try {
     const ds = dicomParser.parseDicom(new Uint8Array(buf));
     return {
-      studyUid:      ds.string('x0020000d') || '',
-      seriesUid:     ds.string('x0020000e') || '',
-      sopInstanceUid: ds.string('x00080018') || '',
-      instanceNumber: ds.intString('x00200013') || 0,
-      patientName:   ds.string('x00100010') || '',
-      patientId:     ds.string('x00100020') || '',
-      studyDate:     ds.string('x00080020') || '',
-      modality:      ds.string('x00080060') || '',
+      studyUid:         ds.string('x0020000d') || '',
+      seriesUid:        ds.string('x0020000e') || '',
+      sopInstanceUid:   ds.string('x00080018') || '',
+      instanceNumber:   ds.intString('x00200013') || 0,
+      patientName:      ds.string('x00100010') || '',
+      patientId:        ds.string('x00100020') || '',
+      patientDob:       ds.string('x00100030') || '',
+      patientSex:       ds.string('x00100040') || '',
+      patientAge:       ds.string('x00101010') || '',
+      studyDate:        ds.string('x00080020') || '',
+      modality:         ds.string('x00080060') || '',
+      accessionNumber:  ds.string('x00080050') || '',
+      referringPhysician: ds.string('x00080090') || '',
+      studyDescription: ds.string('x00081030') || '',
       transferSyntax,
     };
   } catch (_) {
@@ -299,7 +317,7 @@ function applyWindowing(pixelData, samples, bitsAllocated, bitsStored, signed, w
   return out;
 }
 
-function renderToPng(filepath, logger) {
+function renderToPng(filepath, logger, opts = {}) {
   const buf = fs.readFileSync(filepath);
   const { transferSyntax, datasetStart } = readMetaHeader(buf);
 
@@ -391,17 +409,44 @@ function renderToPng(filepath, logger) {
     }
   }
 
-  const png = new PNG({ width: cols, height: rows });
-
   const totalSamples = rows * cols;
 
+  // Determine target dimensions BEFORE creating the PNG to avoid
+  // allocating a full-resolution RGBA buffer unnecessarily.
+  const maxDim = opts.maxDim || 0;
+  const needsDownscale = maxDim > 0 && (cols > maxDim || rows > maxDim);
+  const scale = needsDownscale ? Math.min(maxDim / cols, maxDim / rows) : 1;
+  const outW = needsDownscale ? Math.max(1, Math.round(cols * scale)) : cols;
+  const outH = needsDownscale ? Math.max(1, Math.round(rows * scale)) : rows;
+
+  if (needsDownscale) {
+    logger?.info(`[Render] downscale ${cols}x${rows} → ${outW}x${outH}`);
+  }
+
+  const png = new PNG({ width: outW, height: outH });
+
   if (samplesPerPixel === 3) {
-    // RGB: just copy
-    for (let i = 0; i < totalSamples; i++) {
-      png.data[i * 4] = pixelBytes[i * 3];
-      png.data[i * 4 + 1] = pixelBytes[i * 3 + 1];
-      png.data[i * 4 + 2] = pixelBytes[i * 3 + 2];
-      png.data[i * 4 + 3] = 255;
+    if (needsDownscale) {
+      // Nearest-neighbour downscale directly from source pixels → PNG
+      for (let dy = 0; dy < outH; dy++) {
+        const sy = Math.min(rows - 1, Math.floor(dy / scale));
+        for (let dx = 0; dx < outW; dx++) {
+          const sx = Math.min(cols - 1, Math.floor(dx / scale));
+          const si = (sy * cols + sx) * 3;
+          const di = (dy * outW + dx) * 4;
+          png.data[di]     = pixelBytes[si];
+          png.data[di + 1] = pixelBytes[si + 1];
+          png.data[di + 2] = pixelBytes[si + 2];
+          png.data[di + 3] = 255;
+        }
+      }
+    } else {
+      for (let i = 0; i < totalSamples; i++) {
+        png.data[i * 4]     = pixelBytes[i * 3];
+        png.data[i * 4 + 1] = pixelBytes[i * 3 + 1];
+        png.data[i * 4 + 2] = pixelBytes[i * 3 + 2];
+        png.data[i * 4 + 3] = 255;
+      }
     }
   } else {
     const signed = pixelRepresentation === 1;
@@ -410,30 +455,62 @@ function renderToPng(filepath, logger) {
       wc = auto.wc; ww = auto.ww;
       logger?.info(`[Render] auto window WC=${wc.toFixed(0)} WW=${ww.toFixed(0)}`);
     }
-    logger?.debug?.(`[Render] WC=${wc} WW=${ww} slope=${slope} intercept=${intercept} bits=${bitsStored}/${bitsAllocated} signed=${signed}`);
-    const rgba = applyWindowing(
-      pixelBytes,
-      totalSamples,
-      bitsAllocated,
-      bitsStored,
-      signed,
-      wc,
-      ww,
-      slope,
-      intercept,
-    );
-    // Invert MONOCHROME1
-    if (photometric === 'MONOCHROME1') {
-      for (let i = 0; i < totalSamples; i++) {
-        rgba[i * 4] = 255 - rgba[i * 4];
-        rgba[i * 4 + 1] = 255 - rgba[i * 4 + 1];
-        rgba[i * 4 + 2] = 255 - rgba[i * 4 + 2];
+
+    // Apply windowing directly into the (possibly smaller) PNG buffer
+    const lower = wc - ww / 2;
+    const upper = wc + ww / 2;
+    const range = upper - lower;
+    const bytesPerSample = bitsAllocated <= 8 ? 1 : 2;
+    const invert = photometric === 'MONOCHROME1';
+
+    if (needsDownscale) {
+      for (let dy = 0; dy < outH; dy++) {
+        const sy = Math.min(rows - 1, Math.floor(dy / scale));
+        for (let dx = 0; dx < outW; dx++) {
+          const sx = Math.min(cols - 1, Math.floor(dx / scale));
+          const si = sy * cols + sx;
+          let raw;
+          if (bytesPerSample === 1) {
+            raw = signed ? (pixelBytes[si] > 127 ? pixelBytes[si] - 256 : pixelBytes[si]) : pixelBytes[si];
+          } else {
+            raw = pixelBytes.readUInt16LE(si * 2);
+            if (signed && raw > 32767) raw -= 65536;
+          }
+          const hu = raw * slope + intercept;
+          let g;
+          if (hu <= lower) g = 0;
+          else if (hu >= upper) g = 255;
+          else g = Math.round(((hu - lower) / range) * 255);
+          if (invert) g = 255 - g;
+          const di = (dy * outW + dx) * 4;
+          png.data[di] = g;
+          png.data[di + 1] = g;
+          png.data[di + 2] = g;
+          png.data[di + 3] = 255;
+        }
       }
+    } else {
+      const rgba = applyWindowing(pixelBytes, totalSamples, bitsAllocated, bitsStored, signed, wc, ww, slope, intercept);
+      if (invert) {
+        for (let i = 0; i < totalSamples; i++) {
+          rgba[i * 4] = 255 - rgba[i * 4];
+          rgba[i * 4 + 1] = 255 - rgba[i * 4 + 1];
+          rgba[i * 4 + 2] = 255 - rgba[i * 4 + 2];
+        }
+      }
+      rgba.copy(png.data);
     }
-    rgba.copy(png.data);
   }
 
-  const pngBuf = PNG.sync.write(png);
+  // filterType 0 (none) is fastest to encode; size difference is negligible
+  // for already-downscaled grayscale images
+  const pngBuf = PNG.sync.write(png, { filterType: 0 });
+
+  if (opts.outFile) {
+    fs.writeFileSync(opts.outFile, pngBuf);
+    return opts.outFile;
+  }
+
   return `data:image/png;base64,${pngBuf.toString('base64')}`;
 }
 

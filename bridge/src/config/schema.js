@@ -4,6 +4,7 @@
  */
 
 const crypto = require('crypto');
+const { DEFAULT_BRANDING } = require('./defaultBranding');
 
 const PAPER_SIZES = ['A3', 'A4', 'A5', 'Letter', 'Legal'];
 
@@ -21,17 +22,18 @@ function defaultSlot(index = 1) {
     windowsPrinterName: '',
     paperSize: 'A4',
     layoutId: 'auto',
-    studyDebounceSeconds: 30,
+    studyDebounceSeconds: 5,
     copies: 1,
   };
 }
 
 function defaultConfig() {
   return {
-    version: 1,
+    version: 2,
     slots: [],
     startupBehavior: 'tray',
     logRetentionDays: 30,
+    branding: { ...DEFAULT_BRANDING },
   };
 }
 
@@ -47,4 +49,20 @@ function validateSlot(slot) {
   return errors;
 }
 
-module.exports = { PAPER_SIZES, newSlotId, defaultSlot, defaultConfig, validateSlot };
+/**
+ * Migrate older config versions to current.
+ * v1 → v2: adds branding object with defaults.
+ */
+function migrateConfig(cfg) {
+  if (!cfg.version || cfg.version < 2) {
+    cfg.branding = { ...DEFAULT_BRANDING, ...(cfg.branding || {}) };
+    cfg.version = 2;
+  }
+  // Ensure branding always has all keys (new defaults added in future)
+  if (cfg.branding) {
+    cfg.branding = { ...DEFAULT_BRANDING, ...cfg.branding };
+  }
+  return cfg;
+}
+
+module.exports = { PAPER_SIZES, newSlotId, defaultSlot, defaultConfig, validateSlot, migrateConfig };

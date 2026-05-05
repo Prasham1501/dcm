@@ -4,7 +4,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { defaultConfig } = require('./schema');
+const { defaultConfig, migrateConfig } = require('./schema');
 
 class ConfigStore {
   constructor({ configPath, logger }) {
@@ -18,7 +18,14 @@ class ConfigStore {
       if (fs.existsSync(this.configPath)) {
         const raw = fs.readFileSync(this.configPath, 'utf8').replace(/^\uFEFF/, '');
         const parsed = JSON.parse(raw);
-        return { ...defaultConfig(), ...parsed };
+        const merged = { ...defaultConfig(), ...parsed };
+        const migrated = migrateConfig(merged);
+        // Persist if migrated
+        if (parsed.version !== migrated.version) {
+          this.logger?.info(`[Config] migrated v${parsed.version || 1} → v${migrated.version}`);
+          this._save(migrated);
+        }
+        return migrated;
       }
     } catch (e) {
       this.logger?.error(`[Config] failed to load: ${e.message}`);

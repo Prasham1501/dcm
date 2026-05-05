@@ -51,16 +51,15 @@ class SlotManager extends EventEmitter {
     scp.on('file', (info) => {
       this.jobQueue.enqueueFile(slot, info);
       this.emit('file', { slot, info });
-      // Archive a copy into bridge/received/<slotName>/
+      // Archive a copy into bridge/received/<slotName>/ (async to avoid blocking)
       if (this.archiveRoot) {
-        try {
-          const archiveDir = path.join(this.archiveRoot, slot.name || slot.id);
-          fs.mkdirSync(archiveDir, { recursive: true });
-          const dest = path.join(archiveDir, path.basename(info.filepath));
-          fs.copyFileSync(info.filepath, dest);
-        } catch (copyErr) {
-          this.logger.error(`[SlotManager] archive copy failed: ${copyErr.message}`);
-        }
+        const archiveDir = path.join(this.archiveRoot, slot.name || slot.id);
+        const dest = path.join(archiveDir, path.basename(info.filepath));
+        fs.promises.mkdir(archiveDir, { recursive: true })
+          .then(() => fs.promises.copyFile(info.filepath, dest))
+          .catch((copyErr) => {
+            this.logger.error(`[SlotManager] archive copy failed: ${copyErr.message}`);
+          });
       }
     });
 

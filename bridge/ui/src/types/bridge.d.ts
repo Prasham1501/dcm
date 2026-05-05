@@ -1,4 +1,87 @@
 export type PaperSize = 'A3' | 'A4' | 'A5' | 'Letter' | 'Legal';
+export type PrintSlotContent = 'logo' | 'name' | 'address' | 'custom' | 'none';
+
+export interface HeaderFooterLayout {
+  left: PrintSlotContent;
+  center: PrintSlotContent;
+  right: PrintSlotContent;
+}
+
+export interface HospitalBranding {
+  // Hospital identity
+  hospitalName: string;
+  brandNameSecondary: string;
+  servicesList: string;
+
+  // Address & contact
+  address1: string;
+  address2: string;
+  address3: string;
+  city: string;
+  state: string;
+  pincode: string;
+  phone: string;
+  email: string;
+  website: string;
+
+  // Logo (base64 data URL)
+  logoDataUrl: string;
+
+  // Header section
+  headerShowLogo: boolean;
+  headerLogoSize: number;
+  headerLogoPosition: 'left' | 'center' | 'right';
+  headerLogoShape: 'circle' | 'square';
+  headerShowName: boolean;
+  headerNameFontSize: number;
+  headerNameColor: string;
+  headerNameAlign: 'left' | 'center' | 'right';
+  headerSecondaryNameColor: string;
+  headerShowServices: boolean;
+  headerServicesFontSize: number;
+  headerServicesColor: string;
+  headerServicesAlign: 'left' | 'center' | 'right';
+  headerShowAddress: boolean;
+  headerAddressFontSize: number;
+  headerAddressColor: string;
+  headerAddressAlign: 'left' | 'center' | 'right';
+  headerShowContact: boolean;
+  headerContactFontSize: number;
+  headerContactColor: string;
+  headerContactAlign: 'left' | 'center' | 'right';
+  headerBgColor: string;
+  headerBorderBottomColor: string;
+
+  // Footer
+  enableFooter: boolean;
+  footerLayout: HeaderFooterLayout;
+  customFooterLeft: string;
+  customFooterCenter: string;
+  customFooterRight: string;
+  footerFontSize: number;
+  footerFontColor: string;
+  footerBgColor: string;
+  footerBorderTopColor: string;
+
+  // Print page settings
+  printBlackBg: boolean;
+  printBorderEnabled: boolean;
+  printBorderColor: string;
+  gapBetweenImages: number;
+  marginTop: number;
+  marginLeft: number;
+  marginRight: number;
+
+  // Patient metadata on print
+  metadataPrintPatientName: boolean;
+  metadataPrintPatientId: boolean;
+  metadataPrintAge: boolean;
+  metadataPrintSex: boolean;
+  metadataPrintModality: boolean;
+  metadataPrintStudyName: boolean;
+  metadataPrintAccessNo: boolean;
+  metadataPrintRefBy: boolean;
+}
 
 export interface PrinterSlot {
   id: string;
@@ -14,10 +97,11 @@ export interface PrinterSlot {
 }
 
 export interface BridgeConfig {
-  version: 1;
+  version: number;
   slots: PrinterSlot[];
   startupBehavior: 'tray' | 'window';
   logRetentionDays: number;
+  branding: HospitalBranding;
 }
 
 export interface SystemPrinter {
@@ -64,6 +148,10 @@ export interface BridgeAPI {
   onSlotEvent: (cb: (evt: SlotEvent) => void) => () => void;
   hideToTray: () => Promise<void>;
   quitApp: () => Promise<void>;
+
+  // Branding
+  saveBranding: (branding: Partial<HospitalBranding>) => Promise<HospitalBranding>;
+  pickAndEncodeLogo: () => Promise<string | null>;
 }
 
 declare global {

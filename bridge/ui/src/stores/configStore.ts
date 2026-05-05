@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { BridgeConfig, PrinterSlot, SlotStatus, SystemPrinter } from '@/types/bridge';
+import type { BridgeConfig, PrinterSlot, SlotStatus, SystemPrinter, HospitalBranding } from '@/types/bridge';
 
 interface ConfigState {
   config: BridgeConfig | null;
@@ -13,6 +13,7 @@ interface ConfigState {
   newSlot: () => Promise<PrinterSlot>;
   upsertSlot: (slot: PrinterSlot) => Promise<{ ok: boolean; errors?: string[] }>;
   removeSlot: (slotId: string) => Promise<void>;
+  saveBranding: (branding: Partial<HospitalBranding>) => Promise<void>;
 }
 
 export const useConfigStore = create<ConfigState>((set, get) => ({
@@ -64,6 +65,14 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
     if (result.ok && result.config) {
       set({ config: result.config });
       await get().refreshSlotStatus();
+    }
+  },
+
+  async saveBranding(branding) {
+    const saved = await window.bridgeAPI.saveBranding(branding);
+    const config = get().config;
+    if (config) {
+      set({ config: { ...config, branding: saved } });
     }
   },
 }));

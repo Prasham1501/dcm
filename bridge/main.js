@@ -10,7 +10,7 @@
  *   - PrintWorker (renders DICOM to PNG and prints via Electron)
  */
 
-const { app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, Notification, shell } = require('electron');
+const { app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, Notification, shell, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
@@ -23,6 +23,7 @@ const { PrintWorker } = require('./src/print/printWorker');
 const { ensureFirewallRules } = require('./src/firewall/addFirewallRule');
 const { registerStartup, getStartupStatus } = require('./src/autostart/registerStartup');
 const { parseStudyUid } = require('./src/render/dicomRender');
+const { DEFAULT_BRANDING } = require('./src/config/defaultBranding');
 
 // --- Single instance lock ---
 const gotLock = app.requestSingleInstanceLock();
@@ -214,6 +215,26 @@ function setupIpc() {
 
   ipcMain.handle('bridge:get-log-tail', (_e, n) => logger.tail(n || 500));
 
+  // --- Branding IPC ---
+  ipcMain.handle('bridge:save-branding', async (_e, branding) => {
+    const merged = { ...DEFAULT_BRANDING, ...branding };
+    config.update({ branding: merged });
+    return config.get().branding;
+  });
+
+  ipcMain.handle('bridge:pick-and-encode-logo', async () => {
+    const r = await dialog.showOpenDialog({
+      properties: ['openFile'],
+      filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'svg', 'webp'] }],
+    });
+    if (r.canceled || !r.filePaths[0]) return null;
+    const buf = await fs.promises.readFile(r.filePaths[0]);
+    if (buf.length > 1_000_000) throw new Error('Logo must be under 1 MB');
+    const ext = path.extname(r.filePaths[0]).slice(1).toLowerCase();
+    const mime = ext === 'svg' ? 'image/svg+xml' : `image/${ext === 'jpg' ? 'jpeg' : ext}`;
+    return `data:${mime};base64,${buf.toString('base64')}`;
+  });
+
   ipcMain.handle('bridge:hide-to-tray', () => {
     if (configWindow && !configWindow.isDestroyed()) configWindow.hide();
   });
@@ -242,7 +263,7 @@ app.whenReady().then(async () => {
   // Always register auto-start unless user opts out
   registerStartup(app, true);
 
-  printWorker = new PrintWorker({ logger });
+  printWorker = new PrintWorker({ logger, configStore: config });
   jobQueue = new JobQueue({
     logger,
     parseStudyUid,
@@ -253,6 +274,12 @@ app.whenReady().then(async () => {
   jobQueue.on('printed', (job) => {
     logger.info(`[Job] printed slot=${job.slot.name} pages=${job.result.pages}`);
     notifySlotEvent('printed', { slotId: job.slot.id, pages: job.result.pages, layoutId: job.result.layoutId });
+    if (Notification.isSupported()) {
+      new Notification({
+        title: 'Accurate Bridge — sent to printer',
+        body: `${job.slot.name}: ${job.result.pages} page(s) sent to printer (${job.result.layoutId})`,
+      }).show();
+    }
   });
   jobQueue.on('failed', (job) => {
     notifySlotEvent('failed', { slotId: job.slot.id, error: job.error });

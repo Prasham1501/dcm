@@ -39,4 +39,8 @@ contextBridge.exposeInMainWorld('bridgeAPI', {
   // Window
   hideToTray: () => ipcRenderer.invoke('bridge:hide-to-tray'),
   quitApp: () => ipcRenderer.invoke('bridge:quit-app'),
+
+  // Branding
+  saveBranding: (branding) => ipcRenderer.invoke('bridge:save-branding', branding),
+  pickAndEncodeLogo: () => ipcRenderer.invoke('bridge:pick-and-encode-logo'),
 });
