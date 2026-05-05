@@ -20,6 +20,16 @@ let content = fs.readFileSync(filePath, 'utf-8');
 const MARKER = 'if (textBox && textBox._hidden) return;';
 if (content.includes(MARKER)) {
   console.log('[patch] cornerstone-tools already patched.');
+  // Still check if Vite cache needs clearing
+  const viteCacheFile = path.join(__dirname, '..', 'node_modules', '.vite', 'deps', 'cornerstone-tools.js');
+  if (fs.existsSync(viteCacheFile)) {
+    const cached = fs.readFileSync(viteCacheFile, 'utf-8');
+    if (!cached.includes(MARKER)) {
+      const viteCacheDir = path.join(__dirname, '..', 'node_modules', '.vite');
+      fs.rmSync(viteCacheDir, { recursive: true, force: true });
+      console.log('[patch] Cleared stale Vite dependency cache.');
+    }
+  }
   process.exit(0);
 }
 
@@ -34,3 +44,10 @@ if (!content.includes(TARGET)) {
 content = content.replace(TARGET, REPLACEMENT);
 fs.writeFileSync(filePath, content, 'utf-8');
 console.log('[patch] cornerstone-tools drawLinkedTextBox patched successfully.');
+
+// Clear Vite dependency cache so it re-bundles with the patch
+const viteCacheDir = path.join(__dirname, '..', 'node_modules', '.vite');
+if (fs.existsSync(viteCacheDir)) {
+  fs.rmSync(viteCacheDir, { recursive: true, force: true });
+  console.log('[patch] Cleared Vite dependency cache.');
+}

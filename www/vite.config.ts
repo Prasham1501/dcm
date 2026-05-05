@@ -334,8 +334,31 @@ function dicomServerPlugin() {
   };
 }
 
+/**
+ * Vite plugin to patch cornerstone-tools drawLinkedTextBox at transform time.
+ * Adds early return when textBox._hidden is true, preventing the dotted
+ * callout line from rendering when annotation text is hidden.
+ */
+function cornerstoneHideTextPatchPlugin() {
+  return {
+    name: 'cornerstone-hide-text-patch',
+    enforce: 'pre' as const,
+    transform(code: string, id: string) {
+      if (!id.includes('cornerstone-tools')) return null;
+      const TARGET = 'function (context, element, textBox, text, handles, textBoxAnchorPoints, color, lineWidth, xOffset, yCenter) {\n  var pixelToCanvas';
+      if (!code.includes(TARGET)) return null;
+      const MARKER = 'if (textBox && textBox._hidden) return;';
+      if (code.includes(MARKER)) return null;
+      return code.replace(
+        TARGET,
+        'function (context, element, textBox, text, handles, textBoxAnchorPoints, color, lineWidth, xOffset, yCenter) {\n  if (textBox && textBox._hidden) return;\n  var pixelToCanvas'
+      );
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [react(), dicomServerPlugin()],
+  plugins: [react(), dicomServerPlugin(), cornerstoneHideTextPatchPlugin()],
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
