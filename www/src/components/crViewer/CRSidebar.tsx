@@ -412,6 +412,7 @@ export function CRSidebar() {
               ? [...selectedViewportIndices].sort((a, b) => b - a)
               : [selectedViewport];
             indicesToDelete.forEach(vi => deleteImageFromViewport(vi));
+            useCRViewerStore.setState({ selectedViewport: 0, selectedViewportIndices: [0] });
           }}
           label="Delete"
           title={selectedViewportIndices.length > 1 ? 'Delete all selected images' : 'Delete selected image'}

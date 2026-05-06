@@ -27,8 +27,8 @@ export function PatientStatusBar() {
 
   return (
     <>
-      <div className="flex items-center justify-between px-3 2xl:px-5 py-1 2xl:py-2 bg-app-statusbar-bg border-t border-app-border">
-        <div className="flex items-center gap-1 2xl:gap-2">
+      <div className="flex items-center justify-between px-3 2xl:px-5 py-1 2xl:py-2 bg-app-statusbar-bg border-t border-app-border flex-wrap gap-y-1 flex-shrink-0">
+        <div className="flex items-center gap-1 2xl:gap-2 flex-shrink-0">
           <button
             onClick={() => navigate('/config')}
             className="px-2 2xl:px-3 py-0.5 2xl:py-1 text-xs 2xl:text-sm border border-app-border text-app-text-secondary bg-app-bg rounded hover:bg-app-hover"
@@ -43,7 +43,7 @@ export function PatientStatusBar() {
           </button>
         </div>
 
-        <div className="flex items-center gap-4 text-xs 2xl:text-sm text-app-text-secondary">
+        <div className="flex items-center gap-2 2xl:gap-4 text-[10px] 2xl:text-sm text-app-text-secondary flex-wrap">
           <span>Print count left- A4: {printCountRemaining}</span>
           <span className="text-app-border">|</span>
           <span>Images occupied : {totalImages > 0 ? `${totalImages} (${sizeDisplay})` : '0'}</span>

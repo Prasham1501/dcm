@@ -199,7 +199,7 @@ export function PatientActionBar() {
   };
 
   return (
-    <div className="border-t border-app-border bg-app-surface">
+    <div className="border-t border-app-border bg-app-surface flex-shrink-0">
       {/* Single row: All action buttons combined */}
       <div className="flex items-center justify-center gap-1 px-2 py-1 flex-wrap">
         <ActionButton

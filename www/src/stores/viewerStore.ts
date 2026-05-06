@@ -767,6 +767,8 @@ export const useViewerStore = create<ViewerState>((set, get) => ({
       currentPage: newCurrentPage,
       viewportImageOverrides: {},
       viewportIndexOverrides: {},
+      selectedViewport: 0,
+      selectedViewportIndices: [0],
     });
   },
 

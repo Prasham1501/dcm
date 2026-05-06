@@ -158,7 +158,7 @@ export function PatientTable() {
   const multiCount = selectedPatients.size;
 
   return (
-    <div ref={tableRef} className="flex-1 overflow-auto border-b border-app-border flex flex-col">
+    <div ref={tableRef} className="flex-1 min-h-0 overflow-auto border-b border-app-border flex flex-col">
       <table className="w-full text-xs 2xl:text-sm border-collapse">
         <thead className="sticky top-0 z-10">
           <tr className="bg-app-header-bg border-b-2 border-app-accent">

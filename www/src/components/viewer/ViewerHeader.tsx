@@ -162,6 +162,7 @@ export function ViewerHeader({ showThumbnails = true, onToggleThumbnails }: { sh
               ? [...selectedViewportIndices].sort((a, b) => b - a)
               : [selectedViewport];
             indices.forEach(vi => deleteImageFromViewport(vi));
+            useViewerStore.setState({ selectedViewport: 0, selectedViewportIndices: [0] });
           }}
           disabled={!hasImages}
           className="p-1 rounded border border-app-border text-app-text-secondary hover:bg-red-500/20 hover:text-red-400 transition-colors disabled:opacity-30"

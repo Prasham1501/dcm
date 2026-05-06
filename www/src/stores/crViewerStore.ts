@@ -842,6 +842,8 @@ export const useCRViewerStore = create<CRViewerState>((set, get) => ({
       totalPages: newTotalPages,
       currentPage: newCurrentPage,
       viewportImageOverrides: {},
+      selectedViewport: 0,
+      selectedViewportIndices: [0],
     });
   },
 

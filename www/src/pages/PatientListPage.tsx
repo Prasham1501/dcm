@@ -68,6 +68,18 @@ export function PatientListPage() {
     };
   }, [loadPatients]);
 
+  // F10 shortcut to open Config
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'F10') {
+        e.preventDefault();
+        navigate('/config');
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [navigate]);
+
   return (
     <div className="flex flex-col h-screen bg-app-bg">
       {/* Header with brand + stats */}

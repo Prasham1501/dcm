@@ -305,6 +305,7 @@ export function DualSidebar() {
               ? [...selectedViewportIndices].sort((a, b) => b - a)
               : [selectedViewport];
             indicesToDelete.forEach(vi => store.getState().deleteImageFromViewport(activePanel, vi));
+            store.getState().setPanelSelectedViewport(activePanel, 0);
           }}
           label="Delete"
           title={selectedViewportIndices.length > 1 ? 'Delete all selected images' : 'Delete selected image'}
