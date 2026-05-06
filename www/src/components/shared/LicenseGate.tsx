@@ -1,62 +1,22 @@
 import { useEffect, useState } from 'react';
-import { Settings, FileText, Info, Moon, Sun, Minus, Palette, Shield, Key, AlertTriangle, CheckCircle, Loader2, Clock } from 'lucide-react';
-import { useConfigStore } from './stores/configStore';
-import { SlotsPage } from './pages/SlotsPage';
-import { LogsPage } from './pages/LogsPage';
-import { AboutPage } from './pages/AboutPage';
-import { BrandingPage } from './pages/BrandingPage';
-import { LicensePage } from './pages/LicensePage';
-import { StatusBar } from './components/StatusBar';
+import { useLicenseStore } from '@/stores/licenseStore';
+import { Shield, Key, AlertTriangle, CheckCircle, Loader2, Clock } from 'lucide-react';
 
-type Tab = 'slots' | 'branding' | 'license' | 'logs' | 'about';
+interface LicenseGateProps {
+  children: React.ReactNode;
+}
 
-const TABS: { id: Tab; label: string; icon: typeof Settings }[] = [
-  { id: 'slots', label: 'Printer Slots', icon: Settings },
-  { id: 'branding', label: 'Branding', icon: Palette },
-  { id: 'license', label: 'License', icon: Shield },
-  { id: 'logs', label: 'Logs', icon: FileText },
-  { id: 'about', label: 'About', icon: Info },
-];
-
-export function App() {
-  const [tab, setTab] = useState<Tab>('slots');
-  const [dark, setDark] = useState(true);
-  const load = useConfigStore((s) => s.load);
-  const loadPrinters = useConfigStore((s) => s.loadSystemPrinters);
-  const refresh = useConfigStore((s) => s.refreshSlotStatus);
-  const [licenseStatus, setLicenseStatus] = useState<any>(null);
-  const [licenseLoading, setLicenseLoading] = useState(true);
-
-  const fetchLicense = async () => {
-    try {
-      const s = await (window as any).bridgeAPI.getLicenseStatus();
-      setLicenseStatus(s);
-    } catch {}
-    setLicenseLoading(false);
-  };
+export function LicenseGate({ children }: LicenseGateProps) {
+  const { status, loading, fetchStatus } = useLicenseStore();
 
   useEffect(() => {
-    load();
-    loadPrinters();
-    fetchLicense();
-    const id = setInterval(refresh, 3000);
-    const licInterval = setInterval(fetchLicense, 10 * 60 * 1000);
-    return () => { clearInterval(id); clearInterval(licInterval); };
-  }, [load, loadPrinters, refresh]);
+    fetchStatus();
+    // Re-check license every 10 minutes to catch mid-session expiry
+    const interval = setInterval(fetchStatus, 10 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, [fetchStatus]);
 
-  useEffect(() => {
-    document.documentElement.classList.toggle('dark', dark);
-  }, [dark]);
-
-  // Allow licensed OR active trial through; block expired trial / expired license
-  const isActive = (licenseStatus?.type === 'licensed' && !licenseStatus?.expired) || 
-                   (licenseStatus?.type === 'trial' && !licenseStatus?.expired);
-  const isTrial = licenseStatus?.type === 'trial' && !licenseStatus?.expired;
-  const isExpiredTrial = licenseStatus?.type === 'trial' && licenseStatus?.expired;
-  const isExpiredLicense = licenseStatus?.type === 'licensed' && licenseStatus?.expired;
-
-  // Loading state
-  if (licenseLoading) {
+  if (loading) {
     return (
       <div className="flex h-screen items-center justify-center bg-gray-950">
         <div className="flex flex-col items-center gap-4">
@@ -67,118 +27,65 @@ export function App() {
     );
   }
 
-  // Expired trial or expired license — full-screen block
-  if (!isActive) {
-    return <BridgeLicenseActivationPage expired={isExpiredLicense} trialExpired={isExpiredTrial} onActivated={fetchLicense} />;
+  // If licensed and not expired, render the app
+  if (status?.type === 'licensed' && !status.expired) {
+    return <>{children}</>;
   }
 
-  return (
-    <div className="flex h-screen flex-col bg-app-bg text-app-text">
-      {/* Trial banner */}
-      {isTrial && (
-        <BridgeTrialBanner remaining={licenseStatus.remaining ?? 0} onActivated={fetchLicense} />
-      )}
+  // If trial and not expired, render app with trial banner
+  if (status?.type === 'trial' && !status.expired) {
+    return (
+      <>
+        <TrialBanner remaining={status.remaining ?? 0} onActivated={fetchStatus} />
+        {children}
+      </>
+    );
+  }
 
-      {/* Title bar */}
-      <header className="flex items-center justify-between bg-app-accent px-4 py-2 text-white">
-        <div className="flex items-center gap-2 text-sm font-bold tracking-wide">
-          <span className="rounded bg-white/20 px-2 py-0.5 text-xs">ACCURATE</span>
-          <span>Bridge</span>
-          <span className="ml-2 text-xs font-normal opacity-80">
-            {licenseStatus?.type === 'licensed'
-              ? `License ${licenseStatus.licenseKey?.split('-').pop() || ''} | ${licenseStatus.daysLeft ?? '—'} days left`
-              : 'Printing bridge for DICOM modalities'}
-          </span>
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setDark((d) => !d)}
-            title={dark ? 'Light mode' : 'Dark mode'}
-            className="rounded p-1 hover:bg-white/20"
-          >
-            {dark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-          </button>
-          <button
-            onClick={() => window.bridgeAPI.hideToTray()}
-            title="Hide to tray"
-            className="rounded p-1 hover:bg-white/20"
-          >
-            <Minus className="h-4 w-4" />
-          </button>
-        </div>
-      </header>
-
-      {/* Tabs */}
-      <nav className="flex border-b border-app-border bg-app-header-bg">
-        {TABS.map((t) => {
-          const Icon = t.icon;
-          const active = t.id === tab;
-          return (
-            <button
-              key={t.id}
-              onClick={() => setTab(t.id)}
-              className={`flex items-center gap-2 border-b-2 px-4 py-2 text-xs font-semibold transition-colors ${
-                active
-                  ? 'border-app-accent text-app-accent'
-                  : 'border-transparent text-app-text-secondary hover:bg-app-hover'
-              }`}
-            >
-              <Icon className="h-3.5 w-3.5" />
-              {t.label}
-            </button>
-          );
-        })}
-      </nav>
-
-      {/* Page */}
-      <main className="flex-1 overflow-auto bg-app-bg">
-        {tab === 'slots' && <SlotsPage />}
-        {tab === 'branding' && <BrandingPage />}
-        {tab === 'license' && <LicensePage />}
-        {tab === 'logs' && <LogsPage />}
-        {tab === 'about' && <AboutPage />}
-      </main>
-
-      <StatusBar />
-    </div>
-  );
+  // Expired trial or expired license — show activation page
+  return <LicenseActivationPage expired={status?.type === 'licensed' && status.expired} trialExpired={status?.type === 'trial' && status.expired} />;
 }
 
-function BridgeLicenseActivationPage({ expired = false, trialExpired = false, onActivated }: { expired?: boolean; trialExpired?: boolean; onActivated: () => void }) {
+function LicenseActivationPage({ expired = false, trialExpired = false }: { expired?: boolean; trialExpired?: boolean }) {
+  const { activateLicense, activating, error, fetchStatus } = useLicenseStore();
   const [key, setKey] = useState('');
-  const [activating, setActivating] = useState(false);
-  const [error, setError] = useState('');
+  const [localError, setLocalError] = useState('');
   const [success, setSuccess] = useState(false);
-  const api = (window as any).bridgeAPI;
 
   const handleActivate = async () => {
     const trimmed = key.trim().toUpperCase();
-    if (!trimmed) { setError('Please enter a license key'); return; }
-    if (!/^MV-[A-Z2-9]{4}-[A-Z2-9]{4}-[A-Z2-9]{4}-[A-Z2-9]{4}$/.test(trimmed)) {
-      setError('Invalid format. Expected: MV-XXXX-XXXX-XXXX-XXXX');
+    if (!trimmed) {
+      setLocalError('Please enter a license key');
       return;
     }
-    setError('');
-    setActivating(true);
-    const result = await api.activateLicense(trimmed);
-    setActivating(false);
+    if (!/^MV-[A-Z2-9]{4}-[A-Z2-9]{4}-[A-Z2-9]{4}-[A-Z2-9]{4}$/.test(trimmed)) {
+      setLocalError('Invalid format. Expected: MV-XXXX-XXXX-XXXX-XXXX');
+      return;
+    }
+    setLocalError('');
+    const result = await activateLicense(trimmed);
     if (result.success) {
       setSuccess(true);
-      setTimeout(() => onActivated(), 1000);
+      setTimeout(() => fetchStatus(), 1000);
     } else {
-      setError(result.error || 'Activation failed');
+      setLocalError(result.error || 'Activation failed');
     }
   };
+
+  const displayError = localError || error;
 
   return (
     <div className="flex h-screen items-center justify-center bg-gradient-to-br from-gray-950 via-gray-900 to-gray-950">
       <div className="w-full max-w-md rounded-2xl border border-gray-800 bg-gray-900/80 p-8 shadow-2xl backdrop-blur">
+        {/* Logo */}
         <div className="mb-8 flex flex-col items-center gap-3">
           <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-red-600/20">
             <Shield className="h-8 w-8 text-red-500" />
           </div>
-          <h1 className="text-2xl font-bold text-white">Accurate Bridge</h1>
-          <p className="text-center text-sm text-gray-400">DICOM Printing Bridge</p>
+          <h1 className="text-2xl font-bold text-white">Accurate</h1>
+          <p className="text-center text-sm text-gray-400">
+            Professional DICOM Viewer
+          </p>
         </div>
 
         {success ? (
@@ -189,6 +96,7 @@ function BridgeLicenseActivationPage({ expired = false, trialExpired = false, on
           </div>
         ) : (
           <>
+            {/* Notice */}
             <div className="mb-6 flex items-start gap-3 rounded-lg border border-red-800/50 bg-red-950/30 p-3">
               <AlertTriangle className="mt-0.5 h-5 w-5 flex-shrink-0 text-red-400" />
               <div>
@@ -205,9 +113,12 @@ function BridgeLicenseActivationPage({ expired = false, trialExpired = false, on
               </div>
             </div>
 
+            {/* License key input */}
             <div className="space-y-4">
               <div>
-                <label className="mb-1.5 block text-xs font-medium text-gray-300">License Key</label>
+                <label className="mb-1.5 block text-xs font-medium text-gray-300">
+                  License Key
+                </label>
                 <div className="relative">
                   <Key className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" />
                   <input
@@ -224,9 +135,9 @@ function BridgeLicenseActivationPage({ expired = false, trialExpired = false, on
                 </div>
               </div>
 
-              {error && (
+              {displayError && (
                 <div className="rounded-lg border border-red-800/40 bg-red-950/20 px-3 py-2 text-xs text-red-400">
-                  {error}
+                  {displayError}
                 </div>
               )}
 
@@ -248,8 +159,12 @@ function BridgeLicenseActivationPage({ expired = false, trialExpired = false, on
 
             <p className="mt-6 text-center text-xs text-gray-500">
               Need a license?{' '}
-              <a href="https://mehrgrewal.com/mediview/" target="_blank" rel="noopener noreferrer"
-                className="text-red-400 hover:text-red-300 underline">
+              <a
+                href="https://mehrgrewal.com/mediview/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-red-400 hover:text-red-300 underline"
+              >
                 Purchase here
               </a>
             </p>
@@ -260,12 +175,12 @@ function BridgeLicenseActivationPage({ expired = false, trialExpired = false, on
   );
 }
 
-function BridgeTrialBanner({ remaining, onActivated }: { remaining: number; onActivated: () => void }) {
+function TrialBanner({ remaining, onActivated }: { remaining: number; onActivated: () => void }) {
   const [expanded, setExpanded] = useState(false);
   const [key, setKey] = useState('');
   const [activating, setActivating] = useState(false);
   const [error, setError] = useState('');
-  const api = (window as any).bridgeAPI;
+  const api = (window as any).electronAPI;
 
   const handleActivate = async () => {
     const trimmed = key.trim().toUpperCase();

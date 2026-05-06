@@ -44,9 +44,45 @@ const mysqldPath = path.join(mysqlDir, 'bin', 'mysqld.exe');
 const mysqlClientPath = path.join(mysqlDir, 'bin', 'mysql.exe');
 const userDataPath = app.getPath('userData');
 
-// ===== 30-Day Trial License =====
-const TRIAL_DAYS = 30;
+// ===== License & Trial System =====
+const LICENSE_API_BASE = 'https://mehrgrewal.com/mediview/api';
+const TRIAL_DAYS = 7;
 const trialFile = path.join(userDataPath, '.trial');
+const licenseFile = path.join(userDataPath, '.license');
+
+function getFingerprint() {
+    const crypto = require('crypto');
+    const os = require('os');
+    const raw = [
+        os.hostname(),
+        os.platform(),
+        os.arch(),
+        os.cpus()[0]?.model || '',
+        os.totalmem().toString(),
+        (os.networkInterfaces()['Ethernet'] || os.networkInterfaces()['Wi-Fi'] || Object.values(os.networkInterfaces())[0] || [])
+            .find(i => !i.internal && i.family === 'IPv4')?.mac || ''
+    ].join('|');
+    return crypto.createHash('sha256').update(raw).digest('hex').substring(0, 32);
+}
+
+function getLicenseData() {
+    try {
+        if (fs.existsSync(licenseFile)) {
+            return JSON.parse(fs.readFileSync(licenseFile, 'utf8'));
+        }
+    } catch { /* corrupt */ }
+    return null;
+}
+
+function saveLicenseData(data) {
+    try {
+        fs.writeFileSync(licenseFile, JSON.stringify(data, null, 2), 'utf8');
+    } catch (e) { console.error('[License] Failed to save:', e.message); }
+}
+
+function clearLicenseData() {
+    try { if (fs.existsSync(licenseFile)) fs.unlinkSync(licenseFile); } catch {}
+}
 
 function getTrialInfo() {
     let installDate;
@@ -68,6 +104,142 @@ function getTrialInfo() {
     const elapsed = Math.floor((now - installDate) / (1000 * 60 * 60 * 24));
     const remaining = Math.max(0, TRIAL_DAYS - elapsed);
     return { installDate, elapsed, remaining, expired: remaining <= 0 };
+}
+
+async function apiRequest(endpoint, body) {
+    const https = require('https');
+    return new Promise((resolve, reject) => {
+        const data = JSON.stringify(body);
+        const urlObj = new URL(LICENSE_API_BASE + endpoint);
+        const options = {
+            hostname: urlObj.hostname,
+            port: 443,
+            path: urlObj.pathname,
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) },
+        };
+        const req = https.request(options, (res) => {
+            let body = '';
+            res.on('data', chunk => body += chunk);
+            res.on('end', () => {
+                try { resolve({ status: res.statusCode, data: JSON.parse(body) }); }
+                catch { resolve({ status: res.statusCode, data: { error: body } }); }
+            });
+        });
+        req.on('error', reject);
+        req.setTimeout(15000, () => { req.destroy(); reject(new Error('Timeout')); });
+        req.write(data);
+        req.end();
+    });
+}
+
+async function activateLicense(licenseKey) {
+    const fingerprint = getFingerprint();
+    const os = require('os');
+    try {
+        const res = await apiRequest('/license/activate', {
+            license_key: licenseKey,
+            fingerprint,
+            machine_name: os.hostname(),
+            os: `${os.platform()} ${os.release()}`,
+            app_version: app.getVersion ? app.getVersion() : '1.0.0',
+        });
+        if (res.status >= 200 && res.status < 300) {
+            saveLicenseData({
+                licenseKey,
+                fingerprint,
+                deviceId: res.data.device_id,
+                plan: res.data.plan || 'unknown',
+                expiresAt: res.data.expires_at,
+                activatedAt: new Date().toISOString(),
+                lastValidated: new Date().toISOString(),
+            });
+            return { success: true, data: res.data };
+        }
+        return { success: false, error: res.data?.error || res.data?.message || 'Activation failed' };
+    } catch (e) {
+        return { success: false, error: 'Network error: ' + e.message };
+    }
+}
+
+async function validateLicense() {
+    const lic = getLicenseData();
+    if (!lic) return { valid: false, reason: 'no_license' };
+
+    try {
+        const res = await apiRequest('/license/validate', {
+            license_key: lic.licenseKey,
+            fingerprint: lic.fingerprint,
+        });
+        if (res.data?.valid) {
+            lic.lastValidated = new Date().toISOString();
+            lic.plan = res.data.plan || lic.plan;
+            lic.expiresAt = res.data.expires_at || lic.expiresAt;
+            saveLicenseData(lic);
+            return { valid: true, plan: lic.plan, expiresAt: lic.expiresAt };
+        }
+        return { valid: false, reason: res.data?.reason || 'invalid' };
+    } catch {
+        // Offline grace: if validated within last 7 days, allow
+        if (lic.lastValidated) {
+            const lastCheck = new Date(lic.lastValidated);
+            const daysSince = (Date.now() - lastCheck.getTime()) / (1000 * 60 * 60 * 24);
+            if (daysSince < 7) {
+                return { valid: true, plan: lic.plan, expiresAt: lic.expiresAt, offline: true };
+            }
+        }
+        return { valid: false, reason: 'network_error' };
+    }
+}
+
+async function sendHeartbeat() {
+    const lic = getLicenseData();
+    if (!lic) return;
+    try {
+        await apiRequest('/license/heartbeat', {
+            license_key: lic.licenseKey,
+            fingerprint: lic.fingerprint,
+            app_version: app.getVersion ? app.getVersion() : '1.0.0',
+        });
+    } catch { /* silent */ }
+}
+
+async function deactivateLicense() {
+    const lic = getLicenseData();
+    if (!lic) return;
+    try {
+        await apiRequest('/license/deactivate', {
+            license_key: lic.licenseKey,
+            fingerprint: lic.fingerprint,
+        });
+    } catch { /* silent */ }
+    clearLicenseData();
+}
+
+function getLicenseStatus() {
+    const lic = getLicenseData();
+    if (lic) {
+        let daysLeft = null;
+        if (lic.expiresAt) {
+            daysLeft = Math.max(0, Math.ceil((new Date(lic.expiresAt).getTime() - Date.now()) / (1000 * 60 * 60 * 24)));
+        }
+        return {
+            type: 'licensed',
+            licenseKey: lic.licenseKey,
+            plan: lic.plan,
+            expiresAt: lic.expiresAt,
+            lastValidated: lic.lastValidated,
+            daysLeft,
+            expired: daysLeft !== null && daysLeft <= 0,
+        };
+    }
+    const trial = getTrialInfo();
+    return {
+        type: 'trial',
+        remaining: trial.remaining,
+        expired: trial.expired,
+        totalDays: TRIAL_DAYS,
+    };
 }
 const mysqlDataDir = path.join(userDataPath, 'mysql-data');
 const mysqlDataSubDir = path.join(mysqlDataDir, 'data');
@@ -150,7 +322,12 @@ function createMainWindow() {
         minWidth: 1024,
         minHeight: 768,
         show: false,
-        title: `Accurate — Trial (${getTrialInfo().remaining} days remaining)`,
+        title: (() => {
+            const lic = getLicenseData();
+            if (lic) return `Accurate — ${lic.plan.charAt(0).toUpperCase() + lic.plan.slice(1)} License`;
+            const trial = getTrialInfo();
+            return `Accurate — Trial (${trial.remaining} days remaining)`;
+        })(),
         icon: path.join(__dirname, 'icon.ico'),
         webPreferences: {
             nodeIntegration: false,
@@ -1249,13 +1426,28 @@ function stopDicomServer() {
 // =====================================================
 // App Lifecycle
 // =====================================================
-app.whenReady().then(() => {
-    const trial = getTrialInfo();
-    if (trial.expired) {
-        dialog.showErrorBox('Trial Expired', 'Your 30-day trial of Accurate has expired.\nPlease contact support to purchase a license.');
-        app.quit();
-        return;
+app.whenReady().then(async () => {
+    const lic = getLicenseData();
+    if (lic) {
+        // Has license key — validate it
+        const result = await validateLicense();
+        if (!result.valid) {
+            if (result.reason === 'expired') {
+                // Don't quit — let the UI show the activation page
+                clearLicenseData();
+            } else if (result.reason === 'revoked') {
+                clearLicenseData();
+            } else if (result.reason === 'deactivated') {
+                clearLicenseData();
+            }
+            // For network_error with valid grace period, validateLicense already returns valid
+            // For other cases, clear license and let UI show activation page
+        } else {
+            // Start heartbeat interval
+            setInterval(sendHeartbeat, 30 * 60 * 1000); // every 30 min
+        }
     }
+    // Always start app — UI (LicenseGate) handles showing activation page if no license
     startApp();
 });
 app.on('window-all-closed', () => { stopDicomServer(); stopDicomNetworkReceiver(); stopPhpServer(); stopOrthanc(); stopMySQL(); app.quit(); });
@@ -1266,10 +1458,31 @@ app.on('before-quit', () => { stopDicomServer(); stopDicomNetworkReceiver(); sto
 // IPC Handlers
 // =====================================================
 
-// Trial info
+// License & Trial info
 ipcMain.handle('get-trial-info', () => {
     const trial = getTrialInfo();
     return { remaining: trial.remaining, expired: trial.expired, totalDays: TRIAL_DAYS };
+});
+
+ipcMain.handle('get-license-status', () => {
+    return getLicenseStatus();
+});
+
+ipcMain.handle('activate-license', async (_event, licenseKey) => {
+    return await activateLicense(licenseKey);
+});
+
+ipcMain.handle('validate-license', async () => {
+    return await validateLicense();
+});
+
+ipcMain.handle('deactivate-license', async () => {
+    await deactivateLicense();
+    return { success: true };
+});
+
+ipcMain.handle('get-fingerprint', () => {
+    return getFingerprint();
 });
 // =====================================================
 

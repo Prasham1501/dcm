@@ -40,6 +40,14 @@ contextBridge.exposeInMainWorld('bridgeAPI', {
   hideToTray: () => ipcRenderer.invoke('bridge:hide-to-tray'),
   quitApp: () => ipcRenderer.invoke('bridge:quit-app'),
 
+  // License management
+  getLicenseStatus: () => ipcRenderer.invoke('bridge:get-license-status'),
+  activateLicense: (key) => ipcRenderer.invoke('bridge:activate-license', key),
+  validateLicense: () => ipcRenderer.invoke('bridge:validate-license'),
+  deactivateLicense: () => ipcRenderer.invoke('bridge:deactivate-license'),
+  getTrialInfo: () => ipcRenderer.invoke('bridge:get-trial-info'),
+  getFingerprint: () => ipcRenderer.invoke('bridge:get-fingerprint'),
+
   // Branding
   saveBranding: (branding) => ipcRenderer.invoke('bridge:save-branding', branding),
   pickAndEncodeLogo: () => ipcRenderer.invoke('bridge:pick-and-encode-logo'),

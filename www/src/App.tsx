@@ -11,6 +11,7 @@ import { StudiesPage } from '@/pages/StudiesPage';
 import { PrintManagementPage } from '@/pages/PrintManagementPage';
 import { ReportEditorPage } from '@/pages/ReportEditorPage';
 import { ToastContainer } from '@/components/shared/Toast';
+import { LicenseGate } from '@/components/shared/LicenseGate';
 
 export default function App() {
   const { mode } = useThemeStore();
@@ -41,6 +42,7 @@ export default function App() {
   return (
     <>
     <ToastContainer />
+    <LicenseGate>
     <Routes>
       <Route path="/" element={<PatientListPage />}>
         <Route path="config" element={<ConfigPage />} />
@@ -56,6 +58,7 @@ export default function App() {
       <Route path="/report-editor" element={<ReportEditorPage />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
+    </LicenseGate>
     </>
   );
 }

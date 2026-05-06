@@ -26,6 +26,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
     clearCredentials: () => ipcRenderer.invoke('clear-credentials'),
     hasAutoLoginCredentials: () => ipcRenderer.invoke('has-credentials'),
 
+    // License management
+    getLicenseStatus: () => ipcRenderer.invoke('get-license-status'),
+    activateLicense: (key) => ipcRenderer.invoke('activate-license', key),
+    validateLicense: () => ipcRenderer.invoke('validate-license'),
+    deactivateLicense: () => ipcRenderer.invoke('deactivate-license'),
+    getTrialInfo: () => ipcRenderer.invoke('get-trial-info'),
+    getFingerprint: () => ipcRenderer.invoke('get-fingerprint'),
+
     // DICOM File Server
     getDicomPort: () => ipcRenderer.invoke('get-dicom-port'),
 

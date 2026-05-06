@@ -11,6 +11,7 @@ import { PatientStatusBar } from '@/components/patient/PatientStatusBar';
 import { useThemeStore } from '@/stores/themeStore';
 import { useReportStore } from '@/stores/reportStore';
 import { usePrintStore } from '@/stores/printStore';
+import { useLicenseStore } from '@/stores/licenseStore';
 import { ReportEditor } from '@/components/report/ReportEditor';
 import { Sun, Moon } from 'lucide-react';
 
@@ -43,6 +44,7 @@ export function PatientListPage() {
   const mode = useThemeStore((s) => s.mode);
   const toggleTheme = useThemeStore((s) => s.toggleTheme);
   const printCountRemaining = usePrintStore((s) => s.printCountRemaining);
+  const licenseStatus = useLicenseStore((s) => s.status);
   const printedCount = filteredPatients.filter((p) => p.printed).length;
 
   useEffect(() => {
@@ -75,7 +77,11 @@ export function PatientListPage() {
             Accurate
           </span>
           <span className="text-[10px] 2xl:text-xs text-app-text-secondary whitespace-nowrap">
-            | License TV5PPH4T | 224 days left
+            {licenseStatus?.type === 'licensed'
+              ? `| License ${licenseStatus.licenseKey ? licenseStatus.licenseKey.split('-').pop() : '—'} | ${licenseStatus.daysLeft != null ? `${licenseStatus.daysLeft} days left` : '—'}`
+              : licenseStatus?.type === 'trial'
+                ? `| Trial: ${licenseStatus.remaining} day${licenseStatus.remaining !== 1 ? 's' : ''} left`
+                : '| No License'}
           </span>
           <span className="text-[10px] 2xl:text-xs text-app-text-secondary whitespace-nowrap">
             | Prints Left: {printCountRemaining}

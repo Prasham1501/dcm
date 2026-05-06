@@ -7,8 +7,9 @@ import { SendTab } from '@/components/config/SendTab';
 import { ClinicalTab } from '@/components/config/ClinicalTab';
 import { NetworkReceiverTab } from '@/components/config/NetworkReceiverTab';
 import { PrintSettingsTab } from '@/components/config/PrintSettingsTab';
+import { LicenseTab } from '@/components/config/LicenseTab';
 
-const TABS = ['General', 'Print', 'Server', 'Send', 'Clinical', 'Network'] as const;
+const TABS = ['General', 'Print', 'Server', 'Send', 'Clinical', 'Network', 'License'] as const;
 type TabName = typeof TABS[number];
 
 export function ConfigPage() {
@@ -23,6 +24,7 @@ export function ConfigPage() {
       case 'Send': return <SendTab />;
       case 'Clinical': return <ClinicalTab />;
       case 'Network': return <NetworkReceiverTab />;
+      case 'License': return <LicenseTab />;
     }
   };
 
