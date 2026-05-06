@@ -3,6 +3,7 @@ import { useHospitalConfigStore, getFormattedAddress, type PrintSlotContent } fr
 
 const ALIGN_OPTIONS = [
   { value: 'left', label: 'Left' },
+  { value: 'center', label: 'Center' },
   { value: 'right', label: 'Right' },
 ];
 
