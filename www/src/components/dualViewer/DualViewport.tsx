@@ -13,6 +13,7 @@ import { useDualViewerStore, type PanelId } from '@/stores/dualViewerStore';
 import { refitCornerstoneViewport, resetCornerstoneViewport } from '@/lib/cornerstoneViewport';
 import { findAnnotationAtPoint, setupAutoDeactivate, markDblClickHandled } from '@/lib/annotationUtils';
 import { AnnotationEditOverlay } from '@/components/shared/AnnotationEditOverlay';
+import { X, Plus, Minus, Trash2, Check } from 'lucide-react';
 
 interface DualViewportProps {
   imageId: string | null;
@@ -39,13 +40,16 @@ function DualViewportInner({
 
   const {
     isStampMode, activeStampId, placeStamp, stampPlacements, updateStampPlacement,
-    setPanelViewportImage, isTextMode, placeTextDirect,
+    setPanelViewportImage, isTextMode, placeTextDirect, updateStampPlacementProps, removeStampPlacement,
   } = useDualViewerStore();
 
   // Editing cornerstone annotation (double-click on shape)
   const [editingAnnotation, setEditingAnnotation] = useState<{
     toolName: string; annotationIndex: number; color: string; lineWidth: number; position: { x: number; y: number };
   } | null>(null);
+
+  // Editing stamp/text (double-click on stamp)
+  const [editingStamp, setEditingStamp] = useState<{ id: string; color: string; fontSize: number; text?: string; type?: string } | null>(null);
 
   const runLayoutRefit = useCallback(() => {
     const el = elementRef.current;
@@ -405,11 +409,113 @@ function DualViewportInner({
             };
           }}
           onClick={(e) => e.stopPropagation()}
+          onDoubleClick={(e) => {
+            e.stopPropagation();
+            markDblClickHandled();
+            setEditingStamp({ id: sp.id, color: sp.color, fontSize: sp.fontSize, text: sp.text, type: sp.type || 'stamp' });
+          }}
         >
           {sp.text}
         </div>
         );
       })}
+
+      {/* Edit stamp/text panel (double-click) — fixed to top-right corner */}
+      {editingStamp && (() => {
+        const sp = viewportStamps.find(s => s.id === editingStamp.id);
+        if (!sp) return null;
+        const isText = editingStamp.type === 'text';
+        return (
+          <div
+            className="absolute z-40 top-2 right-2"
+            data-stamp-edit="true"
+            onClick={(e) => e.stopPropagation()}
+            onDoubleClick={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <div className="bg-gray-900/95 border border-blue-500/70 rounded-xl p-2.5 shadow-2xl w-[200px] backdrop-blur-sm">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[10px] text-blue-400 font-bold uppercase tracking-wide">Edit {isText ? 'Text' : 'Stamp'}</span>
+                <button onClick={() => setEditingStamp(null)} className="w-4 h-4 flex items-center justify-center rounded-full bg-gray-700 hover:bg-gray-600 text-gray-400 hover:text-white text-[10px]">
+                  <X className="w-3 h-3" />
+                </button>
+              </div>
+              {isText && (
+                <div className="mb-2">
+                  <span className="text-[9px] text-gray-400 uppercase font-semibold block mb-1">Text</span>
+                  <input
+                    type="text"
+                    value={editingStamp.text ?? sp.text}
+                    onChange={(e) => setEditingStamp({ ...editingStamp, text: e.target.value })}
+                    className="w-full px-2 py-1 text-[10px] bg-gray-800 text-white border border-gray-600 rounded focus:border-blue-500 focus:outline-none"
+                  />
+                </div>
+              )}
+              <div className="mb-2">
+                <span className="text-[9px] text-gray-400 uppercase font-semibold block mb-1">Color</span>
+                <div className="flex gap-1.5 flex-wrap">
+                  {['#ff0000', '#ffff00', '#00ff00', '#00ffff', '#ff00ff', '#ffffff', '#ff8800', '#8800ff'].map(c => (
+                    <button
+                      key={c}
+                      onClick={() => setEditingStamp({ ...editingStamp, color: c })}
+                      className={`w-5 h-5 rounded-full border-2 transition-transform ${editingStamp.color === c ? 'border-white scale-110 ring-2 ring-blue-500/50' : 'border-gray-600 hover:border-gray-400'}`}
+                      style={{ backgroundColor: c }}
+                    />
+                  ))}
+                </div>
+              </div>
+              <div className="mb-2">
+                <span className="text-[9px] text-gray-400 uppercase font-semibold block mb-1">Size</span>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    onClick={() => setEditingStamp({ ...editingStamp, fontSize: Math.max(10, editingStamp.fontSize - 2) })}
+                    onDoubleClick={(e) => e.stopPropagation()}
+                    disabled={editingStamp.fontSize <= 10}
+                    className="w-7 h-7 flex items-center justify-center rounded bg-gray-700 text-gray-300 hover:bg-gray-600 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                  >
+                    <Minus className="w-3.5 h-3.5" />
+                  </button>
+                  <div className="flex-1 flex items-center justify-center">
+                    <span className="font-bold truncate max-w-[60px]" style={{ color: editingStamp.color, fontSize: `${Math.min(editingStamp.fontSize, 18)}px` }}>
+                      {editingStamp.text || sp.text}
+                    </span>
+                  </div>
+                  <span className="text-[10px] text-gray-300 font-bold w-8 text-center">{editingStamp.fontSize}px</span>
+                  <button
+                    onClick={() => setEditingStamp({ ...editingStamp, fontSize: Math.min(40, editingStamp.fontSize + 2) })}
+                    onDoubleClick={(e) => e.stopPropagation()}
+                    disabled={editingStamp.fontSize >= 40}
+                    className="w-7 h-7 flex items-center justify-center rounded bg-gray-700 text-gray-300 hover:bg-gray-600 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    onClick={() => { removeStampPlacement(editingStamp.id); setEditingStamp(null); }}
+                    onDoubleClick={(e) => e.stopPropagation()}
+                    className="w-7 h-7 flex items-center justify-center rounded bg-red-600/80 text-white hover:bg-red-500 transition-colors ml-1"
+                    title="Delete"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  const containerHeight = containerRef.current?.getBoundingClientRect().height || 500;
+                  const fontSizePercent = (editingStamp.fontSize / containerHeight) * 100;
+                  const updates: { color: string; fontSize: number; fontSizePercent: number; text?: string } = { color: editingStamp.color, fontSize: editingStamp.fontSize, fontSizePercent };
+                  if (isText && editingStamp.text !== undefined) updates.text = editingStamp.text;
+                  updateStampPlacementProps(editingStamp.id, updates);
+                  setEditingStamp(null);
+                }}
+                className="w-full flex items-center justify-center gap-1 px-2 py-1.5 text-[10px] font-bold bg-blue-600/80 text-white rounded hover:bg-blue-500 transition-colors"
+              >
+                <Check className="w-3 h-3" /> Save
+              </button>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Pending text input — fixed to top-right */}
       {pendingText && (

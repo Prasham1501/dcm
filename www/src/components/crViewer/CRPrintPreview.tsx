@@ -5,11 +5,11 @@ import { usePrintStore } from '@/stores/printStore';
 import { useHospitalConfigStore, getFormattedAddress, renderPrintSlot, buildBrandHeaderHtml, buildFooterHtml } from '@/stores/hospitalConfigStore';
 import { usePatientStore } from '@/stores/patientStore';
 import { getAutoOrientationForLayout, getLayoutAreaNames, getLayoutGridTemplate } from '@/lib/layoutUtils';
-import { captureCornerstoneViewportForPrint, waitForViewportImages, PrintOverlay } from '@/lib/printCapture';
+import { captureCornerstoneViewportForPrintAsync, waitForViewportImages, PrintOverlay } from '@/lib/printCapture';
 import { fillEmptyPrintSlots } from '@/lib/printPageUtils';
 
 
-function captureViewport(viewportIndex: number): string | null {
+async function captureViewport(viewportIndex: number): Promise<string | null> {
   const imageId = getViewportImageIds()[viewportIndex];
   const { stampPlacements } = useCRViewerStore.getState();
   const overlays: PrintOverlay[] = stampPlacements
@@ -23,7 +23,7 @@ function captureViewport(viewportIndex: number): string | null {
       fontSizePercent: sp.fontSizePercent,
       type: sp.type ?? 'stamp',
     }));
-  return captureCornerstoneViewportForPrint('data-cr-viewport-index', viewportIndex, overlays);
+  return captureCornerstoneViewportForPrintAsync('data-cr-viewport-index', viewportIndex, overlays);
 }
 
 function getViewportImageIds(): Array<string | null> {
@@ -152,9 +152,15 @@ export function CRPrintPreview({ onClose, initialPageMode = 'all' }: CRPrintPrev
         await waitForViewportImages('data-cr-viewport-index', getPageViewportImageIds(currentLayout.spots, p));
         if (cancelled) return;
         await new Promise(r => setTimeout(r, 75));
-        rawCaptures.push(
-          Array.from({ length: currentLayout.spots }, (_, viewportIndex) => captureViewport(viewportIndex)),
-        );
+        // Sequential capture: each call resizes the live cornerstone canvas
+        // to print resolution and waits for cornerstone-tools to repaint, so
+        // running them in parallel would race over the same canvas.
+        const pageCaps: Array<string | null> = [];
+        for (let viewportIndex = 0; viewportIndex < currentLayout.spots; viewportIndex++) {
+          if (cancelled) return;
+          pageCaps.push(await captureViewport(viewportIndex));
+        }
+        rawCaptures.push(pageCaps);
       }
       setCurrentPage(origPage);
       await waitForViewportImages('data-cr-viewport-index', getPageViewportImageIds(currentLayout.spots, origPage));

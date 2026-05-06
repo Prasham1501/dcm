@@ -4,7 +4,7 @@
  * Allows changing color, line width, and scaling.
  */
 import { useState } from 'react';
-import { X, Plus, Minus, Trash2 } from 'lucide-react';
+import { X, Plus, Minus, Trash2, Check } from 'lucide-react';
 import { updateAnnotationStyle, deleteAnnotation, toggleAnnotationText, isAnnotationTextHidden } from '@/lib/annotationUtils';
 import { cornerstoneTools } from '@/lib/cornerstoneSetup';
 
@@ -63,6 +63,7 @@ export function AnnotationEditOverlay({
       className="fixed z-[100] bg-gray-900/95 border border-blue-500/70 rounded-xl p-2.5 shadow-2xl w-[200px] backdrop-blur-sm"
       style={{ left: Math.min(position.x, window.innerWidth - 220), top: Math.min(position.y, window.innerHeight - 300) }}
       onClick={(e) => e.stopPropagation()}
+      onDoubleClick={(e) => e.stopPropagation()}
       onMouseDown={(e) => { if ((e.target as HTMLElement).tagName !== 'INPUT') e.stopPropagation(); }}
     >
       {/* Header */}
@@ -96,6 +97,7 @@ export function AnnotationEditOverlay({
         <div className="flex items-center gap-1.5">
           <button
             onClick={() => handleLineWidthChange(lineWidth - 1)}
+            onDoubleClick={(e) => e.stopPropagation()}
             disabled={lineWidth <= 1}
             className="w-7 h-7 flex items-center justify-center rounded bg-gray-700 text-gray-300 hover:bg-gray-600 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
           >
@@ -110,10 +112,19 @@ export function AnnotationEditOverlay({
           <span className="text-[10px] text-gray-300 font-bold w-5 text-center">{lineWidth}</span>
           <button
             onClick={() => handleLineWidthChange(lineWidth + 1)}
+            onDoubleClick={(e) => e.stopPropagation()}
             disabled={lineWidth >= 10}
             className="w-7 h-7 flex items-center justify-center rounded bg-gray-700 text-gray-300 hover:bg-gray-600 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
           >
             <Plus className="w-3.5 h-3.5" />
+          </button>
+          <button
+            onClick={handleDelete}
+            onDoubleClick={(e) => e.stopPropagation()}
+            className="w-7 h-7 flex items-center justify-center rounded bg-red-600/80 text-white hover:bg-red-500 transition-colors ml-1"
+            title="Delete annotation"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
           </button>
         </div>
       </div>
@@ -134,12 +145,12 @@ export function AnnotationEditOverlay({
         </button>
       </div>
 
-      {/* Delete */}
+      {/* Save */}
       <button
-        onClick={handleDelete}
-        className="w-full flex items-center justify-center gap-1 px-2 py-1.5 text-[10px] font-bold bg-red-600/80 text-white rounded hover:bg-red-500 transition-colors"
+        onClick={onClose}
+        className="w-full flex items-center justify-center gap-1 px-2 py-1.5 text-[10px] font-bold bg-blue-600/80 text-white rounded hover:bg-blue-500 transition-colors"
       >
-        <Trash2 className="w-3 h-3" /> Delete
+        <Check className="w-3 h-3" /> Save
       </button>
     </div>
   );

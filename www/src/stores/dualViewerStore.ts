@@ -182,6 +182,7 @@ interface DualViewerState {
   placeStamp: (panelId: PanelId, imageId: string, xPercent: number, yPercent: number, containerHeight?: number) => void;
   removeStampPlacement: (id: string) => void;
   updateStampPlacement: (id: string, xPercent: number, yPercent: number) => void;
+  updateStampPlacementProps: (id: string, props: { color?: string; fontSize?: number; fontSizePercent?: number; text?: string }) => void;
   undoStampPlacement: () => void;
   clearStampPlacements: (panelId?: PanelId, viewportIndex?: number) => void;
 
@@ -718,6 +719,14 @@ export const useDualViewerStore = create<DualViewerState>((set, get) => {
   updateStampPlacement: (id, xPercent, yPercent) => {
     set((state) => ({
       stampPlacements: state.stampPlacements.map(s => s.id === id ? { ...s, xPercent, yPercent } : s),
+    }));
+  },
+
+  updateStampPlacementProps: (id, props) => {
+    set((state) => ({
+      stampPlacements: state.stampPlacements.map(s =>
+        s.id === id ? { ...s, ...props } : s
+      ),
     }));
   },
 

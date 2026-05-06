@@ -6,16 +6,20 @@ import { useViewerStore } from '@/stores/viewerStore';
 import { usePatientStore } from '@/stores/patientStore';
 import { useHospitalConfigStore, getFormattedAddress, buildBrandHeaderHtml, buildFooterHtml } from '@/stores/hospitalConfigStore';
 import { getAutoOrientationForLayout, getLayoutAreaNames, getLayoutGridTemplate } from '@/lib/layoutUtils';
-import { captureCornerstoneViewportForPrint, waitForViewportImages, PrintOverlay, PrintDrawPath } from '@/lib/printCapture';
+import { captureCornerstoneViewportForPrintAsync, waitForViewportImages, PrintOverlay, PrintDrawPath } from '@/lib/printCapture';
 import { fillEmptyPrintSlots } from '@/lib/printPageUtils';
 import { useCustomAnnotationStore } from '@/stores/customAnnotationStore';
 
 
-function capturePageViewports(spots: number, page: number): Array<string | null> {
+// Captures every viewport on a page in sequence (must be sequential — each
+// capture temporarily resizes the live canvas and parallel runs would race).
+async function capturePageViewports(spots: number, page: number): Promise<Array<string | null>> {
   const imageIds = getPageViewportImageIds(spots, page);
   const annStore = useCustomAnnotationStore.getState();
+  const results: Array<string | null> = [];
 
-  return imageIds.map((imageId, viewportIndex) => {
+  for (let viewportIndex = 0; viewportIndex < imageIds.length; viewportIndex++) {
+    const imageId = imageIds[viewportIndex];
     const overlays: PrintOverlay[] = imageId
       ? annStore.getAnnotations(imageId).map(ann => ({
           text: ann.text,
@@ -36,8 +40,10 @@ function capturePageViewports(spots: number, page: number): Array<string | null>
         }))
       : [];
 
-    return captureCornerstoneViewportForPrint('data-viewport-index', viewportIndex, overlays, drawPaths);
-  });
+    results.push(await captureCornerstoneViewportForPrintAsync('data-viewport-index', viewportIndex, overlays, drawPaths));
+  }
+
+  return results;
 }
 
 function getPageViewportImageIds(spots: number, page: number): Array<string | null> {
@@ -149,7 +155,7 @@ export function PrintPreview() {
         await waitForViewportImages('data-viewport-index', getPageViewportImageIds(currentLayout.spots, p));
         if (cancelled) return;
         await new Promise(r => setTimeout(r, 75));
-        rawCaptures.push(capturePageViewports(currentLayout.spots, p));
+        rawCaptures.push(await capturePageViewports(currentLayout.spots, p));
       }
       setCurrentPage(origPage);
       await waitForViewportImages('data-viewport-index', getPageViewportImageIds(currentLayout.spots, origPage));

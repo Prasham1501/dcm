@@ -4,11 +4,11 @@ import { useDualViewerStore } from '@/stores/dualViewerStore';
 import { usePrintStore } from '@/stores/printStore';
 import { useHospitalConfigStore, getFormattedAddress, renderPrintSlot, buildBrandHeaderHtml } from '@/stores/hospitalConfigStore';
 import { usePatientStore } from '@/stores/patientStore';
-import { captureCornerstoneElementForPrint, PrintOverlay } from '@/lib/printCapture';
+import { captureCornerstoneElementForPrintAsync, PrintOverlay } from '@/lib/printCapture';
 import { fillEmptyPrintSlots } from '@/lib/printPageUtils';
 
 
-function captureViewport(panelId: string, viewportIndex: number): string | null {
+async function captureViewport(panelId: string, viewportIndex: number): Promise<string | null> {
   const sel = '[data-dual-viewport-index="' + panelId + '-' + viewportIndex + '"]';
   const el = document.querySelector(sel) as HTMLElement;
   if (!el) return null;
@@ -30,15 +30,17 @@ function captureViewport(panelId: string, viewportIndex: number): string | null 
       type: sp.type ?? 'stamp',
     }));
 
-  return captureCornerstoneElementForPrint(el, overlays);
+  return captureCornerstoneElementForPrintAsync(el, overlays);
 }
 
-function capturePanelPage(panelId: string, spots: number, totalImages: number, currentPage: number): Array<string | null> {
+async function capturePanelPage(panelId: string, spots: number, totalImages: number, currentPage: number): Promise<Array<string | null>> {
   const caps: (string | null)[] = [];
   const startIndex = (currentPage - 1) * spots;
+  // Sequential — each call temporarily resizes the live canvas, parallel
+  // would race.
   for (let i = 0; i < spots; i++) {
     if (startIndex + i < totalImages) {
-      caps.push(captureViewport(panelId, i));
+      caps.push(await captureViewport(panelId, i));
     } else {
       caps.push(null);
     }
@@ -190,13 +192,13 @@ export function DualPrintPreview({ onClose }: DualPrintPreviewProps) {
 
         // Capture
         if (p <= leftPanel.totalPages) {
-          rawLeftCaptures.push(capturePanelPage('left', leftPanel.currentLayout.spots, leftPanel.totalImages, p));
+          rawLeftCaptures.push(await capturePanelPage('left', leftPanel.currentLayout.spots, leftPanel.totalImages, p));
         } else {
           rawLeftCaptures.push(Array(leftPanel.currentLayout.spots).fill(null));
         }
 
         if (p <= rightPanel.totalPages) {
-          rawRightCaptures.push(capturePanelPage('right', rightPanel.currentLayout.spots, rightPanel.totalImages, p));
+          rawRightCaptures.push(await capturePanelPage('right', rightPanel.currentLayout.spots, rightPanel.totalImages, p));
         } else {
           rawRightCaptures.push(Array(rightPanel.currentLayout.spots).fill(null));
         }

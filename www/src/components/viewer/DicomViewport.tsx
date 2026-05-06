@@ -14,6 +14,7 @@ import { resetViewport, activateTool } from '@/lib/viewerTools';
 import { refitCornerstoneViewport } from '@/lib/cornerstoneViewport';
 import { findAnnotationAtPoint, setupAutoDeactivate, markDblClickHandled } from '@/lib/annotationUtils';
 import { AnnotationEditOverlay } from '@/components/shared/AnnotationEditOverlay';
+import { X, Plus, Minus, Trash2, Check } from 'lucide-react';
 
 
 // ---- Draw path annotation ---- (interfaces moved to store)
@@ -1056,66 +1057,76 @@ function DicomViewportInner({
           className="absolute z-40 top-2 right-2"
           data-stamp-edit="true"
           onClick={(e) => e.stopPropagation()}
+          onDoubleClick={(e) => e.stopPropagation()}
           onMouseDown={(e) => e.stopPropagation()}
         >
-          <div className="bg-gray-900/95 border border-blue-500/70 rounded-xl p-3 lg:p-4 shadow-2xl w-[220px] lg:w-[280px] backdrop-blur-sm">
-            <div className="flex items-center justify-between mb-2 lg:mb-3">
-              <div className="text-xs lg:text-sm text-blue-400 font-bold uppercase tracking-wide">Edit {editingAnn.type === 'stamp' ? 'Stamp' : 'Text'}</div>
-              <button onClick={() => setEditingAnn(null)} className="w-5 h-5 lg:w-6 lg:h-6 flex items-center justify-center rounded-full bg-gray-700 hover:bg-gray-600 text-gray-400 hover:text-white transition-colors text-xs">
-                ×
+          <div className="bg-gray-900/95 border border-blue-500/70 rounded-xl p-2.5 shadow-2xl w-[200px] backdrop-blur-sm">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[10px] text-blue-400 font-bold uppercase tracking-wide">Edit {editingAnn.type === 'stamp' ? 'Stamp' : 'Text'}</span>
+              <button onClick={() => setEditingAnn(null)} className="w-4 h-4 flex items-center justify-center rounded-full bg-gray-700 hover:bg-gray-600 text-gray-400 hover:text-white text-[10px]">
+                <X className="w-3 h-3" />
               </button>
             </div>
-            {/* Live preview */}
-            <div className="mb-3 lg:mb-4 p-2 lg:p-3 bg-black/70 rounded-lg border border-gray-700/50 text-center min-h-[40px] lg:min-h-[50px] flex items-center justify-center">
-              <span
-                className={`inline-block px-2 py-1 rounded font-bold whitespace-nowrap ${
-                  editingAnn.type === 'stamp' ? 'border-2 border-current uppercase tracking-wider' : ''
-                }`}
-                style={{ color: editColor, fontSize: `${editFontSize}px`, textShadow: '1px 1px 3px rgba(0,0,0,0.9)' }}
-              >
-                {editingAnn.text}
-              </span>
-            </div>
-            <div className="space-y-1.5 2xl:space-y-3">
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-[9px] 2xl:text-xs text-gray-400 uppercase font-semibold">Size</span>
-                  <span className="text-[9px] 2xl:text-xs text-white font-bold bg-gray-700 px-1 py-0.5 rounded">{editFontSize}px</span>
-                </div>
-                <input 
-                  type="range" min="10" max="40" value={editFontSize}
-                  onChange={(e) => setEditFontSize(parseInt(e.target.value))}
-                  className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-blue-500"
-                />
-              </div>
-              <div>
-                <span className="text-[9px] 2xl:text-xs text-gray-400 uppercase font-semibold block mb-1">Color</span>
-                <div className="flex gap-1.5 2xl:gap-2.5 flex-wrap">
-                  {['#ff0000', '#ffff00', '#00ff00', '#00ffff', '#ff00ff', '#ffffff', '#ff8800', '#8800ff'].map(c => (
-                    <button
-                      key={c}
-                      onClick={() => setEditColor(c)}
-                      className={`w-5 h-5 2xl:w-7 2xl:h-7 rounded-full border-2 transition-transform ${editColor === c ? 'border-white scale-110 ring-2 ring-blue-500/50' : 'border-gray-600 hover:border-gray-400'}`}
-                      style={{ backgroundColor: c }}
-                    />
-                  ))}
-                </div>
+            {/* Color */}
+            <div className="mb-2">
+              <span className="text-[9px] text-gray-400 uppercase font-semibold block mb-1">Color</span>
+              <div className="flex gap-1.5 flex-wrap">
+                {['#ff0000', '#ffff00', '#00ff00', '#00ffff', '#ff00ff', '#ffffff', '#ff8800', '#8800ff'].map(c => (
+                  <button
+                    key={c}
+                    onClick={() => setEditColor(c)}
+                    className={`w-5 h-5 rounded-full border-2 transition-transform ${editColor === c ? 'border-white scale-110 ring-2 ring-blue-500/50' : 'border-gray-600 hover:border-gray-400'}`}
+                    style={{ backgroundColor: c }}
+                  />
+                ))}
               </div>
             </div>
-            <div className="flex gap-1.5 mt-2 2xl:mt-4">
-              <button
-                onClick={handleSaveEditAnnotation}
-                className="flex-1 px-2 py-1.5 text-[10px] 2xl:text-sm bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-500 transition-colors"
-              >
-                Save
-              </button>
-              <button
-                onClick={() => { if (imageId) handleDeleteAnnotation(editingAnn.id); setEditingAnn(null); }}
-                className="px-2 py-1.5 text-[10px] 2xl:text-sm bg-red-600/80 text-white rounded-lg font-bold hover:bg-red-500 transition-colors"
-              >
-                Delete
-              </button>
+            {/* Size */}
+            <div className="mb-2">
+              <span className="text-[9px] text-gray-400 uppercase font-semibold block mb-1">Size</span>
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={() => setEditFontSize(Math.max(10, editFontSize - 2))}
+                  onDoubleClick={(e) => e.stopPropagation()}
+                  disabled={editFontSize <= 10}
+                  className="w-7 h-7 flex items-center justify-center rounded bg-gray-700 text-gray-300 hover:bg-gray-600 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                >
+                  <Minus className="w-3.5 h-3.5" />
+                </button>
+                <div className="flex-1 flex items-center justify-center">
+                  <span
+                    className="font-bold truncate max-w-[60px]"
+                    style={{ color: editColor, fontSize: `${Math.min(editFontSize, 18)}px` }}
+                  >
+                    {editingAnn.text}
+                  </span>
+                </div>
+                <span className="text-[10px] text-gray-300 font-bold w-8 text-center">{editFontSize}px</span>
+                <button
+                  onClick={() => setEditFontSize(Math.min(40, editFontSize + 2))}
+                  onDoubleClick={(e) => e.stopPropagation()}
+                  disabled={editFontSize >= 40}
+                  className="w-7 h-7 flex items-center justify-center rounded bg-gray-700 text-gray-300 hover:bg-gray-600 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  onClick={() => { if (imageId) handleDeleteAnnotation(editingAnn.id); setEditingAnn(null); }}
+                  onDoubleClick={(e) => e.stopPropagation()}
+                  className="w-7 h-7 flex items-center justify-center rounded bg-red-600/80 text-white hover:bg-red-500 transition-colors ml-1"
+                  title="Delete"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              </div>
             </div>
+            {/* Save */}
+            <button
+              onClick={handleSaveEditAnnotation}
+              className="w-full flex items-center justify-center gap-1 px-2 py-1.5 text-[10px] font-bold bg-blue-600/80 text-white rounded hover:bg-blue-500 transition-colors"
+            >
+              <Check className="w-3 h-3" /> Save
+            </button>
           </div>
         </div>
       )}

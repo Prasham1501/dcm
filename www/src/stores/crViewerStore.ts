@@ -171,7 +171,7 @@ interface CRViewerState {
   placeTextDirect: (imageId: string, xPercent: number, yPercent: number, text: string, color: string, fontSize: number, containerHeight?: number) => void;
   removeStampPlacement: (id: string) => void;
   updateStampPlacement: (id: string, xPercent: number, yPercent: number) => void;
-  updateStampPlacementProps: (id: string, props: { color?: string; fontSize?: number; text?: string }) => void;
+  updateStampPlacementProps: (id: string, props: { color?: string; fontSize?: number; fontSizePercent?: number; text?: string }) => void;
   undoStampPlacement: () => void;
   clearStampPlacements: (viewportIndex?: number) => void;
 

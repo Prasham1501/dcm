@@ -4,7 +4,7 @@
     "description": "Accurate - Professional Medical Imaging Desktop Application",
     "main": "main.js",
     "scripts": {
-        "start": "electron .",
+        "start": "concurrently \"cd www && npm run dev\" \"electron .\"",
         "dev": "concurrently \"cd www && npm run dev\" \"electron .\"",
         "setup": "npm install && cd www && npm install && npm run build",
         "postinstall": "cd www && npm install",
