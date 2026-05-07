@@ -75,6 +75,7 @@ const PAPER_DIMS_MM: Record<string, { w: number; h: number }> = {
   A5: { w: 148, h: 210 }, Letter: { w: 215.9, h: 279.4 }, Legal: { w: 215.9, h: 355.6 },
 };
 const PAGE_MARGIN_MM = 10;
+const MM_TO_PX = 3.7795275591;
 
 export function PrintPreview() {
   const navigate = useNavigate();
@@ -179,8 +180,19 @@ export function PrintPreview() {
 
   const dims = PAPER_DIMS[localPaperSize] || PAPER_DIMS.A4;
   const isLandscape = localOrientation === 'landscape';
-  const pw = isLandscape ? dims.h : dims.w;
-  const ph = isLandscape ? dims.w : dims.h;
+  const paperMm = PAPER_DIMS_MM[localPaperSize] || PAPER_DIMS_MM.A4;
+  const sheetW_mm = isLandscape ? paperMm.h : paperMm.w;
+  const sheetH_mm = isLandscape ? paperMm.w : paperMm.h;
+  const previewMarginMm = hospitalConfig.printBlackBg ? 0 : PAGE_MARGIN_MM;
+  const pw = (sheetW_mm - previewMarginMm * 2) * MM_TO_PX;
+  const ph = (sheetH_mm - previewMarginMm * 2) * MM_TO_PX;
+
+  const [viewportSize, setViewportSize] = useState({ w: window.innerWidth, h: window.innerHeight });
+  useEffect(() => {
+    const handler = () => setViewportSize({ w: window.innerWidth, h: window.innerHeight });
+    window.addEventListener('resize', handler);
+    return () => window.removeEventListener('resize', handler);
+  }, []);
 
   const buildGridCss = () => {
     const grid = getLayoutGridTemplate(currentLayout);
@@ -198,27 +210,31 @@ export function PrintPreview() {
     return buildFooterHtml(hospitalConfig as any);
   };
 
-  const patientBarHtml = () => {
+  const patientBarHtml = (pageNum: number) => {
     if (!settings.patientInfoEnabled) return '';
     const matchedPatient = usePatientStore.getState().patients.find(p => p.patientId === patientId && p.patientName === patientName);
-    const parts: string[] = [];
-    if (hospitalConfig.metadataPrintPatientName !== false) parts.push(`<span><b>Patient:</b> ${patientName}</span>`);
-    if (hospitalConfig.metadataPrintAge && matchedPatient?.age) parts.push(`<span><b>Age:</b> ${matchedPatient.age}</span>`);
-    if (hospitalConfig.metadataPrintSex && matchedPatient?.sex) parts.push(`<span><b>Sex:</b> ${matchedPatient.sex}</span>`);
-    if (hospitalConfig.metadataPrintPatientId) parts.push(`<span><b>ID:</b> ${patientId}</span>`);
-    parts.push(`<span><b>Date:</b> ${studyDate}</span>`);
-    if (hospitalConfig.metadataPrintModality && matchedPatient?.modality) parts.push(`<span><b>Modality:</b> ${matchedPatient.modality}</span>`);
-    if (hospitalConfig.metadataPrintStudyName && matchedPatient?.studyDescription) parts.push(`<span><b>Study:</b> ${matchedPatient.studyDescription}</span>`);
-    if (hospitalConfig.metadataPrintAccessNo && matchedPatient?.accessionNumber) parts.push(`<span><b>Acc#:</b> ${matchedPatient.accessionNumber}</span>`);
-    if (hospitalConfig.metadataPrintRefBy && matchedPatient?.referringPhysician) parts.push(`<span><b>Ref:</b> ${matchedPatient.referringPhysician}</span>`);
-    return `<div style="padding:4px 15px;background:#111827;color:#d1d5db;border-bottom:1px solid #374151;display:flex;justify-content:space-between;flex-wrap:wrap;gap:4px;font-size:10px">${parts.join('')}</div>`;
+    const borderCol = hospitalConfig.headerBorderBottomColor || '#2563eb';
+    const left: string[] = [];
+    if (hospitalConfig.metadataPrintPatientName !== false) left.push(`<span style="white-space:nowrap"><b>Patient:</b> ${patientName}</span>`);
+    if (hospitalConfig.metadataPrintAge && matchedPatient?.age) left.push(`<span style="white-space:nowrap"><b>Age:</b> ${matchedPatient.age}</span>`);
+    if (hospitalConfig.metadataPrintSex && matchedPatient?.sex) left.push(`<span style="white-space:nowrap"><b>Sex:</b> ${matchedPatient.sex}</span>`);
+    if (hospitalConfig.metadataPrintPatientId) left.push(`<span style="white-space:nowrap"><b>ID:</b> ${patientId}</span>`);
+    if (hospitalConfig.metadataPrintModality && matchedPatient?.modality) left.push(`<span style="white-space:nowrap"><b>Mod:</b> ${matchedPatient.modality}</span>`);
+    if (hospitalConfig.metadataPrintStudyName && matchedPatient?.studyDescription) left.push(`<span style="white-space:nowrap"><b>Study:</b> ${matchedPatient.studyDescription}</span>`);
+    if (hospitalConfig.metadataPrintAccessNo && matchedPatient?.accessionNumber) left.push(`<span style="white-space:nowrap"><b>Acc#:</b> ${matchedPatient.accessionNumber}</span>`);
+    if (hospitalConfig.metadataPrintRefBy && matchedPatient?.referringPhysician) left.push(`<span style="white-space:nowrap"><b>Ref:</b> ${matchedPatient.referringPhysician}</span>`);
+    const right = [
+      `<span style="white-space:nowrap"><b>Date:</b> ${studyDate}</span>`,
+      `<span style="white-space:nowrap"><b>Page</b> ${pageNum}/${totalPages}</span>`,
+    ];
+    return `<div style="padding:4px 8px;background:#111827;color:#d1d5db;border-bottom:1px solid ${borderCol};display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:10px;flex-shrink:0;overflow:hidden"><div style="display:flex;align-items:center;gap:8px;flex:1 1 auto;min-width:0;overflow:hidden">${left.join('')}</div><div style="display:flex;align-items:center;gap:8px;flex:0 0 auto">${right.join('')}</div></div>`;
   };
 
   const renderSlotPv = (slot: string, customText: string) => {
-    const fs = (hospitalConfig.footerFontSize || 8) * zoom;
+    const fs = Math.max((hospitalConfig.footerFontSize || 8) * 1.4, 11);
     const fc = hospitalConfig.footerFontColor || '#666';
     switch (slot) {
-      case 'logo': return hospitalConfig.logoDataUrl ? <img src={hospitalConfig.logoDataUrl} style={{ maxHeight: 30 * zoom, maxWidth: 80 * zoom, objectFit: 'contain' }} alt="Logo" /> : <span style={{ fontSize: fs, color: fc, opacity: 0.6 }}>[No Logo]</span>;
+      case 'logo': return hospitalConfig.logoDataUrl ? <img src={hospitalConfig.logoDataUrl} style={{ maxHeight: 30, maxWidth: 80, objectFit: 'contain' }} alt="Logo" /> : <span style={{ fontSize: fs, color: fc, opacity: 0.6 }}>[No Logo]</span>;
       case 'name': return <span style={{ fontSize: fs, fontWeight: 600, color: fc }}>{hospitalConfig.hospitalName}</span>;
       case 'address': return <span style={{ fontSize: fs, color: fc }}>{getFormattedAddress(hospitalConfig as any)}{hospitalConfig.phone && ` | ${hospitalConfig.phone}`}</span>;
       case 'custom': return <span style={{ fontSize: fs, color: fc }}>{customText}</span>;
@@ -282,16 +298,18 @@ export function PrintPreview() {
     const borderCol = hospitalConfig.printBorderEnabled ? (hospitalConfig.printBorderColor || '#333') : 'transparent';
     const blackBg = hospitalConfig.printBlackBg;
     const pageBg = blackBg ? '#000' : '#fff';
+    const wrapperBorder = hospitalConfig.printBorderEnabled ? `1px solid ${borderCol}` : 'none';
+    const cellShadow = hospitalConfig.printBorderEnabled ? `box-shadow:inset 0 0 0 1px ${borderCol};` : '';
     const pagesHtml = pagesToPrint.map((pageNum) => {
       const caps = allPageCaptures[pageNum - 1] || [];
       const imgsHtml = Array.from({ length: currentLayout.spots }).map((_, i) => {
         const src = caps[i];
         const areaStyle = currentLayout.areas && areaNames[i] ? `grid-area:${areaNames[i]};` : '';
         return src
-          ? `<div style="${areaStyle}background:#000;display:flex;align-items:center;justify-content:center;overflow:hidden;border:1px solid ${borderCol}"><img src="${src}" style="width:100%;height:100%;object-fit:contain" /></div>`
-          : `<div style="${areaStyle}background:#000;display:flex;align-items:center;justify-content:center;overflow:hidden;border:1px solid ${borderCol}"></div>`;
+          ? `<div style="${areaStyle}background:#000;display:flex;align-items:center;justify-content:center;overflow:hidden;padding:3px;${cellShadow}"><img src="${src}" style="width:100%;height:100%;object-fit:contain" /></div>`
+          : `<div style="${areaStyle}background:#000;display:flex;align-items:center;justify-content:center;overflow:hidden;padding:3px;${cellShadow}"></div>`;
       }).join('');
-      return `<div class="page" style="background:${pageBg}">${settings.headerEnabled ? buildHeaderHtml() : ''}${patientBarHtml()}<div class="grid">${imgsHtml}</div>${hospitalConfig.enableFooter ? buildPrintFooterHtml() : ''}</div>`;
+      return `<div class="page" style="background:${pageBg}">${settings.headerEnabled ? buildHeaderHtml() : ''}<div class="content-wrap" style="border:${wrapperBorder};display:flex;flex-direction:column;flex:1;min-height:0;overflow:hidden">${patientBarHtml(pageNum)}<div class="grid">${imgsHtml}</div></div>${hospitalConfig.enableFooter ? buildPrintFooterHtml() : ''}</div>`;
     }).join('');
     const paperMm = PAPER_DIMS_MM[localPaperSize] || PAPER_DIMS_MM.A4;
     const sheetW = isLandscape ? paperMm.h : paperMm.w;
@@ -499,23 +517,33 @@ export function PrintPreview() {
             const pageCaps = allPageCaptures[pageNum - 1] || [];
             const previewBorderCol = hospitalConfig.printBorderEnabled ? (hospitalConfig.printBorderColor || '#333') : 'transparent';
             const matchedPatient = usePatientStore.getState().patients.find(p => p.patientId === patientId && p.patientName === patientName);
+            const availW = viewportSize.w * 0.95;
+            const availH = viewportSize.h - toolbarH - 80;
+            const fitScale = Math.min(availW / pw, availH / ph);
+            const totalScale = fitScale * zoom;
             return (
               <div key={`preview-page-${pageNum}`} className="flex-shrink-0 flex flex-col items-center mb-4">
                 <div className="text-xs text-app-text-muted py-1 text-center">Page {pageNum} of {totalPages} — {localPaperSize} {localOrientation}</div>
-                <div className="flex flex-col border border-gray-600 shadow-xl" style={{ width: `min(calc(98vw * ${zoom}), calc((100vh - ${toolbarH}px - 50px) * ${zoom} * ${(pw/ph).toFixed(4)}))`, aspectRatio: `${pw} / ${ph}`, background: hospitalConfig.printBlackBg ? '#000' : '#fff' }}>
+                <div style={{ width: pw * totalScale, height: ph * totalScale, position: 'relative' }}>
+                <div className="flex flex-col border border-gray-600 shadow-xl" style={{ width: pw, height: ph, position: 'absolute', top: 0, left: 0, transform: `scale(${totalScale})`, transformOrigin: 'top left', background: hospitalConfig.printBlackBg ? '#000' : '#fff' }}>
                   {settings.headerEnabled && renderBrandHeaderPv()}
+                  <div style={{ border: hospitalConfig.printBorderEnabled ? `1px solid ${previewBorderCol}` : 'none', display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }}>
                   {settings.patientInfoEnabled && (
-                    <div style={{ padding: '3px 12px', fontSize: '10px' }} className="bg-gray-900 border-b border-gray-700 flex flex-wrap gap-x-3 gap-y-0.5 text-gray-300 font-medium flex-shrink-0">
-                      {hospitalConfig.metadataPrintPatientName !== false && <span>Patient: {patientName}</span>}
-                      {hospitalConfig.metadataPrintAge && matchedPatient?.age && <span>Age: {matchedPatient.age}</span>}
-                      {hospitalConfig.metadataPrintSex && matchedPatient?.sex && <span>Sex: {matchedPatient.sex}</span>}
-                      {hospitalConfig.metadataPrintPatientId && <span>ID: {patientId}</span>}
-                      <span>Date: {studyDate}</span>
-                      {hospitalConfig.metadataPrintModality && matchedPatient?.modality && <span>Mod: {matchedPatient.modality}</span>}
-                      {hospitalConfig.metadataPrintStudyName && matchedPatient?.studyDescription && <span>Study: {matchedPatient.studyDescription}</span>}
-                      {hospitalConfig.metadataPrintAccessNo && matchedPatient?.accessionNumber && <span>Acc#: {matchedPatient.accessionNumber}</span>}
-                      {hospitalConfig.metadataPrintRefBy && matchedPatient?.referringPhysician && <span>Ref: {matchedPatient.referringPhysician}</span>}
-                      <span className="ml-auto">Page {pageNum}/{totalPages}</span>
+                    <div style={{ padding: '4px 8px', fontSize: '10px', borderBottom: `1px solid ${hospitalConfig.headerBorderBottomColor || '#2563eb'}`, gap: 8, justifyContent: 'space-between', overflow: 'hidden' }} className="bg-gray-900 flex items-center text-gray-300 font-medium flex-shrink-0">
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: '1 1 auto', minWidth: 0, overflow: 'hidden' }}>
+                        {hospitalConfig.metadataPrintPatientName !== false && <span style={{ whiteSpace: 'nowrap' }}>Patient: {patientName}</span>}
+                        {hospitalConfig.metadataPrintAge && matchedPatient?.age && <span style={{ whiteSpace: 'nowrap' }}>Age: {matchedPatient.age}</span>}
+                        {hospitalConfig.metadataPrintSex && matchedPatient?.sex && <span style={{ whiteSpace: 'nowrap' }}>Sex: {matchedPatient.sex}</span>}
+                        {hospitalConfig.metadataPrintPatientId && <span style={{ whiteSpace: 'nowrap' }}>ID: {patientId}</span>}
+                        {hospitalConfig.metadataPrintModality && matchedPatient?.modality && <span style={{ whiteSpace: 'nowrap' }}>Mod: {matchedPatient.modality}</span>}
+                        {hospitalConfig.metadataPrintStudyName && matchedPatient?.studyDescription && <span style={{ whiteSpace: 'nowrap' }}>Study: {matchedPatient.studyDescription}</span>}
+                        {hospitalConfig.metadataPrintAccessNo && matchedPatient?.accessionNumber && <span style={{ whiteSpace: 'nowrap' }}>Acc#: {matchedPatient.accessionNumber}</span>}
+                        {hospitalConfig.metadataPrintRefBy && matchedPatient?.referringPhysician && <span style={{ whiteSpace: 'nowrap' }}>Ref: {matchedPatient.referringPhysician}</span>}
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: '0 0 auto' }}>
+                        <span style={{ whiteSpace: 'nowrap' }}>Date: {studyDate}</span>
+                        <span style={{ whiteSpace: 'nowrap' }}>Page {pageNum}/{totalPages}</span>
+                      </div>
                     </div>
                   )}
                   <div className="flex-1 min-h-0">
@@ -524,18 +552,19 @@ export function PrintPreview() {
                         const src = pageCaps[i];
                         const aStyle: React.CSSProperties = currentLayout.areas && areaNames[i] ? { gridArea: areaNames[i] } : {};
                         return (
-                          <div key={i} className="bg-black overflow-hidden" style={{ ...aStyle, border: `1px solid ${previewBorderCol}` }}>
+                          <div key={i} className="bg-black overflow-hidden" style={{ ...aStyle, boxShadow: hospitalConfig.printBorderEnabled ? `inset 0 0 0 1px ${previewBorderCol}` : 'none', padding: 3 }}>
                             {src ? (<img src={src} className="w-full h-full object-contain" alt={`Page ${pageNum} Image ${i + 1}`} />) : (<span className="text-gray-600 text-[10px] select-none flex items-center justify-center w-full h-full">Empty</span>)}
                           </div>
                         );
                       })}
                     </div>
                   </div>
+                  </div>
                   {hospitalConfig.enableFooter && (
                     <div
                       style={{
-                        padding: '3px 12px',
-                        fontSize: `${hospitalConfig.footerFontSize || 8}px`,
+                        padding: '6px 15px',
+                        fontSize: `${Math.max((hospitalConfig.footerFontSize || 8) * 1.4, 11)}px`,
                         color: hospitalConfig.footerFontColor || '#666',
                         borderTop: `1px solid ${hospitalConfig.footerBorderTopColor || '#555'}`,
                         background: hospitalConfig.footerBgColor || undefined,
@@ -547,6 +576,7 @@ export function PrintPreview() {
                       <div className="text-right">{renderSlotPv(hospitalConfig.footerLayout.right, hospitalConfig.customFooterRight)}</div>
                     </div>
                   )}
+                </div>
                 </div>
               </div>
             );

@@ -400,7 +400,8 @@ export function renderPrintSlot(
   isCustomText?: string,
   isFooter?: boolean
 ): string {
-  const fontSize = isFooter ? config.footerFontSize : config.headerFontSize;
+  const rawFontSize = isFooter ? (config.footerFontSize || 8) : (config.headerFontSize || 10);
+  const fontSize = isFooter ? Math.max(rawFontSize * 1.4, 11) : rawFontSize;
   const fontColor = isFooter ? config.footerFontColor : config.headerFontColor;
   const baseStyle = `font-size:${fontSize}px;color:${fontColor}`;
   switch (slot) {
@@ -411,7 +412,7 @@ export function renderPrintSlot(
     case 'name':
       return `<div style="font-weight:600;${baseStyle}">${config.hospitalName}</div>`;
     case 'address':
-      return `<div style="${baseStyle}">${getFormattedAddress(config)}</div>${config.phone ? `<div style="${baseStyle}">${config.phone}</div>` : ''}`;
+      return `<span style="${baseStyle}">${getFormattedAddress(config)}${config.phone ? ` | ${config.phone}` : ''}</span>`;
     case 'custom':
       return `<div style="${baseStyle}">${isCustomText || ''}</div>`;
     case 'none':
@@ -473,7 +474,7 @@ export function buildBrandHeaderHtml(config: HospitalConfig): string {
     ? `<div style="margin-bottom:2px;text-align:${nameAlign}"><span style="font-size:${nameFs}px;font-weight:800;color:${nameCol}">${config.hospitalName}</span>${config.brandNameSecondary ? `<span style="font-size:${nameFs}px;font-weight:400;color:${secCol};margin-left:5px">${config.brandNameSecondary}</span>` : ''}</div>`
     : '';
   const svcPart = (config.headerShowServices !== false && services.length > 0)
-    ? `<div style="display:flex;align-items:center;justify-content:${svcJustify};gap:3px;font-size:${svcFs}px;font-weight:600;color:${svcCol};flex-wrap:wrap;margin-bottom:2px">${HEADER_ICONS.scanner}<span style="margin-right:2px"></span>${servicesHtml}</div>`
+    ? `<div style="display:flex;align-items:center;justify-content:${svcJustify};gap:3px;font-size:${svcFs}px;font-weight:600;color:${svcCol};flex-wrap:wrap;margin-bottom:2px">${servicesHtml}</div>`
     : '';
   const addrPart = (config.headerShowAddress !== false && address)
     ? `<div style="font-size:${addrFs}px;color:${addrCol};text-transform:uppercase;letter-spacing:0.5px;text-align:${addrAlign}">${address}</div>`
@@ -500,7 +501,7 @@ export function buildFooterHtml(config: HospitalConfig): string {
   const r = renderPrintSlot(config.footerLayout.right, config, config.customFooterRight, true);
   const bgCol = config.footerBgColor || '#ffffff';
   const borderCol = config.footerBorderTopColor || '#cccccc';
-  const fontSize = config.footerFontSize || 8;
+  const fontSize = Math.max((config.footerFontSize || 8) * 1.4, 11);
   const fontColor = config.footerFontColor || '#666666';
-  return `<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 15px;border-top:1px solid ${borderCol};background:${bgCol};font-size:${fontSize}px;color:${fontColor}"><div>${l}</div><div style="text-align:center">${c}</div><div style="text-align:right">${r}</div></div>`;
+  return `<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 15px;border-top:1px solid ${borderCol};background:${bgCol};font-size:${fontSize}px;color:${fontColor}"><div>${l}</div><div style="text-align:center">${c}</div><div style="text-align:right">${r}</div></div>`;
 }

@@ -85,6 +85,7 @@ const PAPER_DIMS_MM: Record<string, { w: number; h: number }> = {
   A5: { w: 148, h: 210 }, Letter: { w: 215.9, h: 279.4 }, Legal: { w: 215.9, h: 355.6 },
 };
 const PAGE_MARGIN_MM = 10;
+const MM_TO_PX = 3.7795275591;
 
 interface DualPrintPreviewProps { onClose: () => void; }
 
@@ -224,13 +225,24 @@ export function DualPrintPreview({ onClose }: DualPrintPreviewProps) {
 
   const dims = PAPER_DIMS[localPaperSize] || PAPER_DIMS.A4;
   const isLandscape = localOrientation === 'landscape';
-  const pw = isLandscape ? dims.h : dims.w;
-  const ph = isLandscape ? dims.w : dims.h;
+  const paperMmDims = PAPER_DIMS_MM[localPaperSize] || PAPER_DIMS_MM.A4;
+  const sheetW_mm = isLandscape ? paperMmDims.h : paperMmDims.w;
+  const sheetH_mm = isLandscape ? paperMmDims.w : paperMmDims.h;
+  const previewMarginMm = hospitalConfig.printBlackBg ? 0 : PAGE_MARGIN_MM;
+  const pw = (sheetW_mm - previewMarginMm * 2) * MM_TO_PX;
+  const ph = (sheetH_mm - previewMarginMm * 2) * MM_TO_PX;
+
+  const [viewportSize, setViewportSize] = useState({ w: window.innerWidth, h: window.innerHeight });
+  useEffect(() => {
+    const handler = () => setViewportSize({ w: window.innerWidth, h: window.innerHeight });
+    window.addEventListener('resize', handler);
+    return () => window.removeEventListener('resize', handler);
+  }, []);
 
   const services = (hospitalConfig.servicesList || '').split('|').filter(Boolean);
 
   const renderSlotPv = (slot: string, customText: string) => {
-    const fs = (dualFooterFontSize || 8) * zoom;
+    const fs = Math.max((dualFooterFontSize || 8) * 1.4, 11);
     const fc = dualFooterFontColor || '#666';
     switch (slot) {
       case 'logo': return hospitalConfig.logoDataUrl
@@ -307,36 +319,45 @@ export function DualPrintPreview({ onClose }: DualPrintPreviewProps) {
       const r = renderPrintSlot(dualFooterLayout.right as any, hospitalConfig as any, dualFooterCustomRight, true);
       const bgCol = dualFooterBgColor || '#ffffff';
       const borderCol = dualFooterBorderTopColor || '#cccccc';
-      const fontSize = dualFooterFontSize || 8;
+      const fontSize = Math.max((dualFooterFontSize || 8) * 1.4, 11);
       const fontColor = dualFooterFontColor || '#666666';
-      return `<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 15px;border-top:1px solid ${borderCol};background:${bgCol};font-size:${fontSize}px;color:${fontColor}"><div>${l}</div><div style="text-align:center">${c}</div><div style="text-align:right">${r}</div></div>`;
+      return `<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 15px;border-top:1px solid ${borderCol};background:${bgCol};font-size:${fontSize}px;color:${fontColor}"><div>${l}</div><div style="text-align:center">${c}</div><div style="text-align:right">${r}</div></div>`;
     };
 
-    const buildPanelMetadataHtml = (panel: typeof leftPanel) => {
+    const headerBorderCol = hospitalConfig.headerBorderBottomColor || '#2563eb';
+    const wrapperBorder = hospitalConfig.printBorderEnabled ? `1px solid ${borderCol}` : 'none';
+    const cellShadow = hospitalConfig.printBorderEnabled ? `box-shadow:inset 0 0 0 1px ${borderCol};` : '';
+
+    const buildPanelMetadataHtml = (panel: typeof leftPanel, pageNum: number) => {
       if (!settings.patientInfoEnabled) return '';
       const matched = usePatientStore.getState().patients.find(p => p.patientId === panel.patientId && p.patientName === panel.patientName);
-      const parts: string[] = [];
-      if (hospitalConfig.metadataPrintPatientName !== false) parts.push(`<span><b>Patient:</b> ${panel.patientName}</span>`);
-      if (hospitalConfig.metadataPrintAge && matched?.age) parts.push(`<span><b>Age:</b> ${matched.age}</span>`);
-      if (hospitalConfig.metadataPrintSex && matched?.sex) parts.push(`<span><b>Sex:</b> ${matched.sex}</span>`);
-      if (hospitalConfig.metadataPrintPatientId) parts.push(`<span><b>ID:</b> ${panel.patientId}</span>`);
-      parts.push(`<span><b>Date:</b> ${panel.studyDate}</span>`);
-      if (hospitalConfig.metadataPrintModality && matched?.modality) parts.push(`<span><b>Modality:</b> ${matched.modality}</span>`);
-      if (hospitalConfig.metadataPrintStudyName && matched?.studyDescription) parts.push(`<span><b>Study:</b> ${matched.studyDescription}</span>`);
-      if (hospitalConfig.metadataPrintAccessNo && matched?.accessionNumber) parts.push(`<span><b>Acc#:</b> ${matched.accessionNumber}</span>`);
-      if (hospitalConfig.metadataPrintRefBy && matched?.referringPhysician) parts.push(`<span><b>Ref:</b> ${matched.referringPhysician}</span>`);
-      return `<div style="padding:4px 10px;background:#111827;color:#d1d5db;border-bottom:1px solid #374151;display:flex;flex-wrap:wrap;gap:6px;font-size:9px;flex-shrink:0">${parts.join('')}</div>`;
+      const left: string[] = [];
+      if (hospitalConfig.metadataPrintPatientName !== false) left.push(`<span style="white-space:nowrap"><b>Patient:</b> ${panel.patientName}</span>`);
+      if (hospitalConfig.metadataPrintAge && matched?.age) left.push(`<span style="white-space:nowrap"><b>Age:</b> ${matched.age}</span>`);
+      if (hospitalConfig.metadataPrintSex && matched?.sex) left.push(`<span style="white-space:nowrap"><b>Sex:</b> ${matched.sex}</span>`);
+      if (hospitalConfig.metadataPrintPatientId) left.push(`<span style="white-space:nowrap"><b>ID:</b> ${panel.patientId}</span>`);
+      if (hospitalConfig.metadataPrintModality && matched?.modality) left.push(`<span style="white-space:nowrap"><b>Mod:</b> ${matched.modality}</span>`);
+      if (hospitalConfig.metadataPrintStudyName && matched?.studyDescription) left.push(`<span style="white-space:nowrap"><b>Study:</b> ${matched.studyDescription}</span>`);
+      if (hospitalConfig.metadataPrintAccessNo && matched?.accessionNumber) left.push(`<span style="white-space:nowrap"><b>Acc#:</b> ${matched.accessionNumber}</span>`);
+      if (hospitalConfig.metadataPrintRefBy && matched?.referringPhysician) left.push(`<span style="white-space:nowrap"><b>Ref:</b> ${matched.referringPhysician}</span>`);
+      const right = [
+        `<span style="white-space:nowrap"><b>Date:</b> ${panel.studyDate}</span>`,
+        `<span style="white-space:nowrap"><b>Page</b> ${pageNum}/${totalDualPages}</span>`,
+      ];
+      return `<div style="padding:4px 6px;background:#111827;color:#d1d5db;border-bottom:1px solid ${headerBorderCol};display:flex;align-items:center;justify-content:space-between;gap:6px;font-size:9px;flex-shrink:0;overflow:hidden"><div style="display:flex;align-items:center;gap:6px;flex:1 1 auto;min-width:0;overflow:hidden">${left.join('')}</div><div style="display:flex;align-items:center;gap:6px;flex:0 0 auto">${right.join('')}</div></div>`;
     };
 
-    const buildPanelGridHtml = (captures: string[], gridCols: string, gridRows: string, panel: typeof leftPanel) => {
+    const buildPanelGridHtml = (captures: string[], gridCols: string, gridRows: string, panel: typeof leftPanel, pageNum: number) => {
       const imgsHtml = captures.map(src => {
         const inner = src ? `<img src="${src}" style="width:100%;height:100%;object-fit:contain" />` : '';
-        return `<div style="background:#000;display:flex;align-items:center;justify-content:center;overflow:hidden;min-height:0;border:1px solid ${borderCol}">${inner}</div>`;
+        return `<div style="background:#000;display:flex;align-items:center;justify-content:center;overflow:hidden;min-height:0;padding:3px;${cellShadow}">${inner}</div>`;
       }).join('');
       return `<div style="flex:1;display:flex;flex-direction:column;min-height:0;overflow:hidden;border-right:1px dashed #555">` +
         `${settings.headerEnabled ? buildHeaderHtml() : ''}` +
-        `${buildPanelMetadataHtml(panel)}` +
-        `<div style="flex:1;display:grid;grid-template-columns:${gridCols};grid-template-rows:${gridRows};gap:2px;min-height:0;overflow:hidden;padding:4px">${imgsHtml}</div>` +
+        `<div style="border:${wrapperBorder};display:flex;flex-direction:column;flex:1;min-height:0;overflow:hidden">` +
+          `${buildPanelMetadataHtml(panel, pageNum)}` +
+          `<div style="flex:1;display:grid;grid-template-columns:${gridCols};grid-template-rows:${gridRows};gap:2px;min-height:0;overflow:hidden;padding:2px">${imgsHtml}</div>` +
+        `</div>` +
         `${dualFooterEnabled ? buildPrintFooterHtml() : ''}` +
         `</div>`;
     };
@@ -344,7 +365,7 @@ export function DualPrintPreview({ onClose }: DualPrintPreviewProps) {
     const pagesHtml = pagesToPrint.map((pageNum) => {
       const leftCaps = allLeftCaptures[pageNum - 1] || [];
       const rightCaps = allRightCaptures[pageNum - 1] || [];
-      return `<div class="page" style="background:${pageBg}"><div style="flex:1;display:flex;gap:0;min-height:0;overflow:hidden">${buildPanelGridHtml(leftCaps, leftGridCols, leftGridRows, leftPanel)}${buildPanelGridHtml(rightCaps, rightGridCols, rightGridRows, rightPanel)}</div></div>`;
+      return `<div class="page" style="background:${pageBg}"><div style="flex:1;display:flex;gap:0;min-height:0;overflow:hidden">${buildPanelGridHtml(leftCaps, leftGridCols, leftGridRows, leftPanel, pageNum)}${buildPanelGridHtml(rightCaps, rightGridCols, rightGridRows, rightPanel, pageNum)}</div></div>`;
     }).join('');
 
     const paperMm = PAPER_DIMS_MM[localPaperSize] || PAPER_DIMS_MM.A4;
@@ -418,49 +439,57 @@ export function DualPrintPreview({ onClose }: DualPrintPreviewProps) {
     }
   };
 
-  const renderPanelMetadataPv = (panel: typeof leftPanel) => {
+  const renderPanelMetadataPv = (panel: typeof leftPanel, pageNum: number) => {
     if (!settings.patientInfoEnabled) return null;
     const matched = usePatientStore.getState().patients.find(p => p.patientId === panel.patientId && p.patientName === panel.patientName);
     return (
-      <div style={{ padding: '3px 10px', fontSize: '9px' }} className="bg-gray-900 border-b border-gray-700 flex flex-wrap gap-x-2.5 gap-y-0.5 text-gray-300 font-medium flex-shrink-0">
-        {hospitalConfig.metadataPrintPatientName !== false && <span>Patient: {panel.patientName}</span>}
-        {hospitalConfig.metadataPrintAge && matched?.age && <span>Age: {matched.age}</span>}
-        {hospitalConfig.metadataPrintSex && matched?.sex && <span>Sex: {matched.sex}</span>}
-        {hospitalConfig.metadataPrintPatientId && <span>ID: {panel.patientId}</span>}
-        <span>Date: {panel.studyDate}</span>
-        {hospitalConfig.metadataPrintModality && matched?.modality && <span>Mod: {matched.modality}</span>}
-        {hospitalConfig.metadataPrintStudyName && matched?.studyDescription && <span>Study: {matched.studyDescription}</span>}
-        {hospitalConfig.metadataPrintAccessNo && matched?.accessionNumber && <span>Acc#: {matched.accessionNumber}</span>}
-        {hospitalConfig.metadataPrintRefBy && matched?.referringPhysician && <span>Ref: {matched.referringPhysician}</span>}
+      <div style={{ padding: '4px 6px', fontSize: '9px', borderBottom: `1px solid ${hospitalConfig.headerBorderBottomColor || '#2563eb'}`, gap: 6, justifyContent: 'space-between', overflow: 'hidden' }} className="bg-gray-900 flex items-center text-gray-300 font-medium flex-shrink-0">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: '1 1 auto', minWidth: 0, overflow: 'hidden' }}>
+          {hospitalConfig.metadataPrintPatientName !== false && <span style={{ whiteSpace: 'nowrap' }}>Patient: {panel.patientName}</span>}
+          {hospitalConfig.metadataPrintAge && matched?.age && <span style={{ whiteSpace: 'nowrap' }}>Age: {matched.age}</span>}
+          {hospitalConfig.metadataPrintSex && matched?.sex && <span style={{ whiteSpace: 'nowrap' }}>Sex: {matched.sex}</span>}
+          {hospitalConfig.metadataPrintPatientId && <span style={{ whiteSpace: 'nowrap' }}>ID: {panel.patientId}</span>}
+          {hospitalConfig.metadataPrintModality && matched?.modality && <span style={{ whiteSpace: 'nowrap' }}>Mod: {matched.modality}</span>}
+          {hospitalConfig.metadataPrintStudyName && matched?.studyDescription && <span style={{ whiteSpace: 'nowrap' }}>Study: {matched.studyDescription}</span>}
+          {hospitalConfig.metadataPrintAccessNo && matched?.accessionNumber && <span style={{ whiteSpace: 'nowrap' }}>Acc#: {matched.accessionNumber}</span>}
+          {hospitalConfig.metadataPrintRefBy && matched?.referringPhysician && <span style={{ whiteSpace: 'nowrap' }}>Ref: {matched.referringPhysician}</span>}
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: '0 0 auto' }}>
+          <span style={{ whiteSpace: 'nowrap' }}>Date: {panel.studyDate}</span>
+          <span style={{ whiteSpace: 'nowrap' }}>Page {pageNum}/{totalDualPages}</span>
+        </div>
       </div>
     );
   };
 
-  const renderPanelGrid = (captures: string[], layout: typeof leftPanel.currentLayout, panel: typeof leftPanel, isLast: boolean) => {
+  const renderPanelGrid = (captures: string[], layout: typeof leftPanel.currentLayout, panel: typeof leftPanel, isLast: boolean, pageNum: number) => {
     const borderColor = hospitalConfig.printBorderEnabled ? (hospitalConfig.printBorderColor || '#333') : 'transparent';
+    const wrapperBorder = hospitalConfig.printBorderEnabled ? `1px solid ${borderColor}` : 'none';
     return (
       <div
         className="flex flex-col flex-1 min-h-0 overflow-hidden"
         style={{ borderRight: isLast ? 'none' : '1px dashed #555' }}
       >
         {settings.headerEnabled && renderBrandHeaderPv()}
-        {renderPanelMetadataPv(panel)}
-        <div style={{
-          display: 'grid', gap: '2px', flex: 1, minHeight: 0, padding: '4px', backgroundColor: '#374151',
-          gridTemplateColumns: `repeat(${layout.cols}, 1fr)`,
-          gridTemplateRows: `repeat(${layout.rows}, 1fr)`,
-        }} className="h-full">
-          {captures.map((src, i) => (
-            <div key={i} className="bg-black flex items-center justify-center overflow-hidden" style={{ border: `1px solid ${borderColor}`, minHeight: 0 }}>
-              {src ? <img src={src} className="w-full h-full object-contain" alt="" /> : <span className="text-gray-600 text-[10px]">Empty</span>}
-            </div>
-          ))}
+        <div style={{ border: wrapperBorder, display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }}>
+          {renderPanelMetadataPv(panel, pageNum)}
+          <div style={{
+            display: 'grid', gap: '2px', flex: 1, minHeight: 0, padding: '2px', backgroundColor: '#374151',
+            gridTemplateColumns: `repeat(${layout.cols}, 1fr)`,
+            gridTemplateRows: `repeat(${layout.rows}, 1fr)`,
+          }} className="h-full">
+            {captures.map((src, i) => (
+              <div key={i} className="bg-black flex items-center justify-center overflow-hidden" style={{ boxShadow: hospitalConfig.printBorderEnabled ? `inset 0 0 0 1px ${borderColor}` : 'none', padding: 3, minHeight: 0 }}>
+                {src ? <img src={src} className="w-full h-full object-contain" alt="" /> : <span className="text-gray-600 text-[10px]">Empty</span>}
+              </div>
+            ))}
+          </div>
         </div>
         {dualFooterEnabled && (
           <div
             style={{
-              padding: '3px 12px',
-              fontSize: `${dualFooterFontSize || 8}px`,
+              padding: '6px 15px',
+              fontSize: `${Math.max((dualFooterFontSize || 8) * 1.4, 11)}px`,
               color: dualFooterFontColor || '#666',
               borderTop: `1px solid ${dualFooterBorderTopColor || '#555'}`,
               background: dualFooterBgColor || undefined,
@@ -570,14 +599,20 @@ export function DualPrintPreview({ onClose }: DualPrintPreviewProps) {
           pagesToShow.map((pageNum) => {
             const leftCaps = allLeftCaptures[pageNum - 1] || [];
             const rightCaps = allRightCaptures[pageNum - 1] || [];
+            const availW = viewportSize.w * 0.95;
+            const availH = viewportSize.h - toolbarH - 80;
+            const fitScale = Math.min(availW / pw, availH / ph);
+            const totalScale = fitScale * zoom;
             return (
               <div key={`preview-page-${pageNum}`} className="flex-shrink-0 flex flex-col items-center mb-4">
                 <div className="text-xs text-app-text-muted py-1 text-center">Page {pageNum} of {totalDualPages} — {localPaperSize} {localOrientation}</div>
-                <div className="flex flex-col border border-gray-600 shadow-xl" style={{ width: `min(calc(98vw * ${zoom}), calc((100vh - ${toolbarH}px - 50px) * ${zoom} * ${(pw/ph).toFixed(4)}))`, aspectRatio: `${pw} / ${ph}`, background: hospitalConfig.printBlackBg ? '#000' : '#fff' }}>
+                <div style={{ width: pw * totalScale, height: ph * totalScale, position: 'relative' }}>
+                <div className="flex flex-col border border-gray-600 shadow-xl" style={{ width: pw, height: ph, position: 'absolute', top: 0, left: 0, transform: `scale(${totalScale})`, transformOrigin: 'top left', background: hospitalConfig.printBlackBg ? '#000' : '#fff' }}>
                   <div style={{ display: 'flex', gap: 0, flex: 1, minHeight: 0, overflow: 'hidden' }}>
-                    {renderPanelGrid(leftCaps, leftPanel.currentLayout, leftPanel, false)}
-                    {renderPanelGrid(rightCaps, rightPanel.currentLayout, rightPanel, true)}
+                    {renderPanelGrid(leftCaps, leftPanel.currentLayout, leftPanel, false, pageNum)}
+                    {renderPanelGrid(rightCaps, rightPanel.currentLayout, rightPanel, true, pageNum)}
                   </div>
+                </div>
                 </div>
               </div>
             );
