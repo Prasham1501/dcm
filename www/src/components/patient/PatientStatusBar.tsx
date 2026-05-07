@@ -32,12 +32,14 @@ export function PatientStatusBar() {
           <button
             onClick={() => navigate('/config')}
             className="px-2 2xl:px-3 py-0.5 2xl:py-1 text-xs 2xl:text-sm border border-app-border text-app-text-secondary bg-app-bg rounded hover:bg-app-hover"
+            title="F10"
           >
             Config
           </button>
           <button
             onClick={() => setShowPrinterModal(true)}
             className="px-2 2xl:px-3 py-0.5 2xl:py-1 text-xs 2xl:text-sm border border-app-border text-app-text-secondary bg-app-bg rounded hover:bg-app-hover"
+            title="F9"
           >
             Default Printer
           </button>

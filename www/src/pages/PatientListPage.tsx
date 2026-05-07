@@ -68,12 +68,15 @@ export function PatientListPage() {
     };
   }, [loadPatients]);
 
-  // F10 shortcut to open Config
+  // F10 shortcut to open Config, F9 to open Default Printer
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'F10') {
         e.preventDefault();
         navigate('/config');
+      } else if (e.key === 'F9') {
+        e.preventDefault();
+        usePrintStore.getState().setShowPrinterModal(true);
       }
     };
     window.addEventListener('keydown', handleKeyDown);

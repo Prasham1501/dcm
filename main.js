@@ -1668,10 +1668,24 @@ ipcMain.handle('print-to-printer', async (event, options) => {
 
         await printWindow.loadFile(tempFile);
         await waitForPrintableContent(printWindow);
-        return await runElectronPrint(printWindow.webContents, buildElectronPrintOptions(printerName, printSettings));
+
+        const opts = buildElectronPrintOptions(printerName, printSettings);
+        let result = await runElectronPrint(printWindow.webContents, opts);
+
+        // If silent print failed, retry with native OS print dialog
+        if (!result.success) {
+            console.warn('[Print] Silent print failed:', result.error, '— opening native print dialog');
+            const dialogOpts = { ...opts, silent: false };
+            printWindow.showInactive();
+            result = await runElectronPrint(printWindow.webContents, dialogOpts, 120000);
+        }
+
+        return result;
     } catch (e) {
         return { success: false, error: e.message };
     } finally {
+        // Brief delay so the OS print spooler finishes queuing the job
+        await new Promise(r => setTimeout(r, 500));
         if (printWindow && !printWindow.isDestroyed()) printWindow.close();
         if (tempFile && fs.existsSync(tempFile)) try { fs.unlinkSync(tempFile); } catch { }
     }

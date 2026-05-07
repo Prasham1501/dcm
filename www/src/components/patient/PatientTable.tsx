@@ -9,7 +9,7 @@ import { FileText, Printer, Undo2 } from 'lucide-react';
 
 export function PatientTable() {
   const navigate = useNavigate();
-  const { filteredPatients, selectedPatient, selectedPatients, selectPatient, togglePatientSelection } = usePatientStore();
+  const { filteredPatients, selectedPatient, selectedPatients, selectPatient, togglePatientSelection, newStudyIds } = usePatientStore();
   const { getReportsForPatient } = useReportStore();
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; patient: Patient } | null>(null);
   const tableRef = useRef<HTMLDivElement>(null);
@@ -112,6 +112,10 @@ export function PatientTable() {
   }, [selectPatient, togglePatientSelection]);
 
   const handleRowDoubleClick = useCallback((patient: Patient) => {
+    // Clear new-study highlight when user opens the study
+    if (newStudyIds.has(patient.id)) {
+      usePatientStore.getState().clearNewHighlight(patient.id);
+    }
     if (patient.filePaths && patient.filePaths.length > 0) {
       openCRViewerPopup({
         patientName: patient.patientName,
@@ -120,7 +124,7 @@ export function PatientTable() {
         filePaths: patient.filePaths,
       }, navigate);
     }
-  }, [navigate]);
+  }, [navigate, newStudyIds]);
 
   const handleContextMenu = useCallback((e: React.MouseEvent, patient: Patient) => {
     e.preventDefault();
@@ -175,6 +179,7 @@ export function PatientTable() {
         <tbody>
           {filteredPatients.map((patient) => {
             const isSelected = selectedPatient?.id === patient.id || selectedPatients.has(patient.id);
+            const isNew = newStudyIds.has(patient.id);
             return (
               <tr
                 key={patient.id}
@@ -184,7 +189,9 @@ export function PatientTable() {
                 className={`border-b border-app-border cursor-pointer transition-colors ${
                   isSelected
                     ? 'bg-blue-600 text-white'
-                    : 'hover:bg-app-hover text-app-text'
+                    : isNew
+                      ? 'bg-green-500/10 hover:bg-green-500/20 text-app-text border-l-2 border-l-green-500'
+                      : 'hover:bg-app-hover text-app-text'
                 }`}
               >
                 <td className="px-3 py-2 text-center border-r border-app-border font-semibold">

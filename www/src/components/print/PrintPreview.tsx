@@ -347,19 +347,8 @@ export function PrintPreview() {
           htmlContent,
           printSettings: { paperSize: localPaperSize, orientation: localOrientation, copies: localCopies, colorMode: 'color', margins: 'none' },
         });
-
-        if (result.success) {
-          printStarted = true;
-        } else {
-          console.error('Direct print failed:', result.error);
-          if (electronAPI?.printReportDialog) {
-            const fallbackResult = await electronAPI.printReportDialog({ htmlContent, paperSize: localPaperSize });
-            printStarted = fallbackResult?.success !== false;
-          }
-        }
-      } else if (electronAPI?.printReportDialog) {
-        const fallbackResult = await electronAPI.printReportDialog({ htmlContent, paperSize: localPaperSize });
-        printStarted = fallbackResult?.success !== false;
+        printStarted = result.success;
+        if (!result.success) console.error('Print failed:', result.error);
       } else {
         const printWin = window.open('', '_blank');
         if (printWin) {

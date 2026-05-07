@@ -58,6 +58,7 @@ interface PatientState {
   filteredPatients: Patient[];
   selectedPatient: Patient | null;
   selectedPatients: Set<string>;
+  newStudyIds: Set<string>;
   filters: PatientFilters;
   loading: boolean;
   error: string | null;
@@ -97,6 +98,8 @@ interface PatientState {
   exportSelected: () => Patient[];
   importFolder: () => Promise<{ imported: number; studies: number } | null>;
   importToManagedStorage: (filePaths: string[], destDir?: string) => Promise<{ imported: string[]; errors: string[]; managedDir: string }>;
+  clearNewHighlight: (id: string) => void;
+  clearAllNewHighlights: () => void;
 }
 
 const defaultFilters: PatientFilters = {
@@ -214,6 +217,7 @@ export const usePatientStore = create<PatientState>()(
   filteredPatients: [],
   selectedPatient: null,
   selectedPatients: new Set(),
+  newStudyIds: new Set(),
   filters: { ...defaultFilters },
   loading: false,
   error: null,
@@ -230,6 +234,9 @@ export const usePatientStore = create<PatientState>()(
 
   loadPatients: async () => {
     set({ loading: true, error: null });
+
+    // Remember existing IDs to detect new studies
+    const previousIds = new Set(get().patients.map(p => p.id));
 
     // Always scan the network DICOM folder for received files
     const networkPatients = await scanNetworkDicomFolder();
@@ -315,6 +322,22 @@ export const usePatientStore = create<PatientState>()(
         console.error('[patientStore] loadPatients filter error:', err);
         set({ patients, filteredPatients: patients, loading: false, totalRecords: patients.length, totalPages: 1 });
       }
+    }
+
+    // Detect newly appeared studies and sort them to the top
+    const currentPatients = get().patients;
+    const currentNewIds = new Set(get().newStudyIds);
+    for (const p of currentPatients) {
+      if (!previousIds.has(p.id)) currentNewIds.add(p.id);
+    }
+    if (currentNewIds.size > 0) {
+      const filtered = get().filteredPatients;
+      const sorted = [...filtered].sort((a, b) => {
+        const aNew = currentNewIds.has(a.id) ? 1 : 0;
+        const bNew = currentNewIds.has(b.id) ? 1 : 0;
+        return bNew - aNew;
+      });
+      set({ newStudyIds: currentNewIds, filteredPatients: sorted });
     }
   },
 
@@ -655,9 +678,20 @@ export const usePatientStore = create<PatientState>()(
       const existingIds = new Set(state.patients.map((p) => p.id));
       const unique = newPatients.filter((p) => !existingIds.has(p.id));
       const patients = [...state.patients, ...unique];
+      const currentNewIds = new Set(state.newStudyIds);
+      for (const p of unique) currentNewIds.add(p.id);
+      const filtered = patients.filter((p) => matchesFilter(p, state.filters));
+      const sorted = currentNewIds.size > 0
+        ? [...filtered].sort((a, b) => {
+            const aNew = currentNewIds.has(a.id) ? 1 : 0;
+            const bNew = currentNewIds.has(b.id) ? 1 : 0;
+            return bNew - aNew;
+          })
+        : filtered;
       return {
         patients,
-        filteredPatients: patients.filter((p) => matchesFilter(p, state.filters)),
+        filteredPatients: sorted,
+        newStudyIds: currentNewIds,
         totalRecords: patients.length,
       };
     });
@@ -818,9 +852,23 @@ export const usePatientStore = create<PatientState>()(
       }
 
       const patients = [...existing, ...newEntries];
+
+      // Mark new entries as highlighted and sort them to top
+      const currentNewIds = new Set(get().newStudyIds);
+      for (const entry of newEntries) currentNewIds.add(entry.id);
+      const filtered = patients.filter((p) => matchesFilter(p, filters));
+      const sorted = currentNewIds.size > 0
+        ? [...filtered].sort((a, b) => {
+            const aNew = currentNewIds.has(a.id) ? 1 : 0;
+            const bNew = currentNewIds.has(b.id) ? 1 : 0;
+            return bNew - aNew;
+          })
+        : filtered;
+
       set({
         patients,
-        filteredPatients: patients.filter((p) => matchesFilter(p, filters)),
+        filteredPatients: sorted,
+        newStudyIds: currentNewIds,
         totalRecords: patients.length,
         syncing: false,
         syncProgress: null,
@@ -844,6 +892,16 @@ export const usePatientStore = create<PatientState>()(
     const data = await response.json();
     if (!data.success) throw new Error(data.error || 'Import failed');
     return { imported: data.imported, errors: data.errors, managedDir: data.managedDir };
+  },
+
+  clearNewHighlight: (id: string) => {
+    const next = new Set(get().newStudyIds);
+    next.delete(id);
+    set({ newStudyIds: next });
+  },
+
+  clearAllNewHighlights: () => {
+    set({ newStudyIds: new Set() });
   },
 }),
     {
