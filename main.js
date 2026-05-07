@@ -739,6 +739,8 @@ const mime = {
 };
 
 let staticServer = null;
+const APACHE_PORT = 80;
+const APACHE_BASE_PATH = '/dcm';
 
 function startStaticServer() {
     return new Promise((resolve) => {
@@ -747,8 +749,31 @@ function startStaticServer() {
         console.log('[StaticServer] Starting on port', PHP_PORT, '→', distPath);
 
         staticServer = http.createServer((req, res) => {
-            // Strip query string
-            let reqPath = url.parse(req.url).pathname;
+            const parsed = url.parse(req.url);
+            let reqPath = parsed.pathname;
+
+            // Proxy /api/ requests to Apache (PHP)
+            if (reqPath.startsWith('/api/') || reqPath.endsWith('.php')) {
+                const proxyPath = `${APACHE_BASE_PATH}${parsed.path}`;
+                const proxyOpts = {
+                    hostname: '127.0.0.1',
+                    port: APACHE_PORT,
+                    path: proxyPath,
+                    method: req.method,
+                    headers: { ...req.headers, host: `127.0.0.1:${APACHE_PORT}` },
+                };
+                const proxyReq = http.request(proxyOpts, (proxyRes) => {
+                    res.writeHead(proxyRes.statusCode, proxyRes.headers);
+                    proxyRes.pipe(res, { end: true });
+                });
+                proxyReq.on('error', (err) => {
+                    console.error('[StaticServer] Proxy error:', err.message);
+                    res.writeHead(502);
+                    res.end(JSON.stringify({ success: false, error: 'API proxy error: ' + err.message }));
+                });
+                req.pipe(proxyReq, { end: true });
+                return;
+            }
 
             // Try exact file first
             let filePath = path.join(distPath, reqPath);
@@ -1710,6 +1735,21 @@ ipcMain.handle('focus-main-window', async () => {
     catch (e) { return { success: false, error: e.message }; }
 });
 
+// Mark patient as printed — broadcast to ALL windows so main window store is updated
+ipcMain.handle('mark-patient-printed', async (event, { patientId, patientName }) => {
+    try {
+        const { BrowserWindow } = require('electron');
+        for (const win of BrowserWindow.getAllWindows()) {
+            if (!win.isDestroyed()) {
+                win.webContents.send('patient-printed', { patientId, patientName });
+            }
+        }
+        return { success: true };
+    } catch (e) {
+        return { success: false, error: e.message };
+    }
+});
+
 // Credential management for auto-login
 const credentialsPath = path.join(userDataPath, 'credentials.json');
 
@@ -2042,6 +2082,42 @@ ipcMain.handle('show-open-dialog', async (event, options) => {
         return result; // { canceled, filePaths }
     } catch (e) {
         return { canceled: true, filePaths: [], error: e.message };
+    }
+});
+
+// =====================================================
+// List DICOM files in a folder (recursive)
+// =====================================================
+ipcMain.handle('list-dicom-files', async (event, folderPath) => {
+    try {
+        const resolved = path.resolve(folderPath);
+        if (!fs.existsSync(resolved) || !fs.statSync(resolved).isDirectory()) {
+            return { success: false, files: [], error: 'Not a valid directory' };
+        }
+        const files = [];
+        const limit = 500;
+        const walk = (dir) => {
+            if (files.length >= limit) return;
+            try {
+                const entries = fs.readdirSync(dir, { withFileTypes: true });
+                for (const entry of entries) {
+                    if (files.length >= limit) return;
+                    const fullPath = path.join(dir, entry.name);
+                    if (entry.isDirectory()) {
+                        walk(fullPath);
+                    } else if (entry.isFile()) {
+                        const name = entry.name.toLowerCase();
+                        if (name.endsWith('.dcm') || name.endsWith('.dicom') || (!name.includes('.') && name !== 'dicomdir')) {
+                            files.push(fullPath);
+                        }
+                    }
+                }
+            } catch { /* skip unreadable dirs */ }
+        };
+        walk(resolved);
+        return { success: true, files };
+    } catch (e) {
+        return { success: false, files: [], error: e.message };
     }
 });
 
@@ -3183,7 +3259,7 @@ ipcMain.handle('extract-dicom-all-readings', async (event, { filePaths }) => {
 
     const TEXT_VRS = new Set(['ST', 'LO', 'LT', 'SH', 'UT', 'DS', 'IS']);
 
-    for (const filePath of (filePaths || []).slice(0, 15)) {
+    for (const filePath of (filePaths || []).slice(0, 50)) {
         try {
             const buffer = fs.readFileSync(filePath);
             const byteArray = new Uint8Array(buffer);
@@ -3581,6 +3657,145 @@ ipcMain.handle('ocr-dicom-file', async (event, { filePath }) => {
     } catch (err) {
         console.warn('[OCR-file] Failed:', err.message);
         return { text: '', success: false, error: err.message };
+    }
+});
+
+// ── Batch OCR: single Tesseract worker shared across ALL files ──
+// ~3-4× faster than per-file worker creation.  Uses 2 passes instead of 4.
+ipcMain.handle('ocr-dicom-batch', async (event, { filePaths }) => {
+    try {
+        const os = require('os');
+        const dicomParserLib = require('dicom-parser');
+        const { createWorker } = require('tesseract.js');
+
+        const results = [];
+        const batchStart = Date.now();
+
+        // Create ONE worker for the entire batch
+        const worker = await createWorker('eng', 1, { logger: () => { } });
+        console.log(`[OCR-batch] Worker created in ${Date.now() - batchStart}ms, processing ${filePaths.length} files`);
+
+        for (let fi = 0; fi < filePaths.length; fi++) {
+            const filePath = filePaths[fi];
+            const fileStart = Date.now();
+            try {
+                const buffer = fs.readFileSync(filePath);
+                const byteArray = new Uint8Array(buffer);
+                const dataset = dicomParserLib.parseDicom(byteArray);
+
+                const rows = dataset.uint16('x00280010');
+                const cols = dataset.uint16('x00280011');
+                const bitsAllocated = dataset.uint16('x00280100') || 8;
+                const bitsStored = dataset.uint16('x00280101') || bitsAllocated;
+                const samplesPerPixel = dataset.uint16('x00280002') || 1;
+                const photometric = (dataset.string('x00280004') || '').trim();
+                const pixelRepresentation = dataset.uint16('x00280103') || 0;
+                const windowCenter = parseFloat(dataset.string('x00281050') || '127');
+                const windowWidth = parseFloat(dataset.string('x00281051') || '255');
+
+                if (!rows || !cols) { results.push({ text: '', success: false }); continue; }
+                const pixelDataElement = dataset.elements['x7fe00010'];
+                if (!pixelDataElement) { results.push({ text: '', success: false }); continue; }
+
+                const pixelData = new Uint8Array(buffer.buffer, pixelDataElement.dataOffset, pixelDataElement.length);
+
+                // Convert to grayscale
+                const grayBuf = new Uint8Array(rows * cols);
+                if (samplesPerPixel === 3) {
+                    const isYBR = photometric.startsWith('YBR');
+                    for (let i = 0; i < rows * cols; i++) {
+                        let r = pixelData[i * 3], g = pixelData[i * 3 + 1], b = pixelData[i * 3 + 2];
+                        if (bitsAllocated === 16) {
+                            r = (pixelData[i*6] | (pixelData[i*6+1]<<8)) >> (bitsStored-8);
+                            g = (pixelData[i*6+2] | (pixelData[i*6+3]<<8)) >> (bitsStored-8);
+                            b = (pixelData[i*6+4] | (pixelData[i*6+5]<<8)) >> (bitsStored-8);
+                        }
+                        if (isYBR) {
+                            const y = r, cb = g, cr = b;
+                            r = Math.max(0, Math.min(255, Math.round(y + 1.402 * (cr - 128))));
+                            g = Math.max(0, Math.min(255, Math.round(y - 0.344136 * (cb - 128) - 0.714136 * (cr - 128))));
+                            b = Math.max(0, Math.min(255, Math.round(y + 1.772 * (cb - 128))));
+                        }
+                        grayBuf[i] = Math.round(0.299 * r + 0.587 * g + 0.114 * b);
+                    }
+                } else {
+                    const isInverted = photometric === 'MONOCHROME1';
+                    const wLow = windowCenter - windowWidth / 2;
+                    const wHigh = windowCenter + windowWidth / 2;
+                    for (let i = 0; i < rows * cols; i++) {
+                        let raw;
+                        if (bitsAllocated === 16) {
+                            raw = pixelData[i*2] | (pixelData[i*2+1]<<8);
+                            if (pixelRepresentation === 1 && raw > 32767) raw -= 65536;
+                        } else { raw = pixelData[i]; }
+                        let gray;
+                        if (raw <= wLow) gray = 0;
+                        else if (raw >= wHigh) gray = 255;
+                        else gray = Math.round(((raw - wLow) / windowWidth) * 255);
+                        if (isInverted) gray = 255 - gray;
+                        grayBuf[i] = gray;
+                    }
+                }
+
+                // Adaptive threshold — isolates bright text from dark US background
+                const histogram = new Uint32Array(256);
+                for (let i = 0; i < rows * cols; i++) histogram[grayBuf[i]]++;
+                let cumul = 0, threshVal = 160;
+                for (let i = 255; i >= 0; i--) {
+                    cumul += histogram[i];
+                    if (cumul / (rows * cols) > 0.15) { threshVal = Math.max(i, 120); break; }
+                }
+
+                // Pass 1: Thresholded full image (PSM 11 sparse text)
+                const threshRgb = new Uint8Array(rows * cols * 3);
+                for (let i = 0; i < rows * cols; i++) {
+                    const v = grayBuf[i] >= threshVal ? 255 : 0;
+                    threshRgb[i*3] = v; threshRgb[i*3+1] = v; threshRgb[i*3+2] = v;
+                }
+
+                // Pass 2: Right 45% crop thresholded (PSM 6 block — measurement panels)
+                const cropX = Math.floor(cols * 0.55);
+                const cropW = cols - cropX;
+                const cropRgb = new Uint8Array(rows * cropW * 3);
+                for (let y = 0; y < rows; y++) {
+                    for (let x = 0; x < cropW; x++) {
+                        const v = grayBuf[y * cols + cropX + x] >= threshVal ? 255 : 0;
+                        const di = (y * cropW + x) * 3;
+                        cropRgb[di] = v; cropRgb[di+1] = v; cropRgb[di+2] = v;
+                    }
+                }
+
+                const ts = Date.now();
+                const threshFile = path.join(os.tmpdir(), `dcm-batch-thresh-${ts}-${fi}.bmp`);
+                const cropFile = path.join(os.tmpdir(), `dcm-batch-crop-${ts}-${fi}.bmp`);
+                fs.writeFileSync(threshFile, makeBmp24(threshRgb, cols, rows));
+                fs.writeFileSync(cropFile, makeBmp24(cropRgb, cropW, rows));
+
+                // 2 passes instead of 4
+                await worker.setParameters({ tessedit_pageseg_mode: '11' });
+                const { data: d1 } = await worker.recognize(threshFile);
+
+                await worker.setParameters({ tessedit_pageseg_mode: '6' });
+                const { data: d2 } = await worker.recognize(cropFile);
+
+                for (const f of [threshFile, cropFile]) { try { fs.unlinkSync(f); } catch {} }
+
+                const ocrText = [d1.text, d2.text].filter(t => t?.trim()).join('\n');
+                const elapsed = Date.now() - fileStart;
+                console.log(`[OCR-batch] File ${fi+1}/${filePaths.length} (${elapsed}ms): ${ocrText.length} chars`);
+                results.push({ text: ocrText, success: true });
+            } catch (err) {
+                console.warn(`[OCR-batch] File ${fi+1} failed:`, err.message);
+                results.push({ text: '', success: false, error: err.message });
+            }
+        }
+
+        await worker.terminate();
+        console.log(`[OCR-batch] Total: ${Date.now() - batchStart}ms for ${filePaths.length} files`);
+        return results;
+    } catch (err) {
+        console.warn('[OCR-batch] Failed:', err.message);
+        return [];
     }
 });
 

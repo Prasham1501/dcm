@@ -216,6 +216,14 @@ function sendSuccessResponse($data = [], $message = 'Success') {
 }
 
 /**
+ * Check if request originates from localhost (desktop app)
+ */
+function isLocalRequest() {
+    $ip = $_SERVER['REMOTE_ADDR'] ?? '';
+    return in_array($ip, ['127.0.0.1', '::1', 'localhost'], true);
+}
+
+/**
  * Sanitize Input
  *
  * @param string $input Input to sanitize
