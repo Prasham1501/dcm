@@ -232,25 +232,20 @@ export function PrintSettingsTab() {
 
       {/* ── SECTION 4: IMAGE APPEARANCE ── */}
       <Section title="Image Appearance">
-        <div className="grid grid-cols-2 gap-x-6 gap-y-2">
-          <div className="space-y-2">
-            <CheckboxRow label="Black background" checked={config.printBlackBg} onChange={(v) => config.updateField('printBlackBg', v)} />
-            <CheckboxRow label="Border around images" checked={config.printBorderEnabled} onChange={(v) => config.updateField('printBorderEnabled', v)} />
+        <div className="flex flex-wrap items-start gap-x-6 gap-y-2">
+          <CheckboxRow label="Black background" checked={config.printBlackBg} onChange={(v) => config.updateField('printBlackBg', v)} />
+          <div className="flex items-center gap-2">
+            <CheckboxRow label="Image border" checked={config.printBorderEnabled} onChange={(v) => config.updateField('printBorderEnabled', v)} />
             {config.printBorderEnabled && (
-              <div className="ml-5">
-                <ColorField label="Border Color" value={config.printBorderColor} onChange={(v) => config.updateField('printBorderColor', v)} />
-              </div>
+              <ColorField label="" value={config.printBorderColor} onChange={(v) => config.updateField('printBorderColor', v)} />
             )}
           </div>
-          <div className="space-y-2">
-            <ColorField label="Viewport Border" value={config.viewportBorderColor} onChange={(v) => config.updateField('viewportBorderColor', v)} />
-            <div className="flex items-center gap-2">
-              <label className="text-[10px] font-bold text-app-text-muted uppercase w-24">Image Gap</label>
-              <input type="number" min={0} max={200} value={config.gapBetweenImages}
-                onChange={(e) => config.updateField('gapBetweenImages', parseInt(e.target.value) || 0)}
-                className="w-16 h-6 px-1.5 text-[10px] border border-app-border bg-app-bg text-app-text rounded-sm" />
-              <span className="text-[9px] text-app-text-muted">px</span>
-            </div>
+          <div className="flex items-center gap-2">
+            <label className="text-[10px] font-bold text-app-text-muted uppercase">Image Gap</label>
+            <input type="number" min={0} max={200} value={config.gapBetweenImages}
+              onChange={(e) => config.updateField('gapBetweenImages', parseInt(e.target.value) || 0)}
+              className="w-16 h-6 px-1.5 text-[10px] border border-app-border bg-app-bg text-app-text rounded-sm" />
+            <span className="text-[9px] text-app-text-muted">px</span>
           </div>
         </div>
       </Section>
