@@ -66,6 +66,8 @@ interface CRViewerState {
   patientName: string;
   patientId: string;
   studyDate: string;
+  modality: string;
+  studyDescription: string;
 
   // Images
   images: CRImage[];
@@ -119,6 +121,8 @@ interface CRViewerState {
     patientId: string;
     studyDate: string;
     filePaths: string[];
+    modality?: string;
+    studyDescription?: string;
   }) => void;
   setLayout: (layout: CRLayout) => void;
   setCurrentPage: (page: number) => void;
@@ -208,6 +212,8 @@ export async function openCRViewerPopup(params: {
   patientId: string;
   studyDate: string;
   filePaths: string[];
+  modality?: string;
+  studyDescription?: string;
 }, navigate: (path: string) => void) {
   const imageCount = params.filePaths.length;
   const layout = autoSelectLayout(imageCount);
@@ -267,6 +273,8 @@ export const useCRViewerStore = create<CRViewerState>((set, get) => ({
   patientName: '',
   patientId: '',
   studyDate: '',
+  modality: '',
+  studyDescription: '',
   images: [],
   originalImages: [],
   totalImages: 0,
@@ -316,6 +324,8 @@ export const useCRViewerStore = create<CRViewerState>((set, get) => ({
       patientName: params.patientName,
       patientId: params.patientId,
       studyDate: params.studyDate,
+      modality: params.modality ?? '',
+      studyDescription: params.studyDescription ?? '',
       isLoading: false,
       selectedViewport: 0,
       selectedCount: 0,

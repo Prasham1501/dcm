@@ -296,7 +296,19 @@ export function parseTextBlock(text: string): { readings: Reading[]; warnings: s
   // For multi-line format: label on one line, value on the next (common on Doppler/Mindray DC-7)
   let pendingLabel: { key: string; label: string; category: TemplateKey } | null = null;
 
-  const lines = text.split(/[\n\r,;]+/);
+  // Split on newlines, commas, semicolons first
+  const rawLines = text.split(/[\n\r,;]+/);
+  // Then further split lines that have multiple measurements concatenated (e.g. "BPD 92mm HC 328mm AC 310mm")
+  const lines: string[] = [];
+  const MEAS_LABELS = /(?=\b(?:BPD|HC|AC|FL|CRL|EFW|FHR|AFI|HL|NT|NB|IT|GA|EDD|PSV|EDV|RI|PI|TAMV|IMT|Vel)\b)/i;
+  for (const raw of rawLines) {
+    const parts = raw.split(MEAS_LABELS).map(s => s.trim()).filter(s => s.length > 0);
+    if (parts.length > 1) {
+      lines.push(...parts);
+    } else {
+      lines.push(raw);
+    }
+  }
   console.log(`[parseTextBlock] Parsing ${lines.length} lines...`);
   for (const line of lines) {
     // Check if this line names a vessel/anatomy — use it as context for subsequent measurements

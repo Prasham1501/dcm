@@ -260,10 +260,16 @@ export const usePatientStore = create<PatientState>()(
 
         const mergedPatients = apiPatients.map((ap) => {
           const prev = existingMap.get(ap.patientId);
+          const preservedFields: Partial<Patient> = {};
           if (prev?.filePaths && prev.filePaths.length > 0 && !ap.filePaths) {
-            return { ...ap, filePaths: prev.filePaths, studyInstanceUID: prev.studyInstanceUID || ap.studyInstanceUID };
+            preservedFields.filePaths = prev.filePaths;
+            preservedFields.studyInstanceUID = prev.studyInstanceUID || ap.studyInstanceUID;
           }
-          return ap;
+          // Preserve local printed status (logical OR with API value)
+          if (prev?.printed && !ap.printed) {
+            preservedFields.printed = true;
+          }
+          return Object.keys(preservedFields).length > 0 ? { ...ap, ...preservedFields } : ap;
         });
 
         // Also keep folder-synced patients that aren't in API results
@@ -650,9 +656,12 @@ export const usePatientStore = create<PatientState>()(
   createPatient: (patient: Patient) => {
     set((state) => {
       const patients = [patient, ...state.patients];
+      const newStudyIds = new Set(state.newStudyIds);
+      newStudyIds.add(patient.id);
       return {
         patients,
         filteredPatients: patients.filter((p) => matchesFilter(p, state.filters)),
+        newStudyIds,
         totalRecords: patients.length,
       };
     });

@@ -6,6 +6,7 @@ import { useThemeStore } from '@/stores/themeStore';
 import { useCustomAnnotationStore } from '@/stores/customAnnotationStore';
 import { useUndoStore } from '@/stores/undoStore';
 import { useReportStore } from '@/stores/reportStore';
+import { useReportRouter } from '@/features/report-router/useReportRouter';
 import { resetViewport } from '@/lib/viewerTools';
 import {
   Sun, Moon, ChevronLeft, ChevronRight, Printer, X, Copy, Check,
@@ -16,7 +17,7 @@ export function ViewerHeader({ showThumbnails = true, onToggleThumbnails }: { sh
   const navigate = useNavigate();
   const {
     currentPage, totalPages, totalImages, images,
-    patientName, patientId, studyDate,
+    patientName, patientId, studyDate, modality, studyDescription,
     nextPage, prevPage,
     selectAllViewports, selectedViewportIndices, selectedViewport,
     deleteImageFromViewport, insertAllViewports,
@@ -25,6 +26,7 @@ export function ViewerHeader({ showThumbnails = true, onToggleThumbnails }: { sh
   const { mode, toggleTheme } = useThemeStore();
   const showInlineReport = useReportStore((s) => s.showInlineReport);
   const setShowInlineReport = useReportStore((s) => s.setShowInlineReport);
+  const reportRouter = useReportRouter();
   const [copied, setCopied] = useState(false);
   const hasImages = images.length > 0;
 
@@ -192,9 +194,28 @@ export function ViewerHeader({ showThumbnails = true, onToggleThumbnails }: { sh
 
         {/* Report - highlighted */}
         <button
-          onClick={() => setShowInlineReport(!showInlineReport)}
+          onClick={() => {
+            if (showInlineReport) {
+              setShowInlineReport(false);
+            } else {
+              reportRouter.createReport({
+                id: patientId,
+                patientId,
+                patientName,
+                studyDate,
+                modality,
+                studyDescription,
+                age: '',
+                sex: '',
+                images: 0,
+                accessionNumber: '',
+                referringPhysician: '',
+                printed: false,
+              });
+            }
+          }}
           className={`px-2 py-1 text-[10px] 2xl:text-sm font-semibold border-2 border-app-accent rounded transition-colors flex items-center gap-1 ${showInlineReport ? 'text-white bg-app-accent hover:opacity-90' : 'text-app-accent bg-app-bg hover:bg-app-accent hover:text-white'}`}
-          title={showInlineReport ? 'Hide Report Panel' : 'Show Report Panel'}
+          title={showInlineReport ? 'Hide Report Panel' : 'Create Report'}
         >
           <FileText className="w-3 h-3" />
           Report

@@ -77,14 +77,24 @@ export async function extractReadings(params: ExtractionParams): Promise<Reading
     allWarnings.push(`Phase 1b (Orthanc tags) threw: ${err?.message}`);
   }
 
-  // If tags found readings, return with dicom-sr source (highest confidence)
+  // If tags found readings, check if critical OB keys are missing before skipping OCR
   if (tagReadings.length > 0) {
-    console.log(`[extractReadings] Tags found ${tagReadings.length} readings — using dicom-sr source`);
-    return build(params.studyUID, 'dicom-sr', tagReadings, allWarnings);
+    const CRITICAL_OB_KEYS = ['BPD', 'HC', 'AC', 'FL', 'CRL', 'EFW', 'HL', 'NT'];
+    const foundKeys = new Set(tagReadings.map(r => r.key.replace(/_\d+$/, '').toUpperCase()));
+    const missingCritical = CRITICAL_OB_KEYS.filter(k => !foundKeys.has(k));
+
+    if (missingCritical.length === 0) {
+      // All critical keys found via tags — no need for OCR
+      console.log(`[extractReadings] Tags found ${tagReadings.length} readings with all critical OB keys — using dicom-sr source`);
+      return build(params.studyUID, 'dicom-sr', tagReadings, allWarnings);
+    }
+
+    // Some critical OB keys missing — run OCR to try to find them
+    console.log(`[extractReadings] Tags found ${tagReadings.length} readings but missing: ${missingCritical.join(', ')} — running OCR supplement`);
   }
 
   // ════════════════════════════════════════════════════════════
-  // Phase 2: OCR — tags found nothing, fall back to pixel reading
+  // Phase 2: OCR — tags found nothing OR missing critical OB keys
   // ════════════════════════════════════════════════════════════
 
   // 2a. Node.js Tesseract OCR (native resolution, best quality)
@@ -94,7 +104,9 @@ export async function extractReadings(params: ExtractionParams): Promise<Reading
     allWarnings.push(...warnings);
     console.log(`[extractReadings] Phase 2a: ${readings.length} OCR readings`);
     if (readings.length > 0) {
-      return build(params.studyUID, 'pixel-ocr', readings, allWarnings);
+      // Merge with any existing tag readings (tag readings take priority)
+      const merged = mergeReadings(tagReadings, readings);
+      return build(params.studyUID, tagReadings.length > 0 ? 'dicom-sr' : 'pixel-ocr', merged, allWarnings);
     }
   } catch (err: any) {
     console.warn('[extractReadings] Phase 2a threw:', err?.message);
@@ -106,7 +118,8 @@ export async function extractReadings(params: ExtractionParams): Promise<Reading
     const { readings, warnings } = await fromPixelOcr(params.imageUrls);
     allWarnings.push(...warnings);
     if (readings.length > 0) {
-      return build(params.studyUID, 'pixel-ocr', readings, allWarnings);
+      const merged = mergeReadings(tagReadings, readings);
+      return build(params.studyUID, tagReadings.length > 0 ? 'dicom-sr' : 'pixel-ocr', merged, allWarnings);
     }
   } catch (err: any) {
     allWarnings.push(`Phase 2b (browser OCR) threw: ${err?.message}`);
@@ -120,15 +133,42 @@ export async function extractReadings(params: ExtractionParams): Promise<Reading
       const { readings, warnings } = await fromVisionModel(params.hfToken, params.imageUrls);
       allWarnings.push(...warnings);
       if (readings.length > 0) {
-        return build(params.studyUID, 'vision-llm', readings, allWarnings);
+        const merged = mergeReadings(tagReadings, readings);
+        return build(params.studyUID, 'vision-llm', merged, allWarnings);
       }
     } catch (err: any) {
       allWarnings.push(`Phase 3 (Vision LLM) threw: ${err?.message}`);
     }
   }
 
+  // If we had tag readings but OCR/AI found nothing extra, still return tag readings
+  if (tagReadings.length > 0) {
+    console.log(`[extractReadings] Returning ${tagReadings.length} tag-only readings (OCR found nothing additional)`);
+    return build(params.studyUID, 'dicom-sr', tagReadings, allWarnings);
+  }
+
   // All phases exhausted — return empty
   return { ...EMPTY_READING_SET(params.studyUID), warnings: allWarnings };
+}
+
+/**
+ * Merge two reading arrays: primary readings take priority.
+ * Secondary readings are only added if their base key isn't already in primary.
+ */
+function mergeReadings(primary: Reading[], secondary: Reading[]): Reading[] {
+  if (primary.length === 0) return secondary;
+  if (secondary.length === 0) return primary;
+  const existingKeys = new Set(primary.map(r => r.key.replace(/_\d+$/, '').toUpperCase()));
+  const merged = [...primary];
+  for (const r of secondary) {
+    const baseKey = r.key.replace(/_\d+$/, '').toUpperCase();
+    if (!existingKeys.has(baseKey)) {
+      merged.push(r);
+      existingKeys.add(baseKey);
+    }
+  }
+  console.log(`[extractReadings] Merged: ${primary.length} primary + ${merged.length - primary.length} new from secondary = ${merged.length} total`);
+  return merged;
 }
 
 function build(

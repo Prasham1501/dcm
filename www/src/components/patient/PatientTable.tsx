@@ -1,11 +1,13 @@
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { usePatientStore } from '@/stores/patientStore';
 import { openCRViewerPopup } from '@/stores/crViewerStore';
 import { useReportStore } from '@/stores/reportStore';
 import type { Patient } from '@/types/patient';
 import { PatientContextMenu } from './PatientContextMenu';
-import { FileText, Printer, Undo2 } from 'lucide-react';
+import { FileText, Printer, Undo2, ChevronUp, ChevronDown } from 'lucide-react';
+
+type SortDir = 'asc' | 'desc' | null;
 
 export function PatientTable() {
   const navigate = useNavigate();
@@ -13,6 +15,20 @@ export function PatientTable() {
   const { getReportsForPatient } = useReportStore();
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; patient: Patient } | null>(null);
   const tableRef = useRef<HTMLDivElement>(null);
+  const [sortKey, setSortKey] = useState<string | null>(null);
+  const [sortDir, setSortDir] = useState<SortDir>(null);
+
+  // Listen for IPC "patient-printed" broadcast from popup windows
+  useEffect(() => {
+    const api = (window as any).electronAPI;
+    if (!api?.on) return;
+    const unsub = api.on('patient-printed', (data: { patientId: string; patientName: string }) => {
+      const { patients, editPatient } = usePatientStore.getState();
+      const matched = patients.find(p => p.patientId === data.patientId && p.patientName === data.patientName);
+      if (matched) editPatient(matched.id, { printed: true });
+    });
+    return () => { if (typeof unsub === 'function') unsub(); };
+  }, []);
 
   // Merge state
   const [showMergeDialog, setShowMergeDialog] = useState(false);
@@ -145,19 +161,57 @@ export function PatientTable() {
   }, [contextMenu]);
 
   const columns = [
-    { key: 'printed', label: 'P', width: 'w-8' },
-    { key: 'patientId', label: 'Patient ID', width: 'w-44' },
-    { key: 'patientName', label: 'Patient Name', width: 'w-48' },
-    { key: 'age', label: 'Age', width: 'w-14' },
-    { key: 'sex', label: 'Sex', width: 'w-10' },
-    { key: 'studyDate', label: 'Study Date', width: 'w-28' },
-    { key: 'studyDescription', label: 'Study Description', width: 'w-36' },
-    { key: 'images', label: 'Images', width: 'w-16' },
-    { key: 'modality', label: 'Modality', width: 'w-20' },
-    { key: 'accessionNumber', label: 'Accession Number', width: 'w-36' },
-    { key: 'referringPhysician', label: 'Referring Physician', width: 'w-40' },
-    { key: 'report', label: 'Rep', width: 'w-12' },
+    { key: 'printed', label: 'P', width: 'w-8', sortable: true },
+    { key: 'patientId', label: 'Patient ID', width: 'w-44', sortable: true },
+    { key: 'patientName', label: 'Patient Name', width: 'w-48', sortable: true },
+    { key: 'age', label: 'Age', width: 'w-14', sortable: true },
+    { key: 'sex', label: 'Sex', width: 'w-10', sortable: true },
+    { key: 'studyDate', label: 'Study Date', width: 'w-28', sortable: true },
+    { key: 'studyDescription', label: 'Study Description', width: 'w-36', sortable: true },
+    { key: 'images', label: 'Images', width: 'w-16', sortable: true },
+    { key: 'modality', label: 'Modality', width: 'w-20', sortable: true },
+    { key: 'accessionNumber', label: 'Accession Number', width: 'w-36', sortable: true },
+    { key: 'referringPhysician', label: 'Referring Physician', width: 'w-40', sortable: true },
+    { key: 'report', label: 'Rep', width: 'w-12', sortable: false },
   ];
+
+  const handleSort = useCallback((key: string) => {
+    if (sortKey === key) {
+      // Cycle: asc → desc → none
+      setSortDir(prev => prev === 'asc' ? 'desc' : prev === 'desc' ? null : 'asc');
+      if (sortDir === 'desc') setSortKey(null);
+    } else {
+      setSortKey(key);
+      setSortDir('asc');
+    }
+  }, [sortKey, sortDir]);
+
+  const sortedPatients = useMemo(() => {
+    if (!sortKey || !sortDir) return filteredPatients;
+    return [...filteredPatients].sort((a, b) => {
+      let aVal: any = (a as any)[sortKey];
+      let bVal: any = (b as any)[sortKey];
+      // Handle booleans (printed)
+      if (typeof aVal === 'boolean') { aVal = aVal ? 1 : 0; bVal = bVal ? 1 : 0; }
+      // Handle numbers (images)
+      if (sortKey === 'images') { aVal = Number(aVal) || 0; bVal = Number(bVal) || 0; }
+      // Parse study date for proper date sorting (DD-MM-YYYY)
+      if (sortKey === 'studyDate') {
+        const parseDate = (d: string) => {
+          if (!d) return 0;
+          const parts = d.split(/[-/.]/);
+          if (parts.length === 3) return new Date(+parts[2], +parts[1] - 1, +parts[0]).getTime();
+          return new Date(d).getTime() || 0;
+        };
+        aVal = parseDate(aVal); bVal = parseDate(bVal);
+      }
+      // String comparison
+      if (typeof aVal === 'string') { aVal = aVal.toLowerCase(); bVal = (bVal || '').toLowerCase(); }
+      if (aVal < bVal) return sortDir === 'asc' ? -1 : 1;
+      if (aVal > bVal) return sortDir === 'asc' ? 1 : -1;
+      return 0;
+    });
+  }, [filteredPatients, sortKey, sortDir]);
 
   const multiCount = selectedPatients.size;
 
@@ -169,15 +223,21 @@ export function PatientTable() {
             {columns.map((col) => (
               <th
                 key={col.key}
-                className={`${col.width} px-3 2xl:px-4 py-2.5 2xl:py-3 text-center font-bold text-app-accent uppercase tracking-wide border-r border-app-border last:border-r-0 select-none`}
+                onClick={col.sortable ? () => handleSort(col.key) : undefined}
+                className={`${col.width} px-3 2xl:px-4 py-2.5 2xl:py-3 text-center font-bold text-app-accent uppercase tracking-wide border-r border-app-border last:border-r-0 select-none ${col.sortable ? 'cursor-pointer hover:bg-app-accent/10 transition-colors' : ''}`}
               >
-                {col.label}
+                <span className="inline-flex items-center gap-1 justify-center">
+                  {col.label}
+                  {col.sortable && sortKey === col.key && sortDir && (
+                    sortDir === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />
+                  )}
+                </span>
               </th>
             ))}
           </tr>
         </thead>
         <tbody>
-          {filteredPatients.map((patient) => {
+          {sortedPatients.map((patient) => {
             const isSelected = selectedPatient?.id === patient.id || selectedPatients.has(patient.id);
             const isNew = newStudyIds.has(patient.id);
             return (
@@ -190,7 +250,7 @@ export function PatientTable() {
                   isSelected
                     ? 'bg-blue-600 text-white'
                     : isNew
-                      ? 'bg-green-500/10 hover:bg-green-500/20 text-app-text border-l-2 border-l-green-500'
+                      ? 'hover:bg-app-hover text-green-500 font-semibold'
                       : 'hover:bg-app-hover text-app-text'
                 }`}
               >
@@ -243,7 +303,7 @@ export function PatientTable() {
               </tr>
             );
           })}
-          {filteredPatients.length === 0 && (
+          {sortedPatients.length === 0 && (
             <tr>
               <td colSpan={12} className="px-3 py-12 text-center text-app-text-muted">
                 No patients found matching your filters.

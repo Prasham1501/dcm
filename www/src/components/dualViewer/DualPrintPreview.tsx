@@ -269,7 +269,7 @@ export function DualPrintPreview({ onClose }: DualPrintPreviewProps) {
       {hospitalConfig.headerShowLogo !== false && (
       <div style={{ flex: '0 0 auto', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
         {hospitalConfig.logoDataUrl ? (
-          <img src={hospitalConfig.logoDataUrl} style={{ width: logoSz, height: logoSz, borderRadius: logoRadius, objectFit: 'cover', border: '1px solid #ddd' }} alt="Logo" />
+          <img src={hospitalConfig.logoDataUrl} style={{ width: logoSz, height: logoSz, borderRadius: logoRadius, objectFit: 'cover' }} alt="Logo" />
         ) : (
           <span style={{ fontSize: 6 * zoom }} className="text-gray-400">[Logo]</span>
         )}
@@ -417,6 +417,10 @@ export function DualPrintPreview({ onClose }: DualPrintPreviewProps) {
       const jobLayout = 'Dual ' + leftPanel.currentLayout.spots + '+' + rightPanel.currentLayout.spots;
       addPrintJob({ patientName: jobName, studyDate: leftPanel.studyDate, layout: jobLayout, copies: localCopies, paperSize: localPaperSize });
       for (let i = 0; i < localCopies; i++) decrementPrintCount();
+      // Mark patient as printed — broadcast via IPC so all windows (including main) get the update
+      if (electronAPI?.invoke) {
+        electronAPI.invoke('mark-patient-printed', { patientId: leftPanel.patientId, patientName: leftPanel.patientName }).catch(() => {});
+      }
       const { patients, editPatient } = usePatientStore.getState();
       const matchedPatient = patients.find(p => p.patientId === leftPanel.patientId && p.patientName === leftPanel.patientName);
       if (matchedPatient) editPatient(matchedPatient.id, { printed: true });

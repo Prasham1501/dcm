@@ -5,7 +5,7 @@
 import { useState, useEffect } from 'react';
 import { useDualViewerStore } from '@/stores/dualViewerStore';
 import { useUndoStore } from '@/stores/undoStore';
-import { useReportStore } from '@/stores/reportStore';
+import { useReportRouter } from '@/features/report-router/useReportRouter';
 import {
   ChevronLeft, ChevronRight, Printer, ListOrdered, MoveHorizontal, Move3d, Undo2, FileText,
 } from 'lucide-react';
@@ -24,6 +24,7 @@ export function DualToolbar() {
   const bothArranging = leftP.isArrangeMode && rightP.isArrangeMode;
 
   const [showPrintPreview, setShowPrintPreview] = useState(false);
+  const reportRouter = useReportRouter();
 
   // Delete key: delete active annotation from dual viewports
   useEffect(() => {
@@ -167,8 +168,20 @@ export function DualToolbar() {
         <button
           onClick={() => {
             const p = activeP;
-            useReportStore.getState().openReportEditor(p.patientId, p.patientName, p.studyDate);
-            useReportStore.getState().setShowInlineReport(true);
+            reportRouter.createReport({
+              id: p.patientId,
+              patientId: p.patientId,
+              patientName: p.patientName,
+              studyDate: p.studyDate,
+              modality: p.modality,
+              studyDescription: p.studyDescription,
+              age: '',
+              sex: '',
+              images: 0,
+              accessionNumber: '',
+              referringPhysician: '',
+              printed: false,
+            });
           }}
           className="flex items-center gap-1 px-2.5 py-1 text-xs font-semibold border-2 border-app-accent text-white bg-app-accent rounded hover:opacity-90 transition-colors"
           title="Create Report"

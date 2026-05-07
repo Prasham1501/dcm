@@ -17,26 +17,48 @@ export async function fromNodeOcr(filePaths?: string[]): Promise<{ readings: Rea
     return { readings: [], warnings };
   }
 
-  // ── Approach 1: File-based OCR at native DICOM resolution ──
+  // ── Approach 1: Batch OCR — single Tesseract worker across ALL files ──
   if (filePaths && filePaths.length > 0) {
-    console.log(`[fromNodeOcr] Trying file-based OCR on ${filePaths.length} files`);
+    console.log(`[fromNodeOcr] Batch OCR on ${filePaths.length} files`);
     const allReadings: Reading[] = [];
-    for (const fp of filePaths.slice(0, 15)) {
-      try {
-        const result = await api.invoke('ocr-dicom-file', { filePath: fp });
-        if (result?.success && result.text?.trim()) {
-          console.log(`[fromNodeOcr] File OCR for ${fp.split('/').pop()}:`);
-          console.log(result.text.substring(0, 800));
+    const paths = filePaths.slice(0, 50);
 
-          const { readings: fileReadings, warnings: fileWarnings } = parseTextBlock(result.text);
-          console.log(`[fromNodeOcr]   → ${fileReadings.length} readings:`, fileReadings.map(r => `${r.key}=${r.value}${r.unit}`));
-          allReadings.push(...fileReadings);
-          warnings.push(...fileWarnings);
+    try {
+      // Use batch handler (shared worker, 2 passes) — ~3-4× faster than per-file
+      const results: Array<{ text: string; success: boolean }> = await api.invoke('ocr-dicom-batch', { filePaths: paths });
+
+      if (results && results.length > 0) {
+        for (let i = 0; i < results.length; i++) {
+          const result = results[i];
+          if (result?.success && result.text?.trim()) {
+            const fname = paths[i]?.split(/[\\/]/).pop() || `file-${i}`;
+            console.log(`[fromNodeOcr] File ${i + 1}/${results.length} (${fname}):`);
+            console.log(result.text.substring(0, 800));
+
+            const { readings: fileReadings, warnings: fileWarnings } = parseTextBlock(result.text);
+            console.log(`[fromNodeOcr]   → ${fileReadings.length} readings:`, fileReadings.map((r: Reading) => `${r.key}=${r.value}${r.unit}`));
+            allReadings.push(...fileReadings);
+            warnings.push(...fileWarnings);
+          }
         }
-      } catch (err: any) {
-        warnings.push(`File OCR failed for ${fp}: ${err?.message}`);
+      }
+    } catch (err: any) {
+      // Fallback to per-file OCR if batch not available
+      console.warn('[fromNodeOcr] Batch OCR failed, falling back to per-file:', err?.message);
+      for (const fp of paths) {
+        try {
+          const result = await api.invoke('ocr-dicom-file', { filePath: fp });
+          if (result?.success && result.text?.trim()) {
+            const { readings: fileReadings, warnings: fileWarnings } = parseTextBlock(result.text);
+            allReadings.push(...fileReadings);
+            warnings.push(...fileWarnings);
+          }
+        } catch (e: any) {
+          warnings.push(`File OCR failed for ${fp}: ${e?.message}`);
+        }
       }
     }
+
     if (allReadings.length > 0) {
       console.log(`[fromNodeOcr] File-based total: ${allReadings.length} readings`);
       return { readings: allReadings, warnings };

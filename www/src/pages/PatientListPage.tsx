@@ -13,6 +13,8 @@ import { useReportStore } from '@/stores/reportStore';
 import { usePrintStore } from '@/stores/printStore';
 import { useLicenseStore } from '@/stores/licenseStore';
 import { ReportEditor } from '@/components/report/ReportEditor';
+import { ReportRouterHost } from '@/features/report-router/ReportRouterHost';
+import { useReportRouter } from '@/features/report-router/useReportRouter';
 import { Sun, Moon } from 'lucide-react';
 
 // Re-hydrate the report store from localStorage whenever the popup window
@@ -40,7 +42,9 @@ export function PatientListPage() {
   const loadPatients = usePatientStore((s) => s.loadPatients);
   const selectedPatient = usePatientStore((s) => s.selectedPatient);
   const filteredPatients = usePatientStore((s) => s.filteredPatients);
-  const openReportEditor = useReportStore((s) => s.openReportEditor);
+  const _openReportEditor = useReportStore((s) => s.openReportEditor);
+  void _openReportEditor;
+  const reportRouter = useReportRouter();
   const mode = useThemeStore((s) => s.mode);
   const toggleTheme = useThemeStore((s) => s.toggleTheme);
   const printCountRemaining = usePrintStore((s) => s.printCountRemaining);
@@ -118,28 +122,10 @@ export function PatientListPage() {
           </button>
           <button className="text-app-text-secondary hover:text-app-text text-sm px-0.5">_</button>
           <button
-            onClick={async () => {
+            onClick={() => {
               const p = selectedPatient;
               if (!p) { alert('Select a patient first'); return; }
-              if (!p.filePaths || p.filePaths.length === 0) { alert('No images to view'); return; }
-              localStorage.setItem('viewer-launch', JSON.stringify({
-                patientName: p.patientName, patientId: p.patientId,
-                studyDate: p.studyDate, filePaths: p.filePaths, timestamp: Date.now(),
-              }));
-              localStorage.setItem('report-launch', JSON.stringify({
-                patientName: p.patientName, patientId: p.patientId || p.id,
-                studyDate: p.studyDate, timestamp: Date.now(),
-              }));
-              const api = (window as any).electronAPI;
-              if (api?.openViewerWithReport) {
-                try {
-                  await api.openViewerWithReport({
-                    isPortrait: false, imageCount: p.filePaths.length, cols: 2, rows: 2,
-                  });
-                  return;
-                } catch (e) { console.warn('Failed to open dual windows:', e); }
-              }
-              openReportEditor(p.id, p.patientName);
+              reportRouter.createReport(p);
             }}
             className="text-app-text-secondary hover:text-app-text text-sm px-0.5"
             title={selectedPatient ? `Report for ${selectedPatient.patientName}` : 'Select a patient first'}
@@ -173,6 +159,9 @@ export function PatientListPage() {
       
       {/* Report Editor modal */}
       <ReportEditor />
+
+      {/* Report-type picker modal (auto-detects fetal vs radiology, etc.) */}
+      <ReportRouterHost />
 
       {/* Nested routes (e.g. Config modal) */}
       <Outlet />

@@ -66,9 +66,31 @@ async function runOcrExtraction(
 ) {
   setStatus('running');
   try {
+    // Try CR viewer first, fall back to normal viewer
     const { useCRViewerStore } = await import('@/stores/crViewerStore');
     const crImages = useCRViewerStore.getState().images;
-    const filePaths = crImages.map((img: any) => img.filePath).filter(Boolean);
+
+    let filePaths: string[] = [];
+    let imageUrls: string[] = [];
+
+    if (crImages.length > 0) {
+      // CR viewer has images (opened via "Open in CR format")
+      filePaths = crImages.map((img: any) => img.filePath).filter(Boolean);
+      imageUrls = crImages.map((img: any) => img.imageUrl);
+    } else {
+      // Fall back to normal viewer store
+      const { useViewerStore } = await import('@/stores/viewerStore');
+      const viewerImages = useViewerStore.getState().images;
+      imageUrls = viewerImages.map(img => img.imageUrl);
+      // Extract file paths from wadouri URLs (format: wadouri:...?path=<encodedPath>)
+      filePaths = viewerImages.map(img => {
+        try {
+          const match = img.imageUrl.match(/[?&]path=([^&]+)/);
+          if (match) return decodeURIComponent(match[1]);
+        } catch { /* ignore */ }
+        return '';
+      }).filter(Boolean);
+    }
 
     // Also fetch metadata if not yet available
     const api = (window as any).electronAPI;
@@ -86,7 +108,7 @@ async function runOcrExtraction(
       studyUID,
       orthancStudyId: '',
       orthancInstanceIds: [],
-      imageUrls: crImages.map((img: any) => img.imageUrl),
+      imageUrls,
       filePaths,
       hfToken: '',
     });

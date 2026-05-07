@@ -275,20 +275,13 @@ export function PatientSearchBar() {
         </select>
       </div>
 
-      {/* Clr, Revert and Go buttons */}
+      {/* Clr and Go buttons */}
       <button
         onClick={clearFilters}
         className="ml-1 h-7 2xl:h-9 px-2 2xl:px-3 text-[10px] 2xl:text-xs font-bold border border-gray-400 text-gray-500 bg-app-bg rounded hover:bg-gray-100 transition-colors"
         title="Clear all fields"
       >
         Clear
-      </button>
-      <button
-        onClick={() => { clearFilters(); setTimeout(applyFilters, 0); }}
-        className="h-7 2xl:h-9 px-2 2xl:px-3 text-[10px] 2xl:text-xs font-bold border-2 border-app-accent text-app-accent bg-app-bg rounded hover:bg-app-accent hover:text-white transition-colors"
-        title="Revert filters to default (all)"
-      >
-        Revert
       </button>
       <button
         onClick={applyFilters}

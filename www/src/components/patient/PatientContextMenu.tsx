@@ -8,6 +8,8 @@ import { usePatientStore } from '@/stores/patientStore';
 import { localFileToImageId } from '@/lib/dicomLoader';
 import { useSendToStore, type SendDestination } from '@/stores/sendToStore';
 import { useReportStore } from '@/stores/reportStore';
+import { useReportRouter } from '@/features/report-router/useReportRouter';
+import { REPORT_TYPES } from '@/features/report-router/registry';
 import type { Patient } from '@/types/patient';
 
 interface Props {
@@ -63,8 +65,18 @@ export function PatientContextMenu({ x, y, patient, onClose, onMerge, canMerge =
   const [sending, setSending] = useState(false);
   const { destinations, addDestination, removeDestination } = useSendToStore();
   const [newDest, setNewDest] = useState({ name: '', host: '', port: 104, aeTitle: 'ORTHANC' });
-  const { openReportEditor, getReportsForPatient } = useReportStore();
-  const hasReport = getReportsForPatient(patient.patientId || patient.id).length > 0;
+  const { openReportEditor: _openReportEditor, getReportsForPatient } = useReportStore();
+  void _openReportEditor;
+  const router = useReportRouter();
+
+  // "Open Report" is enabled if any registered report type has saved reports for this patient.
+  // Synchronous check for now (radiology hits the local store; fetal returns false until wired).
+  const hasReport =
+    getReportsForPatient(patient.patientId || patient.id).length > 0 ||
+    REPORT_TYPES.some((t) => {
+      const r = t.hasExistingReports(patient);
+      return typeof r === 'boolean' ? r : false;
+    });
 
   const openInViewer = (layoutParam?: string) => {
     if (patient.filePaths && patient.filePaths.length > 0) {
@@ -74,6 +86,8 @@ export function PatientContextMenu({ x, y, patient, onClose, onMerge, canMerge =
         studyDate: patient.studyDate,
         filePaths: patient.filePaths,
         layoutParam,
+        modality: patient.modality,
+        studyDescription: patient.studyDescription,
       }, navigate);
     }
   };
@@ -85,6 +99,8 @@ export function PatientContextMenu({ x, y, patient, onClose, onMerge, canMerge =
         patientId: patient.patientId,
         studyDate: patient.studyDate,
         filePaths: patient.filePaths,
+        modality: patient.modality,
+        studyDescription: patient.studyDescription,
       }, navigate);
     }
   };
@@ -109,12 +125,16 @@ export function PatientContextMenu({ x, y, patient, onClose, onMerge, canMerge =
               patientId: selected[0]!.patientId,
               studyDate: selected[0]!.studyDate,
               filePaths: selected[0]!.filePaths!,
+              modality: selected[0]!.modality,
+              studyDescription: selected[0]!.studyDescription,
             },
             rightStudy: {
               patientName: selected[1]!.patientName,
               patientId: selected[1]!.patientId,
               studyDate: selected[1]!.studyDate,
               filePaths: selected[1]!.filePaths!,
+              modality: selected[1]!.modality,
+              studyDescription: selected[1]!.studyDescription,
             },
           }, navigate);
         } else {
@@ -124,12 +144,16 @@ export function PatientContextMenu({ x, y, patient, onClose, onMerge, canMerge =
               patientId: patient.patientId,
               studyDate: patient.studyDate,
               filePaths: patient.filePaths || [],
+              modality: patient.modality,
+              studyDescription: patient.studyDescription,
             },
             rightStudy: {
               patientName: patient.patientName,
               patientId: patient.patientId,
               studyDate: patient.studyDate,
               filePaths: patient.filePaths || [],
+              modality: patient.modality,
+              studyDescription: patient.studyDescription,
             },
           }, navigate);
         }
@@ -138,35 +162,11 @@ export function PatientContextMenu({ x, y, patient, onClose, onMerge, canMerge =
       case 'open-cr':
         openInViewer();
         break;
-      case 'create-report': {
-        if (!patient.filePaths || patient.filePaths.length === 0) { alert('No images to view'); break; }
-        localStorage.setItem('viewer-launch', JSON.stringify({
-          patientName: patient.patientName, patientId: patient.patientId,
-          studyDate: patient.studyDate, filePaths: patient.filePaths, timestamp: Date.now(),
-        }));
-        localStorage.setItem('report-launch', JSON.stringify({
-          patientName: patient.patientName, patientId: patient.patientId || patient.id,
-          studyDate: patient.studyDate, timestamp: Date.now(),
-        }));
-        const api = (window as any).electronAPI;
-        if (api?.openViewerWithReport) {
-          try {
-            await api.openViewerWithReport({
-              isPortrait: false, imageCount: patient.filePaths.length, cols: 2, rows: 2,
-            });
-          } catch (e) {
-            console.warn('Failed to open dual windows:', e);
-            openReportEditor(patient.id, patient.patientName);
-            navigate('/cr-viewer');
-          }
-        } else {
-          openReportEditor(patient.id, patient.patientName);
-          navigate('/cr-viewer');
-        }
+      case 'create-report':
+        router.createReport(patient);
         break;
-      }
       case 'open-report':
-        navigate('/studies');
+        router.openReport(patient);
         break;
       case 'merge':
         if (onMerge) onMerge();

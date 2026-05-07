@@ -10,6 +10,7 @@ import { ConfigPage } from '@/pages/ConfigPage';
 import { StudiesPage } from '@/pages/StudiesPage';
 import { PrintManagementPage } from '@/pages/PrintManagementPage';
 import { ReportEditorPage } from '@/pages/ReportEditorPage';
+import { FetalExaminationWorkspace } from '@/features/fetal/routes/FetalExaminationWorkspace';
 import { ToastContainer } from '@/components/shared/Toast';
 import { LicenseGate } from '@/components/shared/LicenseGate';
 
@@ -56,6 +57,7 @@ export default function App() {
       <Route path="/studies" element={<StudiesPage />} />
       <Route path="/print" element={<PrintManagementPage />} />
       <Route path="/report-editor" element={<ReportEditorPage />} />
+      <Route path="/fetal/patient/:patientId" element={<FetalExaminationWorkspace />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
     </LicenseGate>

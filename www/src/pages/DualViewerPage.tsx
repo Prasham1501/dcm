@@ -7,6 +7,7 @@ import { useNavigate } from 'react-router-dom';
 import { useDualViewerStore } from '@/stores/dualViewerStore';
 import { useReportStore } from '@/stores/reportStore';
 import { DualToolbar } from '@/components/dualViewer/DualToolbar';
+import { ReportRouterHost } from '@/features/report-router/ReportRouterHost';
 import { DualViewportPanel } from '@/components/dualViewer/DualViewportPanel';
 import { DualSidebar } from '@/components/dualViewer/DualSidebar';
 import { DualThumbnailSidebar } from '@/components/dualViewer/DualThumbnailSidebar';
@@ -42,12 +43,16 @@ export function DualViewerPage() {
             patientId: data.leftStudy.patientId,
             studyDate: data.leftStudy.studyDate,
             filePaths: data.leftStudy.filePaths,
+            modality: data.leftStudy.modality,
+            studyDescription: data.leftStudy.studyDescription,
           });
           loadPanelStudy('right', {
             patientName: data.rightStudy.patientName,
             patientId: data.rightStudy.patientId,
             studyDate: data.rightStudy.studyDate,
             filePaths: data.rightStudy.filePaths,
+            modality: data.rightStudy.modality,
+            studyDescription: data.rightStudy.studyDescription,
           });
         }
         localStorage.removeItem('dual-viewer-launch');
@@ -193,6 +198,9 @@ export function DualViewerPage() {
           </div>
         )}
       </div>
+
+      {/* Report type picker modal */}
+      <ReportRouterHost />
     </div>
   );
 }

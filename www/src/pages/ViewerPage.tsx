@@ -13,6 +13,7 @@ import { PrintPreview } from '@/components/print/PrintPreview';
 import { PrinterModal } from '@/components/print/PrinterModal';
 import { ReportEditor } from '@/components/report/ReportEditor';
 import { InlineReportPanel } from '@/components/report/InlineReportPanel';
+import { ReportRouterHost } from '@/features/report-router/ReportRouterHost';
 import { usePrintStore } from '@/stores/printStore';
 import { useViewerStore } from '@/stores/viewerStore';
 import { useReportStore } from '@/stores/reportStore';
@@ -44,6 +45,8 @@ export function ViewerPage() {
             patientId: data.patientId,
             studyDate: data.studyDate,
             filePaths: data.filePaths,
+            modality: data.modality,
+            studyDescription: data.studyDescription,
           });
         }
         localStorage.removeItem('viewer-launch');
@@ -151,6 +154,9 @@ export function ViewerPage() {
 
       {/* Report Editor modal */}
       <ReportEditor />
+
+      {/* Report type picker modal */}
+      <ReportRouterHost />
     </div>
   );
 }

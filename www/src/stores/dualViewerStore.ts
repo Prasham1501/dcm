@@ -69,6 +69,8 @@ interface PanelState {
   patientName: string;
   patientId: string;
   studyDate: string;
+  modality: string;
+  studyDescription: string;
   images: DualImage[];
   originalImages: DualImage[];
   totalImages: number;
@@ -90,6 +92,8 @@ function createDefaultPanelState(): PanelState {
     patientName: '',
     patientId: '',
     studyDate: '',
+    modality: '',
+    studyDescription: '',
     images: [],
     originalImages: [],
     totalImages: 0,
@@ -141,6 +145,7 @@ interface DualViewerState {
   // Panel actions
   loadPanelStudy: (panelId: PanelId, params: {
     patientName: string; patientId: string; studyDate: string; filePaths: string[];
+    modality?: string; studyDescription?: string;
   }) => void;
   setPanelLayout: (panelId: PanelId, layout: DualLayout) => void;
   panelNextPage: (panelId: PanelId) => void;
@@ -301,6 +306,8 @@ export const useDualViewerStore = create<DualViewerState>((set, get) => {
       patientName: params.patientName,
       patientId: params.patientId,
       studyDate: params.studyDate,
+      modality: params.modality ?? '',
+      studyDescription: params.studyDescription ?? '',
       selectedViewport: 0,
       selectedViewportIndices: [0],
       isArrangeMode: false,
@@ -796,6 +803,8 @@ export interface DualStudyParams {
   patientId: string;
   studyDate: string;
   filePaths: string[];
+  modality?: string;
+  studyDescription?: string;
 }
 
 export async function openDualViewerPopup(

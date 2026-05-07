@@ -4,7 +4,7 @@
  */
 import { useState } from 'react';
 import { useCRViewerStore, CR_LAYOUTS, type CRLayout } from '@/stores/crViewerStore';
-import { useReportStore } from '@/stores/reportStore';
+import { useReportRouter } from '@/features/report-router/useReportRouter';
 import {
   ChevronLeft, ChevronRight, Printer, ListOrdered, FileText,
 } from 'lucide-react';
@@ -15,8 +15,9 @@ export function CRToolbar() {
     currentLayout, setLayout, totalImages,
     isArrangeMode, toggleArrangeMode,
     nextPage, prevPage, currentPage, totalPages,
-    patientName, patientId, studyDate,
+    patientName, patientId, studyDate, modality, studyDescription,
   } = useCRViewerStore();
+  const reportRouter = useReportRouter();
 
   const [showPrintPreview, setShowPrintPreview] = useState(false);
   const [printFilter, setPrintFilter] = useState<'All' | 'Current'>('All');
@@ -106,8 +107,20 @@ export function CRToolbar() {
         {/* Report button - highlighted */}
         <button
           onClick={() => {
-            useReportStore.getState().openReportEditor(patientId, patientName, studyDate);
-            useReportStore.getState().setShowInlineReport(true);
+            reportRouter.createReport({
+              id: patientId,
+              patientId,
+              patientName,
+              studyDate,
+              modality,
+              studyDescription,
+              age: '',
+              sex: '',
+              images: 0,
+              accessionNumber: '',
+              referringPhysician: '',
+              printed: false,
+            });
           }}
           className="flex items-center gap-1 2xl:gap-1.5 px-2.5 2xl:px-3.5 py-1 2xl:py-1.5 text-xs 2xl:text-sm font-semibold border-2 border-app-accent text-white bg-app-accent rounded hover:opacity-90 transition-colors"
           title="Create Report"

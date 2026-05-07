@@ -51,8 +51,14 @@ export function CreatePatientModal({ onSave, onClose }: CreatePatientModalProps)
           title: 'Select DICOM Folder',
         });
         if (result && !result.canceled && result.filePaths?.length) {
-          // Store folder path as a single entry (loader will scan it)
-          setFilePaths(result.filePaths);
+          // Scan folder for DICOM files
+          const scanResult = await api.invoke('list-dicom-files', result.filePaths[0]);
+          if (scanResult?.success && scanResult.files.length > 0) {
+            setFilePaths(scanResult.files);
+          } else {
+            // Fallback: store folder path if scan finds nothing or fails
+            setFilePaths(result.filePaths);
+          }
         }
       } catch { /* ignore */ }
     }

@@ -71,7 +71,7 @@ export function PrintSettingsTab() {
                 {config.headerShowLogo && (
                   <div style={{ flex: '0 0 auto' }}>
                     {config.logoDataUrl ? (
-                      <img src={config.logoDataUrl} style={{ width: previewLogoSize, height: previewLogoSize, borderRadius: logoRadius, objectFit: 'cover', border: '1px solid #ddd' }} alt="Logo" />
+                      <img src={config.logoDataUrl} style={{ width: previewLogoSize, height: previewLogoSize, borderRadius: logoRadius, objectFit: 'cover' }} alt="Logo" />
                     ) : (
                       <div style={{ width: previewLogoSize, height: previewLogoSize, borderRadius: logoRadius, background: '#e5e7eb', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 7, color: '#9ca3af' }}>[Logo]</div>
                     )}
@@ -131,7 +131,6 @@ export function PrintSettingsTab() {
               <div className="flex items-center gap-2 flex-wrap">
                 <NumberField label="Size" value={config.headerNameFontSize} onChange={(v) => config.updateField('headerNameFontSize', v)} min={8} max={36} />
                 <ColorField label="Color" value={config.headerNameColor} onChange={(v) => config.updateField('headerNameColor', v)} />
-                <ColorField label="2nd" value={config.headerSecondaryNameColor} onChange={(v) => config.updateField('headerSecondaryNameColor', v)} />
                 <SelectField label="Align" value={config.headerNameAlign} onChange={(v) => config.updateField('headerNameAlign', v)} options={ALIGN_OPTIONS} />
               </div>
             </FieldGroup>

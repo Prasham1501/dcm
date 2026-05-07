@@ -1,5 +1,4 @@
 import { useState, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
 import JSZip from 'jszip';
 import { usePatientStore } from '@/stores/patientStore';
 import { openCRViewerPopup } from '@/stores/crViewerStore';
@@ -38,7 +37,6 @@ async function dicomToJpeg(imageId: string): Promise<Blob | null> {
 }
 
 export function PatientActionBar() {
-  const navigate = useNavigate();
   const {
     selectAll,
     selectedPatients,

@@ -225,7 +225,6 @@ export function PrintPreview() {
     if (hospitalConfig.metadataPrintRefBy && matchedPatient?.referringPhysician) left.push(`<span style="white-space:nowrap"><b>Ref:</b> ${matchedPatient.referringPhysician}</span>`);
     const right = [
       `<span style="white-space:nowrap"><b>Date:</b> ${studyDate}</span>`,
-      `<span style="white-space:nowrap"><b>Page</b> ${pageNum}/${totalPages}</span>`,
     ];
     return `<div style="padding:4px 8px;background:#111827;color:#d1d5db;border-bottom:1px solid ${borderCol};display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:10px;flex-shrink:0;overflow:hidden"><div style="display:flex;align-items:center;gap:8px;flex:1 1 auto;min-width:0;overflow:hidden">${left.join('')}</div><div style="display:flex;align-items:center;gap:8px;flex:0 0 auto">${right.join('')}</div></div>`;
   };
@@ -258,7 +257,7 @@ export function PrintPreview() {
       {hospitalConfig.headerShowLogo !== false && (
       <div style={{ flex: '0 0 auto', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
         {hospitalConfig.logoDataUrl ? (
-          <img src={hospitalConfig.logoDataUrl} style={{ width: logoSz, height: logoSz, borderRadius: logoRadius, objectFit: 'cover', border: '1px solid #ddd' }} alt="Logo" />
+          <img src={hospitalConfig.logoDataUrl} style={{ width: logoSz, height: logoSz, borderRadius: logoRadius, objectFit: 'cover' }} alt="Logo" />
         ) : (
           <span style={{ fontSize: 6 * zoom }} className="text-gray-400">[Logo]</span>
         )}
@@ -309,7 +308,7 @@ export function PrintPreview() {
           ? `<div style="${areaStyle}background:#000;display:flex;align-items:center;justify-content:center;overflow:hidden;padding:3px;${cellShadow}"><img src="${src}" style="width:100%;height:100%;object-fit:contain" /></div>`
           : `<div style="${areaStyle}background:#000;display:flex;align-items:center;justify-content:center;overflow:hidden;padding:3px;${cellShadow}"></div>`;
       }).join('');
-      return `<div class="page" style="background:${pageBg}">${settings.headerEnabled ? buildHeaderHtml() : ''}<div class="content-wrap" style="border:${wrapperBorder};display:flex;flex-direction:column;flex:1;min-height:0;overflow:hidden">${patientBarHtml(pageNum)}<div class="grid">${imgsHtml}</div></div>${hospitalConfig.enableFooter ? buildPrintFooterHtml() : ''}</div>`;
+      return `<div class="page" style="background:${pageBg}">${settings.headerEnabled ? buildHeaderHtml() : ''}<div class="content-wrap" style="border:${wrapperBorder};display:flex;flex-direction:column;flex:1;min-height:0;overflow:hidden">${patientBarHtml(pageNum)}<div class="grid">${imgsHtml}</div></div><div style="display:flex;justify-content:flex-end;padding:2px 8px;font-size:9px;color:#9ca3af;flex-shrink:0"><span>Page ${pageNum}/${totalPages}</span></div>${hospitalConfig.enableFooter ? buildPrintFooterHtml() : ''}</div>`;
     }).join('');
     const paperMm = PAPER_DIMS_MM[localPaperSize] || PAPER_DIMS_MM.A4;
     const sheetW = isLandscape ? paperMm.h : paperMm.w;
@@ -366,6 +365,10 @@ export function PrintPreview() {
 
       addPrintJob({ patientName, studyDate, layout: `${currentLayout.spots} Spots`, copies: localCopies, paperSize: localPaperSize });
       for (let i = 0; i < localCopies; i++) decrementPrintCount();
+      // Mark patient as printed — broadcast via IPC so all windows (including main) get the update
+      if (electronAPI?.invoke) {
+        electronAPI.invoke('mark-patient-printed', { patientId, patientName }).catch(() => {});
+      }
       const { patients, editPatient } = usePatientStore.getState();
       const matchedPatient = patients.find(p => p.patientId === patientId && p.patientName === patientName);
       if (matchedPatient) editPatient(matchedPatient.id, { printed: true });
@@ -531,7 +534,6 @@ export function PrintPreview() {
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: '0 0 auto' }}>
                         <span style={{ whiteSpace: 'nowrap' }}>Date: {studyDate}</span>
-                        <span style={{ whiteSpace: 'nowrap' }}>Page {pageNum}/{totalPages}</span>
                       </div>
                     </div>
                   )}
@@ -548,6 +550,9 @@ export function PrintPreview() {
                       })}
                     </div>
                   </div>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '2px 8px', fontSize: '9px', color: '#9ca3af', flexShrink: 0 }}>
+                    <span>Page {pageNum}/{totalPages}</span>
                   </div>
                   {hospitalConfig.enableFooter && (
                     <div

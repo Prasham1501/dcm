@@ -39,6 +39,10 @@ interface ReportStore {
   editingPatientName: string;
   showInlineReport: boolean;
   setShowInlineReport: (v: boolean) => void;
+  // Fetal inline panel state
+  showFetalPanel: boolean;
+  fetalPatientId: string | null;
+  setShowFetalPanel: (v: boolean, patientId?: string) => void;
   editingStudyDate: string;
   getReport: (studyId: string) => Report | undefined;
   saveReport: (studyId: string, data: Omit<Report, 'id' | 'studyId'>) => void;
@@ -80,7 +84,10 @@ export const useReportStore = create<ReportStore>()(
       editingPatientId: null,
       editingPatientName: '',
       showInlineReport: false,
-      setShowInlineReport: (v) => set({ showInlineReport: v }),
+      setShowInlineReport: (v) => set({ showInlineReport: v, showFetalPanel: v ? false : get().showFetalPanel }),
+      showFetalPanel: false,
+      fetalPatientId: null,
+      setShowFetalPanel: (v, patientId) => set({ showFetalPanel: v, fetalPatientId: patientId ?? null, showInlineReport: v ? false : get().showInlineReport }),
       editingStudyDate: '',
       activeReadingSet: null,
       extractionStatus: 'idle',

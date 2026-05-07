@@ -69,6 +69,8 @@ interface ViewerState {
   studyDate: string;
   studyUID: string;
   orthancStudyId: string;
+  modality: string;
+  studyDescription: string;
 
   // DICOM data
   series: SeriesInfo[];
@@ -154,6 +156,8 @@ interface ViewerState {
     patientId: string;
     studyDate: string;
     filePaths: string[];
+    modality?: string;
+    studyDescription?: string;
   }) => void;
 }
 
@@ -234,6 +238,8 @@ export async function openViewerPopup(params: {
   studyDate: string;
   filePaths: string[];
   layoutParam?: string;
+  modality?: string;
+  studyDescription?: string;
 }, navigate: (path: string) => void) {
   const imageCount = params.filePaths.length;
   const { orientation } = autoSelectLayout(imageCount);
@@ -246,6 +252,8 @@ export async function openViewerPopup(params: {
     studyDate: params.studyDate,
     filePaths: params.filePaths,
     layoutParam: params.layoutParam,
+    modality: params.modality,
+    studyDescription: params.studyDescription,
     timestamp: Date.now(),
   }));
 
@@ -319,6 +327,8 @@ export const useViewerStore = create<ViewerState>((set, get) => ({
   studyDate: '',
   studyUID: '',
   orthancStudyId: '',
+  modality: '',
+  studyDescription: '',
 
   series: [],
   images: [],
@@ -1046,6 +1056,8 @@ export const useViewerStore = create<ViewerState>((set, get) => ({
       patientName: params.patientName,
       patientId: params.patientId,
       studyDate: params.studyDate,
+      modality: params.modality ?? '',
+      studyDescription: params.studyDescription ?? '',
       loadingStudy: false,
       studyError: null,
       loadProgress: 100,

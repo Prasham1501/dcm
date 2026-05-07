@@ -438,7 +438,7 @@ export function buildBrandHeaderHtml(config: HospitalConfig): string {
   const logoSize = config.headerLogoSize || 60;
   const logoRadius = config.headerLogoShape === 'square' ? '6px' : '50%';
   const logoHtml = (config.headerShowLogo !== false && config.logoDataUrl)
-    ? `<img src="${config.logoDataUrl}" style="width:${logoSize}px;height:${logoSize}px;border-radius:${logoRadius};object-fit:cover;border:1px solid #ddd" />`
+    ? `<img src="${config.logoDataUrl}" style="width:${logoSize}px;height:${logoSize}px;border-radius:${logoRadius};object-fit:cover" />`
     : '';
 
   const contactParts: string[] = [];

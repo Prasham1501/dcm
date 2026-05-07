@@ -13,6 +13,8 @@ import { CRViewportGrid } from '@/components/crViewer/CRViewportGrid';
 import { CRSidebar } from '@/components/crViewer/CRSidebar';
 import { CRThumbnailSidebar } from '@/components/crViewer/CRThumbnailSidebar';
 import { InlineReportPanel } from '@/components/report/InlineReportPanel';
+import { FetalInlinePanel } from '@/features/fetal/components/FetalInlinePanel';
+import { ReportRouterHost } from '@/features/report-router/ReportRouterHost';
 import { ChevronLeft, X, PanelRightClose, PanelRightOpen } from 'lucide-react';
 import { useThemeStore } from '@/stores/themeStore';
 import { Sun, Moon } from 'lucide-react';
@@ -60,6 +62,7 @@ export function CRViewerPage() {
   const { patientName, patientId, studyDate, totalImages, currentPage, totalPages, loadStudy } = useCRViewerStore();
   const { mode, toggleTheme } = useThemeStore();
   const showInlineReport = useReportStore((s) => s.showInlineReport);
+  const showFetalPanel = useReportStore((s) => s.showFetalPanel);
   const [showThumbnails, setShowThumbnails] = useState(false);
   const launchChecked = useRef(false);
 
@@ -79,6 +82,8 @@ export function CRViewerPage() {
             patientId: data.patientId,
             studyDate: data.studyDate,
             filePaths: data.filePaths,
+            modality: data.modality,
+            studyDescription: data.studyDescription,
           });
           // Auto-extract measurements in background (no user action needed)
           autoExtract(data.filePaths, data.patientId);
@@ -174,10 +179,10 @@ export function CRViewerPage() {
       {/* Toolbar */}
       <CRToolbar />
 
-      {/* Main content: viewport grid + sidebar (+ optional inline report) */}
+      {/* Main content: viewport grid + sidebar (+ optional inline report / fetal panel) */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Viewport area — shrinks to 60% when report panel is open */}
-        <div className={`flex overflow-hidden ${showInlineReport ? 'w-[60%]' : 'flex-1'}`}>
+        {/* Viewport area — shrinks to 50% when fetal panel is open, 60% for report */}
+        <div className={`flex overflow-hidden ${showFetalPanel ? 'w-[50%]' : showInlineReport ? 'w-[60%]' : 'flex-1'}`}>
           <CRViewportGrid />
           <div className="flex h-full border-l border-app-border">
             {showThumbnails && <CRThumbnailSidebar />}
@@ -191,12 +196,22 @@ export function CRViewerPage() {
             <InlineReportPanel />
           </div>
         )}
+
+        {/* Fetal inline panel — 50% width */}
+        {showFetalPanel && (
+          <div className="w-[50%] flex-shrink-0 overflow-hidden">
+            <FetalInlinePanel />
+          </div>
+        )}
       </div>
 
       {/* Bottom bar: patient name + study date */}
       <div className="text-center py-1 2xl:py-1.5 bg-gray-900 text-gray-200 text-xs 2xl:text-sm border-t border-gray-700 font-semibold">
         {patientName} : {studyDate}
       </div>
+
+      {/* Report type picker modal */}
+      <ReportRouterHost />
     </div>
   );
 }
