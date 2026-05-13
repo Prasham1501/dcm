@@ -213,7 +213,7 @@ export function PrintPreview() {
   const patientBarHtml = (pageNum: number) => {
     if (!settings.patientInfoEnabled) return '';
     const matchedPatient = usePatientStore.getState().patients.find(p => p.patientId === patientId && p.patientName === patientName);
-    const borderCol = hospitalConfig.headerBorderBottomColor || '#2563eb';
+    const borderCol = 'transparent';
     const left: string[] = [];
     if (hospitalConfig.metadataPrintPatientName !== false) left.push(`<span style="white-space:nowrap"><b>Patient:</b> ${patientName}</span>`);
     if (hospitalConfig.metadataPrintAge && matchedPatient?.age) left.push(`<span style="white-space:nowrap"><b>Age:</b> ${matchedPatient.age}</span>`);
@@ -253,7 +253,7 @@ export function PrintPreview() {
     const contactAlign = hospitalConfig.headerContactAlign || 'left';
     const alignFlex = (a: string) => a === 'left' ? 'flex-start' : a === 'right' ? 'flex-end' : 'center';
     return (
-    <div style={{ display: 'flex', alignItems: 'center', padding: `${3 * zoom}px ${8 * zoom}px`, gap: 6 * zoom, borderBottom: `2px solid ${hospitalConfig.headerBorderBottomColor || '#2563eb'}`, background: hospitalConfig.headerBgColor || '#fff', flexDirection: logoPos === 'right' ? 'row-reverse' : 'row' }} className="flex-shrink-0">
+    <div style={{ display: 'flex', alignItems: 'center', padding: `${3 * zoom}px ${8 * zoom}px`, gap: 6 * zoom, borderBottom: `2px solid transparent`, background: hospitalConfig.headerBgColor || '#fff', flexDirection: logoPos === 'right' ? 'row-reverse' : 'row' }} className="flex-shrink-0">
       {hospitalConfig.headerShowLogo !== false && (
       <div style={{ flex: '0 0 auto', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
         {hospitalConfig.logoDataUrl ? (
@@ -521,7 +521,7 @@ export function PrintPreview() {
                   {settings.headerEnabled && renderBrandHeaderPv()}
                   <div style={{ border: hospitalConfig.printBorderEnabled ? `1px solid ${previewBorderCol}` : 'none', display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }}>
                   {settings.patientInfoEnabled && (
-                    <div style={{ padding: '4px 8px', fontSize: '10px', borderBottom: `1px solid ${hospitalConfig.headerBorderBottomColor || '#2563eb'}`, gap: 8, justifyContent: 'space-between', overflow: 'hidden' }} className="bg-gray-900 flex items-center text-gray-300 font-medium flex-shrink-0">
+                    <div style={{ padding: '4px 8px', fontSize: '10px', borderBottom: `1px solid transparent`, gap: 8, justifyContent: 'space-between', overflow: 'hidden' }} className="bg-gray-900 flex items-center text-gray-300 font-medium flex-shrink-0">
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: '1 1 auto', minWidth: 0, overflow: 'hidden' }}>
                         {hospitalConfig.metadataPrintPatientName !== false && <span style={{ whiteSpace: 'nowrap' }}>Patient: {patientName}</span>}
                         {hospitalConfig.metadataPrintAge && matchedPatient?.age && <span style={{ whiteSpace: 'nowrap' }}>Age: {matchedPatient.age}</span>}
@@ -560,7 +560,7 @@ export function PrintPreview() {
                         padding: '6px 15px',
                         fontSize: `${Math.max((hospitalConfig.footerFontSize || 8) * 1.4, 11)}px`,
                         color: hospitalConfig.footerFontColor || '#666',
-                        borderTop: `1px solid ${hospitalConfig.footerBorderTopColor || '#555'}`,
+                        borderTop: `1px solid transparent`,
                         background: hospitalConfig.footerBgColor || undefined,
                       }}
                       className="flex justify-between items-center flex-shrink-0"

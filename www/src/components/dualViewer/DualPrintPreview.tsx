@@ -265,7 +265,7 @@ export function DualPrintPreview({ onClose }: DualPrintPreviewProps) {
     const contactAlign = hospitalConfig.headerContactAlign || 'left';
     const alignFlex = (a: string) => a === 'left' ? 'flex-start' : a === 'right' ? 'flex-end' : 'center';
     return (
-    <div style={{ display: 'flex', alignItems: 'center', padding: `${3 * zoom}px ${8 * zoom}px`, gap: 6 * zoom, borderBottom: `2px solid ${hospitalConfig.headerBorderBottomColor || '#2563eb'}`, background: hospitalConfig.headerBgColor || '#fff', flexDirection: logoPos === 'right' ? 'row-reverse' : 'row' }} className="flex-shrink-0">
+    <div style={{ display: 'flex', alignItems: 'center', padding: `${3 * zoom}px ${8 * zoom}px`, gap: 6 * zoom, borderBottom: `2px solid transparent`, background: hospitalConfig.headerBgColor || '#fff', flexDirection: logoPos === 'right' ? 'row-reverse' : 'row' }} className="flex-shrink-0">
       {hospitalConfig.headerShowLogo !== false && (
       <div style={{ flex: '0 0 auto', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
         {hospitalConfig.logoDataUrl ? (
@@ -318,13 +318,13 @@ export function DualPrintPreview({ onClose }: DualPrintPreviewProps) {
       const c = renderPrintSlot(dualFooterLayout.center as any, hospitalConfig as any, dualFooterCustomCenter, true);
       const r = renderPrintSlot(dualFooterLayout.right as any, hospitalConfig as any, dualFooterCustomRight, true);
       const bgCol = dualFooterBgColor || '#ffffff';
-      const borderCol = dualFooterBorderTopColor || '#cccccc';
+      const borderCol = 'transparent';
       const fontSize = Math.max((dualFooterFontSize || 8) * 1.4, 11);
       const fontColor = dualFooterFontColor || '#666666';
       return `<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 15px;border-top:1px solid ${borderCol};background:${bgCol};font-size:${fontSize}px;color:${fontColor}"><div>${l}</div><div style="text-align:center">${c}</div><div style="text-align:right">${r}</div></div>`;
     };
 
-    const headerBorderCol = hospitalConfig.headerBorderBottomColor || '#2563eb';
+    const headerBorderCol = 'transparent';
     const wrapperBorder = hospitalConfig.printBorderEnabled ? `1px solid ${borderCol}` : 'none';
     const cellShadow = hospitalConfig.printBorderEnabled ? `box-shadow:inset 0 0 0 1px ${borderCol};` : '';
 
@@ -437,7 +437,7 @@ export function DualPrintPreview({ onClose }: DualPrintPreviewProps) {
     if (!settings.patientInfoEnabled) return null;
     const matched = usePatientStore.getState().patients.find(p => p.patientId === panel.patientId && p.patientName === panel.patientName);
     return (
-      <div style={{ padding: '4px 6px', fontSize: '9px', borderBottom: `1px solid ${hospitalConfig.headerBorderBottomColor || '#2563eb'}`, gap: 6, justifyContent: 'space-between', overflow: 'hidden' }} className="bg-gray-900 flex items-center text-gray-300 font-medium flex-shrink-0">
+      <div style={{ padding: '4px 6px', fontSize: '9px', borderBottom: `1px solid transparent`, gap: 6, justifyContent: 'space-between', overflow: 'hidden' }} className="bg-gray-900 flex items-center text-gray-300 font-medium flex-shrink-0">
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: '1 1 auto', minWidth: 0, overflow: 'hidden' }}>
           {hospitalConfig.metadataPrintPatientName !== false && <span style={{ whiteSpace: 'nowrap' }}>Patient: {panel.patientName}</span>}
           {hospitalConfig.metadataPrintAge && matched?.age && <span style={{ whiteSpace: 'nowrap' }}>Age: {matched.age}</span>}
@@ -485,7 +485,7 @@ export function DualPrintPreview({ onClose }: DualPrintPreviewProps) {
               padding: '6px 15px',
               fontSize: `${Math.max((dualFooterFontSize || 8) * 1.4, 11)}px`,
               color: dualFooterFontColor || '#666',
-              borderTop: `1px solid ${dualFooterBorderTopColor || '#555'}`,
+              borderTop: `1px solid transparent`,
               background: dualFooterBgColor || undefined,
             }}
             className="flex justify-between items-center flex-shrink-0"

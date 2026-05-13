@@ -64,7 +64,7 @@ export function PrintSettingsTab() {
             <div style={{ width: 500 }} className="border border-app-border rounded overflow-hidden shadow-sm">
               <div style={{
                 display: 'flex', alignItems: 'center', padding: '6px 10px', gap: 8,
-                borderBottom: `2px solid ${config.headerBorderBottomColor || '#2563eb'}`,
+                borderBottom: `2px solid transparent`,
                 background: config.headerBgColor || '#ffffff',
                 flexDirection: config.headerLogoPosition === 'right' ? 'row-reverse' : 'row',
               }}>
@@ -111,7 +111,6 @@ export function PrintSettingsTab() {
             {/* Header Background */}
             <div className="grid grid-cols-2 gap-2">
               <ColorField label="Background" value={config.headerBgColor} onChange={(v) => config.updateField('headerBgColor', v)} />
-              <ColorField label="Border Color" value={config.headerBorderBottomColor} onChange={(v) => config.updateField('headerBorderBottomColor', v)} />
             </div>
 
             {/* Logo */}
@@ -172,7 +171,6 @@ export function PrintSettingsTab() {
           <div className="space-y-2">
             <div className="grid grid-cols-2 gap-2">
               <ColorField label="Background" value={config.footerBgColor} onChange={(v) => config.updateField('footerBgColor', v)} />
-              <ColorField label="Border Top" value={config.footerBorderTopColor} onChange={(v) => config.updateField('footerBorderTopColor', v)} />
               <NumberField label="Font Size" value={config.footerFontSize} onChange={(v) => config.updateField('footerFontSize', v)} min={6} max={18} />
               <ColorField label="Font Color" value={config.footerFontColor} onChange={(v) => config.updateField('footerFontColor', v)} />
             </div>
@@ -203,7 +201,7 @@ export function PrintSettingsTab() {
             <div className="border border-app-border rounded overflow-hidden">
               <div style={{
                 display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '3px 10px',
-                borderTop: `1px solid ${config.footerBorderTopColor || '#ccc'}`,
+                borderTop: `1px solid transparent`,
                 background: config.footerBgColor || '#ffffff',
               }}>
                 <div>{renderSlotPreview(config.footerLayout.left, config.customFooterLeft)}</div>

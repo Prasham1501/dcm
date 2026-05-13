@@ -454,7 +454,7 @@ export function buildBrandHeaderHtml(config: HospitalConfig): string {
     : '';
 
   const bgCol = config.headerBgColor || '#ffffff';
-  const borderCol = config.headerBorderBottomColor || '#2563eb';
+  const borderCol = 'transparent';
   const nameFs = config.headerNameFontSize || 18;
   const nameCol = config.headerNameColor || '#1e3a5f';
   const secCol = config.headerSecondaryNameColor || '#2563eb';
@@ -500,7 +500,7 @@ export function buildFooterHtml(config: HospitalConfig): string {
   const c = renderPrintSlot(config.footerLayout.center, config, config.customFooterCenter, true);
   const r = renderPrintSlot(config.footerLayout.right, config, config.customFooterRight, true);
   const bgCol = config.footerBgColor || '#ffffff';
-  const borderCol = config.footerBorderTopColor || '#cccccc';
+  const borderCol = 'transparent';
   const fontSize = Math.max((config.footerFontSize || 8) * 1.4, 11);
   const fontColor = config.footerFontColor || '#666666';
   return `<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 15px;border-top:1px solid ${borderCol};background:${bgCol};font-size:${fontSize}px;color:${fontColor}"><div>${l}</div><div style="text-align:center">${c}</div><div style="text-align:right">${r}</div></div>`;
