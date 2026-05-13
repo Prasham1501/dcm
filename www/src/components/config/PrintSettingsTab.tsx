@@ -24,6 +24,8 @@ const SLOT_OPTIONS: { value: PrintSlotContent; label: string }[] = [
 export function PrintSettingsTab() {
   const config = useHospitalConfigStore();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const headerImageInputRef = useRef<HTMLInputElement>(null);
+  const footerImageInputRef = useRef<HTMLInputElement>(null);
 
   const services = (config.servicesList || '').split('|').filter(Boolean);
   const logoRadius = config.headerLogoShape === 'square' ? '6px' : '50%';
@@ -34,6 +36,24 @@ export function PrintSettingsTab() {
     if (!file) return;
     const reader = new FileReader();
     reader.onload = () => { if (typeof reader.result === 'string') config.setLogo(reader.result); };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  };
+
+  const handleHeaderImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => { if (typeof reader.result === 'string') config.updateField('headerImageDataUrl', reader.result); };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  };
+
+  const handleFooterImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => { if (typeof reader.result === 'string') config.updateField('footerImageDataUrl', reader.result); };
     reader.readAsDataURL(file);
     e.target.value = '';
   };
@@ -58,6 +78,39 @@ export function PrintSettingsTab() {
       {/* ── SECTION 1: HEADER ── */}
       <Section title="Print Header">
         <div className="space-y-3">
+          {/* Mode Toggle */}
+          <div className="flex items-center gap-2">
+            <label className="text-[10px] font-bold text-app-text-muted uppercase">Header Type</label>
+            <div className="flex border border-app-border rounded overflow-hidden">
+              <button onClick={() => config.updateField('headerMode', 'text')} className={`px-3 py-1 text-[10px] font-semibold transition-colors ${(config.headerMode || 'text') === 'text' ? 'bg-app-accent text-white' : 'bg-app-bg text-app-text-secondary hover:bg-app-surface'}`}>Text</button>
+              <button onClick={() => config.updateField('headerMode', 'image')} className={`px-3 py-1 text-[10px] font-semibold transition-colors ${config.headerMode === 'image' ? 'bg-app-accent text-white' : 'bg-app-bg text-app-text-secondary hover:bg-app-surface'}`}>Image</button>
+            </div>
+          </div>
+
+          {config.headerMode === 'image' ? (
+            /* ── IMAGE MODE ── */
+            <div className="space-y-2">
+              <input ref={headerImageInputRef} type="file" accept="image/png,image/jpeg" className="hidden" onChange={handleHeaderImageUpload} />
+              <div className="flex items-center gap-2">
+                <button onClick={() => headerImageInputRef.current?.click()} className="px-3 py-1 text-[10px] font-semibold border border-app-accent text-app-accent rounded hover:bg-app-accent hover:text-white transition-colors">Upload Header Image</button>
+                {config.headerImageDataUrl && <button onClick={() => config.updateField('headerImageDataUrl', '')} className="px-3 py-1 text-[10px] font-semibold border border-red-500 text-red-500 rounded hover:bg-red-500 hover:text-white transition-colors">Remove</button>}
+              </div>
+              {config.headerImageDataUrl ? (
+                <div>
+                  <div className="text-[10px] font-bold text-app-text-muted uppercase mb-1">Preview</div>
+                  <div style={{ width: 500 }} className="border border-app-border rounded overflow-hidden shadow-sm">
+                    <img src={config.headerImageDataUrl} style={{ width: '100%', height: 80, objectFit: 'cover', display: 'block' }} alt="Header" />
+                  </div>
+                </div>
+              ) : (
+                <div style={{ width: 500 }} className="border border-dashed border-app-border rounded p-4 flex items-center justify-center">
+                  <span className="text-[10px] text-app-text-muted">No header image uploaded. Click "Upload Header Image" to add one.</span>
+                </div>
+              )}
+            </div>
+          ) : (
+            /* ── TEXT MODE (existing) ── */
+            <div className="space-y-3">
           {/* Live Preview — full width, fixed width matching print output proportions */}
           <div>
             <div className="text-[10px] font-bold text-app-text-muted uppercase mb-1">Live Header Preview</div>
@@ -162,6 +215,8 @@ export function PrintSettingsTab() {
             </FieldGroup>
           </div>
 
+          </div>
+          )}
         </div>
       </Section>
 
@@ -169,6 +224,39 @@ export function PrintSettingsTab() {
       <Section title="Print Footer" toggle={{ checked: config.enableFooter, onChange: (v) => config.updateField('enableFooter', v), label: 'Enable' }}>
         {config.enableFooter && (
           <div className="space-y-2">
+            {/* Mode Toggle */}
+            <div className="flex items-center gap-2">
+              <label className="text-[10px] font-bold text-app-text-muted uppercase">Footer Type</label>
+              <div className="flex border border-app-border rounded overflow-hidden">
+                <button onClick={() => config.updateField('footerMode', 'text')} className={`px-3 py-1 text-[10px] font-semibold transition-colors ${(config.footerMode || 'text') === 'text' ? 'bg-app-accent text-white' : 'bg-app-bg text-app-text-secondary hover:bg-app-surface'}`}>Text</button>
+                <button onClick={() => config.updateField('footerMode', 'image')} className={`px-3 py-1 text-[10px] font-semibold transition-colors ${config.footerMode === 'image' ? 'bg-app-accent text-white' : 'bg-app-bg text-app-text-secondary hover:bg-app-surface'}`}>Image</button>
+              </div>
+            </div>
+
+            {config.footerMode === 'image' ? (
+              /* ── IMAGE MODE ── */
+              <div className="space-y-2">
+                <input ref={footerImageInputRef} type="file" accept="image/png,image/jpeg" className="hidden" onChange={handleFooterImageUpload} />
+                <div className="flex items-center gap-2">
+                  <button onClick={() => footerImageInputRef.current?.click()} className="px-3 py-1 text-[10px] font-semibold border border-app-accent text-app-accent rounded hover:bg-app-accent hover:text-white transition-colors">Upload Footer Image</button>
+                  {config.footerImageDataUrl && <button onClick={() => config.updateField('footerImageDataUrl', '')} className="px-3 py-1 text-[10px] font-semibold border border-red-500 text-red-500 rounded hover:bg-red-500 hover:text-white transition-colors">Remove</button>}
+                </div>
+                {config.footerImageDataUrl ? (
+                  <div>
+                    <div className="text-[10px] font-bold text-app-text-muted uppercase mb-1">Preview</div>
+                    <div style={{ width: 500 }} className="border border-app-border rounded overflow-hidden shadow-sm">
+                      <img src={config.footerImageDataUrl} style={{ width: '100%', height: 40, objectFit: 'cover', display: 'block' }} alt="Footer" />
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ width: 500 }} className="border border-dashed border-app-border rounded p-4 flex items-center justify-center">
+                    <span className="text-[10px] text-app-text-muted">No footer image uploaded. Click "Upload Footer Image" to add one.</span>
+                  </div>
+                )}
+              </div>
+            ) : (
+              /* ── TEXT MODE (existing) ── */
+              <div className="space-y-2">
             <div className="grid grid-cols-2 gap-2">
               <ColorField label="Background" value={config.footerBgColor} onChange={(v) => config.updateField('footerBgColor', v)} />
               <NumberField label="Font Size" value={config.footerFontSize} onChange={(v) => config.updateField('footerFontSize', v)} min={6} max={18} />
@@ -209,6 +297,8 @@ export function PrintSettingsTab() {
                 <div style={{ textAlign: 'right' }}>{renderSlotPreview(config.footerLayout.right, config.customFooterRight)}</div>
               </div>
             </div>
+              </div>
+            )}
           </div>
         )}
       </Section>

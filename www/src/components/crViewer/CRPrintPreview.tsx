@@ -226,6 +226,10 @@ export function CRPrintPreview({ onClose, initialPageMode = 'all' }: CRPrintPrev
   const services = (hospitalConfig.servicesList || '').split('|').filter(Boolean);
 
   const renderBrandHeaderPv = () => {
+    // Image mode
+    if (hospitalConfig.headerMode === 'image' && hospitalConfig.headerImageDataUrl) {
+      return <div className="flex-shrink-0"><img src={hospitalConfig.headerImageDataUrl} style={{ width: '100%', height: 80, objectFit: 'cover', display: 'block' }} alt="Header" /></div>;
+    }
     const logoPos = hospitalConfig.headerLogoPosition || 'left';
     const logoRadius = hospitalConfig.headerLogoShape === 'square' ? '6px' : '50%';
     const logoSz = (hospitalConfig.headerLogoSize || 60) * zoom * 0.6;
@@ -533,6 +537,9 @@ export function CRPrintPreview({ onClose, initialPageMode = 'all' }: CRPrintPrev
                     <span>Page {pageNum}/{totalPages}</span>
                   </div>
                   {hospitalConfig.enableFooter && (
+                    hospitalConfig.footerMode === 'image' && hospitalConfig.footerImageDataUrl ? (
+                      <div className="flex-shrink-0"><img src={hospitalConfig.footerImageDataUrl} style={{ width: '100%', height: 40, objectFit: 'cover', display: 'block' }} alt="Footer" /></div>
+                    ) : (
                     <div
                       style={{
                         padding: '6px 15px',
@@ -547,6 +554,7 @@ export function CRPrintPreview({ onClose, initialPageMode = 'all' }: CRPrintPrev
                       <div className="text-center">{renderSlotPv(hospitalConfig.footerLayout.center, hospitalConfig.customFooterCenter)}</div>
                       <div className="text-right">{renderSlotPv(hospitalConfig.footerLayout.right, hospitalConfig.customFooterRight)}</div>
                     </div>
+                    )
                   )}
                 </div>
                 </div>

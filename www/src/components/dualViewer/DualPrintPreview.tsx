@@ -256,6 +256,10 @@ export function DualPrintPreview({ onClose }: DualPrintPreviewProps) {
   };
 
   const renderBrandHeaderPv = () => {
+    // Image mode
+    if (hospitalConfig.headerMode === 'image' && hospitalConfig.headerImageDataUrl) {
+      return <div className="flex-shrink-0"><img src={hospitalConfig.headerImageDataUrl} style={{ width: '100%', height: 80, objectFit: 'cover', display: 'block' }} alt="Header" /></div>;
+    }
     const logoPos = hospitalConfig.headerLogoPosition || 'left';
     const logoRadius = hospitalConfig.headerLogoShape === 'square' ? '6px' : '50%';
     const logoSz = (hospitalConfig.headerLogoSize || 60) * zoom * 0.6;
@@ -480,6 +484,9 @@ export function DualPrintPreview({ onClose }: DualPrintPreviewProps) {
           </div>
         </div>
         {dualFooterEnabled && (
+          hospitalConfig.footerMode === 'image' && hospitalConfig.footerImageDataUrl ? (
+            <div className="flex-shrink-0"><img src={hospitalConfig.footerImageDataUrl} style={{ width: '100%', height: 40, objectFit: 'cover', display: 'block' }} alt="Footer" /></div>
+          ) : (
           <div
             style={{
               padding: '6px 15px',
@@ -494,6 +501,7 @@ export function DualPrintPreview({ onClose }: DualPrintPreviewProps) {
             <div className="text-center">{renderSlotPv(dualFooterLayout.center, dualFooterCustomCenter)}</div>
             <div className="text-right">{renderSlotPv(dualFooterLayout.right, dualFooterCustomRight)}</div>
           </div>
+          )
         )}
       </div>
     );

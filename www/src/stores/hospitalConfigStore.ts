@@ -131,6 +131,12 @@ interface HospitalConfig {
   headerContactColor: string;
   headerContactAlign: 'left' | 'center' | 'right';
 
+  // Header/Footer mode: 'text' = existing text-based, 'image' = uploaded image
+  headerMode: 'text' | 'image';
+  footerMode: 'text' | 'image';
+  headerImageDataUrl: string;
+  footerImageDataUrl: string;
+
   // Footer customization
   footerBgColor: string;
   footerBorderTopColor: string;
@@ -261,6 +267,12 @@ export const useHospitalConfigStore = create<HospitalConfig>()(
       headerContactFontSize: 9,
       headerContactColor: '#333333',
       headerContactAlign: 'left' as const,
+
+      // Header/Footer mode
+      headerMode: 'text' as const,
+      footerMode: 'text' as const,
+      headerImageDataUrl: '',
+      footerImageDataUrl: '',
 
       // Footer customization
       footerBgColor: '#ffffff',
@@ -431,6 +443,10 @@ const HEADER_ICONS = {
 
 /** Build the new brand header HTML for print output */
 export function buildBrandHeaderHtml(config: HospitalConfig): string {
+  // Image mode: return a full-width image
+  if (config.headerMode === 'image' && config.headerImageDataUrl) {
+    return `<div style="flex-shrink:0"><img src="${config.headerImageDataUrl}" style="width:100%;height:80px;object-fit:cover;display:block" /></div>`;
+  }
   const services = (config.servicesList || '').split('|').filter(Boolean);
   const servicesHtml = services.map(s => `<span>${s.trim()}</span>`).join('<span style="margin:0 4px;color:#999">|</span>');
   const address = getFormattedAddress(config).toUpperCase();
@@ -496,6 +512,10 @@ export function buildBrandHeaderHtml(config: HospitalConfig): string {
 
 /** Build customized footer HTML for print output */
 export function buildFooterHtml(config: HospitalConfig): string {
+  // Image mode: return a full-width image
+  if (config.footerMode === 'image' && config.footerImageDataUrl) {
+    return `<div style="flex-shrink:0"><img src="${config.footerImageDataUrl}" style="width:100%;height:40px;object-fit:cover;display:block" /></div>`;
+  }
   const l = renderPrintSlot(config.footerLayout.left, config, config.customFooterLeft, true);
   const c = renderPrintSlot(config.footerLayout.center, config, config.customFooterCenter, true);
   const r = renderPrintSlot(config.footerLayout.right, config, config.customFooterRight, true);
