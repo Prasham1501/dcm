@@ -99,8 +99,29 @@ export function PrintSettingsTab() {
                 <div>
                   <div className="text-[10px] font-bold text-app-text-muted uppercase mb-1">Preview</div>
                   <div style={{ width: 500 }} className="border border-app-border rounded overflow-hidden shadow-sm">
-                    <img src={config.headerImageDataUrl} style={{ width: '100%', height: 80, objectFit: 'cover', display: 'block' }} alt="Header" />
+                    <img
+                      src={config.headerImageDataUrl}
+                      style={{
+                        width: '100%',
+                        height: config.headerImageHeight || 80,
+                        objectFit: (config.headerImageFit || 'contain') as any,
+                        objectPosition: config.headerImagePosition || 'center center',
+                        display: 'block',
+                        background: 'transparent',
+                      }}
+                      alt="Header"
+                    />
                   </div>
+                  <ImageLayoutControls
+                    fit={config.headerImageFit || 'contain'}
+                    onFit={(v) => config.updateField('headerImageFit', v)}
+                    position={config.headerImagePosition || 'center center'}
+                    onPosition={(v) => config.updateField('headerImagePosition', v)}
+                    height={config.headerImageHeight || 80}
+                    onHeight={(v) => config.updateField('headerImageHeight', v)}
+                    minHeight={30}
+                    maxHeight={200}
+                  />
                 </div>
               ) : (
                 <div style={{ width: 500 }} className="border border-dashed border-app-border rounded p-4 flex items-center justify-center">
@@ -124,7 +145,7 @@ export function PrintSettingsTab() {
                 {config.headerShowLogo && (
                   <div style={{ flex: '0 0 auto' }}>
                     {config.logoDataUrl ? (
-                      <img src={config.logoDataUrl} style={{ width: previewLogoSize, height: previewLogoSize, borderRadius: logoRadius, objectFit: 'cover' }} alt="Logo" />
+                      <img src={config.logoDataUrl} style={{ height: previewLogoSize, maxWidth: previewLogoSize * 3, width: 'auto', borderRadius: logoRadius, objectFit: 'contain' }} alt="Logo" />
                     ) : (
                       <div style={{ width: previewLogoSize, height: previewLogoSize, borderRadius: logoRadius, background: '#e5e7eb', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 7, color: '#9ca3af' }}>[Logo]</div>
                     )}
@@ -245,8 +266,29 @@ export function PrintSettingsTab() {
                   <div>
                     <div className="text-[10px] font-bold text-app-text-muted uppercase mb-1">Preview</div>
                     <div style={{ width: 500 }} className="border border-app-border rounded overflow-hidden shadow-sm">
-                      <img src={config.footerImageDataUrl} style={{ width: '100%', height: 40, objectFit: 'cover', display: 'block' }} alt="Footer" />
+                      <img
+                        src={config.footerImageDataUrl}
+                        style={{
+                          width: '100%',
+                          height: config.footerImageHeight || 40,
+                          objectFit: (config.footerImageFit || 'contain') as any,
+                          objectPosition: config.footerImagePosition || 'center center',
+                          display: 'block',
+                          background: 'transparent',
+                        }}
+                        alt="Footer"
+                      />
                     </div>
+                    <ImageLayoutControls
+                      fit={config.footerImageFit || 'contain'}
+                      onFit={(v) => config.updateField('footerImageFit', v)}
+                      position={config.footerImagePosition || 'center center'}
+                      onPosition={(v) => config.updateField('footerImagePosition', v)}
+                      height={config.footerImageHeight || 40}
+                      onHeight={(v) => config.updateField('footerImageHeight', v)}
+                      minHeight={20}
+                      maxHeight={120}
+                    />
                   </div>
                 ) : (
                   <div style={{ width: 500 }} className="border border-dashed border-app-border rounded p-4 flex items-center justify-center">
@@ -448,6 +490,78 @@ function SelectField({ label, value, onChange, options }: { label: string; value
       <select value={value} onChange={(e) => onChange(e.target.value)} className="h-5 px-0.5 text-[10px] border border-app-border bg-app-bg text-app-text rounded">
         {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
       </select>
+    </div>
+  );
+}
+
+/**
+ * Layout controls for the header/footer image banner.
+ * The banner itself is always 100% wide; these knobs control how the
+ * image content sits inside that banner.
+ */
+function ImageLayoutControls({
+  fit, onFit, position, onPosition, height, onHeight, minHeight, maxHeight,
+}: {
+  fit: 'contain' | 'cover' | 'fill' | 'none';
+  onFit: (v: 'contain' | 'cover' | 'fill' | 'none') => void;
+  position: string;
+  onPosition: (v: string) => void;
+  height: number;
+  onHeight: (n: number) => void;
+  minHeight: number;
+  maxHeight: number;
+}) {
+  // CSS object-position takes "horizontal vertical" — keep them as two
+  // independent dropdowns for clarity, then recombine when persisting.
+  const [hPos, vPos] = (position || 'center center').split(' ');
+
+  return (
+    <div className="mt-2 p-2 border border-app-border rounded bg-app-bg space-y-1.5">
+      <div className="grid grid-cols-3 gap-2">
+        <SelectField
+          label="Fit"
+          value={fit}
+          onChange={(v) => onFit(v as 'contain' | 'cover' | 'fill' | 'none')}
+          options={[
+            { value: 'contain', label: 'Contain (no crop)' },
+            { value: 'cover',   label: 'Cover (crop)' },
+            { value: 'fill',    label: 'Stretch' },
+            { value: 'none',    label: 'Original size' },
+          ]}
+        />
+        <SelectField
+          label="Horizontal"
+          value={hPos || 'center'}
+          onChange={(v) => onPosition(`${v} ${vPos || 'center'}`)}
+          options={[
+            { value: 'left',   label: 'Left' },
+            { value: 'center', label: 'Center' },
+            { value: 'right',  label: 'Right' },
+          ]}
+        />
+        <SelectField
+          label="Vertical"
+          value={vPos || 'center'}
+          onChange={(v) => onPosition(`${hPos || 'center'} ${v}`)}
+          options={[
+            { value: 'top',    label: 'Top' },
+            { value: 'center', label: 'Middle' },
+            { value: 'bottom', label: 'Bottom' },
+          ]}
+        />
+      </div>
+      <div className="flex items-center gap-2">
+        <label className="text-[10px] font-bold text-app-text-muted uppercase flex-shrink-0">Height (px)</label>
+        <input
+          type="range"
+          min={minHeight}
+          max={maxHeight}
+          value={height}
+          onChange={(e) => onHeight(parseInt(e.target.value) || minHeight)}
+          className="flex-1"
+        />
+        <span className="text-[10px] font-mono text-app-text w-8 text-right">{height}</span>
+      </div>
     </div>
   );
 }

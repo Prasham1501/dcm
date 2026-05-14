@@ -34,6 +34,15 @@ export function StructuralAssessmentTab() {
     }
   }, [examId, loadForExamination, addToast]);
 
+  // Debounced autosave — flush dirty state ~1.5 s after the user stops typing.
+  useEffect(() => {
+    if (!dirty) return;
+    const t = setTimeout(() => {
+      save().catch((e) => addToast(`Autosave failed: ${(e as Error).message}`, 'error'));
+    }, 1500);
+    return () => clearTimeout(t);
+  }, [dirty, save, addToast]);
+
   const handleSave = async () => {
     try {
       await save();

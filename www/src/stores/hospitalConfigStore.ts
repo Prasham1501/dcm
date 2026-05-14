@@ -136,6 +136,22 @@ interface HospitalConfig {
   footerMode: 'text' | 'image';
   headerImageDataUrl: string;
   footerImageDataUrl: string;
+  // Image rendering: banner is always 100% wide. These control how the image
+  // content sits *inside* that banner.
+  //   - 'contain' (default): full image visible, may not fill horizontally
+  //   - 'cover':             fills banner, crops overflow
+  //   - 'fill':              stretches to fit (may distort)
+  //   - 'none':              image at natural size, no scaling
+  headerImageFit:  'contain' | 'cover' | 'fill' | 'none';
+  footerImageFit:  'contain' | 'cover' | 'fill' | 'none';
+  // CSS `object-position`-style string: '<h-pos> <v-pos>', e.g. 'left center',
+  // 'center top', '50% 50%'. Determines where the image is placed when
+  // contain/none leave empty space, or which side is kept when cover crops.
+  headerImagePosition: string;
+  footerImagePosition: string;
+  // Banner height (px). Lets the user pick a taller strip for big banners.
+  headerImageHeight: number;
+  footerImageHeight: number;
 
   // Footer customization
   footerBgColor: string;
@@ -273,6 +289,12 @@ export const useHospitalConfigStore = create<HospitalConfig>()(
       footerMode: 'text' as const,
       headerImageDataUrl: '',
       footerImageDataUrl: '',
+      headerImageFit:      'contain' as const,
+      footerImageFit:      'contain' as const,
+      headerImagePosition: 'center center',
+      footerImagePosition: 'center center',
+      headerImageHeight:   80,
+      footerImageHeight:   40,
 
       // Footer customization
       footerBgColor: '#ffffff',
@@ -445,7 +467,10 @@ const HEADER_ICONS = {
 export function buildBrandHeaderHtml(config: HospitalConfig): string {
   // Image mode: return a full-width image
   if (config.headerMode === 'image' && config.headerImageDataUrl) {
-    return `<div style="flex-shrink:0"><img src="${config.headerImageDataUrl}" style="width:100%;height:80px;object-fit:cover;display:block" /></div>`;
+    const fit  = config.headerImageFit      || 'contain';
+    const pos  = config.headerImagePosition || 'center center';
+    const ht   = config.headerImageHeight   || 80;
+    return `<div style="flex-shrink:0;width:100%"><img src="${config.headerImageDataUrl}" style="width:100%;height:${ht}px;object-fit:${fit};object-position:${pos};display:block;background:transparent" /></div>`;
   }
   const services = (config.servicesList || '').split('|').filter(Boolean);
   const servicesHtml = services.map(s => `<span>${s.trim()}</span>`).join('<span style="margin:0 4px;color:#999">|</span>');
@@ -454,7 +479,7 @@ export function buildBrandHeaderHtml(config: HospitalConfig): string {
   const logoSize = config.headerLogoSize || 60;
   const logoRadius = config.headerLogoShape === 'square' ? '6px' : '50%';
   const logoHtml = (config.headerShowLogo !== false && config.logoDataUrl)
-    ? `<img src="${config.logoDataUrl}" style="width:${logoSize}px;height:${logoSize}px;border-radius:${logoRadius};object-fit:cover" />`
+    ? `<img src="${config.logoDataUrl}" style="height:${logoSize}px;max-width:${logoSize * 3}px;width:auto;border-radius:${logoRadius};object-fit:contain" />`
     : '';
 
   const contactParts: string[] = [];
@@ -514,7 +539,10 @@ export function buildBrandHeaderHtml(config: HospitalConfig): string {
 export function buildFooterHtml(config: HospitalConfig): string {
   // Image mode: return a full-width image
   if (config.footerMode === 'image' && config.footerImageDataUrl) {
-    return `<div style="flex-shrink:0"><img src="${config.footerImageDataUrl}" style="width:100%;height:40px;object-fit:cover;display:block" /></div>`;
+    const fit  = config.footerImageFit      || 'contain';
+    const pos  = config.footerImagePosition || 'center center';
+    const ht   = config.footerImageHeight   || 40;
+    return `<div style="flex-shrink:0;width:100%"><img src="${config.footerImageDataUrl}" style="width:100%;height:${ht}px;object-fit:${fit};object-position:${pos};display:block;background:transparent" /></div>`;
   }
   const l = renderPrintSlot(config.footerLayout.left, config, config.customFooterLeft, true);
   const c = renderPrintSlot(config.footerLayout.center, config, config.customFooterCenter, true);

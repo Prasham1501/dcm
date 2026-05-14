@@ -290,6 +290,23 @@ export async function captureCornerstoneElementForPrintAsync(
         enabledElement.viewport.scale = origScale * ratio;
       }
 
+      // Annotations (ellipse / rectangle / line / arrow / angle) are drawn by
+      // cornerstone-tools using a single global stroke width — tuned for the
+      // ~500-px on-screen viewport. When we capture at print resolution
+      // (~2400 px, i.e. ~5× larger) those strokes become hair-thin.
+      // Temporarily scale the global tool-width by the same ratio we use for
+      // the canvas, then restore it after the snapshot.
+      let origToolWidth: number | null = null;
+      try {
+        const cstools: any = cornerstoneTools;
+        if (cstools?.toolStyle?.getToolWidth) {
+          origToolWidth = cstools.toolStyle.getToolWidth();
+          const boosted = Math.max(2, (origToolWidth || 1) * ratio);
+          cstools.toolStyle.setToolWidth(boosted);
+          if (cstools.toolStyle.setActiveWidth) cstools.toolStyle.setActiveWidth(boosted);
+        }
+      } catch { /* tool style not available — annotations will print at default thickness */ }
+
       // Trigger the redraw and wait for it to actually happen.  Cornerstone's
       // updateImage just sets a flag; the real paint (and the
       // cornerstone-tools annotation pass that runs inside the
@@ -299,6 +316,15 @@ export async function captureCornerstoneElementForPrintAsync(
       await renderDone;
 
       dataUrl = snapshotWithOverlays(liveCanvas, drawPaths, overlays, cssHeight);
+
+      // Restore the original stroke width before any subsequent (live) render.
+      if (origToolWidth !== null) {
+        try {
+          const cstools: any = cornerstoneTools;
+          cstools?.toolStyle?.setToolWidth?.(origToolWidth);
+          cstools?.toolStyle?.setActiveWidth?.(origToolWidth);
+        } catch { /* ignore */ }
+      }
     } catch (err) {
       console.warn('[printCapture] hi-DPI live-canvas capture failed', err);
       dataUrl = null;

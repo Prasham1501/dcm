@@ -13,12 +13,19 @@ import {
 import { useExaminationStore, useCurrentExamination } from '@/features/fetal/stores/examinationStore';
 import { useBiometryStore } from '@/features/fetal/stores/biometryStore';
 import { useStructuralStore } from '@/features/fetal/stores/structuralStore';
+import { useDstStore } from '@/features/fetal/stores/dstStore';
+import { useRiskStore } from '@/features/fetal/stores/riskStore';
 import { useUIStore } from '@/stores/uiStore';
 import { useReportStore } from '@/stores/reportStore';
 import { useCRViewerStore } from '@/stores/crViewerStore';
 import { deriveDatingFromLmp, formatDateDisplay } from '@/features/fetal/lib/dating';
 import { BiometryTab } from '@/features/fetal/tabs/BiometryTab';
 import { StructuralAssessmentTab } from '@/features/fetal/tabs/StructuralAssessmentTab';
+import { AbnormalAssessmentTab } from '@/features/fetal/tabs/AbnormalAssessmentTab';
+import { InterventionTab } from '@/features/fetal/tabs/InterventionTab';
+import { ReportComposerTab } from '@/features/fetal/tabs/ReportComposerTab';
+import { useInterventionStore } from '@/features/fetal/stores/interventionStore';
+import { SaveStatusBadge } from '@/features/fetal/components/SaveStatusBadge';
 import type { ExamType } from '@/features/fetal/types';
 
 const TABS = [
@@ -67,6 +74,9 @@ export function FetalInlinePanel() {
   const applyReadings = useBiometryStore((s) => s.applyReadings);
   const recalcAllPercentiles = useBiometryStore((s) => s.recalcAllPercentiles);
   const clearStructural = useStructuralStore((s) => s.clear);
+  const clearDst = useDstStore((s) => s.clear);
+  const clearRisk = useRiskStore((s) => s.clear);
+  const clearIntervention = useInterventionStore((s) => s.clear);
 
   const activeReadingSet = useReportStore((s) => s.activeReadingSet);
   const extractionStatus = useReportStore((s) => s.extractionStatus);
@@ -90,8 +100,11 @@ export function FetalInlinePanel() {
     setExamDateDraft(current?.exam_date ?? '');
     clearBiometry();
     clearStructural();
+    clearDst();
+    clearRisk();
+    clearIntervention();
     setInserted(false);
-  }, [current?.id, clearBiometry, clearStructural]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [current?.id, clearBiometry, clearStructural, clearDst, clearRisk, clearIntervention]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const dating = useMemo(
     () => deriveDatingFromLmp(current?.lmp_date ?? null, current?.exam_date ?? null),
@@ -204,9 +217,10 @@ export function FetalInlinePanel() {
     <div className="flex flex-col h-full bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-slate-100 border-l border-app-border">
       {/* Panel header */}
       <div className="flex items-center justify-between px-3 py-2 bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700">
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-bold text-pink-600 uppercase tracking-wide">Fetal Report</span>
-          <span className="text-xs text-slate-400 font-mono">{patientId}</span>
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="text-xs font-bold text-pink-600 uppercase tracking-wide flex-shrink-0">Fetal Report</span>
+          <span className="text-xs text-slate-400 font-mono truncate">{patientId}</span>
+          <SaveStatusBadge />
         </div>
         <div className="flex items-center gap-1">
           {current && (
@@ -454,15 +468,9 @@ export function FetalInlinePanel() {
           <div className="flex-1 overflow-auto">
             {activeTab === 'biometry' && <BiometryTab />}
             {activeTab === 'structural' && <StructuralAssessmentTab />}
-            {activeTab === 'abnormal' && (
-              <TabStub label="Abnormal Structural Assessment" note="Findings → Syndromes → Genes browsers. (Phase 4)" />
-            )}
-            {activeTab === 'intervention' && (
-              <TabStub label="Intervention" note="Procedures and counselling notes. (Phase 8)" />
-            )}
-            {activeTab === 'report' && (
-              <TabStub label="Report" note="Composer with per-section include/exclude + PDF. (Phase 6)" />
-            )}
+            {activeTab === 'abnormal' && <AbnormalAssessmentTab />}
+            {activeTab === 'intervention' && <InterventionTab />}
+            {activeTab === 'report' && <ReportComposerTab />}
           </div>
         </>
       )}

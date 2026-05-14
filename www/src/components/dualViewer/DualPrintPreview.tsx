@@ -258,7 +258,19 @@ export function DualPrintPreview({ onClose }: DualPrintPreviewProps) {
   const renderBrandHeaderPv = () => {
     // Image mode
     if (hospitalConfig.headerMode === 'image' && hospitalConfig.headerImageDataUrl) {
-      return <div className="flex-shrink-0"><img src={hospitalConfig.headerImageDataUrl} style={{ width: '100%', height: 80, objectFit: 'cover', display: 'block' }} alt="Header" /></div>;
+      return <div className="flex-shrink-0" style={{ width: '100%' }}>
+        <img
+          src={hospitalConfig.headerImageDataUrl}
+          style={{
+            width: '100%',
+            height: (hospitalConfig.headerImageHeight || 80) * zoom,
+            objectFit: hospitalConfig.headerImageFit || 'contain',
+            objectPosition: hospitalConfig.headerImagePosition || 'center center',
+            display: 'block', background: 'transparent',
+          }}
+          alt="Header"
+        />
+      </div>;
     }
     const logoPos = hospitalConfig.headerLogoPosition || 'left';
     const logoRadius = hospitalConfig.headerLogoShape === 'square' ? '6px' : '50%';
@@ -273,7 +285,7 @@ export function DualPrintPreview({ onClose }: DualPrintPreviewProps) {
       {hospitalConfig.headerShowLogo !== false && (
       <div style={{ flex: '0 0 auto', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
         {hospitalConfig.logoDataUrl ? (
-          <img src={hospitalConfig.logoDataUrl} style={{ width: logoSz, height: logoSz, borderRadius: logoRadius, objectFit: 'cover' }} alt="Logo" />
+          <img src={hospitalConfig.logoDataUrl} style={{ height: logoSz, maxWidth: logoSz * 3, width: 'auto', borderRadius: logoRadius, objectFit: 'contain' }} alt="Logo" />
         ) : (
           <span style={{ fontSize: 6 * zoom }} className="text-gray-400">[Logo]</span>
         )}
@@ -485,7 +497,19 @@ export function DualPrintPreview({ onClose }: DualPrintPreviewProps) {
         </div>
         {dualFooterEnabled && (
           hospitalConfig.footerMode === 'image' && hospitalConfig.footerImageDataUrl ? (
-            <div className="flex-shrink-0"><img src={hospitalConfig.footerImageDataUrl} style={{ width: '100%', height: 40, objectFit: 'cover', display: 'block' }} alt="Footer" /></div>
+            <div className="flex-shrink-0" style={{ width: '100%' }}>
+              <img
+                src={hospitalConfig.footerImageDataUrl}
+                style={{
+                  width: '100%',
+                  height: (hospitalConfig.footerImageHeight || 40) * zoom,
+                  objectFit: hospitalConfig.footerImageFit || 'contain',
+                  objectPosition: hospitalConfig.footerImagePosition || 'center center',
+                  display: 'block', background: 'transparent',
+                }}
+                alt="Footer"
+              />
+            </div>
           ) : (
           <div
             style={{

@@ -1,11 +1,16 @@
 import { useEffect, useState, useCallback } from 'react';
-import { BarChart2, Save } from 'lucide-react';
+import { BarChart2, Save, Activity, ShieldAlert, Clock } from 'lucide-react';
 import { useBiometryStore, FTS_FIELDS, SECOND_TRIMESTER_FIELDS } from '@/features/fetal/stores/biometryStore';
 import { useCurrentExamination } from '@/features/fetal/stores/examinationStore';
+import { useRiskStore } from '@/features/fetal/stores/riskStore';
 import { useUIStore } from '@/stores/uiStore';
 import { deriveDatingFromLmp } from '@/features/fetal/lib/dating';
 import type { ExamType } from '@/features/fetal/types';
 import { ReferenceChart } from '@/features/fetal/components/ReferenceChart';
+import { AneuploidyRiskModal } from '@/features/fetal/calculators/AneuploidyRiskModal';
+import { PreeclampsiaRiskModal } from '@/features/fetal/calculators/PreeclampsiaRiskModal';
+import { PretermBirthRiskModal } from '@/features/fetal/calculators/PretermBirthRiskModal';
+import { formatRisk } from '@/features/fetal/lib/fmfRisk';
 
 interface ChartModal {
   fieldKey: string;
@@ -73,15 +78,20 @@ export function BiometryTab() {
   } = useBiometryStore();
 
   const [chartModal, setChartModal] = useState<ChartModal | null>(null);
+  const [riskModal, setRiskModal] = useState<null | 'aneuploidy' | 'preeclampsia' | 'preterm'>(null);
 
   const { loadChartData } = useBiometryStore();
+
+  const riskRows         = useRiskStore((s) => s.rows);
+  const loadRisks        = useRiskStore((s) => s.loadForExamination);
 
   useEffect(() => {
     if (current?.id) {
       loadForExamination(current.id);
       loadAuthors();
+      loadRisks(current.id);
     }
-  }, [current?.id, loadForExamination, loadAuthors]);
+  }, [current?.id, loadForExamination, loadAuthors, loadRisks]);
 
   const dating = deriveDatingFromLmp(current?.lmp_date ?? null, current?.exam_date ?? null);
 
@@ -158,6 +168,48 @@ export function BiometryTab() {
             Set LMP in examination header to see GA
           </span>
         )}
+      </div>
+
+      {/* First Trimester Risk panel */}
+      <div className="mb-4 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg overflow-hidden">
+        <div className="px-3 py-2 bg-slate-50 dark:bg-slate-900/40 border-b border-slate-200 dark:border-slate-700 text-xs font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300">
+          First-Trimester Risk Assessment
+        </div>
+        <div className="p-3 grid grid-cols-1 md:grid-cols-3 gap-2">
+          <RiskButton
+            icon={<Activity size={14} className="text-rose-500" />}
+            label="Aneuploidy"
+            sub="T21 · T18 · T13"
+            valueSummary={
+              riskRows.aneuploidy?.results
+                ? `T21 ${formatRisk((riskRows.aneuploidy.results as { combined: { t21: number } }).combined.t21)}`
+                : null
+            }
+            onClick={() => setRiskModal('aneuploidy')}
+          />
+          <RiskButton
+            icon={<ShieldAlert size={14} className="text-amber-500" />}
+            label="Preeclampsia"
+            sub="Wright 2-stage model"
+            valueSummary={
+              riskRows.preeclampsia?.results
+                ? `Preterm ${formatRisk((riskRows.preeclampsia.results as { pretermPE: number }).pretermPE)}`
+                : null
+            }
+            onClick={() => setRiskModal('preeclampsia')}
+          />
+          <RiskButton
+            icon={<Clock size={14} className="text-purple-500" />}
+            label="Preterm Birth"
+            sub="Cervical length < 34 wk"
+            valueSummary={
+              riskRows.preterm?.results
+                ? `sPTB ${formatRisk((riskRows.preterm.results as { sPTBunder34: number }).sPTBunder34)}`
+                : null
+            }
+            onClick={() => setRiskModal('preterm')}
+          />
+        </div>
       </div>
 
       {/* Biometry table */}
@@ -273,6 +325,41 @@ export function BiometryTab() {
           onClose={() => setChartModal(null)}
         />
       )}
+
+      {/* Risk calculators */}
+      <AneuploidyRiskModal    open={riskModal === 'aneuploidy'}    onClose={() => setRiskModal(null)} />
+      <PreeclampsiaRiskModal  open={riskModal === 'preeclampsia'}  onClose={() => setRiskModal(null)} />
+      <PretermBirthRiskModal  open={riskModal === 'preterm'}       onClose={() => setRiskModal(null)} />
     </div>
+  );
+}
+
+function RiskButton({
+  icon, label, sub, valueSummary, onClick,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  sub: string;
+  valueSummary: string | null;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className="text-left flex items-center gap-3 px-3 py-2 rounded border border-slate-200 dark:border-slate-700 hover:border-blue-400 hover:bg-blue-50/40 dark:hover:bg-blue-900/10 transition"
+    >
+      <span className="flex-shrink-0">{icon}</span>
+      <span className="flex-1 min-w-0">
+        <span className="block text-sm font-semibold text-slate-700 dark:text-slate-200">{label}</span>
+        <span className="block text-[11px] text-slate-500">{sub}</span>
+      </span>
+      {valueSummary ? (
+        <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 flex-shrink-0">
+          {valueSummary}
+        </span>
+      ) : (
+        <span className="text-[10px] uppercase text-slate-400 flex-shrink-0">Calculate</span>
+      )}
+    </button>
   );
 }
