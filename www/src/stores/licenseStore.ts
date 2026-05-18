@@ -6,6 +6,10 @@ interface LicenseStatus {
   plan?: string;
   expiresAt?: string;
   lastValidated?: string;
+  activatedAt?: string;
+  deviceId?: string;
+  fingerprint?: string;
+  machineName?: string;
   daysLeft?: number | null;
   expired?: boolean;
   remaining?: number;
@@ -19,6 +23,7 @@ interface LicenseState {
   activating: boolean;
 
   fetchStatus: () => Promise<void>;
+  refreshStatus: () => Promise<void>;
   activateLicense: (key: string) => Promise<{ success: boolean; error?: string }>;
   deactivateLicense: () => Promise<void>;
 }
@@ -43,6 +48,19 @@ export const useLicenseStore = create<LicenseState>((set) => ({
       }
     } catch (e: any) {
       set({ error: e.message, loading: false });
+    }
+  },
+
+  refreshStatus: async () => {
+    try {
+      if (api?.getLicenseStatus) {
+        const status = await api.getLicenseStatus();
+        set({ status, error: null });
+      } else {
+        set({ status: { type: 'licensed', plan: 'dev' }, error: null });
+      }
+    } catch (e: any) {
+      set({ error: e.message });
     }
   },
 
