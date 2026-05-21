@@ -17,6 +17,13 @@ const openCheckout = async ({ type, amount, credits, items, user, description, o
   // Step 1 — create order on backend.
   onProgress?.('Creating order…');
   const order = await mvApi.topup({ type, amount, credits, items });
+
+  // Backend has no Razorpay configured → credit was applied immediately.
+  if (order.auto_provisioned) {
+    onProgress?.('Credit applied');
+    return { balance: order.balance, invoice_id: order.invoice_id, invoice: order.invoice, auto_provisioned: true };
+  }
+
   // Step 2 — open checkout. In mock mode, we simulate the popup with a real-feeling overlay.
   if (mvApi.getMode() === 'mock') {
     return openMockCheckout({ order, type, amount, credits, items, description, onProgress });
@@ -143,3 +150,28 @@ const openMockCheckout = ({ order, type, amount, credits, items, description, on
 });
 
 window.openCheckout = openCheckout;
+
+window.openRazorpay = async ({ key, amount, order_id, name, description, handler }) => {
+  if (mvApi.getMode() !== 'mock') await loadRazorpay();
+  const finalAmount = Math.round(Number(amount || 0) * 100);
+  if (mvApi.getMode() === 'mock' || !window.Razorpay) {
+    await new Promise(r => setTimeout(r, 500));
+    await handler({
+      razorpay_order_id: order_id,
+      razorpay_payment_id: 'pay_mock_' + Math.random().toString(36).slice(2, 10),
+      razorpay_signature: 'sig_mock',
+    });
+    return;
+  }
+  const rzp = new window.Razorpay({
+    key,
+    amount: finalAmount,
+    currency: 'INR',
+    name: name || 'Mediview',
+    description: description || 'Mediview license',
+    order_id,
+    theme: { color: '#DC2626' },
+    handler,
+  });
+  rzp.open();
+};

@@ -14,7 +14,52 @@ window.DICOM_VIEWER.PrintManager = class {
         this.printSettings = null; // Will be loaded from server
         this.availablePrinters = [];
         this.selectedPrinter = null;
+        this._pendingCharge  = null;
         this.init();
+        // Expose so the print-preview popup can call back into us (printAndCharge).
+        window.DICOM_VIEWER.PrintManagerInstance = this;
+    }
+
+    /** Estimate physical page count for the current job. Conservative. */
+    estimatePageCount(printType) {
+        if (printType === 'report') return 1;
+        const layout = (this.printSettings?.default_layout || '2x2').toString();
+        const [cols, rows] = layout.split('x').map(n => parseInt(n,10) || 1);
+        const perPage = Math.max(1, cols * rows);
+        const state = window.DICOM_VIEWER.STATE;
+        const totalImages = state?.currentSeriesImages?.length || 1;
+        return Math.max(1, Math.ceil(totalImages / perPage));
+    }
+
+    /**
+     * Called from the preview-window Print button. Debits the wallet on
+     * the website backend, then fires the actual print only if the debit
+     * succeeded — so once the wallet hits 0, no paper ever comes out.
+     */
+    async printAndCharge(previewWindow) {
+        const charge = this._pendingCharge;
+        const wallet = window.DICOM_VIEWER.PrintWallet;
+        if (!wallet || !charge) {
+            try { previewWindow.print(); } catch {}
+            return;
+        }
+        const res = await wallet.spend({
+            pages: charge.pages,
+            colorMode: charge.colorMode,
+            meta: 'Mediview viewer print',
+        });
+        if (!res.ok) {
+            const msg = res.reason === 'insufficient'
+                ? `Print cancelled: balance ${res.balance ?? 0} < required ${charge.cost}.`
+                : 'Print cancelled: wallet update failed (' + (res.reason || 'unknown') + ').';
+            this.showToast(msg, 'error');
+            try { previewWindow.close(); } catch {}
+            this._pendingCharge = null;
+            return;
+        }
+        try { previewWindow.print(); } catch {}
+        this.showToast(`Print charged. Remaining balance: ${res.balance}`, 'success');
+        this._pendingCharge = null;
     }
 
     async init() {
@@ -499,6 +544,23 @@ window.DICOM_VIEWER.PrintManager = class {
 
         this.selectedPrinter = selectedPrinter;
 
+        // ── Wallet gating ─────────────────────────────────────────────────
+        // For real prints, verify the user has enough credits on the website
+        // wallet BEFORE generating preview. Actual debit fires in printAndCharge().
+        if (!previewOnly) {
+            const wallet = window.DICOM_VIEWER.PrintWallet;
+            if (wallet) {
+                const pages = this.estimatePageCount(printType);
+                const colorMode = this.printSettings?.color_mode || 'grayscale';
+                const check = await wallet.canPrint({ pages, colorMode });
+                if (!check.allowed) {
+                    this.showToast(check.message, 'error');
+                    return;
+                }
+                this._pendingCharge = { pages, colorMode, cost: check.cost, balance: check.balance };
+            }
+        }
+
         try {
             if (printType === 'viewport') {
                 await this.printViewport(previewOnly);
@@ -755,7 +817,7 @@ window.DICOM_VIEWER.PrintManager = class {
     <div class="print-toolbar no-print">
         <h4>Print Preview - ${viewportState.viewports.length} viewports (${viewportState.layout} layout)</h4>
         <div>
-            <button class="btn-print" onclick="window.print()">Print Now</button>
+            <button class="btn-print" onclick="window.opener && window.opener.DICOM_VIEWER && window.opener.DICOM_VIEWER.PrintManagerInstance ? window.opener.DICOM_VIEWER.PrintManagerInstance.printAndCharge(window) : window.print()">Print Now</button>
             <button class="btn-close" onclick="window.close()">Close</button>
         </div>
     </div>
@@ -1027,7 +1089,7 @@ window.DICOM_VIEWER.PrintManager = class {
     <div class="print-toolbar no-print">
         <h4>Medical Report Preview</h4>
         <div>
-            <button class="btn-print" onclick="window.print()">Print Report</button>
+            <button class="btn-print" onclick="window.opener && window.opener.DICOM_VIEWER && window.opener.DICOM_VIEWER.PrintManagerInstance ? window.opener.DICOM_VIEWER.PrintManagerInstance.printAndCharge(window) : window.print()">Print Report</button>
             <button class="btn-close" onclick="window.close()">Close</button>
         </div>
     </div>

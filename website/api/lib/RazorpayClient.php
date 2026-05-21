@@ -15,6 +15,13 @@ class RazorpayClient {
         }
     }
 
+    /** Cheap, non-throwing config check. */
+    public static function isConfigured(): bool {
+        $k = Settings::get('razorpay.key_id');
+        $s = Settings::get('razorpay.key_secret');
+        return !empty($k) && !empty($s);
+    }
+
     /** Create a Razorpay order and return order details */
     public function createOrder(int $amountPaise, string $receipt, array $notes = []): array {
         // Use Razorpay SDK if available

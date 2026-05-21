@@ -1,12 +1,12 @@
 /**
  * Multi-port firewall rule helper.
  * Adapted from dcm/main.js addFirewallRule() (lines 2420-2453).
- * One rule named "Accurate Bridge - <port>" per slot port; UAC-elevates if needed.
+ * One rule named "Mediview Bridge - <port>" per slot port; UAC-elevates if needed.
  */
 
 const { execSync, exec } = require('child_process');
 
-function ruleName(port) { return `Accurate Bridge - ${port}`; }
+function ruleName(port) { return `Mediview Bridge - ${port}`; }
 
 function ruleExists(port) {
   try {

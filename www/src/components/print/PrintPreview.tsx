@@ -79,7 +79,10 @@ const MM_TO_PX = 3.7795275591;
 
 export function PrintPreview() {
   const navigate = useNavigate();
-  const { settings, updateSettings, setShowPrintPreview, addPrintJob, decrementPrintCount, printCountRemaining } = usePrintStore();
+  const { settings, updateSettings, setShowPrintPreview, addPrintJob, logPrintToApi, fetchPrintCount, printCountRemaining } = usePrintStore();
+  // Refresh the wallet balance from the website the moment the preview
+  // opens so the user can never see a stale count or print past 0.
+  useEffect(() => { fetchPrintCount(); }, [fetchPrintCount]);
   const { currentLayout, patientName, patientId, studyDate, currentPage, totalPages, totalImages, setCurrentPage } = useViewerStore();
   const hospitalConfig = useHospitalConfigStore();
 
@@ -346,10 +349,35 @@ export function PrintPreview() {
   const handlePrint = async (e: React.MouseEvent) => {
     e.stopPropagation();
     if (activePrinters.length === 0) { alert('No printers configured. Please add a printer in Config or Printer Settings.'); return; }
-    if (printCountRemaining <= 0) { alert('No prints remaining. Please recharge your print count.'); return; }
     if (allPageCaptures.length === 0 && printType === 'image') { alert('Still capturing pages, please wait.'); return; }
+
     setPrinting(true);
     try {
+      // ── Wallet pre-flight — refresh from server, confirm enough credits,
+      // then atomically debit BEFORE we send anything to the printer.
+      // If the spend fails, no paper comes out.
+      await fetchPrintCount();
+      const cost = Math.max(1, localCopies | 0);
+      const live = usePrintStore.getState().printCountRemaining;
+      if (live < cost) {
+        alert(`Not enough print credits (have ${live}, need ${cost}). Top up from the Mediview dashboard.`);
+        return;
+      }
+      const debit = await logPrintToApi({
+        studyUid: undefined,
+        patientId, patientName,
+        layoutType: `${currentLayout.spots}-spot`,
+        credits: cost,
+      });
+      if (!debit.ok) {
+        alert(
+          debit.reason === 'insufficient'
+            ? `Print cancelled: balance ${debit.balance} < required ${cost}.`
+            : `Print cancelled: wallet update failed (${debit.reason || 'unknown'}).`
+        );
+        return;
+      }
+
       updateSettings({ paperSize: localPaperSize, orientation: localOrientation, copies: localCopies, defaultPrinter: selectedPrinter });
       const pagesToPrint = selectedPages();
       const htmlContent = printType === 'pcpndt' ? buildPcpndtHtml() : buildPrintHtml(pagesToPrint);
@@ -375,13 +403,13 @@ export function PrintPreview() {
       }
 
       if (!printStarted) {
-        alert('Printing could not be started. Check the selected printer and try again.');
+        // Already debited — surface a clear refund-needed message rather
+        // than silently swallowing the credits.
+        alert('Printing could not be started after the wallet was debited. Contact support with your invoice to reverse the charge.');
         return;
       }
 
       addPrintJob({ patientName, studyDate, layout: `${currentLayout.spots} Spots`, copies: localCopies, paperSize: localPaperSize });
-      for (let i = 0; i < localCopies; i++) decrementPrintCount();
-      // Mark patient as printed — broadcast via IPC so all windows (including main) get the update
       if (electronAPI?.invoke) {
         electronAPI.invoke('mark-patient-printed', { patientId, patientName }).catch(() => {});
       }

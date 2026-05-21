@@ -1,4 +1,4 @@
-# Accurate Bridge
+# Mediview Bridge
 
 A DICOM print bridge that sits in the Windows system tray, listens for DICOM
 images sent from MRI / CT / USG / CR modalities, and automatically prints
@@ -28,7 +28,7 @@ the same theme tokens and the same multi-image layout system as the viewer.
 
 ## Installation (end users)
 
-1. Double-click `AccurateBridge-Setup-1.0.0.exe`.
+1. Double-click `MediviewBridge-Setup-1.0.0.exe`.
 2. Approve the UAC prompt (needed to add Windows firewall rules for the
    listener ports).
 3. Pick install directory → install.
@@ -78,7 +78,7 @@ cd bridge
 npm run build:win
 ```
 
-Output: `bridge\installer-output\AccurateBridge-Setup-1.0.0.exe`.
+Output: `bridge\installer-output\MediviewBridge-Setup-1.0.0.exe`.
 
 ---
 
@@ -91,10 +91,10 @@ bridge/
 ├── package.json            electron-builder config (NSIS, perMachine)
 ├── icon.ico                Shared with Accurate viewer
 ├── src/
-│   ├── log/logger.js       Rotating file logger (%APPDATA%/AccurateBridge/logs)
+│   ├── log/logger.js       Rotating file logger (%APPDATA%/MediviewBridge/logs)
 │   ├── config/
 │   │   ├── schema.js       PrinterSlot defaults + validation
-│   │   └── store.js        JSON config (%APPDATA%/AccurateBridge/config.json)
+│   │   └── store.js        JSON config (%APPDATA%/MediviewBridge/config.json)
 │   ├── firewall/           Multi-port netsh firewall rule (UAC if needed)
 │   ├── autostart/          Electron setLoginItemSettings wrapper
 │   ├── scp/
@@ -133,39 +133,12 @@ Per-connection lifecycle:
 2. Bridge replies `A-ASSOCIATE-AC`, accepting all offered presentation
    contexts and preferring Explicit VR Little Endian.
 3. Modality sends one or more `C-STORE-RQ` operations; each `.dcm` is saved
-   to `%APPDATA%/AccurateBridge/incoming/<slotId>/`.
+   to `%APPDATA%/MediviewBridge/incoming/<slotId>/`.
 4. Modality sends `A-RELEASE-RQ`; bridge replies `A-RELEASE-RP`.
 5. After `studyDebounceSeconds` of silence per Study UID, the job queue
    renders all images and prints to the configured Windows printer.
 6. On success → files moved to `printed/YYYY-MM-DD/`.
    On failure → files moved to `failed/YYYY-MM-DD/`.
-
----
-
-## Testing
-
-End-to-end test using DCMTK:
-
-```powershell
-# Verify association handshake
-echoscu -aet TESTER -aec BRIDGE_P1 localhost 7001
-
-# Send a sample DICOM file
-storescu -aet TESTER -aec BRIDGE_P1 +sd +r localhost 7001 sample.dcm
-```
-
-For safe printing during testing, set the slot's Windows printer to
-**"Microsoft Print to PDF"** — the output PDF will appear in your Documents.
-
----
-
-## Configuration files
-
-- Config:    `%APPDATA%\AccurateBridge\config.json`
-- Logs:      `%APPDATA%\AccurateBridge\logs\bridge-YYYY-MM-DD.log`
-- Incoming:  `%APPDATA%\AccurateBridge\incoming\<slotId>\`
-- Printed:   `%APPDATA%\AccurateBridge\printed\YYYY-MM-DD\`
-- Failed:    `%APPDATA%\AccurateBridge\failed\YYYY-MM-DD\`
 
 ---
 

@@ -56,18 +56,10 @@ class AuthController {
                 "INSERT INTO referrals (id, account_id, code, created_at) VALUES (?,?,?,?)"
             )->execute([generateId(), $accountId, strtoupper(substr($name, 0, 4) . '-' . strtoupper(bin2hex(random_bytes(3)))), $now]);
 
-            // Issue trial license
-            $keyCode = LicenseKey::generate();
-            $trialDays = (int)Settings::get('pricing.trial_days', '30');
-            $trialSeats= (int)Settings::get('pricing.trial_seats', '1');
-            $licId     = generateId();
-            $expires   = gmdate('Y-m-d H:i:s', time() + $trialDays * 86400);
-            $hmac      = LicenseKey::sign($keyCode, ['plan' => 'trial', 'account' => $accountId]);
-
-            $pdo->prepare(
-                "INSERT INTO licenses (id, account_id, key_code, plan, seats, status, starts_at, expires_at, hmac_signature, created_at)
-                 VALUES (?,?,?,?,?,?,?,?,?,?)"
-            )->execute([$licId, $accountId, $keyCode, 'trial', $trialSeats, 'active', $now, $expires, $hmac, $now]);
+            // No trial license is issued — the Free plan / desktop trial works
+            // without any key. Users only get a key when they buy a paid plan.
+            $pdo->prepare("INSERT INTO wallets (account_id, type, balance, updated_at) VALUES (?,?,?,?), (?,?,?,?)")
+                ->execute([$accountId, 'print', 0, $now, $accountId, 'ai', 0, $now]);
 
             $pdo->commit();
         } catch (\Throwable $e) {
@@ -89,18 +81,14 @@ class AuthController {
             error_log('[Auth/signup] Verify email failed: ' . $e->getMessage());
         }
 
-        // Send welcome + trial key (non-fatal)
+        // Send welcome email (no trial key — the Free plan works without one).
         try {
-            Mailer::send($email, $name, 'Welcome to Mediview — your trial license key', 'email-license', [
+            Mailer::send($email, $name, 'Welcome to Mediview', 'email-welcome', [
                 'name'         => $name,
-                'key_code'     => $keyCode,
-                'plan'         => 'Trial',
-                'seats'        => $trialSeats,
-                'expires_at'   => date('d M Y', strtotime($expires)),
-                'download_url' => rtrim(getenv('APP_URL'), '/') . '/api/download/exe',
+                'download_url' => rtrim((string)getenv('APP_URL'), '/') . '/api/download/exe',
             ]);
         } catch (\Throwable $e) {
-            error_log('[Auth/signup] License email failed: ' . $e->getMessage());
+            error_log('[Auth/signup] Welcome email failed: ' . $e->getMessage());
         }
 
         // Reward referrer
@@ -229,6 +217,11 @@ class AuthController {
         if ($name) {
             db()->prepare("UPDATE users SET name=?, updated_at=? WHERE id=?")
                 ->execute([$name, nowDb(), $req->user['id']]);
+        }
+        foreach (['phone', 'specialty'] as $field) {
+            if (array_key_exists($field, $body)) {
+                Settings::set('acct.' . $req->user['account_id'] . '.profile.' . $field, (string)$body[$field], $req->user['id']);
+            }
         }
         Response::ok(['name' => $name]);
     }

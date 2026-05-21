@@ -28,25 +28,34 @@ function getFormattedAddress(cfg) {
   return parts.join(', ');
 }
 
-function renderPrintSlot(slot, cfg, customText, isFooter) {
-  const fontSize = isFooter ? cfg.footerFontSize : 10;
-  const fontColor = isFooter ? cfg.footerFontColor : '#000';
-  const baseStyle = `font-size:${fontSize}px;color:${fontColor}`;
-  switch (slot) {
+/** Footer item renderer — supports name, services, address, phone, email,
+ *  website, logo and custom strings; items stack vertically inside their slot. */
+function renderFooterItem(item, cfg) {
+  const fs = cfg.footerFontSize || 8;
+  const fc = cfg.footerFontColor || '#666';
+  const base = `font-size:${fs}px;color:${fc};line-height:1.25`;
+  switch (item.type) {
     case 'logo':
       return cfg.logoDataUrl
-        ? `<img src="${cfg.logoDataUrl}" style="max-height:40px;max-width:120px;object-fit:contain" />`
+        ? `<img src="${cfg.logoDataUrl}" style="max-height:32px;max-width:140px;object-fit:contain" />`
         : '';
-    case 'name':
-      return `<div style="font-weight:600;${baseStyle}">${escapeHtml(cfg.hospitalName)}</div>`;
-    case 'address':
-      return `<span style="${baseStyle}">${escapeHtml(getFormattedAddress(cfg))}</span>`;
-    case 'custom':
-      return `<div style="${baseStyle}">${escapeHtml(customText || '')}</div>`;
+    case 'name':     return cfg.hospitalName ? `<div style="font-weight:600;${base}">${escapeHtml(cfg.hospitalName)}</div>` : '';
+    case 'services': return cfg.servicesList ? `<div style="${base}">${escapeHtml(cfg.servicesList.split('|').join(' • '))}</div>` : '';
+    case 'address':  return `<div style="${base}">${escapeHtml(getFormattedAddress(cfg))}</div>`;
+    case 'phone':    return cfg.phone   ? `<div style="${base}">☎ ${escapeHtml(cfg.phone)}</div>`   : '';
+    case 'email':    return cfg.email   ? `<div style="${base}">✉ ${escapeHtml(cfg.email)}</div>`   : '';
+    case 'website':  return cfg.website ? `<div style="${base}">🌐 ${escapeHtml(cfg.website)}</div>` : '';
+    case 'custom':   return item.customText ? `<div style="${base}">${escapeHtml(item.customText)}</div>` : '';
     case 'none':
-    default:
-      return '';
+    default:         return '';
   }
+}
+
+function renderFooterStack(slotValue, customLegacy, cfg) {
+  const items = Array.isArray(slotValue)
+    ? slotValue
+    : (slotValue && slotValue !== 'none' ? [{ type: slotValue, customText: customLegacy }] : []);
+  return items.map((it) => renderFooterItem(it, cfg)).filter(Boolean).join('');
 }
 
 /**
@@ -59,10 +68,11 @@ function buildBrandHeaderHtml(cfg) {
   const servicesHtml = services.map(s => `<span>${escapeHtml(s.trim())}</span>`).join('<span style="margin:0 4px;color:#999">|</span>');
   const address = getFormattedAddress(cfg).toUpperCase();
 
-  const logoSize = cfg.headerLogoSize || 60;
-  const logoRadius = cfg.headerLogoShape === 'square' ? '6px' : '50%';
+  const logoSize = cfg.headerLogoSize || 80;
+  // object-fit:contain so the whole logo fits; max-width capped at 1.8× the
+  // height so wordmark-style logos don't dominate the printed header.
   const logoHtml = (cfg.headerShowLogo !== false && cfg.logoDataUrl)
-    ? `<img src="${cfg.logoDataUrl}" style="width:${logoSize}px;height:${logoSize}px;border-radius:${logoRadius};object-fit:cover;border:1px solid #ddd" />`
+    ? `<img src="${cfg.logoDataUrl}" style="height:${logoSize}px;max-width:${Math.round(logoSize * 1.8)}px;width:auto;object-fit:contain;display:block" />`
     : '';
 
   const contactParts = [];
@@ -92,7 +102,7 @@ function buildBrandHeaderHtml(cfg) {
   const addrAlign = cfg.headerAddressAlign || 'left';
   const logoPos = cfg.headerLogoPosition || 'left';
 
-  const logoBoxWidth = Math.max(74, logoSize + 20);
+  const logoBoxWidth = Math.max(100, Math.round(logoSize * 1.8) + 16);
   const logoDivHtml = logoHtml ? `<div style="flex:0 0 ${logoBoxWidth}px;display:flex;justify-content:center;align-items:center">${logoHtml}</div>` : '';
   const logoSpacerHtml = logoHtml ? `<div style="flex:0 0 ${logoBoxWidth}px"></div>` : '';
 
@@ -100,7 +110,7 @@ function buildBrandHeaderHtml(cfg) {
     ? `<div style="margin-bottom:2px;text-align:${nameAlign}"><span style="font-size:${nameFs}px;font-weight:800;color:${nameCol}">${escapeHtml(cfg.hospitalName)}</span>${cfg.brandNameSecondary ? `<span style="font-size:${nameFs}px;font-weight:400;color:${secCol};margin-left:5px">${escapeHtml(cfg.brandNameSecondary)}</span>` : ''}</div>`
     : '';
   const svcPart = (cfg.headerShowServices !== false && services.length > 0)
-    ? `<div style="display:flex;align-items:center;justify-content:${svcJustify};gap:3px;font-size:${svcFs}px;font-weight:600;color:${svcCol};flex-wrap:wrap;margin-bottom:2px">${HEADER_ICONS.scanner}<span style="margin-right:2px"></span>${servicesHtml}</div>`
+    ? `<div style="display:flex;align-items:center;justify-content:${svcJustify};gap:3px;font-size:${svcFs}px;font-weight:600;color:${svcCol};flex-wrap:wrap;margin-bottom:2px">${servicesHtml}</div>`
     : '';
   const addrPart = (cfg.headerShowAddress !== false && address)
     ? `<div style="font-size:${addrFs}px;color:${addrCol};text-transform:uppercase;letter-spacing:0.5px;text-align:${addrAlign}">${escapeHtml(address)}</div>`
@@ -125,15 +135,19 @@ function buildBrandHeaderHtml(cfg) {
  */
 function buildFooterHtml(cfg) {
   if (!cfg) return '';
-  const fl = cfg.footerLayout || { left: 'none', center: 'none', right: 'none' };
-  const l = renderPrintSlot(fl.left, cfg, cfg.customFooterLeft, true);
-  const c = renderPrintSlot(fl.center, cfg, cfg.customFooterCenter, true);
-  const r = renderPrintSlot(fl.right, cfg, cfg.customFooterRight, true);
+  const fl = cfg.footerLayout || { left: [], center: [], right: [] };
+  const l = renderFooterStack(fl.left,   cfg.customFooterLeft   || '', cfg);
+  const c = renderFooterStack(fl.center, cfg.customFooterCenter || '', cfg);
+  const r = renderFooterStack(fl.right,  cfg.customFooterRight  || '', cfg);
   const bgCol = cfg.footerBgColor || '#ffffff';
   const borderCol = cfg.footerBorderTopColor || '#cccccc';
   const fontSize = cfg.footerFontSize || 8;
   const fontColor = cfg.footerFontColor || '#666666';
-  return `<div style="display:flex;justify-content:space-between;align-items:center;padding:2px 12px;border-top:1px solid ${borderCol};background:${bgCol};font-size:${fontSize}px;color:${fontColor};white-space:nowrap;overflow:hidden"><div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${l}</div><div style="text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${c}</div><div style="text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r}</div></div>`;
+  return `<div style="display:flex;justify-content:space-between;align-items:flex-start;padding:4px 12px;border-top:1px solid ${borderCol};background:${bgCol};font-size:${fontSize}px;color:${fontColor}">
+    <div style="flex:1;text-align:left">${l}</div>
+    <div style="flex:1;text-align:center">${c}</div>
+    <div style="flex:1;text-align:right">${r}</div>
+  </div>`;
 }
 
 /**

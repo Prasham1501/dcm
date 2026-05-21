@@ -28,6 +28,26 @@ class AnalyticsController {
         $pStmt->execute([$accountId, $since]);
         $printed = (int)$pStmt->fetchColumn();
 
+        $printTopupsStmt = db()->prepare("SELECT COALESCE(SUM(credits_delta),0) FROM transactions WHERE account_id=? AND wallet_type='print' AND kind='topup' AND created_at >= ?");
+        $printTopupsStmt->execute([$accountId, $since]);
+        $printTopups = (int)$printTopupsStmt->fetchColumn();
+
+        $aiTopupsStmt = db()->prepare("SELECT COALESCE(SUM(credits_delta),0) FROM transactions WHERE account_id=? AND wallet_type='ai' AND kind='topup' AND created_at >= ?");
+        $aiTopupsStmt->execute([$accountId, $since]);
+        $aiTopups = (int)$aiTopupsStmt->fetchColumn();
+
+        $licenseStmt = db()->prepare("SELECT COUNT(*) FROM licenses WHERE account_id=? AND plan <> 'trial' AND created_at >= ?");
+        $licenseStmt->execute([$accountId, $since]);
+        $licensesPurchased = (int)$licenseStmt->fetchColumn();
+
+        $ticketStmt = db()->prepare("SELECT COUNT(*) FROM tickets WHERE account_id=? AND created_at >= ?");
+        $ticketStmt->execute([$accountId, $since]);
+        $ticketsRaised = (int)$ticketStmt->fetchColumn();
+
+        $bugStmt = db()->prepare("SELECT COUNT(*) FROM bugs WHERE account_id=? AND created_at >= ?");
+        $bugStmt->execute([$accountId, $since]);
+        $bugsRaised = (int)$bugStmt->fetchColumn();
+
         // By modality (from analytics events meta)
         $mStmt = db()->prepare(
             "SELECT JSON_UNQUOTE(JSON_EXTRACT(meta,'$.modality')) as modality, COUNT(*) as cnt
@@ -50,6 +70,11 @@ class AnalyticsController {
             'studies_' . $days . 'd'  => $studies,
             'ai_calls_' . $days . 'd' => $aiCalls,
             'pages_printed_' . $days . 'd' => $printed,
+            'print_credits_added_' . $days . 'd' => $printTopups,
+            'ai_credits_added_' . $days . 'd' => $aiTopups,
+            'licenses_purchased_' . $days . 'd' => $licensesPurchased,
+            'tickets_raised_' . $days . 'd' => $ticketsRaised,
+            'bugs_raised_' . $days . 'd' => $bugsRaised,
             'by_modality'             => array_map(fn($r) => ['name' => $r['modality'] ?: 'Unknown', 'value' => (int)$r['cnt']], $byModality),
             'daily'                   => $daily,
         ]);

@@ -11,7 +11,10 @@ class InvoiceController {
         $stmt = db()->prepare(
             "SELECT * FROM invoices WHERE account_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?"
         );
-        $stmt->execute([$req->user['account_id'], $limit, $off]);
+        $stmt->bindValue(1, $req->user['account_id'], PDO::PARAM_STR);
+        $stmt->bindValue(2, $limit, PDO::PARAM_INT);
+        $stmt->bindValue(3, $off,   PDO::PARAM_INT);
+        $stmt->execute();
         $invoices = $stmt->fetchAll();
 
         $cstmt = db()->prepare("SELECT COUNT(*) FROM invoices WHERE account_id = ?");
@@ -36,10 +39,31 @@ class InvoiceController {
         $aStmt->execute([$req->user['account_id']]);
         $account = $aStmt->fetch() ?: [];
 
-        $pdf  = new PdfInvoice();
-        $path = $pdf->generate($inv, $account);
+        try {
+            $pdf  = new PdfInvoice();
+            $path = $pdf->generate($inv, $account);
+        } catch (\Throwable $e) {
+            error_log('[InvoiceController/pdf] PdfInvoice::generate failed: ' . $e->getMessage());
+            $path = null;
+        }
 
         if (!$path || !file_exists($path)) Response::error('PDF generation failed', 500);
-        Response::pdf($path, $inv['number'] . '.pdf');
+
+        // Inspect actual file bytes — don't trust the extension. Dompdf can
+        // silently return original HTML on some hosts (missing extensions etc.)
+        // so we verify the "%PDF" magic before declaring this a real PDF.
+        $head    = (string)file_get_contents($path, false, null, 0, 5);
+        $isRealPdf = str_starts_with($head, '%PDF-');
+
+        if ($isRealPdf) {
+            Response::pdf($path, $inv['number'] . '.pdf');
+        }
+
+        // Fallback: serve the HTML and let the browser print → save as PDF.
+        header('Content-Type: text/html; charset=utf-8');
+        header('Cache-Control: private, no-cache');
+        readfile($path);
+        echo '<script>window.onload=function(){setTimeout(function(){window.print();},250);}</script>';
+        exit;
     }
 }

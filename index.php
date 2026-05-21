@@ -683,6 +683,7 @@ $userRole = $_SESSION['role'] ?? 'viewer';
     <script src="<?= BASE_PATH ?>/js/components/reporting-system.js?v=<?= time() ?>"></script>
     <script src="<?= BASE_PATH ?>/js/components/mouse-controls.js?v=<?= time() ?>"></script>
     <script src="<?= BASE_PATH ?>/js/components/export-manager.js?v=<?= time() ?>"></script>
+    <script src="<?= BASE_PATH ?>/js/components/print-wallet.js?v=<?= time() ?>"></script>
     <script src="<?= BASE_PATH ?>/js/components/print-manager-v3.js?v=<?= time() ?>"></script>
     <script src="<?= BASE_PATH ?>/js/components/settings-manager.js?v=<?= time() ?>"></script>
     <script src="<?= BASE_PATH ?>/js/components/mobile-controls.js?v=<?= time() ?>"></script>

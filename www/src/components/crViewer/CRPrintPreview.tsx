@@ -70,7 +70,9 @@ interface CRPrintPreviewProps {
 }
 
 export function CRPrintPreview({ onClose, initialPageMode = 'all' }: CRPrintPreviewProps) {
-  const { settings, updateSettings, addPrintJob, decrementPrintCount, printCountRemaining } = usePrintStore();
+  const { settings, updateSettings, addPrintJob, logPrintToApi, fetchPrintCount, printCountRemaining } = usePrintStore();
+  // Refresh the wallet balance from the website on open.
+  useEffect(() => { fetchPrintCount(); }, [fetchPrintCount]);
   const {
     currentLayout, currentPage, totalPages, totalImages,
     patientName, patientId, studyDate, setCurrentPage,
@@ -344,10 +346,32 @@ export function CRPrintPreview({ onClose, initialPageMode = 'all' }: CRPrintPrev
 
   const handlePrint = async () => {
     if (activePrinters.length === 0) { alert('No printers configured. Please add a printer in Config or Printer Settings.'); return; }
-    if (printCountRemaining <= 0) { alert('No prints remaining.'); return; }
     if (allPageCaptures.length === 0) { alert('Still capturing pages, please wait.'); return; }
+
     setPrinting(true);
     try {
+      // Wallet pre-flight — verify on the website BEFORE we print anything.
+      await fetchPrintCount();
+      const cost = Math.max(1, localCopies | 0);
+      const live = usePrintStore.getState().printCountRemaining;
+      if (live < cost) {
+        alert(`Not enough print credits (have ${live}, need ${cost}). Top up from the Mediview dashboard.`);
+        return;
+      }
+      const debit = await logPrintToApi({
+        patientId, patientName,
+        layoutType: `cr-${currentLayout.spots}-spot`,
+        credits: cost,
+      });
+      if (!debit.ok) {
+        alert(
+          debit.reason === 'insufficient'
+            ? `Print cancelled: balance ${debit.balance} < required ${cost}.`
+            : `Print cancelled: wallet update failed (${debit.reason || 'unknown'}).`
+        );
+        return;
+      }
+
       updateSettings({ paperSize: localPaperSize, orientation: localOrientation, copies: localCopies });
       const pagesToPrint = selectedPages();
       const htmlContent = buildPrintHtml(pagesToPrint);
@@ -373,13 +397,11 @@ export function CRPrintPreview({ onClose, initialPageMode = 'all' }: CRPrintPrev
       }
 
       if (!printStarted) {
-        alert('Printing could not be started. Check the selected printer and try again.');
+        alert('Printing could not be started after the wallet was debited. Contact support with your invoice to reverse the charge.');
         return;
       }
 
       addPrintJob({ patientName, studyDate, layout: `${currentLayout.spots} Spots`, copies: localCopies, paperSize: localPaperSize });
-      for (let i = 0; i < localCopies; i++) decrementPrintCount();
-      // Mark patient as printed — broadcast via IPC so all windows (including main) get the update
       if (electronAPI?.invoke) {
         electronAPI.invoke('mark-patient-printed', { patientId, patientName }).catch(() => {});
       }

@@ -24,12 +24,13 @@ const {
 const MAX_PDU_BYTES = 16 * 1024 * 1024;
 
 class DicomScp extends EventEmitter {
-  constructor({ aeTitle, port, storageDir, logger }) {
+  constructor({ aeTitle, port, storageDir, logger, bindHost }) {
     super();
     this.aeTitle = aeTitle;
     this.port = port;
     this.storageDir = storageDir;
     this.logger = logger || console;
+    this.bindHost = bindHost || '0.0.0.0';
     this.server = null;
   }
 
@@ -54,8 +55,8 @@ class DicomScp extends EventEmitter {
 
       this.server.maxConnections = 10;
 
-      this.server.listen(this.port, '0.0.0.0', () => {
-        this.logger.info(`[SCP] listening on ${this.aeTitle} port ${this.port} -> ${this.storageDir}`);
+      this.server.listen(this.port, this.bindHost, () => {
+        this.logger.info(`[SCP] listening on ${this.aeTitle} ${this.bindHost}:${this.port} -> ${this.storageDir}`);
         resolve();
       });
     });
@@ -106,6 +107,17 @@ class DicomScp extends EventEmitter {
       if (commandField === 0x0030) {
         this.logger.info(`[SCP ${this.aeTitle}] C-ECHO`);
         safeWrite(buildCEchoRSP(pcId, messageId));
+        // Emit ping so the slot history shows verification pings from
+        // modalities (e.g. `echoscu` from the CT/USG). Useful for confirming
+        // the network path before sending real studies.
+        this.emit('echo', {
+          aeTitle: this.aeTitle,
+          port: this.port,
+          callingAE: ctx.associationInfo?.callingAE || '',
+          remoteAddress: socket.remoteAddress || '',
+          remotePort:    socket.remotePort,
+          receivedAt: new Date().toISOString(),
+        });
       } else if (commandField === 0x0001) {
         const datasetData = Buffer.concat(ctx.currentCommand.dataFragments || []);
 

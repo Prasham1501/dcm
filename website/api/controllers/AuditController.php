@@ -11,7 +11,10 @@ class AuditController {
         $stmt = db()->prepare(
             "SELECT * FROM audit_logs WHERE account_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?"
         );
-        $stmt->execute([$req->user['account_id'], $limit, $off]);
+        $stmt->bindValue(1, $req->user['account_id'], PDO::PARAM_STR);
+        $stmt->bindValue(2, $limit, PDO::PARAM_INT);
+        $stmt->bindValue(3, $off,   PDO::PARAM_INT);
+        $stmt->execute();
         $logs = $stmt->fetchAll();
 
         $cstmt = db()->prepare("SELECT COUNT(*) FROM audit_logs WHERE account_id = ?");

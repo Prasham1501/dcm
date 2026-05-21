@@ -10,6 +10,7 @@ import { X, Printer, CheckCircle2, AlertTriangle } from 'lucide-react';
 import { generatePrintHtml } from '@/lib/reportPrintTemplate';
 import { useHospitalConfigStore } from '@/stores/hospitalConfigStore';
 import { useReportStore } from '@/stores/reportStore';
+import { usePrintStore } from '@/stores/printStore';
 
 interface PrintPreviewModalProps {
   title: string;
@@ -41,7 +42,12 @@ export function PrintPreviewModal({
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
   const { markReportPrinted, getReportPrintCount } = useReportStore();
+  const { logPrintToApi, fetchPrintCount } = usePrintStore();
   const printCount = reportId ? getReportPrintCount(reportId) : 0;
+
+  // Pull the latest wallet balance when this modal opens so the debit
+  // pre-flight sees up-to-date credits.
+  useEffect(() => { fetchPrintCount(); }, [fetchPrintCount]);
 
   // Generate preview HTML
   const previewHtml = useCallback(() => {
@@ -75,8 +81,32 @@ export function PrintPreviewModal({
     }
   }, [previewHtml]);
 
-  // Print using Electron's IPC (Chromium dialog with preview) or fallback to iframe print
+  // Print using Electron's IPC (Chromium dialog with preview) or fallback to iframe print.
+  // Wallet pre-flight + atomic debit happens BEFORE the print dialog opens so
+  // a Save-as-PDF still counts as a print and a 0 balance refuses to proceed.
   const doPrint = useCallback(async () => {
+    // 1) Refresh wallet from the website
+    await fetchPrintCount();
+    const live = usePrintStore.getState().printCountRemaining;
+    if (live < 1) {
+      alert('Not enough print credits to generate this report. Top up from the Mediview dashboard.');
+      return;
+    }
+    // 2) Atomic debit (1 credit per report print, regardless of paper / pages)
+    const debit = await logPrintToApi({
+      patientId, patientName,
+      layoutType: 'report-' + paperSize,
+      credits: 1,
+    });
+    if (!debit.ok) {
+      alert(
+        debit.reason === 'insufficient'
+          ? `Print cancelled: balance ${debit.balance} < required 1.`
+          : `Print cancelled: wallet update failed (${debit.reason || 'unknown'}).`
+      );
+      return;
+    }
+
     if (reportId) {
       markReportPrinted(reportId);
     }
@@ -100,7 +130,7 @@ export function PrintPreviewModal({
         setTimeout(() => w.print(), 400);
       }
     }
-  }, [previewHtml, reportId, markReportPrinted, paperSize]);
+  }, [previewHtml, reportId, markReportPrinted, paperSize, patientId, patientName, fetchPrintCount, logPrintToApi]);
 
   const handlePrint = useCallback(() => {
     if (printCount > 0 && !showReprintConfirm) {

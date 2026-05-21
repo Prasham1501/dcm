@@ -23,6 +23,55 @@ window.DICOM_VIEWER.PrintManager = class {
             headerStyle: 'full'
         };
         this.setupPrintButton();
+        // Expose the instance so the print-preview popup window can call
+        // back into us (printAndCharge) to debit the wallet.
+        window.DICOM_VIEWER.PrintManagerInstance = this;
+    }
+
+    /** How many physical pages will this print job span? */
+    estimatePageCount() {
+        const state = window.DICOM_VIEWER.STATE;
+        const total = state?.currentSeriesImages?.length || 1;
+        const [cols, rows] = (this.settings.layout || '2x2').split('x').map(n => parseInt(n, 10) || 1);
+        const perPage = Math.max(1, cols * rows);
+        let imagesToPrint = 1;
+        const range = this.settings.printRange;
+        if (range === 'all')         imagesToPrint = total;
+        else if (range === 'range')  imagesToPrint = Math.max(1, total); // upper bound — actual rerouted in dialog
+        else if (range === 'viewport') imagesToPrint = (document.querySelectorAll('.viewport canvas').length || 1);
+        return Math.max(1, Math.ceil(imagesToPrint / perPage));
+    }
+
+    /**
+     * Called from the preview-window Print button. Debits the wallet
+     * (atomic on the server), then fires the actual print only if the
+     * debit succeeded. If anything fails we never reach window.print().
+     */
+    async printAndCharge(previewWindow) {
+        const charge = this._pendingCharge;
+        const wallet = window.DICOM_VIEWER.PrintWallet;
+        if (!wallet || !charge) {
+            try { previewWindow.print(); } catch {}
+            return;
+        }
+        const res = await wallet.spend({
+            pages: charge.pages,
+            colorMode: charge.colorMode,
+            meta: 'Mediview viewer print',
+        });
+        if (!res.ok) {
+            const msg = res.reason === 'insufficient'
+                ? `Print cancelled: balance ${res.balance ?? 0} < required ${charge.cost}.`
+                : 'Print cancelled: wallet update failed (' + (res.reason || 'unknown') + ').';
+            this.showToast(msg, 'error');
+            try { previewWindow.close(); } catch {}
+            this._pendingCharge = null;
+            return;
+        }
+        // Server-side credit reserved. Fire the print.
+        try { previewWindow.print(); } catch {}
+        this.showToast(`Print charged. Remaining balance: ${res.balance}`, 'success');
+        this._pendingCharge = null;
     }
 
     setupPrintButton() {
@@ -584,7 +633,7 @@ window.DICOM_VIEWER.PrintManager = class {
 
     async executePrint(previewOnly = false) {
         const state = window.DICOM_VIEWER.STATE;
-        
+
         // Collect settings from dialog
         this.settings.printRange = document.querySelector('input[name="printRange"]:checked')?.value || 'current';
         this.settings.layout = document.getElementById('printLayout')?.value || '2x2';
@@ -598,6 +647,23 @@ window.DICOM_VIEWER.PrintManager = class {
         this.settings.includeAnnotations = document.getElementById('printAnnotations')?.checked ?? true;
         this.settings.includeWindowLevel = document.getElementById('printWindowLevel')?.checked ?? true;
         this.settings.includeScalebar = document.getElementById('printScalebar')?.checked ?? false;
+
+        // ── Wallet gating ─────────────────────────────────────────────────
+        // For real prints (not just preview), verify the user has enough
+        // print credits on the website wallet BEFORE we render anything.
+        // The actual debit happens after the print fires, in printAndCharge().
+        if (!previewOnly) {
+            const pageCount = this.estimatePageCount();
+            const wallet = window.DICOM_VIEWER.PrintWallet;
+            if (wallet) {
+                const check = await wallet.canPrint({ pages: pageCount, colorMode: this.settings.colorMode });
+                if (!check.allowed) {
+                    this.showToast(check.message, 'error');
+                    return;
+                }
+                this._pendingCharge = { pages: pageCount, colorMode: this.settings.colorMode, balance: check.balance, cost: check.cost };
+            }
+        }
 
         // Show loading indicator
         this.showLoadingModal('Preparing images for printing...', 0);
@@ -1003,7 +1069,7 @@ window.DICOM_VIEWER.PrintManager = class {
     <div class="print-toolbar no-print">
         <h4><span style="color: #0d6efd;">●</span> Print Preview - ${capturedImages.length} images</h4>
         <div class="btn-group">
-            <button class="btn-print" onclick="window.print()">
+            <button class="btn-print" onclick="window.opener && window.opener.DICOM_VIEWER && window.opener.DICOM_VIEWER.PrintManagerInstance ? window.opener.DICOM_VIEWER.PrintManagerInstance.printAndCharge(window) : window.print()">
                 <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
                     <path d="M2.5 8a.5.5 0 1 0 0-1 .5.5 0 0 0 0 1z"/>
                     <path d="M5 1a2 2 0 0 0-2 2v2H2a2 2 0 0 0-2 2v3a2 2 0 0 0 2 2h1v1a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2v-1h1a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-1V3a2 2 0 0 0-2-2H5zM4 3a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2H4V3zm1 5a2 2 0 0 0-2 2v1H2a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1h-1v-1a2 2 0 0 0-2-2H5zm7 2v3a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-3a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1z"/>

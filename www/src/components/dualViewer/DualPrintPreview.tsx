@@ -90,7 +90,9 @@ const MM_TO_PX = 3.7795275591;
 interface DualPrintPreviewProps { onClose: () => void; }
 
 export function DualPrintPreview({ onClose }: DualPrintPreviewProps) {
-  const { settings, updateSettings, addPrintJob, decrementPrintCount, printCountRemaining } = usePrintStore();
+  const { settings, updateSettings, addPrintJob, logPrintToApi, fetchPrintCount, printCountRemaining } = usePrintStore();
+  // Refresh the wallet balance from the website on open.
+  useEffect(() => { fetchPrintCount(); }, [fetchPrintCount]);
   const { panels, setPanelPage, dualFooterEnabled, dualFooterLayout, dualFooterFontSize, dualFooterFontColor, dualFooterBgColor, dualFooterBorderTopColor, dualFooterCustomLeft, dualFooterCustomCenter, dualFooterCustomRight } = useDualViewerStore();
   const hospitalConfig = useHospitalConfigStore();
 
@@ -396,10 +398,33 @@ export function DualPrintPreview({ onClose }: DualPrintPreviewProps) {
 
   const handlePrint = async () => {
     if (activePrinters.length === 0) { alert('No printers configured. Please add a printer in Config or Printer Settings.'); return; }
-    if (printCountRemaining <= 0) { alert('No prints remaining.'); return; }
     if (allLeftCaptures.length === 0 && allRightCaptures.length === 0) { alert('Still capturing pages, please wait.'); return; }
+
     setPrinting(true);
     try {
+      // Wallet pre-flight — verify on the website BEFORE we print anything.
+      await fetchPrintCount();
+      const cost = Math.max(1, localCopies | 0);
+      const live = usePrintStore.getState().printCountRemaining;
+      if (live < cost) {
+        alert(`Not enough print credits (have ${live}, need ${cost}). Top up from the Mediview dashboard.`);
+        return;
+      }
+      const debit = await logPrintToApi({
+        patientId: leftPanel.patientId,
+        patientName: leftPanel.patientName + ' vs ' + rightPanel.patientName,
+        layoutType: 'dual',
+        credits: cost,
+      });
+      if (!debit.ok) {
+        alert(
+          debit.reason === 'insufficient'
+            ? `Print cancelled: balance ${debit.balance} < required ${cost}.`
+            : `Print cancelled: wallet update failed (${debit.reason || 'unknown'}).`
+        );
+        return;
+      }
+
       updateSettings({ paperSize: localPaperSize, orientation: localOrientation, copies: localCopies });
       const pagesToPrint = selectedPages();
       const htmlContent = buildPrintHtml(pagesToPrint);
@@ -425,15 +450,13 @@ export function DualPrintPreview({ onClose }: DualPrintPreviewProps) {
       }
 
       if (!printStarted) {
-        alert('Printing could not be started. Check the selected printer and try again.');
+        alert('Printing could not be started after the wallet was debited. Contact support with your invoice to reverse the charge.');
         return;
       }
 
       const jobName = leftPanel.patientName + ' vs ' + rightPanel.patientName;
       const jobLayout = 'Dual ' + leftPanel.currentLayout.spots + '+' + rightPanel.currentLayout.spots;
       addPrintJob({ patientName: jobName, studyDate: leftPanel.studyDate, layout: jobLayout, copies: localCopies, paperSize: localPaperSize });
-      for (let i = 0; i < localCopies; i++) decrementPrintCount();
-      // Mark patient as printed — broadcast via IPC so all windows (including main) get the update
       if (electronAPI?.invoke) {
         electronAPI.invoke('mark-patient-printed', { patientId: leftPanel.patientId, patientName: leftPanel.patientName }).catch(() => {});
       }

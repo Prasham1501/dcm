@@ -48,9 +48,15 @@ const DEFAULT_BRANDING = {
   headerBgColor: '#8c2c2c',
   headerBorderBottomColor: '#6d81ab',
 
-  // Footer
+  // Footer — each slot is an array of items, rendered top-to-bottom so the
+  // user can stack things like phone + email + website in the same column.
   enableFooter: true,
-  footerLayout: { left: 'name', center: 'custom', right: 'address' },
+  footerLayout: {
+    left:   [{ type: 'name' }],
+    center: [{ type: 'address' }],
+    right:  [{ type: 'phone' }, { type: 'website' }],
+  },
+  // Legacy single-string fields kept only so older migrations don't blow up.
   customFooterLeft: '',
   customFooterCenter: '',
   customFooterRight: '',

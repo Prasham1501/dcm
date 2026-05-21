@@ -22,9 +22,25 @@ contextBridge.exposeInMainWorld('bridgeAPI', {
   // Status
   getSlotStatus: () => ipcRenderer.invoke('bridge:get-slot-status'),
   getStartupStatus: () => ipcRenderer.invoke('bridge:get-startup-status'),
+  // Local LAN IPv4(s) so the user can show modalities where to send DICOM.
+  getLocalIps: () => ipcRenderer.invoke('bridge:get-local-ips'),
 
   // Logs
   getLogTail: (n) => ipcRenderer.invoke('bridge:get-log-tail', n),
+  getSlotHistory: (q) => ipcRenderer.invoke('bridge:get-slot-history', q),
+
+  // Per-slot print quota
+  setSlotQuota: (q) => ipcRenderer.invoke('bridge:set-slot-quota', q),
+  onConfigChanged: (cb) => {
+    const sub = (_e, cfg) => cb(cfg);
+    ipcRenderer.on('bridge:config-changed', sub);
+    return () => ipcRenderer.removeListener('bridge:config-changed', sub);
+  },
+  onOpenQuotaSettings: (cb) => {
+    const sub = () => cb();
+    ipcRenderer.on('bridge:open-quota-settings', sub);
+    return () => ipcRenderer.removeListener('bridge:open-quota-settings', sub);
+  },
   onLogLine: (callback) => {
     const sub = (_event, line) => callback(line);
     ipcRenderer.on('bridge:log-line', sub);
@@ -51,4 +67,16 @@ contextBridge.exposeInMainWorld('bridgeAPI', {
   // Branding
   saveBranding: (branding) => ipcRenderer.invoke('bridge:save-branding', branding),
   pickAndEncodeLogo: () => ipcRenderer.invoke('bridge:pick-and-encode-logo'),
+
+  // Auto-update — admin uploads a Bridge release on the website; we poll
+  // /release/check, surface a system notification, and show a non-dismissible
+  // modal in the config window when force_update is on.
+  checkForUpdate:           () => ipcRenderer.invoke('bridge:check-for-update'),
+  getUpdateInfo:            () => ipcRenderer.invoke('bridge:get-update-info'),
+  downloadAndInstallUpdate: (downloadUrl) => ipcRenderer.invoke('bridge:download-and-install-update', { downloadUrl }),
+  onUpdateInfo: (callback) => {
+    const sub = (_e, info) => callback(info);
+    ipcRenderer.on('bridge:update-info', sub);
+    return () => ipcRenderer.removeListener('bridge:update-info', sub);
+  },
 });

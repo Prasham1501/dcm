@@ -3,38 +3,40 @@ import { Trash2, Power, Save } from 'lucide-react';
 import type { PrinterSlot } from '@/types/bridge';
 import { useConfigStore } from '@/stores/configStore';
 import { PrinterPicker } from './PrinterPicker';
-import { LayoutPicker } from './LayoutPicker';
-import { findLayoutById } from '@/lib/layouts';
 
 const PAPER_OPTIONS = ['A3', 'A4', 'A5', 'Letter', 'Legal'] as const;
 
 interface Props {
   slot: PrinterSlot;
   index: number;
+  /** Called after a successful save. The parent (modal) uses this to close. */
+  onSaved?: () => void;
+  /** Called after the slot is deleted. */
+  onRemoved?: () => void;
 }
 
-export function SlotCard({ slot, index }: Props) {
+export function SlotCard({ slot, index, onSaved, onRemoved }: Props) {
   const [draft, setDraft] = useState<PrinterSlot>(slot);
   const [errors, setErrors] = useState<string[]>([]);
-  const [showPicker, setShowPicker] = useState(false);
   const upsert = useConfigStore((s) => s.upsertSlot);
   const remove = useConfigStore((s) => s.removeSlot);
   const slotStatus = useConfigStore((s) => s.slotStatus);
 
   const status = slotStatus.find((st) => st.slotId === slot.id);
   const dirty = JSON.stringify(draft) !== JSON.stringify(slot);
-  const layout = findLayoutById(draft.layoutId);
 
   const update = (patch: Partial<PrinterSlot>) => setDraft({ ...draft, ...patch });
 
   async function save() {
     const r = await upsert(draft);
     setErrors(r.errors || []);
+    if (r.ok) onSaved?.();
   }
 
   async function remove_() {
     if (!confirm(`Remove ${slot.name}?`)) return;
     await remove(slot.id);
+    onRemoved?.();
   }
 
   return (
@@ -70,12 +72,28 @@ export function SlotCard({ slot, index }: Props) {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-x-4 gap-y-2 p-3 text-xs">
+      <div className="grid grid-cols-3 gap-x-4 gap-y-2 p-3 text-xs">
         <Field label="AE Title">
           <input
             value={draft.aeTitle}
             maxLength={16}
             onChange={(e) => update({ aeTitle: e.target.value.toUpperCase() })}
+            className="w-full rounded border border-app-border bg-app-bg px-2 py-1 font-mono text-xs text-app-text"
+          />
+        </Field>
+        <Field label="Bind IP">
+          {/* Lets the user pin the listener to a specific NIC on multi-network
+              hospital LANs. Empty = bind to all interfaces (0.0.0.0). The
+              raw string is kept while editing so users can fully clear the
+              field; the default is applied only on save / blur. */}
+          <input
+            value={draft.bindHost ?? ''}
+            onChange={(e) => update({ bindHost: e.target.value })}
+            onBlur={(e) => {
+              const v = e.target.value.trim();
+              if (!v) update({ bindHost: '0.0.0.0' });
+            }}
+            placeholder="0.0.0.0 (all interfaces)"
             className="w-full rounded border border-app-border bg-app-bg px-2 py-1 font-mono text-xs text-app-text"
           />
         </Field>
@@ -92,7 +110,7 @@ export function SlotCard({ slot, index }: Props) {
           <PrinterPicker value={draft.windowsPrinterName} onChange={(name) => update({ windowsPrinterName: name })} />
         </Field>
 
-        <Field label="Paper">
+        <Field label="Paper" full>
           <select
             value={draft.paperSize}
             onChange={(e) => update({ paperSize: e.target.value as any })}
@@ -100,55 +118,6 @@ export function SlotCard({ slot, index }: Props) {
           >
             {PAPER_OPTIONS.map((p) => <option key={p} value={p}>{p}</option>)}
           </select>
-        </Field>
-        <Field label="Copies">
-          <input
-            type="number"
-            min={1}
-            max={10}
-            value={draft.copies}
-            onChange={(e) => update({ copies: parseInt(e.target.value, 10) || 1 })}
-            className="w-full rounded border border-app-border bg-app-bg px-2 py-1 text-xs text-app-text"
-          />
-        </Field>
-
-        <Field label="Layout" full>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => update({ layoutId: 'auto' })}
-              className={`rounded border px-2 py-1 text-xs font-semibold ${
-                draft.layoutId === 'auto'
-                  ? 'border-app-accent bg-app-accent text-white'
-                  : 'border-app-border text-app-text-secondary hover:bg-app-hover'
-              }`}
-            >
-              Auto
-            </button>
-            <span className="rounded border border-app-border bg-app-bg px-2 py-1 font-mono text-xs text-app-text">
-              {draft.layoutId === 'auto' ? 'Auto (best fit)' : `${draft.layoutId} (${layout?.spots ?? '?'} spots)`}
-            </span>
-            <button
-              onClick={() => setShowPicker(true)}
-              className="rounded border border-app-accent px-2 py-1 text-xs font-semibold text-app-accent hover:bg-app-accent hover:text-white"
-            >
-              Choose…
-            </button>
-            {draft.layoutId !== 'auto' && (
-              <span className="text-2xs text-app-text-muted">
-                Falls back to auto when image count exceeds {layout?.spots} spots
-              </span>
-            )}
-          </div>
-        </Field>
-
-        <Field label="Study debounce (s)">
-          <input
-            type="number"
-            min={1}
-            value={draft.studyDebounceSeconds}
-            onChange={(e) => update({ studyDebounceSeconds: parseInt(e.target.value, 10) || 1 })}
-            className="w-full rounded border border-app-border bg-app-bg px-2 py-1 text-xs text-app-text"
-          />
         </Field>
       </div>
 
@@ -174,21 +143,15 @@ export function SlotCard({ slot, index }: Props) {
           <Save className="h-3 w-3" /> Save & Apply
         </button>
       </div>
-
-      {showPicker && (
-        <LayoutPicker
-          selectedId={draft.layoutId}
-          onSelect={(id) => update({ layoutId: id })}
-          onClose={() => setShowPicker(false)}
-        />
-      )}
     </div>
   );
 }
 
 function Field({ label, children, full = false }: { label: string; children: React.ReactNode; full?: boolean }) {
+  // `full` means "span the whole row" regardless of grid column count
+  // (the parent uses 3 cols now).
   return (
-    <label className={`flex flex-col gap-1 ${full ? 'col-span-2' : ''}`}>
+    <label className={`flex flex-col gap-1 ${full ? 'col-span-3' : ''}`}>
       <span className="text-2xs font-semibold uppercase tracking-wide text-app-text-muted">{label}</span>
       {children}
     </label>

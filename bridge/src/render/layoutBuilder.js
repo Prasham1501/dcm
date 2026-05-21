@@ -218,7 +218,7 @@ function buildPrintHtml({ slot, images, metadata, branding }) {
     if (hasFooter) {
       footerSection = `<div class="brand-ftr">${brandedFooterHtml}</div>`;
     } else if (!hasBranding) {
-      footerSection = `<footer class="ftr">Accurate Bridge - Slot: ${escapeHtml(slot.name)} - ${escapeHtml(slot.aeTitle)} - Layout: ${escapeHtml(layout.id)} - Page ${pageIdx + 1} / ${pages.length}</footer>`;
+      footerSection = `<footer class="ftr">Mediview Bridge - Slot: ${escapeHtml(slot.name)} - ${escapeHtml(slot.aeTitle)} - Layout: ${escapeHtml(layout.id)} - Page ${pageIdx + 1} / ${pages.length}</footer>`;
     }
 
     return `

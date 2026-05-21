@@ -40,11 +40,39 @@
 
 <!-- Environment config (override these per environment) -->
 <script>
-  window.MEDIVIEW_API_BASE = '/mediview/api'; // absolute: 'https://mehrgrewal.com/mediview/api'
-  window.MEDIVIEW_API_MODE = 'live'; // 'live' | 'mock'
+  const isLocalDashboard = ['localhost', '127.0.0.1', '::1'].includes(window.location.hostname);
+  window.MEDIVIEW_API_BASE = isLocalDashboard ? 'http://127.0.0.1:8092' : '/mediview/api'; // hosted path: 'https://mehrgrewal.com/mediview/api'
+  window.MEDIVIEW_API_MODE = isLocalDashboard ? (localStorage.getItem('mv:mode') || 'mock') : 'live'; // 'live' | 'mock'
+
+  // Impersonation handoff — when a super-admin opens this tab with ?imp=<token>,
+  // adopt that bearer for this tab only and show a banner.
+  (function () {
+    try {
+      var qs = new URLSearchParams(location.search);
+      var imp = qs.get('imp');
+      if (imp) {
+        sessionStorage.setItem('mv:imp', '1');
+        localStorage.setItem('mv:token', imp);
+        localStorage.removeItem('mv:user'); // force /me re-fetch
+        history.replaceState(null, '', location.pathname + location.hash);
+        window.addEventListener('DOMContentLoaded', function () {
+          var bar = document.createElement('div');
+          bar.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9999;background:#f59e0b;color:#0f172a;padding:8px 14px;font:600 12px/1.4 system-ui;display:flex;justify-content:space-between;align-items:center;box-shadow:0 1px 4px rgba(0,0,0,.2)';
+          bar.innerHTML = '<span>⚠ Impersonating — actions count as this user. Close this tab when done.</span><button id="mv-stop-imp" style="background:#0f172a;color:#fff;border:0;padding:5px 10px;border-radius:4px;font-weight:600;cursor:pointer">Stop &amp; close</button>';
+          document.body.appendChild(bar);
+          document.body.style.paddingTop = '40px';
+          document.getElementById('mv-stop-imp').onclick = function () {
+            localStorage.removeItem('mv:token');
+            localStorage.removeItem('mv:user');
+            window.close();
+          };
+        });
+      }
+    } catch (e) { /* ignore */ }
+  })();
 </script>
 
-<link rel="stylesheet" href="styles.css" />
+<link rel="stylesheet" href="styles.css?v=20260521a" />
 <style>
   :root { --line: rgb(226 232 240); --muted: rgb(100 116 139); }
   .dark { --line: rgb(255 255 255 / 0.08); --muted: rgb(148 163 184); }
@@ -67,33 +95,33 @@
 <div id="root"></div>
 
 <!-- Shared icons & primitives from main site -->
-<script type="text/babel" data-presets="env,react" src="components/icons.jsx"></script>
+<script type="text/babel" data-presets="env,react" src="components/icons.jsx?v=20260521a"></script>
 
 <!-- API + payments -->
-<script src="dashboard/api.js"></script>
-<script src="dashboard/razorpay.js"></script>
+<script src="dashboard/api.js?v=20260521a"></script>
+<script src="dashboard/razorpay.js?v=20260521a"></script>
 
 <!-- Auth context + pages -->
-<script type="text/babel" data-presets="env,react" src="dashboard/auth-context.jsx"></script>
-<script type="text/babel" data-presets="env,react" src="dashboard/auth-pages.jsx"></script>
+<script type="text/babel" data-presets="env,react" src="dashboard/auth-context.jsx?v=20260521a"></script>
+<script type="text/babel" data-presets="env,react" src="dashboard/auth-pages.jsx?v=20260521a"></script>
 
 <!-- UI primitives + shell -->
-<script type="text/babel" data-presets="env,react" src="dashboard/dash-ui.jsx"></script>
-<script type="text/babel" data-presets="env,react" src="dashboard/dash-shell.jsx"></script>
+<script type="text/babel" data-presets="env,react" src="dashboard/dash-ui.jsx?v=20260521a"></script>
+<script type="text/babel" data-presets="env,react" src="dashboard/dash-shell.jsx?v=20260521a"></script>
 
 <!-- Recharge flows -->
-<script type="text/babel" data-presets="env,react" src="dashboard/print-recharge.jsx"></script>
-<script type="text/babel" data-presets="env,react" src="dashboard/ai-recharge.jsx"></script>
+<script type="text/babel" data-presets="env,react" src="dashboard/print-recharge.jsx?v=20260521a"></script>
+<script type="text/babel" data-presets="env,react" src="dashboard/ai-recharge.jsx?v=20260521a"></script>
 
 <!-- Pages -->
-<script type="text/babel" data-presets="env,react" src="dashboard/pages-overview.jsx"></script>
-<script type="text/babel" data-presets="env,react" src="dashboard/pages-rest.jsx"></script>
+<script type="text/babel" data-presets="env,react" src="dashboard/pages-overview.jsx?v=20260521a"></script>
+<script type="text/babel" data-presets="env,react" src="dashboard/pages-rest.jsx?v=20260521a"></script>
 
 <!-- Chat widget -->
-<script type="text/babel" data-presets="env,react" src="dashboard/chat-widget.jsx"></script>
+<script type="text/babel" data-presets="env,react" src="dashboard/chat-widget.jsx?v=20260521a"></script>
 
 <!-- Admin shell (super_admin only) -->
-<script type="text/babel" data-presets="env,react" src="dashboard/admin-shell.jsx"></script>
+<script type="text/babel" data-presets="env,react" src="dashboard/admin-shell.jsx?v=20260521a"></script>
 
 <!-- App router -->
 <script type="text/babel" data-presets="env,react">
@@ -124,7 +152,6 @@ const ROUTES = {
   '#/dashboard/bugs':         () => <PageBugs/>,
   '#/dashboard/team':         () => <PageTeam/>,
   '#/dashboard/analytics':    () => <PageAnalytics/>,
-  '#/dashboard/audit':        () => <PageAudit/>,
   '#/dashboard/referrals':    () => <PageReferrals/>,
   '#/dashboard/settings':     () => <PageSettings/>,
   '#/dashboard/admin':        () => (typeof AdminShell !== 'undefined' ? <AdminShell/> : <PageOverview/>),
@@ -147,16 +174,33 @@ const publicRoutes = [
 
 const Router = () => {
   const hash    = useHashRoute();
-  const { isAuthed } = useAuth();
+  const { isAuthed, user } = useAuth();
   const route   = hash.split('?')[0];
+  // Super-admin lives in the operator console — never the user-side pages.
+  // The exception is impersonation: when an admin opens a user's dashboard
+  // via the Accounts → Impersonate flow, the bootstrap stores mv:imp=1 in
+  // sessionStorage so we let them see the user view *in that tab only*.
+  const isSuperAdmin = isAuthed && user?.role === 'super_admin';
+  const isImpersonating = typeof sessionStorage !== 'undefined' && sessionStorage.getItem('mv:imp') === '1';
+  const adminOnly = isSuperAdmin && !isImpersonating;
 
   useEffect(() => {
     if (!isAuthed && !publicRoutes.includes(route)) window.location.hash = '#/dashboard/login';
-    else if (isAuthed && publicRoutes.includes(route)) window.location.hash = '#/dashboard';
-  }, [isAuthed, route]);
+    else if (isAuthed && publicRoutes.includes(route)) {
+      window.location.hash = adminOnly ? '#/dashboard/admin' : '#/dashboard';
+    } else if (adminOnly && !route.startsWith('#/dashboard/admin')) {
+      window.location.hash = '#/dashboard/admin';
+    }
+  }, [isAuthed, route, adminOnly]);
 
   if (!isAuthed && !publicRoutes.includes(route)) return null;
   if (isAuthed && publicRoutes.includes(route)) return null;
+  if (adminOnly && !route.startsWith('#/dashboard/admin')) return null;
+
+  // '#/dashboard/admin/<section>' is owned by AdminShell which handles its own subnav.
+  if (route.startsWith('#/dashboard/admin')) {
+    return typeof AdminShell !== 'undefined' ? <AdminShell route={route}/> : <PageOverview/>;
+  }
 
   const Page = ROUTES[route] || ROUTES['#/dashboard'];
   return <Page/>;

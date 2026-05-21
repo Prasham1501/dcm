@@ -25,7 +25,8 @@ class SlotManager extends EventEmitter {
     for (const [slotId, scp] of this.scps.entries()) {
       const slot = slots.find((s) => s.id === slotId);
       if (!wanted.has(slotId) || !slot ||
-          slot.aeTitle !== scp.aeTitle || slot.port !== scp.port) {
+          slot.aeTitle !== scp.aeTitle || slot.port !== scp.port ||
+          (slot.bindHost || '0.0.0.0') !== scp.bindHost) {
         await scp.stop();
         this.scps.delete(slotId);
       }
@@ -44,6 +45,7 @@ class SlotManager extends EventEmitter {
     const scp = new DicomScp({
       aeTitle: slot.aeTitle,
       port: slot.port,
+      bindHost: slot.bindHost || '0.0.0.0',
       storageDir,
       logger: this.logger,
     });
@@ -65,6 +67,10 @@ class SlotManager extends EventEmitter {
 
     scp.on('error', (err) => {
       this.emit('slot-error', { slot, error: err.message });
+    });
+
+    scp.on('echo', (info) => {
+      this.emit('echo', { slot, info });
     });
 
     try {
