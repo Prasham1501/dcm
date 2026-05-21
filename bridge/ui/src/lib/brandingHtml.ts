@@ -71,6 +71,34 @@ function renderFooterStack(slotValue: any, customLegacy: string, cfg: HospitalBr
   return items.map((it) => renderFooterItem(it, cfg)).filter(Boolean).join('');
 }
 
+/** Build the three footer columns from the per-field placement matrix
+ *  (`footerSlotName` / `footerSlotPhone` / …).  Items in the same slot stack
+ *  in this canonical order so users don't have to think about ordering. */
+const FOOTER_FIELD_ORDER: { key: string; type: string }[] = [
+  { key: 'footerSlotLogo',     type: 'logo' },
+  { key: 'footerSlotName',     type: 'name' },
+  { key: 'footerSlotServices', type: 'services' },
+  { key: 'footerSlotAddress',  type: 'address' },
+  { key: 'footerSlotPhone',    type: 'phone' },
+  { key: 'footerSlotEmail',    type: 'email' },
+  { key: 'footerSlotWebsite',  type: 'website' },
+];
+function footerItemsFromPlacement(cfg: HospitalBranding):
+    { left: { type: string; customText?: string }[]; center: any[]; right: any[] } | null {
+  const anySet = FOOTER_FIELD_ORDER.some((f) => (cfg as any)[f.key] && (cfg as any)[f.key] !== 'none');
+  const hasCustom = !!(cfg.customFooterLeft || cfg.customFooterCenter || cfg.customFooterRight);
+  if (!anySet && !hasCustom) return null;
+  const out: any = { left: [], center: [], right: [] };
+  for (const f of FOOTER_FIELD_ORDER) {
+    const slot = (cfg as any)[f.key];
+    if (slot && slot !== 'none' && out[slot]) out[slot].push({ type: f.type });
+  }
+  if (cfg.customFooterLeft)   out.left.push({   type: 'custom', customText: cfg.customFooterLeft });
+  if (cfg.customFooterCenter) out.center.push({ type: 'custom', customText: cfg.customFooterCenter });
+  if (cfg.customFooterRight)  out.right.push({  type: 'custom', customText: cfg.customFooterRight });
+  return out;
+}
+
 export function buildBrandHeaderHtml(cfg: HospitalBranding): string {
   if (!cfg || !cfg.hospitalName) return '';
 
@@ -85,10 +113,18 @@ export function buildBrandHeaderHtml(cfg: HospitalBranding): string {
     ? `<img src="${cfg.logoDataUrl}" style="height:${logoSize}px;max-width:${Math.round(logoSize * 1.8)}px;width:auto;object-fit:contain;display:block" />`
     : '';
 
+  // Per-field header visibility. Falls back to the legacy master
+  // `headerShowContact` flag when the per-field props haven't been set yet
+  // (older saved configs); user can later toggle Phone/Email/Website
+  // individually to push any one of them to footer-only.
+  const masterContact = cfg.headerShowContact !== false;
+  const showPhone   = (cfg as any).headerShowPhone   ?? masterContact;
+  const showEmail   = (cfg as any).headerShowEmail   ?? masterContact;
+  const showWebsite = (cfg as any).headerShowWebsite ?? masterContact;
   const contactParts: string[] = [];
-  if (cfg.phone) contactParts.push(`<span style="display:inline-flex;align-items:center;gap:3px">${HEADER_ICONS.phone}<span>${esc(cfg.phone)}</span></span>`);
-  if (cfg.email) contactParts.push(`<span style="display:inline-flex;align-items:center;gap:3px">${HEADER_ICONS.email}<span>${esc(cfg.email)}</span></span>`);
-  if (cfg.website) contactParts.push(`<span style="display:inline-flex;align-items:center;gap:3px">${HEADER_ICONS.globe}<span>${esc(cfg.website)}</span></span>`);
+  if (showPhone   && cfg.phone)   contactParts.push(`<span style="display:inline-flex;align-items:center;gap:3px">${HEADER_ICONS.phone}<span>${esc(cfg.phone)}</span></span>`);
+  if (showEmail   && cfg.email)   contactParts.push(`<span style="display:inline-flex;align-items:center;gap:3px">${HEADER_ICONS.email}<span>${esc(cfg.email)}</span></span>`);
+  if (showWebsite && cfg.website) contactParts.push(`<span style="display:inline-flex;align-items:center;gap:3px">${HEADER_ICONS.globe}<span>${esc(cfg.website)}</span></span>`);
   const contactFs = cfg.headerContactFontSize || 9;
   const contactCol = cfg.headerContactColor || '#333';
   const contactAlign = cfg.headerContactAlign || 'left';
@@ -144,7 +180,11 @@ export function buildBrandHeaderHtml(cfg: HospitalBranding): string {
 
 export function buildFooterHtml(cfg: HospitalBranding): string {
   if (!cfg) return '';
-  const fl: any = cfg.footerLayout || { left: [], center: [], right: [] };
+  // Prefer the per-field placement matrix when it's been touched; fall
+  // back to the legacy free-form footerLayout so older configs still work
+  // until they're re-saved through the new UI.
+  const placed = footerItemsFromPlacement(cfg);
+  const fl: any = placed || cfg.footerLayout || { left: [], center: [], right: [] };
   const l = renderFooterStack(fl.left,   (cfg as any).customFooterLeft   || '', cfg);
   const c = renderFooterStack(fl.center, (cfg as any).customFooterCenter || '', cfg);
   const r = renderFooterStack(fl.right,  (cfg as any).customFooterRight  || '', cfg);

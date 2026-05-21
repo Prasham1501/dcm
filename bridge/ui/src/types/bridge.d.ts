@@ -1,4 +1,6 @@
 export type PaperSize = 'A3' | 'A4' | 'A5' | 'Letter' | 'Legal';
+/** Where a footer field appears (or 'none' to hide). */
+export type FooterSlotPos = 'none' | 'left' | 'center' | 'right';
 /** Legacy single-item slot type. Migrations expand it to an array. */
 export type PrintSlotContent =
   | 'logo' | 'name' | 'services' | 'address' | 'phone' | 'email' | 'website' | 'custom' | 'none';
@@ -56,6 +58,12 @@ export interface HospitalBranding {
   headerAddressColor: string;
   headerAddressAlign: 'left' | 'center' | 'right';
   headerShowContact: boolean;
+  /** Per-field header visibility — lets the user hide e.g. Website from the
+   *  header while still showing it in the footer via the slot picker. When
+   *  undefined, the legacy `headerShowContact` master flag applies to all. */
+  headerShowPhone?:   boolean;
+  headerShowEmail?:   boolean;
+  headerShowWebsite?: boolean;
   headerContactFontSize: number;
   headerContactColor: string;
   headerContactAlign: 'left' | 'center' | 'right';
@@ -64,12 +72,24 @@ export interface HospitalBranding {
 
   // Footer
   enableFooter: boolean;
-  footerLayout: HeaderFooterLayout;
-  /** @deprecated kept for legacy migrations only; new layout uses
-   *  `footerLayout[slot][n].customText` instead. */
-  customFooterLeft?: string;
+  /** Per-field footer placement — single source of truth for the new UI.
+   *  Each field is either 'none' or pinned to a footer column. When a slot
+   *  has multiple fields they stack in canonical order (logo, name,
+   *  services, address, phone, email, website, custom). */
+  footerSlotName?:     FooterSlotPos;
+  footerSlotServices?: FooterSlotPos;
+  footerSlotAddress?:  FooterSlotPos;
+  footerSlotPhone?:    FooterSlotPos;
+  footerSlotEmail?:    FooterSlotPos;
+  footerSlotWebsite?:  FooterSlotPos;
+  footerSlotLogo?:     FooterSlotPos;
+  /** Custom strings — show in their respective slots when non-empty. */
+  customFooterLeft?:   string;
   customFooterCenter?: string;
-  customFooterRight?: string;
+  customFooterRight?:  string;
+  /** Legacy free-form layout. Kept so old saved configs still render
+   *  until they're re-saved through the new UI. */
+  footerLayout: HeaderFooterLayout;
   footerFontSize: number;
   footerFontColor: string;
   footerBgColor: string;

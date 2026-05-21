@@ -58,6 +58,30 @@ function renderFooterStack(slotValue, customLegacy, cfg) {
   return items.map((it) => renderFooterItem(it, cfg)).filter(Boolean).join('');
 }
 
+const FOOTER_FIELD_ORDER = [
+  { key: 'footerSlotLogo',     type: 'logo' },
+  { key: 'footerSlotName',     type: 'name' },
+  { key: 'footerSlotServices', type: 'services' },
+  { key: 'footerSlotAddress',  type: 'address' },
+  { key: 'footerSlotPhone',    type: 'phone' },
+  { key: 'footerSlotEmail',    type: 'email' },
+  { key: 'footerSlotWebsite',  type: 'website' },
+];
+function footerItemsFromPlacement(cfg) {
+  const anySet = FOOTER_FIELD_ORDER.some((f) => cfg[f.key] && cfg[f.key] !== 'none');
+  const hasCustom = !!(cfg.customFooterLeft || cfg.customFooterCenter || cfg.customFooterRight);
+  if (!anySet && !hasCustom) return null;
+  const out = { left: [], center: [], right: [] };
+  for (const f of FOOTER_FIELD_ORDER) {
+    const slot = cfg[f.key];
+    if (slot && slot !== 'none' && out[slot]) out[slot].push({ type: f.type });
+  }
+  if (cfg.customFooterLeft)   out.left.push({   type: 'custom', customText: cfg.customFooterLeft });
+  if (cfg.customFooterCenter) out.center.push({ type: 'custom', customText: cfg.customFooterCenter });
+  if (cfg.customFooterRight)  out.right.push({  type: 'custom', customText: cfg.customFooterRight });
+  return out;
+}
+
 /**
  * Build the branded header HTML — verbatim port of DCM's buildBrandHeaderHtml().
  */
@@ -75,10 +99,17 @@ function buildBrandHeaderHtml(cfg) {
     ? `<img src="${cfg.logoDataUrl}" style="height:${logoSize}px;max-width:${Math.round(logoSize * 1.8)}px;width:auto;object-fit:contain;display:block" />`
     : '';
 
+  // Per-field header visibility (falls back to the master flag for legacy
+  // configs). Lets the user hide e.g. Website from the header while still
+  // listing it in the footer via the slot picker.
+  const masterContact = cfg.headerShowContact !== false;
+  const showPhone   = cfg.headerShowPhone   == null ? masterContact : !!cfg.headerShowPhone;
+  const showEmail   = cfg.headerShowEmail   == null ? masterContact : !!cfg.headerShowEmail;
+  const showWebsite = cfg.headerShowWebsite == null ? masterContact : !!cfg.headerShowWebsite;
   const contactParts = [];
-  if (cfg.phone) contactParts.push(`<span style="display:inline-flex;align-items:center;gap:3px">${HEADER_ICONS.phone}<span>${escapeHtml(cfg.phone)}</span></span>`);
-  if (cfg.email) contactParts.push(`<span style="display:inline-flex;align-items:center;gap:3px">${HEADER_ICONS.email}<span>${escapeHtml(cfg.email)}</span></span>`);
-  if (cfg.website) contactParts.push(`<span style="display:inline-flex;align-items:center;gap:3px">${HEADER_ICONS.globe}<span>${escapeHtml(cfg.website)}</span></span>`);
+  if (showPhone   && cfg.phone)   contactParts.push(`<span style="display:inline-flex;align-items:center;gap:3px">${HEADER_ICONS.phone}<span>${escapeHtml(cfg.phone)}</span></span>`);
+  if (showEmail   && cfg.email)   contactParts.push(`<span style="display:inline-flex;align-items:center;gap:3px">${HEADER_ICONS.email}<span>${escapeHtml(cfg.email)}</span></span>`);
+  if (showWebsite && cfg.website) contactParts.push(`<span style="display:inline-flex;align-items:center;gap:3px">${HEADER_ICONS.globe}<span>${escapeHtml(cfg.website)}</span></span>`);
   const contactFs = cfg.headerContactFontSize || 9;
   const contactCol = cfg.headerContactColor || '#333';
   const contactAlign = cfg.headerContactAlign || 'left';
@@ -135,7 +166,10 @@ function buildBrandHeaderHtml(cfg) {
  */
 function buildFooterHtml(cfg) {
   if (!cfg) return '';
-  const fl = cfg.footerLayout || { left: [], center: [], right: [] };
+  // Per-field placement matrix is the source of truth; fall back to legacy
+  // footerLayout arrays for configs that haven't been re-saved yet.
+  const placed = footerItemsFromPlacement(cfg);
+  const fl = placed || cfg.footerLayout || { left: [], center: [], right: [] };
   const l = renderFooterStack(fl.left,   cfg.customFooterLeft   || '', cfg);
   const c = renderFooterStack(fl.center, cfg.customFooterCenter || '', cfg);
   const r = renderFooterStack(fl.right,  cfg.customFooterRight  || '', cfg);

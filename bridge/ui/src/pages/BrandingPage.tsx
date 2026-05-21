@@ -13,7 +13,7 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { Save, RotateCcw, Upload, X, Plus, ArrowUp, ArrowDown } from 'lucide-react';
 import { useConfigStore } from '@/stores/configStore';
-import type { HospitalBranding, PrintSlotContent, FooterSlotItem } from '@/types/bridge';
+import type { HospitalBranding, PrintSlotContent, FooterSlotItem, FooterSlotPos } from '@/types/bridge';
 import { buildBrandHeaderHtml, buildFooterHtml } from '@/lib/brandingHtml';
 
 const DEFAULT_BRANDING: HospitalBranding = {
@@ -28,15 +28,20 @@ const DEFAULT_BRANDING: HospitalBranding = {
   headerSecondaryNameColor: '#2563eb',
   headerShowServices: true, headerServicesFontSize: 10, headerServicesColor: '#1a1a1a', headerServicesAlign: 'left',
   headerShowAddress: true, headerAddressFontSize: 8, headerAddressColor: '#2563eb', headerAddressAlign: 'left',
-  headerShowContact: true, headerContactFontSize: 9, headerContactColor: '#333333', headerContactAlign: 'left',
+  headerShowContact: true, headerShowPhone: true, headerShowEmail: true, headerShowWebsite: true,
+  headerContactFontSize: 9, headerContactColor: '#333333', headerContactAlign: 'left',
   headerBgColor: '#ffffff', headerBorderBottomColor: '#2563eb',
   enableFooter: true,
-  // Footer slots now hold arrays of items — stack as many fields as you like.
-  footerLayout: {
-    left:   [{ type: 'name' }],
-    center: [{ type: 'address' }],
-    right:  [{ type: 'phone' }, { type: 'website' }],
-  },
+  footerSlotName:     'left',
+  footerSlotServices: 'none',
+  footerSlotAddress:  'center',
+  footerSlotPhone:    'right',
+  footerSlotEmail:    'none',
+  footerSlotWebsite:  'right',
+  footerSlotLogo:     'none',
+  // Legacy free-form arrays kept so older saved configs keep rendering
+  // until re-saved through the new matrix.
+  footerLayout: { left: [], center: [], right: [] },
   customFooterLeft: '', customFooterCenter: '', customFooterRight: '',
   footerFontSize: 8, footerFontColor: '#999999',
   footerBgColor: '#ffffff', footerBorderTopColor: '#cccccc',
@@ -220,7 +225,18 @@ export function BrandingPage() {
             </div>
           </FieldGroup>
 
+          {/* Contact line — per-field toggles. Untick any field and it
+              disappears from the header; you can still drop the same field
+              into the footer via the slot pickers below. */}
           <FieldGroup title="Contact Info" checked={local.headerShowContact} onToggle={(v) => update('headerShowContact', v)}>
+            <div className="mb-2 grid grid-cols-3 gap-2 rounded border border-app-border bg-app-bg p-2">
+              <CheckboxRow label="Show Phone in header"   checked={local.headerShowPhone   !== false} onChange={(v) => update('headerShowPhone', v)} />
+              <CheckboxRow label="Show Email in header"   checked={local.headerShowEmail   !== false} onChange={(v) => update('headerShowEmail', v)} />
+              <CheckboxRow label="Show Website in header" checked={local.headerShowWebsite !== false} onChange={(v) => update('headerShowWebsite', v)} />
+            </div>
+            <p className="mb-2 text-[10px] text-app-text-muted">
+              Want a field only in the footer? Untick it here, then add it from the footer slot pickers below.
+            </p>
             <div className="flex flex-wrap items-center gap-3">
               <NumberField label="Size"  value={local.headerContactFontSize}  onChange={(v) => update('headerContactFontSize', v)}  min={6} max={18} />
               <ColorField  label="Color" value={local.headerContactColor}     onChange={(v) => update('headerContactColor', v)} />
@@ -245,18 +261,18 @@ export function BrandingPage() {
               </div>
             </div>
 
+            {/* Field-placement matrix — one row per field, pick which
+                footer slot it lands in. Items in the same slot stack in a
+                canonical order (logo → name → services → address → phone
+                → email → website) so users don't have to micromanage
+                ordering. */}
+            <FooterPlacementMatrix branding={local} update={update} />
+
+            {/* Optional custom strings, one per slot. */}
             <div className="grid grid-cols-3 gap-3">
-              {(['left', 'center', 'right'] as const).map((slot) => (
-                <FooterSlotEditor
-                  key={slot}
-                  label={slot[0].toUpperCase() + slot.slice(1) + ' Slot'}
-                  items={local.footerLayout[slot] || []}
-                  onAdd={(t) => addFooterItem(slot, t)}
-                  onRemove={(i) => removeFooterItem(slot, i)}
-                  onUpdate={(i, patch) => updateFooterItem(slot, i, patch)}
-                  onMove={(i, dir) => moveFooterItem(slot, i, dir)}
-                />
-              ))}
+              <TextField label="Custom (left)"   value={local.customFooterLeft   ?? ''} onChange={(v) => update('customFooterLeft', v)} />
+              <TextField label="Custom (center)" value={local.customFooterCenter ?? ''} onChange={(v) => update('customFooterCenter', v)} />
+              <TextField label="Custom (right)"  value={local.customFooterRight  ?? ''} onChange={(v) => update('customFooterRight', v)} />
             </div>
           </div>
         )}
@@ -392,10 +408,95 @@ function LogoControls({
   );
 }
 
-/* ── Multi-item footer slot editor ──
+/* ── Field Placement matrix ──
  *
- * Stack any combination of fields (name, address, phone, email, website,
- * services, logo, custom) inside one slot. Each row has reorder + remove. */
+ * One row per field; user picks None / Left / Center / Right. The renderer
+ * stitches selected fields into the corresponding footer slots in a fixed
+ * canonical order, so users get a clean layout without manually ordering
+ * items inside each slot. */
+
+const PLACEMENT_FIELDS: {
+  key:   'footerSlotName' | 'footerSlotServices' | 'footerSlotAddress'
+       | 'footerSlotPhone' | 'footerSlotEmail' | 'footerSlotWebsite' | 'footerSlotLogo';
+  label: string;
+}[] = [
+  { key: 'footerSlotLogo',     label: 'Logo' },
+  { key: 'footerSlotName',     label: 'Hospital Name' },
+  { key: 'footerSlotServices', label: 'Services' },
+  { key: 'footerSlotAddress',  label: 'Address' },
+  { key: 'footerSlotPhone',    label: 'Phone' },
+  { key: 'footerSlotEmail',    label: 'Email' },
+  { key: 'footerSlotWebsite',  label: 'Website' },
+];
+
+function FooterPlacementMatrix({
+  branding, update,
+}: {
+  branding: HospitalBranding;
+  update: <K extends keyof HospitalBranding>(key: K, value: HospitalBranding[K]) => void;
+}) {
+  const POS: FooterSlotPos[] = ['none', 'left', 'center', 'right'];
+  return (
+    <div className="rounded border border-app-border bg-app-bg p-3">
+      <div className="mb-2 text-[10px] font-bold uppercase tracking-wide text-app-text-muted">
+        Field placement (Footer)
+      </div>
+      <div className="grid grid-cols-[1fr_auto_auto_auto_auto] items-center gap-x-3 gap-y-1.5 text-xs">
+        <span /> {/* column header spacer */}
+        {(['None', 'Left', 'Center', 'Right'] as const).map((h) => (
+          <span key={h} className="text-center text-[10px] font-bold uppercase tracking-wide text-app-text-muted">
+            {h}
+          </span>
+        ))}
+        {PLACEMENT_FIELDS.map((f) => (
+          <FooterPlacementRow
+            key={f.key}
+            label={f.label}
+            value={(branding as any)[f.key] || 'none'}
+            onChange={(v) => update(f.key as any, v as any)}
+            options={POS}
+          />
+        ))}
+      </div>
+      <p className="mt-2 text-[10px] text-app-text-muted">
+        Tip: tick the same field in multiple sections by leaving "Show in header"
+        on (Hospital Identity controls above) — Footer placement here is independent.
+      </p>
+    </div>
+  );
+}
+
+function FooterPlacementRow({
+  label, value, onChange, options,
+}: {
+  label: string;
+  value: FooterSlotPos;
+  onChange: (v: FooterSlotPos) => void;
+  options: FooterSlotPos[];
+}) {
+  return (
+    <>
+      <span className="text-app-text">{label}</span>
+      {options.map((opt) => (
+        <label key={opt} className="flex cursor-pointer items-center justify-center">
+          <input
+            type="radio"
+            name={'place-' + label}
+            checked={value === opt}
+            onChange={() => onChange(opt)}
+            className="accent-app-accent"
+          />
+        </label>
+      ))}
+    </>
+  );
+}
+
+/* ── Multi-item footer slot editor (legacy, kept for back-compat) ──
+ *
+ * Not currently used — replaced by the placement matrix above. Left in
+ * place so any external import (if anyone ever forked the file) still
+ * compiles. Safe to delete in a future cleanup. */
 function FooterSlotEditor({
   label, items, onAdd, onRemove, onUpdate, onMove,
 }: {

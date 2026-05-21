@@ -67,6 +67,25 @@ function searchTerm(): ?string {
     return $q !== '' ? '%' . $q . '%' : null;
 }
 
+/** Raw search term without wildcards (for relevance ordering). */
+function rawSearchTerm(): ?string {
+    $q = trim($_GET['q'] ?? '');
+    return $q !== '' ? $q : null;
+}
+
+/**
+ * Build a relevance ORDER BY for a name column.
+ * Priority: 1) exact match, 2) starts with, 3) contains in name, 4) rest.
+ * Appends the needed bind params/types to the provided arrays.
+ */
+function relevanceOrder(string $nameCol, ?string $rawQ, array &$params, string &$types): string {
+    if ($rawQ === null) return "ORDER BY $nameCol";
+    $startsWith = $rawQ . '%';
+    $params[] = $rawQ;       $types .= 's';
+    $params[] = $startsWith; $types .= 's';
+    return "ORDER BY ($nameCol = ?) DESC, ($nameCol LIKE ?) DESC, $nameCol";
+}
+
 // ───────────────────────────────────────────────────────────────────────────
 // LIST endpoints
 // ───────────────────────────────────────────────────────────────────────────
@@ -74,6 +93,7 @@ function searchTerm(): ?string {
 function listFindings(mysqli $db): void {
     [$limit, $offset] = pageBounds();
     $q       = searchTerm();
+    $rawQ    = rawSearchTerm();
     $system  = trim($_GET['system'] ?? '');
 
     $where = []; $params = []; $types = '';
@@ -81,7 +101,12 @@ function listFindings(mysqli $db): void {
     if ($system !== '')    { $where[] = 'system = ?';                            $params[] = $system; $types .= 's'; }
     $whereSql = $where ? 'WHERE ' . implode(' AND ', $where) : '';
 
-    $sql = "SELECT id, name, system, description FROM findings $whereSql ORDER BY name LIMIT ? OFFSET ?";
+    // Save WHERE-only params for count query
+    $whereTypes = $types;
+    $whereParams = $params;
+
+    $orderSql = relevanceOrder('name', $rawQ, $params, $types);
+    $sql = "SELECT id, name, system, description FROM findings $whereSql $orderSql LIMIT ? OFFSET ?";
     $types .= 'ii'; $params[] = $limit; $params[] = $offset;
 
     $stmt = $db->prepare($sql);
@@ -92,11 +117,7 @@ function listFindings(mysqli $db): void {
     // total count (without limit) for pagination UI
     $countSql = "SELECT COUNT(*) c FROM findings $whereSql";
     $cstmt = $db->prepare($countSql);
-    if ($where) {
-        $ctypes = substr($types, 0, -2);
-        $cparams = array_slice($params, 0, -2);
-        if ($cparams) $cstmt->bind_param($ctypes, ...$cparams);
-    }
+    if ($whereParams) $cstmt->bind_param($whereTypes, ...$whereParams);
     $cstmt->execute();
     $total = (int)$cstmt->get_result()->fetch_assoc()['c'];
 
@@ -106,11 +127,16 @@ function listFindings(mysqli $db): void {
 function listSyndromes(mysqli $db): void {
     [$limit, $offset] = pageBounds();
     $q = searchTerm();
+    $rawQ = rawSearchTerm();
     $where = []; $params = []; $types = '';
     if ($q !== null) { $where[] = '(name LIKE ? OR description LIKE ?)'; $params[] = $q; $params[] = $q; $types .= 'ss'; }
     $whereSql = $where ? 'WHERE ' . implode(' AND ', $where) : '';
 
-    $sql = "SELECT id, name, omim_id, description FROM syndromes $whereSql ORDER BY name LIMIT ? OFFSET ?";
+    $whereTypes = $types;
+    $whereParams = $params;
+
+    $orderSql = relevanceOrder('name', $rawQ, $params, $types);
+    $sql = "SELECT id, name, omim_id, description FROM syndromes $whereSql $orderSql LIMIT ? OFFSET ?";
     $types .= 'ii'; $params[] = $limit; $params[] = $offset;
 
     $stmt = $db->prepare($sql);
@@ -120,11 +146,7 @@ function listSyndromes(mysqli $db): void {
 
     $countSql = "SELECT COUNT(*) c FROM syndromes $whereSql";
     $cstmt = $db->prepare($countSql);
-    if ($where) {
-        $ctypes = substr($types, 0, -2);
-        $cparams = array_slice($params, 0, -2);
-        if ($cparams) $cstmt->bind_param($ctypes, ...$cparams);
-    }
+    if ($whereParams) $cstmt->bind_param($whereTypes, ...$whereParams);
     $cstmt->execute();
     $total = (int)$cstmt->get_result()->fetch_assoc()['c'];
 
@@ -134,11 +156,16 @@ function listSyndromes(mysqli $db): void {
 function listGenes(mysqli $db): void {
     [$limit, $offset] = pageBounds();
     $q = searchTerm();
+    $rawQ = rawSearchTerm();
     $where = []; $params = []; $types = '';
     if ($q !== null) { $where[] = '(symbol LIKE ? OR full_name LIKE ? OR description LIKE ?)'; $params = [$q, $q, $q]; $types = 'sss'; }
     $whereSql = $where ? 'WHERE ' . implode(' AND ', $where) : '';
 
-    $sql = "SELECT id, symbol, full_name, hgnc_id, description FROM genes $whereSql ORDER BY symbol LIMIT ? OFFSET ?";
+    $whereTypes = $types;
+    $whereParams = $params;
+
+    $orderSql = relevanceOrder('symbol', $rawQ, $params, $types);
+    $sql = "SELECT id, symbol, full_name, hgnc_id, description FROM genes $whereSql $orderSql LIMIT ? OFFSET ?";
     $types .= 'ii'; $params[] = $limit; $params[] = $offset;
 
     $stmt = $db->prepare($sql);
@@ -148,11 +175,7 @@ function listGenes(mysqli $db): void {
 
     $countSql = "SELECT COUNT(*) c FROM genes $whereSql";
     $cstmt = $db->prepare($countSql);
-    if ($where) {
-        $ctypes = substr($types, 0, -2);
-        $cparams = array_slice($params, 0, -2);
-        if ($cparams) $cstmt->bind_param($ctypes, ...$cparams);
-    }
+    if ($whereParams) $cstmt->bind_param($whereTypes, ...$whereParams);
     $cstmt->execute();
     $total = (int)$cstmt->get_result()->fetch_assoc()['c'];
 
@@ -162,6 +185,7 @@ function listGenes(mysqli $db): void {
 function listInvestigations(mysqli $db): void {
     [$limit, $offset] = pageBounds();
     $q = searchTerm();
+    $rawQ = rawSearchTerm();
     $category = trim($_GET['category'] ?? '');
 
     $where = []; $params = []; $types = '';
@@ -169,7 +193,11 @@ function listInvestigations(mysqli $db): void {
     if ($category !== '')    { $where[] = 'category = ?'; $params[] = $category; $types .= 's'; }
     $whereSql = $where ? 'WHERE ' . implode(' AND ', $where) : '';
 
-    $sql = "SELECT id, name, category, description FROM investigations $whereSql ORDER BY name LIMIT ? OFFSET ?";
+    $whereTypes = $types;
+    $whereParams = $params;
+
+    $orderSql = relevanceOrder('name', $rawQ, $params, $types);
+    $sql = "SELECT id, name, category, description FROM investigations $whereSql $orderSql LIMIT ? OFFSET ?";
     $types .= 'ii'; $params[] = $limit; $params[] = $offset;
 
     $stmt = $db->prepare($sql);
@@ -179,11 +207,7 @@ function listInvestigations(mysqli $db): void {
 
     $countSql = "SELECT COUNT(*) c FROM investigations $whereSql";
     $cstmt = $db->prepare($countSql);
-    if ($where) {
-        $ctypes = substr($types, 0, -2);
-        $cparams = array_slice($params, 0, -2);
-        if ($cparams) $cstmt->bind_param($ctypes, ...$cparams);
-    }
+    if ($whereParams) $cstmt->bind_param($whereTypes, ...$whereParams);
     $cstmt->execute();
     $total = (int)$cstmt->get_result()->fetch_assoc()['c'];
 

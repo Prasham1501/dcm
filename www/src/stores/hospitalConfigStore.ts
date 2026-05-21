@@ -39,6 +39,19 @@ const FIELD_TO_BACKEND_KEY: Record<string, string> = {
   showLogoInFooter: 'show_logo_in_footer',
   customHeaderText: 'custom_header_text',
   customFooterText: 'custom_footer_text',
+  // Per-field placement matrix (header vs footer)
+  showHospitalNameInHeader: 'show_hospital_name_in_header',
+  showHospitalNameInFooter: 'show_hospital_name_in_footer',
+  showAddressInHeader:      'show_address_in_header',
+  showAddressInFooter:      'show_address_in_footer',
+  showPhoneInHeader:        'show_phone_in_header',
+  showPhoneInFooter:        'show_phone_in_footer',
+  showEmailInHeader:        'show_email_in_header',
+  showEmailInFooter:        'show_email_in_footer',
+  showWebsiteInHeader:      'show_website_in_header',
+  showWebsiteInFooter:      'show_website_in_footer',
+  showRegistrationInHeader: 'show_registration_in_header',
+  showRegistrationInFooter: 'show_registration_in_footer',
 };
 
 /** Reverse mapping: backend key -> store field */
@@ -69,6 +82,22 @@ interface HospitalConfig {
   // Print display options
   showLogoInHeader: boolean;
   showLogoInFooter: boolean;
+
+  // Per-field placement matrix — controls where each piece of hospital info
+  // appears. Both flags can be true (show in both), one (header-only or
+  // footer-only), or neither (hidden entirely).
+  showHospitalNameInHeader: boolean;
+  showHospitalNameInFooter: boolean;
+  showAddressInHeader:      boolean;
+  showAddressInFooter:      boolean;
+  showPhoneInHeader:        boolean;
+  showPhoneInFooter:        boolean;
+  showEmailInHeader:        boolean;
+  showEmailInFooter:        boolean;
+  showWebsiteInHeader:      boolean;
+  showWebsiteInFooter:      boolean;
+  showRegistrationInHeader: boolean;
+  showRegistrationInFooter: boolean;
 
   // Header/Footer layout
   headerLayout: HeaderFooterLayout;
@@ -224,6 +253,14 @@ export const useHospitalConfigStore = create<HospitalConfig>()(
 
       showLogoInHeader: true,
       showLogoInFooter: false,
+      // Sensible defaults: brand info on top, phone/email there too;
+      // website + registration belong in the footer.
+      showHospitalNameInHeader: true,  showHospitalNameInFooter: false,
+      showAddressInHeader:      true,  showAddressInFooter:      false,
+      showPhoneInHeader:        true,  showPhoneInFooter:        false,
+      showEmailInHeader:        true,  showEmailInFooter:        false,
+      showWebsiteInHeader:      false, showWebsiteInFooter:      true,
+      showRegistrationInHeader: false, showRegistrationInFooter: true,
 
       headerLayout: { left: 'logo', center: 'name', right: 'address' },
       footerLayout: { left: 'custom', center: 'none', right: 'custom' },
@@ -482,10 +519,17 @@ export function buildBrandHeaderHtml(config: HospitalConfig): string {
     ? `<img src="${config.logoDataUrl}" style="height:${logoSize}px;max-width:${logoSize * 3}px;width:auto;border-radius:${logoRadius};object-fit:contain" />`
     : '';
 
+  // Each contact item is gated by its own placement flag so the user can
+  // direct e.g. website to the footer only.
   const contactParts: string[] = [];
-  if (config.phone) contactParts.push(`<span style="display:inline-flex;align-items:center;gap:3px">${HEADER_ICONS.phone}<span>${config.phone}</span></span>`);
-  if (config.email) contactParts.push(`<span style="display:inline-flex;align-items:center;gap:3px">${HEADER_ICONS.email}<span>${config.email}</span></span>`);
-  if (config.website) contactParts.push(`<span style="display:inline-flex;align-items:center;gap:3px">${HEADER_ICONS.globe}<span>${config.website}</span></span>`);
+  if (config.phone   && config.showPhoneInHeader   !== false)
+    contactParts.push(`<span style="display:inline-flex;align-items:center;gap:3px">${HEADER_ICONS.phone}<span>${config.phone}</span></span>`);
+  if (config.email   && config.showEmailInHeader   !== false)
+    contactParts.push(`<span style="display:inline-flex;align-items:center;gap:3px">${HEADER_ICONS.email}<span>${config.email}</span></span>`);
+  if (config.website && config.showWebsiteInHeader === true)
+    contactParts.push(`<span style="display:inline-flex;align-items:center;gap:3px">${HEADER_ICONS.globe}<span>${config.website}</span></span>`);
+  if (config.registration && config.showRegistrationInHeader === true)
+    contactParts.push(`<span>${config.registration}</span>`);
   const contactFs = config.headerContactFontSize || 9;
   const contactCol = config.headerContactColor || '#333';
   const contactAlign = config.headerContactAlign || 'left';

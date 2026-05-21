@@ -42,24 +42,39 @@ const DEFAULT_BRANDING = {
   headerAddressColor: '#93c5fd',
   headerAddressAlign: 'center',
   headerShowContact: true,
+  // Per-field header visibility (default = on; user can untick to push a
+  // field to the footer only).
+  headerShowPhone:   true,
+  headerShowEmail:   true,
+  headerShowWebsite: true,
   headerContactFontSize: 8,
   headerContactColor: '#d1d5db',
   headerContactAlign: 'center',
   headerBgColor: '#8c2c2c',
   headerBorderBottomColor: '#6d81ab',
 
-  // Footer — each slot is an array of items, rendered top-to-bottom so the
-  // user can stack things like phone + email + website in the same column.
+  // Footer — per-field placement matrix is the source of truth. Each row
+  // says which slot (none / left / center / right) the field appears in.
+  // The renderer collects per-slot fields in canonical order so users can
+  // tick boxes without thinking about ordering.
   enableFooter: true,
+  footerSlotName:     'left',
+  footerSlotServices: 'none',
+  footerSlotAddress:  'center',
+  footerSlotPhone:    'right',
+  footerSlotEmail:    'none',
+  footerSlotWebsite:  'right',
+  footerSlotLogo:     'none',
+  customFooterLeft:   '',
+  customFooterCenter: '',
+  customFooterRight:  '',
+  // Legacy free-form layout. Kept so old saved configs still render
+  // until they're re-saved through the new UI.
   footerLayout: {
     left:   [{ type: 'name' }],
     center: [{ type: 'address' }],
     right:  [{ type: 'phone' }, { type: 'website' }],
   },
-  // Legacy single-string fields kept only so older migrations don't blow up.
-  customFooterLeft: '',
-  customFooterCenter: '',
-  customFooterRight: '',
   footerFontSize: 8,
   footerFontColor: '#fdf7f7',
   footerBgColor: '#d01111',

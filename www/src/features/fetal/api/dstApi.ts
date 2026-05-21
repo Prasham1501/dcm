@@ -20,12 +20,12 @@ async function parseJson(res: Response) {
 
 export type DstKind = 'finding' | 'syndrome' | 'gene' | 'investigation';
 
-export interface ExamFinding       { id: number; name: string; system: string | null; include_in_report: number; }
-export interface ExamSyndrome      { id: number; name: string; omim_id: string | null;
+export interface ExamFinding       { id: number; name: string; system: string | null; description: string | null; include_in_report: number; }
+export interface ExamSyndrome      { id: number; name: string; omim_id: string | null; description: string | null;
                                      match_score_num: number | null; match_score_den: number | null;
                                      include_in_report: number; }
-export interface ExamGene          { id: number; symbol: string; full_name: string | null; include_in_report: number; }
-export interface ExamInvestigation { id: number; name: string; catalog_category: string;
+export interface ExamGene          { id: number; symbol: string; full_name: string | null; description: string | null; include_in_report: number; }
+export interface ExamInvestigation { id: number; name: string; description: string | null; catalog_category: string;
                                      category: 'basic' | 'specific'; include_in_report: number; }
 
 export interface DstBundle {

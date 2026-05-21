@@ -57,7 +57,7 @@ try {
 
         // Findings + system
         $stmt = $db->prepare("
-            SELECT f.id, f.name, f.system, ef.include_in_report
+            SELECT f.id, f.name, f.system, f.description, ef.include_in_report
               FROM examination_findings ef
               INNER JOIN findings f ON f.id = ef.finding_id
               WHERE ef.examination_id = ?
@@ -68,7 +68,7 @@ try {
 
         // Syndromes + cached match score (if stored)
         $stmt = $db->prepare("
-            SELECT s.id, s.name, s.omim_id,
+            SELECT s.id, s.name, s.omim_id, s.description,
                    es.match_score_num, es.match_score_den, es.include_in_report
               FROM examination_syndromes es
               INNER JOIN syndromes s ON s.id = es.syndrome_id
@@ -79,7 +79,7 @@ try {
         $syndromes = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
 
         $stmt = $db->prepare("
-            SELECT g.id, g.symbol, g.full_name, eg.include_in_report
+            SELECT g.id, g.symbol, g.full_name, g.description, eg.include_in_report
               FROM examination_genes eg
               INNER JOIN genes g ON g.id = eg.gene_id
               WHERE eg.examination_id = ?
@@ -89,7 +89,7 @@ try {
         $genes = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
 
         $stmt = $db->prepare("
-            SELECT i.id, i.name, i.category AS catalog_category,
+            SELECT i.id, i.name, i.description, i.category AS catalog_category,
                    ei.category, ei.include_in_report
               FROM examination_investigations ei
               INNER JOIN investigations i ON i.id = ei.investigation_id

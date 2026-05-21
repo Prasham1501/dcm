@@ -120,6 +120,7 @@ export function AbnormalAssessmentTab() {
               <Chip key={f.id}
                 label={f.name}
                 meta={f.system ?? undefined}
+                description={f.description ?? undefined}
                 included={!!f.include_in_report}
                 onToggleInclude={(v) => toggleInclude('finding', f.id, v)}
                 onRemove={() => removeItem('finding', f.id)}
@@ -198,6 +199,7 @@ export function AbnormalAssessmentTab() {
               <Chip key={s.id}
                 label={s.name}
                 meta={s.match_score_num != null ? `${s.match_score_num}/${s.match_score_den}` : (s.omim_id ?? undefined)}
+                description={s.description ?? undefined}
                 included={!!s.include_in_report}
                 onToggleInclude={(v) => toggleInclude('syndrome', s.id, v)}
                 onRemove={() => removeItem('syndrome', s.id)}
@@ -222,6 +224,7 @@ export function AbnormalAssessmentTab() {
               <Chip key={g.id}
                 label={g.symbol}
                 meta={g.full_name ?? undefined}
+                description={g.description ?? undefined}
                 included={!!g.include_in_report}
                 onToggleInclude={(v) => toggleInclude('gene', g.id, v)}
                 onRemove={() => removeItem('gene', g.id)}
@@ -263,6 +266,7 @@ export function AbnormalAssessmentTab() {
                     {list.map((i) => (
                       <Chip key={i.id}
                         label={i.name}
+                        description={i.description ?? undefined}
                         included={!!i.include_in_report}
                         onToggleInclude={(v) => toggleInclude('investigation', i.id, v)}
                         onRemove={() => removeItem('investigation', i.id)}
@@ -393,39 +397,54 @@ function ChipGrid({ children }: { children: React.ReactNode }) {
 }
 
 function Chip({
-  label, meta, included, onToggleInclude, onRemove,
+  label, meta, description, included, onToggleInclude, onRemove,
 }: {
   label: string;
   meta?: string;
+  description?: string;
   included: boolean;
   onToggleInclude: (v: boolean) => void;
   onRemove: () => void;
 }) {
+  const [expanded, setExpanded] = useState(false);
   return (
     <div
-      className={`flex items-center gap-2 px-2.5 py-1 rounded-full border text-xs ${
+      className={`rounded-lg border text-xs ${
         included
           ? 'border-emerald-300 bg-emerald-50 dark:bg-emerald-900/20 dark:border-emerald-700 text-emerald-800 dark:text-emerald-300'
           : 'border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-700/30 text-slate-500 line-through'
       }`}
-      title={included ? 'In report' : 'Excluded from report'}
     >
-      <input
-        type="checkbox"
-        checked={included}
-        onChange={(e) => onToggleInclude(e.target.checked)}
-        className="rounded"
-        title="Include in PDF report"
-      />
-      <span className="font-medium">{label}</span>
-      {meta && <span className="text-[10px] text-slate-500 font-mono">{meta}</span>}
-      <button
-        onClick={onRemove}
-        className="text-slate-400 hover:text-red-500 ml-0.5"
-        title="Remove"
+      <div className="flex items-center gap-2 px-2.5 py-1"
+        title={description || (included ? 'In report' : 'Excluded from report')}
       >
-        <Trash2 size={11} />
-      </button>
+        <input
+          type="checkbox"
+          checked={included}
+          onChange={(e) => onToggleInclude(e.target.checked)}
+          className="rounded"
+          title="Include in PDF report"
+        />
+        <span
+          className="font-medium cursor-pointer hover:underline"
+          onClick={() => description && setExpanded(!expanded)}
+        >
+          {label}
+        </span>
+        {meta && <span className="text-[10px] text-slate-500 font-mono">{meta}</span>}
+        <button
+          onClick={onRemove}
+          className="text-slate-400 hover:text-red-500 ml-0.5"
+          title="Remove"
+        >
+          <Trash2 size={11} />
+        </button>
+      </div>
+      {expanded && description && (
+        <div className="px-3 pb-2 pt-0.5 text-[11px] leading-relaxed text-slate-600 dark:text-slate-400 border-t border-slate-200 dark:border-slate-600/50">
+          {description}
+        </div>
+      )}
     </div>
   );
 }

@@ -295,8 +295,12 @@ function renderFindings(d: ReportData): string {
     return `<h2>Diagnoses &amp; Investigations</h2><div class="empty">None selected.</div>`;
   }
 
-  const td = (rows: { id: number; name?: string; symbol?: string }[]) =>
-    rows.length === 0 ? '<span class="empty">—</span>' : rows.map((r) => `<span class="chip">${esc(r.name ?? r.symbol ?? '')}</span>`).join('');
+  const td = (rows: { id: number; name?: string; symbol?: string; description?: string | null }[]) =>
+    rows.length === 0 ? '<span class="empty">—</span>' : rows.map((r) => {
+      const name = esc(r.name ?? r.symbol ?? '');
+      const desc = r.description ? `<div style="font-size:9px;color:#666;margin-top:1px;line-height:1.3">${esc(r.description.length > 120 ? r.description.slice(0, 120) + '…' : r.description)}</div>` : '';
+      return `<div class="chip">${name}${desc}</div>`;
+    }).join('');
 
   return `
     <h2>Diagnoses &amp; Investigations</h2>
@@ -311,8 +315,11 @@ function renderFindings(d: ReportData): string {
       <tbody>
         <tr>
           <td>${td(fIn)}</td>
-          <td>${sIn.map((s) => `<span class="chip">${esc(s.name)}${s.match_score_num != null ? ` (${s.match_score_num}/${s.match_score_den})` : ''}</span>`).join('') || '<span class="empty">—</span>'}</td>
-          <td>${gIn.map((g) => `<span class="chip">${esc(g.symbol)}</span>`).join('') || '<span class="empty">—</span>'}</td>
+          <td>${sIn.map((s) => {
+            const desc = s.description ? `<div style="font-size:9px;color:#666;margin-top:1px;line-height:1.3">${esc(s.description.length > 120 ? s.description.slice(0, 120) + '…' : s.description)}</div>` : '';
+            return `<div class="chip">${esc(s.name)}${s.match_score_num != null ? ` <small>(${s.match_score_num}/${s.match_score_den})</small>` : ''}${desc}</div>`;
+          }).join('') || '<span class="empty">—</span>'}</td>
+          <td>${td(gIn)}</td>
           <td>${td(iBasic)}</td>
           <td>${td(iSpec)}</td>
         </tr>
