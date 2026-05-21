@@ -49,7 +49,19 @@ class Request {
 
     /** Bearer token from Authorization header */
     public function bearerToken(): ?string {
-        $auth = $_SERVER['HTTP_AUTHORIZATION'] ?? ($_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? '');
+        $auth = $_SERVER['HTTP_AUTHORIZATION']
+            ?? $_SERVER['REDIRECT_HTTP_AUTHORIZATION']
+            ?? $_SERVER['Authorization']
+            ?? $_SERVER['HTTP_X_AUTHORIZATION']
+            ?? '';
+        if (!$auth && function_exists('apache_request_headers')) {
+            $headers = apache_request_headers();
+            $auth = $headers['Authorization'] ?? $headers['authorization'] ?? '';
+        }
+        if (!$auth && function_exists('getallheaders')) {
+            $headers = getallheaders();
+            $auth = $headers['Authorization'] ?? $headers['authorization'] ?? '';
+        }
         if (str_starts_with($auth, 'Bearer ')) return substr($auth, 7);
         return null;
     }

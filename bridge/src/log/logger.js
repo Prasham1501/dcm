@@ -1,6 +1,6 @@
 /**
  * Simple rotating file logger.
- * Writes to %APPDATA%/AccurateBridge/logs/bridge-YYYY-MM-DD.log
+ * Writes to %APPDATA%/MediviewBridge/logs/bridge-YYYY-MM-DD.log
  * Also tees to console and emits 'line' for live in-app log viewer.
  */
 

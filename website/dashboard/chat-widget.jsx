@@ -48,9 +48,15 @@ const ChatWidget = () => {
     const [, name, arg] = toolLine.split(':').map(s => s?.trim());
     switch (name) {
       case 'check_balance':
-        if (arg === 'print') return `You have ${mockData?.printBalance?.toLocaleString('en-IN') || '2,847'} print credits — about ${Math.round((mockData?.printBalance || 2847) / 280)} days at your current pace. Want to top up?`;
-        if (arg === 'ai') return `${mockData?.aiBalance?.toLocaleString('en-IN') || '1,250'} AI credits remaining. Credits never expire.`;
-        return 'Which wallet — print or AI?';
+        if (arg === 'print') {
+          setTimeout(() => { window.location.hash = '#/dashboard/wallet'; }, 400);
+          return 'Opening your print wallet now — you can see the exact balance there.';
+        }
+        if (arg === 'ai') {
+          setTimeout(() => { window.location.hash = '#/dashboard/ai'; }, 400);
+          return 'Opening your AI credits page now — you can see the exact balance there.';
+        }
+        return 'Which wallet would you like to check — print or AI? You can also visit the Wallet or AI pages directly.';
       case 'recharge_print':
         setTimeout(() => { window.location.hash = '#/dashboard/wallet'; window.dispatchEvent(new CustomEvent('mv:open-recharge', { detail: 'print' })); }, 400);
         return 'Opening the print top-up form for you now…';
@@ -61,8 +67,8 @@ const ChatWidget = () => {
         setTimeout(() => { window.location.hash = '#/dashboard/tickets'; window.dispatchEvent(new CustomEvent('mv:new-ticket')); }, 400);
         return "Got it. I'm opening the ticket form — fill in what's wrong and our team will get back within 4 hours.";
       case 'list_devices':
-        const devs = mockData?.devices || [];
-        return `You have ${devs.length} registered devices: ${devs.map(d => `${d.name} (${d.status})`).join(', ')}.`;
+        setTimeout(() => { window.location.hash = '#/dashboard/devices'; }, 400);
+        return 'Opening your Devices page — all registered workstations are listed there.';
       default:
         return null;
     }

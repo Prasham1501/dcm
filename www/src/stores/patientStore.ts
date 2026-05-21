@@ -718,30 +718,49 @@ export const usePatientStore = create<PatientState>()(
       return null;
     }
 
-    // Open folder picker via Electron dialog
+    // Show file picker — multi-select. Users can pick individual .dcm files
+    // (Ctrl/Shift-click) instead of being forced to import an entire folder.
+    // To import a whole folder, Ctrl+A inside it; or use the folder-import
+    // shortcut by toggling the "openDirectory" property at the dialog level.
+    let pickedFiles: string[] = [];
     let dirPath: string | null = null;
     try {
       const result = await api.invoke('show-open-dialog', {
-        properties: ['openDirectory'],
-        title: 'Select DICOM Folder to Import',
+        properties: ['openFile', 'multiSelections'],
+        title: 'Select DICOM file(s) to import',
+        filters: [
+          { name: 'DICOM files', extensions: ['dcm', 'dicom'] },
+          { name: 'All files',   extensions: ['*'] },
+        ],
       });
       console.log('[importFolder] dialog result:', result);
       if (!result || result.canceled || !result.filePaths?.length) return null;
-      dirPath = result.filePaths[0];
+      pickedFiles = result.filePaths;
+      // If the user somehow picked a single directory entry, fall back to dir scan.
+      if (pickedFiles.length === 1 && pickedFiles[0] && !/\.[a-z0-9]+$/i.test(pickedFiles[0])) {
+        dirPath = pickedFiles[0];
+        pickedFiles = [];
+      }
     } catch (dialogErr) {
       console.error('[importFolder] show-open-dialog failed:', dialogErr);
       return null;
     }
-    if (!dirPath) return null;
-    console.log('[importFolder] scanning:', dirPath);
+    if (!pickedFiles.length && !dirPath) return null;
+    console.log('[importFolder] scanning', pickedFiles.length ? `${pickedFiles.length} file(s)` : dirPath);
 
     set({ syncing: true, syncError: null, syncProgress: null });
 
     try {
       const scanBase = 'http://localhost:3457';
-      const response = await fetch(
-        `${scanBase}/api/dicom/scan-patients?dir=${encodeURIComponent(dirPath)}&stream=1`
-      );
+      // POST when we have an explicit file list (URLs can't hold many paths).
+      // GET ?dir=… when we have a directory (preserves the legacy path).
+      const response = pickedFiles.length
+        ? await fetch(`${scanBase}/api/dicom/scan-patients?stream=1`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ files: pickedFiles }),
+          })
+        : await fetch(`${scanBase}/api/dicom/scan-patients?dir=${encodeURIComponent(dirPath || '')}&stream=1`);
       if (!response.ok) throw new Error(`Scan failed: ${response.statusText}`);
 
       const contentType = response.headers.get('content-type') || '';

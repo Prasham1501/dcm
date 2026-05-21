@@ -9,7 +9,7 @@ const HospitalMarquee = ({ tilt = 0, faded = true }) => {
     <div className={`relative overflow-hidden mask-reveal ${tilt === -1 ? 'tilt-l' : tilt === 1 ? 'tilt-r' : ''}`}>
       <div className="marquee-track flex items-center gap-12 w-max py-6">
         {row.map((h, i) => (
-          <img key={i} src={`assets/hospital-${h}.png`} alt={h} className={`h-9 w-auto object-contain shrink-0 ${faded ? 'grayscale opacity-60 dark:invert' : ''}`} />
+          <img key={i} src={`assets/hospital-${h}.png`} alt={h} loading="lazy" decoding="async" className={`h-9 w-auto object-contain shrink-0 ${faded ? 'grayscale opacity-60 dark:invert' : ''}`} />
         ))}
       </div>
     </div>

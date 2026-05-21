@@ -34,6 +34,32 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getTrialInfo: () => ipcRenderer.invoke('get-trial-info'),
     getFingerprint: () => ipcRenderer.invoke('get-fingerprint'),
 
+    // Print-quota (sell-by-print). Backed by /license/quota on the website.
+    getLicenseQuota: () => ipcRenderer.invoke('get-license-quota'),
+    decrementLicenseQuota: (pages) => ipcRenderer.invoke('decrement-license-quota', { pages }),
+    setLicenseQuota: (opts) => ipcRenderer.invoke('set-license-quota', opts),
+    onOpenQuotaSettings: (cb) => {
+      const sub = () => cb();
+      ipcRenderer.on('mv:open-quota-settings', sub);
+      return () => ipcRenderer.removeListener('mv:open-quota-settings', sub);
+    },
+
+    // Print/AI wallet — same wallet the dashboard reads, so the two stay in sync.
+    getWalletBalance: (type = 'print')         => ipcRenderer.invoke('wallet-balance', { type }),
+    spendWalletCredits: (credits, type = 'print', meta = '') =>
+                                                  ipcRenderer.invoke('wallet-spend', { type, credits, meta }),
+
+    // Auto-update — admin uploads a release on the website, every desktop
+    // polls on launch + every 30 min and shows a forced modal if needed.
+    checkForUpdate:        () => ipcRenderer.invoke('check-for-update'),
+    getUpdateInfo:         () => ipcRenderer.invoke('get-update-info'),
+    downloadAndInstallUpdate: (downloadUrl) => ipcRenderer.invoke('download-and-install-update', { downloadUrl }),
+    onUpdateInfo: (callback) => {
+      const sub = (_e, info) => callback(info);
+      ipcRenderer.on('update-info', sub);
+      return () => ipcRenderer.removeListener('update-info', sub);
+    },
+
     // DICOM File Server
     getDicomPort: () => ipcRenderer.invoke('get-dicom-port'),
 

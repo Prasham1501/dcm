@@ -1,10 +1,19 @@
 export type PaperSize = 'A3' | 'A4' | 'A5' | 'Letter' | 'Legal';
-export type PrintSlotContent = 'logo' | 'name' | 'address' | 'custom' | 'none';
+/** Legacy single-item slot type. Migrations expand it to an array. */
+export type PrintSlotContent =
+  | 'logo' | 'name' | 'services' | 'address' | 'phone' | 'email' | 'website' | 'custom' | 'none';
+
+export interface FooterSlotItem {
+  type: PrintSlotContent;
+  /** Only used when type === 'custom'. */
+  customText?: string;
+}
 
 export interface HeaderFooterLayout {
-  left: PrintSlotContent;
-  center: PrintSlotContent;
-  right: PrintSlotContent;
+  /** Each slot can stack multiple items (rendered top-to-bottom). */
+  left: FooterSlotItem[];
+  center: FooterSlotItem[];
+  right: FooterSlotItem[];
 }
 
 export interface HospitalBranding {
@@ -31,7 +40,8 @@ export interface HospitalBranding {
   headerShowLogo: boolean;
   headerLogoSize: number;
   headerLogoPosition: 'left' | 'center' | 'right';
-  headerLogoShape: 'circle' | 'square';
+  /** @deprecated kept for backward-compat; UI no longer exposes shape. */
+  headerLogoShape?: 'circle' | 'square';
   headerShowName: boolean;
   headerNameFontSize: number;
   headerNameColor: string;
@@ -55,9 +65,11 @@ export interface HospitalBranding {
   // Footer
   enableFooter: boolean;
   footerLayout: HeaderFooterLayout;
-  customFooterLeft: string;
-  customFooterCenter: string;
-  customFooterRight: string;
+  /** @deprecated kept for legacy migrations only; new layout uses
+   *  `footerLayout[slot][n].customText` instead. */
+  customFooterLeft?: string;
+  customFooterCenter?: string;
+  customFooterRight?: string;
   footerFontSize: number;
   footerFontColor: string;
   footerBgColor: string;
@@ -88,12 +100,38 @@ export interface PrinterSlot {
   name: string;
   enabled: boolean;
   aeTitle: string;
+  /** Local NIC IP to bind the SCP listener to. Defaults to 0.0.0.0. */
+  bindHost: string;
   port: number;
   windowsPrinterName: string;
   paperSize: PaperSize;
   layoutId: string;
   studyDebounceSeconds: number;
   copies: number;
+  /** Print-quota system (sell-by-print model). */
+  quotaEnabled: boolean;
+  quotaRemaining: number;
+  quotaTotal: number;
+}
+
+export interface SlotHistoryEvent {
+  ts: number;
+  kind: 'printed' | 'failed' | 'received' | 'echo';
+  remoteAddress?: string;
+  remotePort?: number;
+  slotName?: string;
+  printer?: string;
+  paperSize?: string;
+  aeTitle?: string;
+  port?: number;
+  pages?: number;
+  layoutId?: string;
+  patientName?: string;
+  patientId?: string;
+  modality?: string;
+  studyUid?: string;
+  callingAE?: string;
+  error?: string;
 }
 
 export interface BridgeConfig {
@@ -143,7 +181,12 @@ export interface BridgeAPI {
   getSystemPrinters: () => Promise<{ success: boolean; printers: SystemPrinter[]; error?: string }>;
   getSlotStatus: () => Promise<SlotStatus[]>;
   getStartupStatus: () => Promise<{ openAtLogin: boolean }>;
+  getLocalIps: () => Promise<{ iface: string; address: string }[]>;
   getLogTail: (n?: number) => Promise<string[]>;
+  getSlotHistory: (q: { slotId: string; fromTs: number; toTs: number; limit?: number }) => Promise<SlotHistoryEvent[]>;
+  setSlotQuota: (q: { slotId: string; quotaEnabled?: boolean; quotaRemaining?: number; quotaTotal?: number }) => Promise<{ ok: boolean; slot?: PrinterSlot }>;
+  onConfigChanged: (cb: (cfg: BridgeConfig) => void) => () => void;
+  onOpenQuotaSettings: (cb: () => void) => () => void;
   onLogLine: (cb: (line: LogLine) => void) => () => void;
   onSlotEvent: (cb: (evt: SlotEvent) => void) => () => void;
   hideToTray: () => Promise<void>;

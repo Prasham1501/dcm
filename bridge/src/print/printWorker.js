@@ -129,7 +129,7 @@ class PrintWorker {
           margins: { top: 0, bottom: 0, left: 0, right: 0 },
         });
 
-        const pdfDir = path.join(app.getPath('documents'), 'AccurateBridge');
+        const pdfDir = path.join(app.getPath('documents'), 'MediviewBridge');
         if (!fs.existsSync(pdfDir)) fs.mkdirSync(pdfDir, { recursive: true });
         const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
         const defaultPath = path.join(pdfDir, `print-${slot.name}-${timestamp}.pdf`);

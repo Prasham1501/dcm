@@ -51,6 +51,9 @@ export function PatientListPage() {
   const licenseStatus = useLicenseStore((s) => s.status);
   const printedCount = filteredPatients.filter((p) => p.printed).length;
 
+  // Note: app-wide wallet polling lives in App.tsx, so every page sees
+  // the same count without each one wiring its own interval.
+
   useEffect(() => {
     loadPatients();
   }, [loadPatients]);

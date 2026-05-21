@@ -18,7 +18,16 @@ class Mailer {
         $body = self::renderTemplate($templateName, $vars);
 
         if (class_exists('PHPMailer\PHPMailer\PHPMailer')) {
+            if (!Settings::get('smtp.host') || !Settings::get('smtp.username') || !Settings::get('smtp.from_email')) {
+                error_log('[Mailer] SMTP is not configured; skipped email to ' . $toEmail);
+                return false;
+            }
             return self::sendViaSMTP($toEmail, $toName, $subject, $body, $attachmentPath, $attachmentName);
+        }
+
+        if (!Settings::get('smtp.from_email')) {
+            error_log('[Mailer] From email is not configured; skipped email to ' . $toEmail);
+            return false;
         }
 
         // Fallback: PHP mail()

@@ -86,7 +86,7 @@ const AISection = () => {
           </div>
           <div className="relative">
             <div className="rounded-xl overflow-hidden border border-[var(--line)] bg-white shadow-[0_30px_80px_-20px_rgba(8,145,178,0.35)] tilt-r">
-              <img src="assets/ai-report.png" alt="Sample AI report" className="w-full block" />
+              <img src="assets/ai-report.png" alt="Sample AI report" loading="lazy" decoding="async" className="w-full block" />
             </div>
             <div className="absolute -bottom-3 -left-3 px-3 py-1.5 rounded-full bg-teal text-white text-[10px] font-bold uppercase tracking-[0.16em] shadow-lg">Sample output</div>
           </div>

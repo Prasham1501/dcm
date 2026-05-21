@@ -44,7 +44,7 @@ class Auth {
     }
 
     public static function passwordHash(string $password): string {
-        return password_hash($password, PASSWORD_BCRYPT, ['cost' => 12]);
+        return password_hash($password, PASSWORD_BCRYPT, ['cost' => 10]);
     }
 
     public static function passwordVerify(string $password, string $hash): bool {

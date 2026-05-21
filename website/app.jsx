@@ -35,6 +35,7 @@ const App = () => {
     switch (route) {
       case '#/features': return <FeaturesPage/>;
       case '#/ai':       return <AIPage/>;
+      case '#/bridge':   return typeof BridgePage !== 'undefined' ? <BridgePage/> : <HomePage/>;
       case '#/pricing':  return <PricingPage/>;
       case '#/download': return <DownloadPage/>;
       case '#/contact':  return <ContactPage/>;

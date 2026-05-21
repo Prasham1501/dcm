@@ -56,15 +56,24 @@ interface PrintStore {
     patientId?: string;
     patientName?: string;
     layoutType?: string;
-  }) => Promise<void>;
+    /** Number of credits to debit (default 1). One per page × copy. */
+    credits?: number;
+  }) => Promise<{ ok: boolean; balance: number; reason?: string }>;
 }
+
+// Bridge to the Electron main process — talks to mehrgrewal.com wallet.
+// Lazily resolved so the store works in plain browser previews too.
+const walletBridge = () => (typeof window !== 'undefined' ? (window as any).electronAPI : null);
 
 export const usePrintStore = create<PrintStore>()(
   persist(
     (set, get) => ({
-      printCountTotal: 500,
+      // Counts default to 0 until the first wallet sync resolves — never
+      // ship a hard-coded 500 again, that's what caused the desktop "481"
+      // vs dashboard "200" mismatch.
+      printCountTotal: 0,
       printCountUsed: 0,
-      printCountRemaining: 500,
+      printCountRemaining: 0,
 
       settings: {
         defaultPrinter: 'HP LaserJet Pro M404dn',
@@ -142,24 +151,86 @@ export const usePrintStore = create<PrintStore>()(
           printCountRemaining: Math.max(0, state.printCountRemaining - 1),
         })),
 
+      /**
+       * Pull the live print balance from the website wallet (the same
+       * number the user sees on mehrgrewal.com/dashboard). When the
+       * Electron bridge isn't available (browser preview) we fall back
+       * to the optional legacy printService for backwards-compat.
+       */
       fetchPrintCount: async () => {
+        const api = walletBridge();
+        if (api?.getWalletBalance) {
+          try {
+            const res = await api.getWalletBalance('print');
+            if (res?.ok) {
+              set((state) => ({
+                printCountRemaining: res.balance | 0,
+                // Keep the running "used" counter coherent: total = used + remaining.
+                printCountTotal: state.printCountUsed + (res.balance | 0),
+              }));
+              return;
+            }
+            // Wallet unreachable / no license — show 0 so the user can't
+            // be misled into thinking they have credits they don't.
+            set({ printCountRemaining: 0 });
+            return;
+          } catch (err) {
+            console.error('[printStore] wallet balance failed:', err);
+            set({ printCountRemaining: 0 });
+            return;
+          }
+        }
+
+        // Legacy fallback (browser preview only)
         if (!USE_API) return;
         try {
           const response = await printService.getCount('today');
-          set({
+          set((state) => ({
             printCountUsed: response.counts.completed,
-            printCountTotal: response.counts.completed + 500, // placeholder
-            printCountRemaining: 500 - response.counts.completed,
-          });
+            printCountTotal: state.printCountTotal,
+            printCountRemaining: Math.max(0, state.printCountTotal - response.counts.completed),
+          }));
         } catch (err) {
           console.error('Failed to fetch print count:', err);
         }
       },
 
+      /**
+       * Called after a successful local print. Debits the website wallet
+       * atomically (so the dashboard sees the same number immediately),
+       * then refreshes from the server to stay in sync.
+       */
       logPrintToApi: async (data) => {
+        const credits = Math.max(1, (data.credits ?? 1) | 0);
+        const api = walletBridge();
+        if (api?.spendWalletCredits) {
+          try {
+            const res = await api.spendWalletCredits(credits, 'print',
+              `Patient ${data.patientName || data.patientId || '—'} · ${data.layoutType || 'image'}`);
+            if (res?.ok) {
+              const newBal = res.balance | 0;
+              set((state) => ({
+                printCountUsed:      state.printCountUsed + credits,
+                printCountRemaining: newBal,
+                printCountTotal:     state.printCountUsed + credits + newBal,
+              }));
+              return { ok: true, balance: newBal };
+            }
+            // Spend failed — do NOT touch the local counter. Caller must
+            // decide whether to fire the actual print; the print previews
+            // call this BEFORE printing precisely so 0 credits = no paper.
+            console.warn('[printStore] wallet spend failed:', res?.reason);
+            return { ok: false, balance: res?.balance | 0, reason: res?.reason };
+          } catch (err) {
+            console.error('[printStore] wallet spend errored:', err);
+            return { ok: false, balance: 0, reason: 'bridge_error' };
+          }
+        }
+
+        // Legacy fallback (browser preview only)
         if (!USE_API) {
-          get().decrementPrintCount();
-          return;
+          for (let i = 0; i < credits; i++) get().decrementPrintCount();
+          return { ok: true, balance: get().printCountRemaining };
         }
         try {
           const { settings } = get();
@@ -176,12 +247,13 @@ export const usePrintStore = create<PrintStore>()(
             print_type: 'image',
             include_patient_info: settings.patientInfoEnabled,
           });
-          get().decrementPrintCount();
-          get().fetchPrintCount(); // refresh from server
+          for (let i = 0; i < credits; i++) get().decrementPrintCount();
+          get().fetchPrintCount();
+          return { ok: true, balance: get().printCountRemaining };
         } catch (err) {
           console.error('Failed to log print:', err);
-          // Still decrement locally on error
-          get().decrementPrintCount();
+          for (let i = 0; i < credits; i++) get().decrementPrintCount();
+          return { ok: true, balance: get().printCountRemaining };
         }
       },
     }),

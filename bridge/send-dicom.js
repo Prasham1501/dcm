@@ -6,8 +6,8 @@
  *   node send-dicom.js <host> <port> <calledAET> <file.dcm> [file2.dcm ...]
  *
  * Examples:
- *   node send-dicom.js localhost 7001 BRIDGE_P1 sample.dcm
- *   node send-dicom.js 192.168.29.252 7001 BRIDGE_P1 C:\Users\prash\downloads\dicom\image.dcm
+ *   node send-dicom.js localhost 7001 MVBRIDGE_P1 sample.dcm
+ *   node send-dicom.js 192.168.29.252 7001 MVBRIDGE_P1 C:\Users\prash\downloads\dicom\image.dcm
  */
 
 'use strict';
@@ -22,7 +22,7 @@ if (args.length < 4) {
   console.error('Usage: node send-dicom.js <host> <port> <calledAET> <file.dcm> [file2.dcm ...]');
   console.error('');
   console.error('Example:');
-  console.error('  node send-dicom.js 192.168.29.252 7001 BRIDGE_P1 C:\\Users\\prash\\downloads\\dicom\\image.dcm');
+  console.error('  node send-dicom.js 192.168.29.252 7001 MVBRIDGE_P1 C:\\Users\\prash\\downloads\\dicom\\image.dcm');
   process.exit(1);
 }
 
@@ -318,7 +318,7 @@ async function run() {
   const firstBuf = fs.readFileSync(expanded[0]);
   const firstMeta = parseMeta(firstBuf);
 
-  console.log(`\nAccurate Bridge — DICOM C-STORE sender`);
+  console.log(`\nMediview Bridge — DICOM C-STORE sender`);
   console.log(`Target  : ${HOST}:${PORT}  (AET: ${CALLED_AET})`);
   console.log(`Calling : ${CALLING_AET}`);
   console.log(`Files   : ${expanded.length}`);

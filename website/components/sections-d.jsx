@@ -25,7 +25,7 @@ const Install = () => {
         ))}
       </Stagger>
       <div className="mt-12 text-center">
-        <Btn variant="primary" size="lg" icon={<I.Windows size={17}/>} magnetic>Download Installer (Windows)</Btn>
+        <Btn href="#/download" variant="primary" size="lg" icon={<I.Windows size={17}/>} magnetic>Download Installer (Windows)</Btn>
         <div className="mt-3 text-xs text-[var(--muted)]">macOS coming soon</div>
       </div>
     </Section>
@@ -108,7 +108,7 @@ const Testimonials = () => {
                 <div className="flex gap-1 text-rose text-sm">{'★★★★★'}</div>
                 <p className="mt-4 font-display text-lg leading-snug">"{t.q}"</p>
                 <div className="mt-5 flex items-center gap-3">
-                  <img src={`assets/${t.a}.png`} alt={t.n} className="h-12 w-12 rounded-full object-cover border-2 border-rose/30"/>
+                  <img src={`assets/${t.a}.png`} alt={t.n} loading="lazy" decoding="async" className="h-12 w-12 rounded-full object-cover border-2 border-rose/30"/>
                   <div>
                     <div className="font-semibold">{t.n}</div>
                     <div className="text-xs text-[var(--muted)]">{t.r}</div>
@@ -180,8 +180,8 @@ const FinalCTA = () => (
       </FadeUp>
       <FadeUp delay={0.2}>
         <div className="mt-10 flex flex-wrap justify-center gap-3">
-          <Btn variant="light" size="lg" icon={<I.Windows size={17}/>} magnetic>Download Free Trial</Btn>
-          <Btn variant="dark" size="lg" icon={<I.Key size={16}/>}>Buy Annual License — ₹1,00,000</Btn>
+          <Btn href="#/download" variant="light" size="lg" icon={<I.Windows size={17}/>} magnetic>Download Free Trial</Btn>
+          <Btn href="dashboard.html#/dashboard/licenses" variant="dark" size="lg" icon={<I.Key size={16}/>}>Buy Annual License — ₹1,00,000</Btn>
         </div>
       </FadeUp>
     </div>

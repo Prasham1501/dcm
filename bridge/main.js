@@ -1,20 +1,21 @@
 /**
- * Accurate Bridge — Electron main process.
+ * Mediview Bridge — Electron main process.
  *
  * Tray-only app (config window opens on demand). Auto-starts at Windows
  * login. Owns:
- *   - Logger (rotating file in %APPDATA%/AccurateBridge/logs)
- *   - ConfigStore (%APPDATA%/AccurateBridge/config.json)
+ *   - Logger (rotating file in %APPDATA%/MediviewBridge/logs)
+ *   - ConfigStore (%APPDATA%/MediviewBridge/config.json)
  *   - SlotManager (one DICOM Storage SCP per enabled printer slot)
  *   - JobQueue (debounced by Study UID)
  *   - PrintWorker (renders DICOM to PNG and prints via Electron)
  */
 
-const { app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, Notification, shell, dialog } = require('electron');
+const { app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, Notification, shell, dialog, globalShortcut } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
 const { Logger } = require('./src/log/logger');
+const { SlotHistory } = require('./src/log/slotHistory');
 const { ConfigStore } = require('./src/config/store');
 const { defaultSlot, validateSlot } = require('./src/config/schema');
 const { SlotManager } = require('./src/scp/slotManager');
@@ -33,15 +34,16 @@ if (!gotLock) {
 }
 
 // --- Paths ---
-const userDataRoot = path.join(app.getPath('appData'), 'AccurateBridge');
+const userDataRoot = path.join(app.getPath('appData'), 'MediviewBridge');
 const logDir = path.join(userDataRoot, 'logs');
+const historyDir = path.join(userDataRoot, 'history');
 const configPath = path.join(userDataRoot, 'config.json');
 const incomingRoot = path.join(userDataRoot, 'incoming');
 const printedRoot = path.join(userDataRoot, 'printed');
 const failedRoot = path.join(userDataRoot, 'failed');
 const licenseFile = path.join(userDataRoot, '.license');
 const trialFile = path.join(userDataRoot, '.trial');
-for (const d of [userDataRoot, logDir, incomingRoot, printedRoot, failedRoot]) {
+for (const d of [userDataRoot, logDir, historyDir, incomingRoot, printedRoot, failedRoot]) {
   if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true });
 }
 
@@ -125,6 +127,7 @@ async function activateBridgeLicense(licenseKey) {
       license_key: licenseKey, fingerprint,
       machine_name: os.hostname() + ' (Bridge)',
       os: `${os.platform()} ${os.release()}`,
+      app: 'bridge',
       app_version: '1.0.0',
     });
     if (res.status >= 200 && res.status < 300) {
@@ -146,7 +149,7 @@ async function validateBridgeLicense() {
   if (!lic) return { valid: false, reason: 'no_license' };
   try {
     const res = await bridgeApiRequest('/license/validate', {
-      license_key: lic.licenseKey, fingerprint: lic.fingerprint,
+      license_key: lic.licenseKey, fingerprint: lic.fingerprint, app: 'bridge',
     });
     if (res.data?.valid) {
       lic.lastValidated = new Date().toISOString();
@@ -190,6 +193,7 @@ function getLicenseStatus() {
 
 // --- Singletons ---
 const logger = new Logger({ logDir });
+const slotHistory = new SlotHistory({ historyRoot: historyDir, logger });
 const config = new ConfigStore({ configPath, logger });
 let printWorker = null;
 let jobQueue = null;
@@ -208,7 +212,7 @@ function buildTrayMenu(slotStatus) {
     enabled: false,
   }));
   return Menu.buildFromTemplate([
-    { label: 'Accurate Bridge', enabled: false },
+    { label: 'Mediview Bridge', enabled: false },
     { type: 'separator' },
     ...(slotItems.length ? slotItems : [{ label: 'No slots configured', enabled: false }]),
     { type: 'separator' },
@@ -216,7 +220,7 @@ function buildTrayMenu(slotStatus) {
     { label: 'Open Logs Folder', click: () => shell.openPath(logDir) },
     { label: 'Open Storage Folder', click: () => shell.openPath(userDataRoot) },
     { type: 'separator' },
-    { label: 'Quit Accurate Bridge', click: () => quitApp() },
+    { label: 'Quit Mediview Bridge', click: () => quitApp() },
   ]);
 }
 
@@ -225,14 +229,15 @@ function refreshTray() {
   const status = slotManager ? slotManager.getStatus() : [];
   tray.setContextMenu(buildTrayMenu(status));
   const enabled = status.filter((s) => s.listening).length;
-  tray.setToolTip(`Accurate Bridge — ${enabled} slot${enabled === 1 ? '' : 's'} listening`);
+  tray.setToolTip(`Mediview Bridge — ${enabled} slot${enabled === 1 ? '' : 's'} listening`);
 }
 
 function setupTray() {
   const iconPath = path.join(__dirname, 'icon.ico');
   const icon = fs.existsSync(iconPath) ? nativeImage.createFromPath(iconPath) : nativeImage.createEmpty();
   tray = new Tray(icon);
-  tray.setToolTip('Accurate Bridge');
+  tray.setToolTip('Mediview Bridge');
+  tray.on('click', openConfigWindow);
   tray.on('double-click', openConfigWindow);
   refreshTray();
 }
@@ -250,7 +255,7 @@ function openConfigWindow() {
     minHeight: 600,
     show: false,
     icon: path.join(__dirname, 'icon.ico'),
-    title: 'Accurate Bridge',
+    title: 'Mediview Bridge',
     autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -358,7 +363,44 @@ function setupIpc() {
 
   ipcMain.handle('bridge:get-startup-status', () => getStartupStatus(app));
 
+  // Enumerate non-internal IPv4 addresses on the host so the UI can show
+  // "send DICOM to <ip>:<port>". Typically returns one address (Ethernet or
+  // Wi-Fi); multi-NIC machines get the full list.
+  ipcMain.handle('bridge:get-local-ips', () => {
+    const os = require('os');
+    const ifs = os.networkInterfaces();
+    const ips = [];
+    for (const name of Object.keys(ifs)) {
+      for (const ni of ifs[name] || []) {
+        if (ni.family === 'IPv4' && !ni.internal) {
+          ips.push({ iface: name, address: ni.address });
+        }
+      }
+    }
+    return ips;
+  });
+
   ipcMain.handle('bridge:get-log-tail', (_e, n) => logger.tail(n || 500));
+
+  // Per-slot print history (UI filters with daily / monthly / yearly buttons).
+  ipcMain.handle('bridge:get-slot-history', (_e, { slotId, fromTs, toTs, limit } = {}) => {
+    if (!slotId) return [];
+    return slotHistory.read(slotId, { fromTs, toTs, limit });
+  });
+
+  // Quota mutation (password-gated in the UI).
+  ipcMain.handle('bridge:set-slot-quota', (_e, { slotId, quotaEnabled, quotaRemaining, quotaTotal } = {}) => {
+    if (!slotId) return { ok: false, error: 'slotId required' };
+    const patch = {};
+    if (typeof quotaEnabled   === 'boolean') patch.quotaEnabled   = quotaEnabled;
+    if (Number.isFinite(quotaRemaining))    patch.quotaRemaining = Math.max(0, Math.floor(quotaRemaining));
+    if (Number.isFinite(quotaTotal))        patch.quotaTotal     = Math.max(0, Math.floor(quotaTotal));
+    const slot = config.patchSlot(slotId, patch);
+    if (configWindow && !configWindow.isDestroyed()) {
+      configWindow.webContents.send('bridge:config-changed', config.get());
+    }
+    return { ok: !!slot, slot };
+  });
 
   // --- Branding IPC ---
   ipcMain.handle('bridge:save-branding', async (_e, branding) => {
@@ -414,11 +456,83 @@ function setupIpc() {
 
   ipcMain.handle('bridge:get-trial-info', () => getTrialInfo());
 
+  // ── Auto-update ────────────────────────────────────────────────────────
+  // Poll the website for the newest Bridge release on launch + every 30 min.
+  // If force_update is on, surface a system notification AND open the config
+  // window with a non-dismissible update modal.
+  ipcMain.handle('bridge:check-for-update', () => checkBridgeForUpdate());
+  ipcMain.handle('bridge:get-update-info',  () => LAST_BRIDGE_RELEASE);
+  ipcMain.handle('bridge:download-and-install-update', async (_e, { downloadUrl } = {}) => {
+    if (!downloadUrl) return { ok: false, error: 'No download URL' };
+    const https = require('https');
+    const tmpDir = app.getPath('temp');
+    const dest   = path.join(tmpDir, `mediview-bridge-update-${Date.now()}.exe`);
+    return await new Promise((resolve) => {
+      const file = fs.createWriteStream(dest);
+      const get  = (link) => https.get(link, (res) => {
+        if ([301,302,303,307,308].includes(res.statusCode) && res.headers.location) return get(res.headers.location);
+        if (res.statusCode !== 200) { file.close(); fs.unlink(dest, () => {}); return resolve({ ok: false, error: 'HTTP ' + res.statusCode }); }
+        res.pipe(file);
+        file.on('finish', () => file.close(() => {
+          shell.openPath(dest).then((err) => {
+            if (err) resolve({ ok: false, error: err });
+            else { resolve({ ok: true }); setTimeout(() => app.quit(), 1500); }
+          });
+        }));
+      });
+      get(downloadUrl);
+    });
+  });
+
   // Forward log lines to renderer for the live tail viewer
   logger.on('line', (line) => {
     if (configWindow && !configWindow.isDestroyed()) {
       configWindow.webContents.send('bridge:log-line', line);
     }
+  });
+}
+
+// Bridge auto-update helper (defined at top-level so app.whenReady can call it too).
+let LAST_BRIDGE_RELEASE = null;
+async function checkBridgeForUpdate() {
+  const https = require('https');
+  const cur   = (app.getVersion && app.getVersion()) || '0.0.0';
+  const url   = LICENSE_API_BASE + '/release/check?app=bridge&current=' + encodeURIComponent(cur);
+  return await new Promise((resolve) => {
+    try {
+      const u   = new URL(url);
+      const req = https.request({ hostname: u.hostname, port: 443, path: u.pathname + u.search, method: 'GET' }, (res) => {
+        let body = '';
+        res.on('data', (c) => body += c);
+        res.on('end', () => {
+          try {
+            const data = JSON.parse(body);
+            LAST_BRIDGE_RELEASE = data;
+            if (data?.has_update) {
+              try {
+                if (Notification.isSupported()) {
+                  new Notification({
+                    title: data.force_update ? 'Required Bridge update' : 'Bridge update available',
+                    body:  `v${data.latest_version} is out — click to install.`,
+                  }).on('click', () => showConfigWindow()).show();
+                }
+              } catch {}
+              // If forced and the config window is already open, push it the news.
+              if (configWindow && !configWindow.isDestroyed()) {
+                configWindow.webContents.send('bridge:update-info', data);
+              } else if (data.force_update) {
+                // Open the config window so the user CAN'T miss the prompt.
+                try { showConfigWindow(); } catch {}
+              }
+            }
+            resolve(data);
+          } catch { resolve(null); }
+        });
+      });
+      req.on('error', () => resolve(null));
+      req.setTimeout(15000, () => { req.destroy(); resolve(null); });
+      req.end();
+    } catch { resolve(null); }
   });
 }
 
@@ -431,7 +545,7 @@ function notifySlotEvent(type, payload) {
 
 // --- Lifecycle ---
 app.whenReady().then(async () => {
-  logger.info(`[Boot] Accurate Bridge starting (hidden=${isHiddenLaunch()})`);
+  logger.info(`[Boot] Mediview Bridge starting (hidden=${isHiddenLaunch()})`);
 
   // --- License check ---
   const lic = getLicenseData();
@@ -460,6 +574,10 @@ app.whenReady().then(async () => {
   // Always register auto-start unless user opts out
   registerStartup(app, true);
 
+  // Auto-update poll: first check 5s after boot, then every 30 min.
+  setTimeout(checkBridgeForUpdate, 5000);
+  setInterval(checkBridgeForUpdate, 30 * 60 * 1000);
+
   printWorker = new PrintWorker({ logger, configStore: config });
   jobQueue = new JobQueue({
     logger,
@@ -471,18 +589,68 @@ app.whenReady().then(async () => {
   jobQueue.on('printed', (job) => {
     logger.info(`[Job] printed slot=${job.slot.name} pages=${job.result.pages}`);
     notifySlotEvent('printed', { slotId: job.slot.id, pages: job.result.pages, layoutId: job.result.layoutId });
+    slotHistory.record(job.slot.id, {
+      kind: 'printed',
+      slotName: job.slot.name,
+      printer: job.slot.windowsPrinterName || '',
+      paperSize: job.slot.paperSize || '',
+      aeTitle: job.slot.aeTitle,
+      port: job.slot.port,
+      pages: job.result.pages,
+      layoutId: job.result.layoutId,
+      patientName: job.result.patientName || job.patientName || '',
+      patientId:   job.result.patientId   || job.patientId   || '',
+      modality:    job.result.modality    || job.modality    || '',
+      studyUid:    job.studyUid || (job.result && job.result.studyUid) || '',
+    });
+
+    // Decrement the slot's print quota when it's enabled. Each page counts.
+    const cur = config.get().slots.find((s) => s.id === job.slot.id);
+    if (cur && cur.quotaEnabled) {
+      const pages = Math.max(1, parseInt(job.result.pages || 1, 10));
+      const before = cur.quotaRemaining || 0;
+      const after  = Math.max(0, before - pages);
+      config.patchSlot(job.slot.id, { quotaRemaining: after });
+      // Fire warning at <= 50, separate notice at 0.
+      if (Notification.isSupported() && after === 0) {
+        new Notification({
+          title: 'Mediview Bridge — quota exhausted',
+          body: `${job.slot.name}: print quota is 0. Printing is now paused for this slot.`,
+        }).show();
+      } else if (Notification.isSupported() && before > 50 && after <= 50) {
+        new Notification({
+          title: 'Mediview Bridge — low quota',
+          body: `${job.slot.name}: only ${after} prints remaining. Top up soon.`,
+        }).show();
+      }
+      // Push the updated slot to renderer so the card UI refreshes.
+      if (configWindow && !configWindow.isDestroyed()) {
+        configWindow.webContents.send('bridge:config-changed', config.get());
+      }
+    }
+
     if (Notification.isSupported()) {
       new Notification({
-        title: 'Accurate Bridge — sent to printer',
+        title: 'Mediview Bridge — sent to printer',
         body: `${job.slot.name}: ${job.result.pages} page(s) sent to printer (${job.result.layoutId})`,
       }).show();
     }
   });
   jobQueue.on('failed', (job) => {
     notifySlotEvent('failed', { slotId: job.slot.id, error: job.error });
+    slotHistory.record(job.slot.id, {
+      kind: 'failed',
+      slotName: job.slot.name,
+      printer: job.slot.windowsPrinterName || '',
+      paperSize: job.slot.paperSize || '',
+      aeTitle: job.slot.aeTitle,
+      port: job.slot.port,
+      error: job.error,
+      studyUid: job.studyUid || '',
+    });
     if (Notification.isSupported()) {
       new Notification({
-        title: 'Accurate Bridge — print failed',
+        title: 'Mediview Bridge — print failed',
         body: `${job.slot.name}: ${job.error}`,
       }).show();
     }
@@ -490,11 +658,50 @@ app.whenReady().then(async () => {
 
   const archiveRoot = path.join(__dirname, 'received');
   slotManager = new SlotManager({ incomingRoot, archiveRoot, logger, jobQueue });
+  // Throttle "study received" notifications to one per studyUid every 30s
+  // — modalities send many files per study and we don't want a flood.
+  const recentStudyNotifs = new Map();
   slotManager.on('file', ({ slot, info }) => {
     notifySlotEvent('file', { slotId: slot.id, callingAE: info.callingAE, sopInstanceUid: info.sopInstanceUid });
+    if (Notification.isSupported()) {
+      const key = (info.studyInstanceUid || info.sopInstanceUid || '') + '|' + slot.id;
+      const last = recentStudyNotifs.get(key) || 0;
+      if (Date.now() - last > 30_000) {
+        recentStudyNotifs.set(key, Date.now());
+        new Notification({
+          title: 'Mediview Bridge — study received',
+          body:  `${slot.name}: receiving from ${info.callingAE || 'unknown AE'}`,
+        }).show();
+        // Record one "received" history row per study (not per file).
+        slotHistory.record(slot.id, {
+          kind: 'received',
+          slotName: slot.name,
+          aeTitle: slot.aeTitle,
+          port: slot.port,
+          callingAE: info.callingAE || '',
+          studyUid: info.studyInstanceUid || '',
+        });
+      }
+    }
   });
   slotManager.on('slot-error', ({ slot, error }) => {
     notifySlotEvent('slot-error', { slotId: slot.id, error });
+  });
+
+  // C-ECHO / verification ping from a modality (e.g. `echoscu`). Record it
+  // in the per-slot history so the user can confirm devices are reaching
+  // Bridge before sending real studies.
+  slotManager.on('echo', ({ slot, info }) => {
+    notifySlotEvent('echo', { slotId: slot.id, callingAE: info.callingAE });
+    slotHistory.record(slot.id, {
+      kind: 'echo',
+      slotName: slot.name,
+      aeTitle: slot.aeTitle,
+      port: slot.port,
+      callingAE: info.callingAE || '',
+      remoteAddress: info.remoteAddress || '',
+      remotePort: info.remotePort,
+    });
   });
 
   setupTray();
@@ -503,6 +710,25 @@ app.whenReady().then(async () => {
   await applyConfig();
 
   if (!isHiddenLaunch()) openConfigWindow();
+
+  // Global keybinding: opens (or focuses) the config window and asks the
+  // renderer to show the password-gated Quota Settings modal.
+  try {
+    const ok = globalShortcut.register('CommandOrControl+Shift+Q', () => {
+      openConfigWindow();
+      // Give the window a beat to be ready before sending the IPC nudge.
+      setTimeout(() => {
+        if (configWindow && !configWindow.isDestroyed()) {
+          configWindow.webContents.send('bridge:open-quota-settings');
+        }
+      }, 300);
+    });
+    if (!ok) logger.warn('[Shortcut] Ctrl+Shift+Q could not be registered (already in use)');
+  } catch (e) { logger.warn('[Shortcut] register failed: ' + e.message); }
+});
+
+app.on('will-quit', () => {
+  try { globalShortcut.unregisterAll(); } catch {}
 });
 
 app.on('second-instance', () => openConfigWindow());

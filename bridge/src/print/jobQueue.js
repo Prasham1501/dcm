@@ -68,11 +68,21 @@ class JobQueue extends EventEmitter {
     while (this.queue.length > 0) {
       const job = this.queue.shift();
       try {
-        this.logger.info(`[Queue] printing slot=${job.slot.name} study=${job.studyUid} files=${job.files.length}`);
-        const result = await this.printWorker.print(job);
-        this.logger.info(`[Queue] printed slot=${job.slot.name} pages=${result.pages}`);
+        // Re-read the slot from disk in case quota was just exhausted by a
+        // previous job in this same tick.
+        const fresh = this.printWorker?.configStore?.get?.()
+          ?.slots?.find((s) => s.id === job.slot.id) || job.slot;
+        if (fresh.quotaEnabled && (fresh.quotaRemaining || 0) <= 0) {
+          this.logger.warn(`[Queue] slot=${fresh.name} quota=0; skipping print`);
+          this._move(job.files, this.failedRoot);
+          this.emit('failed', { ...job, slot: fresh, error: 'Print quota exhausted (0 remaining). Top up via Quota Settings.' });
+          continue;
+        }
+        this.logger.info(`[Queue] printing slot=${fresh.name} study=${job.studyUid} files=${job.files.length}`);
+        const result = await this.printWorker.print({ ...job, slot: fresh });
+        this.logger.info(`[Queue] printed slot=${fresh.name} pages=${result.pages}`);
         this._move(job.files, this.printedRoot);
-        this.emit('printed', { ...job, result });
+        this.emit('printed', { ...job, slot: fresh, result });
       } catch (e) {
         this.logger.error(`[Queue] print failed slot=${job.slot.name}: ${e.message}`);
         this._move(job.files, this.failedRoot);

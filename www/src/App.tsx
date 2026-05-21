@@ -13,10 +13,12 @@ import { ReportEditorPage } from '@/pages/ReportEditorPage';
 import { FetalExaminationWorkspace } from '@/features/fetal/routes/FetalExaminationWorkspace';
 import { ToastContainer } from '@/components/shared/Toast';
 import { LicenseGate } from '@/components/shared/LicenseGate';
+import { UpdateModal } from '@/components/UpdateModal';
+import { LicenseQuotaModal } from '@/components/LicenseQuotaModal';
 
 export default function App() {
   const { mode } = useThemeStore();
-  const { printCountRemaining } = usePrintStore();
+  const { printCountRemaining, fetchPrintCount } = usePrintStore();
   const alertShown = useRef(false);
 
   // Apply theme class to html element
@@ -28,21 +30,41 @@ export default function App() {
     }
   }, [mode]);
 
-  // One-time startup alert when print count is low
+  // App-wide wallet sync — every page (Patient list, Viewer, CR Viewer,
+  // Dual Viewer, Print management, Report editor) reads printCountRemaining
+  // from this store, so a single polling loop here keeps every visible
+  // counter in lock-step with the website wallet.
   useEffect(() => {
-    if (!alertShown.current && printCountRemaining < 50) {
+    fetchPrintCount(); // initial pull
+    const onFocus = () => fetchPrintCount();
+    window.addEventListener('focus', onFocus);
+    const id = window.setInterval(fetchPrintCount, 60_000);
+    return () => {
+      window.removeEventListener('focus', onFocus);
+      window.clearInterval(id);
+    };
+  }, [fetchPrintCount]);
+
+  // One-time startup alert when print count is low (waits for the first
+  // wallet sync so we don't fire it on the placeholder 0).
+  useEffect(() => {
+    if (alertShown.current) return;
+    if (printCountRemaining === 0) return; // not yet synced
+    if (printCountRemaining < 50) {
       alertShown.current = true;
       setTimeout(() => {
         alert(
           `⚠️ Low Print Count Warning\n\nYou have only ${printCountRemaining} print${printCountRemaining === 1 ? '' : 's'} remaining.\n\nPlease recharge your print count to continue printing.`
         );
-      }, 1500); // slight delay so UI loads first
+      }, 1500);
     }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [printCountRemaining]);
 
   return (
     <>
     <ToastContainer />
+    <UpdateModal />
+    <LicenseQuotaModal />
     <LicenseGate>
     <Routes>
       <Route path="/" element={<PatientListPage />}>

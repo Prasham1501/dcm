@@ -259,3 +259,21 @@ details > summary::-webkit-details-marker { display: none; }
 .to-rose-soft { --tw-gradient-to: var(--brand-soft) var(--tw-gradient-to-position) !important; }
 .text-teal { color: var(--teal) !important; }
 .bg-teal { background-color: var(--teal) !important; }
+
+/* ---------------- DROPDOWN FIX ----------------
+ * Native <option> elements ignore Tailwind utilities on the parent
+ * <select> and inherit OS palette instead. That's why options were
+ * rendering white-on-white. Declaring color-scheme makes Chrome /
+ * Firefox / Safari use the right native palette per mode, and the
+ * explicit option rules below cover browsers that still need them.
+ * Applies globally — no need to touch each <select>. */
+select          { color-scheme: light; color: #0f172a; }
+.dark select    { color-scheme: dark;  color: #f1f5f9; }
+
+select option   { background-color: #ffffff; color: #0f172a; }
+.dark select option { background-color: #111827; color: #f1f5f9; }
+
+select option:checked,
+select option:hover { background-color: #FEE2E2; color: #0f172a; }
+.dark select option:checked,
+.dark select option:hover { background-color: rgba(220, 38, 38, 0.25); color: #f1f5f9; }

@@ -132,7 +132,7 @@ const CoreViewer = () => {
                 <span className="ml-3 text-[11px] font-mono text-[var(--muted)] truncate">mediview · workstation · CHEST PA / MRI BRAIN / CT ABD / OB-USG</span>
                 <span className="hidden md:inline ml-auto text-[10px] font-mono uppercase tracking-[0.18em] text-[var(--muted)]">2×2 layout</span>
               </div>
-              <img src="assets/viewer-2x2.png" alt="2x2 viewer" className="w-full block" />
+              <img src="assets/viewer-2x2.png" alt="2x2 viewer" loading="lazy" decoding="async" className="w-full block" />
             </div>
           </HoverTilt>
 
@@ -257,7 +257,7 @@ const Measurements = () => {
         <FadeUp delay={0.15}>
           <HoverTilt max={6} scale={1.015}>
             <div className="relative rounded-2xl overflow-hidden border border-[var(--line)] bg-slate-950">
-            <img src="assets/viewer-cr.png" alt="CR Viewer" className="w-full block" />
+            <img src="assets/viewer-cr.png" alt="CR Viewer" loading="lazy" decoding="async" className="w-full block" />
             <div className="absolute top-4 right-4 px-3 py-1.5 rounded-full bg-rose text-white text-[11px] font-mono shadow-[0_10px_30px_-10px_rgba(225,29,72,0.7)] animate-pulse">
               ROI 1 · 142 mm² · HU 38
             </div>

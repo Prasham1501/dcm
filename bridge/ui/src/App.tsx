@@ -1,26 +1,25 @@
 import { useEffect, useState } from 'react';
-import { Settings, FileText, Info, Moon, Sun, Minus, Palette, Shield, Key, AlertTriangle, CheckCircle, Loader2, Clock } from 'lucide-react';
+import { Settings, Info, Moon, Sun, Minus, Palette, Shield, Key, AlertTriangle, CheckCircle, Loader2, Clock } from 'lucide-react';
 import { useConfigStore } from './stores/configStore';
 import { SlotsPage } from './pages/SlotsPage';
-import { LogsPage } from './pages/LogsPage';
 import { AboutPage } from './pages/AboutPage';
 import { BrandingPage } from './pages/BrandingPage';
 import { LicensePage } from './pages/LicensePage';
 import { StatusBar } from './components/StatusBar';
+import { UpdateModal } from './components/UpdateModal';
 
-type Tab = 'slots' | 'branding' | 'license' | 'logs' | 'about';
+type Tab = 'slots' | 'branding' | 'license' | 'about';
 
 const TABS: { id: Tab; label: string; icon: typeof Settings }[] = [
   { id: 'slots', label: 'Printer Slots', icon: Settings },
   { id: 'branding', label: 'Branding', icon: Palette },
   { id: 'license', label: 'License', icon: Shield },
-  { id: 'logs', label: 'Logs', icon: FileText },
   { id: 'about', label: 'About', icon: Info },
 ];
 
 export function App() {
   const [tab, setTab] = useState<Tab>('slots');
-  const [dark, setDark] = useState(true);
+  const [dark, setDark] = useState(false);
   const load = useConfigStore((s) => s.load);
   const loadPrinters = useConfigStore((s) => s.loadSystemPrinters);
   const refresh = useConfigStore((s) => s.refreshSlotStatus);
@@ -74,39 +73,44 @@ export function App() {
 
   return (
     <div className="flex h-screen flex-col bg-app-bg text-app-text">
-      {/* Trial banner */}
-      {isTrial && (
-        <BridgeTrialBanner remaining={licenseStatus.remaining ?? 0} onActivated={fetchLicense} />
-      )}
-
-      {/* Title bar */}
-      <header className="flex items-center justify-between bg-app-accent px-4 py-2 text-white">
-        <div className="flex items-center gap-2 text-sm font-bold tracking-wide">
-          <span className="rounded bg-white/20 px-2 py-0.5 text-xs">ACCURATE</span>
-          <span>Bridge</span>
-          <span className="ml-2 text-xs font-normal opacity-80">
+      {/* Title bar — top of the window, above the trial banner */}
+      <header className="flex items-center justify-between bg-white px-4 py-2.5 shadow-sm dark:bg-app-surface">
+        <div className="flex items-center gap-3">
+          <img
+            src="./mediview-logo.png"
+            alt="Mediview"
+            className="h-7 w-auto"
+            draggable={false}
+          />
+          <span className="text-sm font-semibold tracking-wide text-app-text">Bridge</span>
+          <span className="ml-2 hidden text-xs font-normal text-app-text-secondary md:inline">
             {licenseStatus?.type === 'licensed'
-              ? `License ${licenseStatus.licenseKey?.split('-').pop() || ''} | ${licenseStatus.daysLeft ?? '—'} days left`
+              ? `License ${licenseStatus.licenseKey?.split('-').pop() || ''} · ${licenseStatus.daysLeft ?? '—'} days left`
               : 'Printing bridge for DICOM modalities'}
           </span>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1">
           <button
             onClick={() => setDark((d) => !d)}
             title={dark ? 'Light mode' : 'Dark mode'}
-            className="rounded p-1 hover:bg-white/20"
+            className="rounded p-1 text-app-text-secondary hover:bg-app-hover hover:text-app-text"
           >
             {dark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
           </button>
           <button
             onClick={() => window.bridgeAPI.hideToTray()}
             title="Hide to tray"
-            className="rounded p-1 hover:bg-white/20"
+            className="rounded p-1 text-app-text-secondary hover:bg-app-hover hover:text-app-text"
           >
             <Minus className="h-4 w-4" />
           </button>
         </div>
       </header>
+
+      {/* Trial banner — below the title bar */}
+      {isTrial && (
+        <BridgeTrialBanner remaining={licenseStatus.remaining ?? 0} onActivated={fetchLicense} />
+      )}
 
       {/* Tabs */}
       <nav className="flex border-b border-app-border bg-app-header-bg">
@@ -135,11 +139,11 @@ export function App() {
         {tab === 'slots' && <SlotsPage />}
         {tab === 'branding' && <BrandingPage />}
         {tab === 'license' && <LicensePage />}
-        {tab === 'logs' && <LogsPage />}
         {tab === 'about' && <AboutPage />}
       </main>
 
       <StatusBar />
+      <UpdateModal />
     </div>
   );
 }
@@ -177,7 +181,7 @@ function BridgeLicenseActivationPage({ expired = false, trialExpired = false, on
           <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-red-600/20">
             <Shield className="h-8 w-8 text-red-500" />
           </div>
-          <h1 className="text-2xl font-bold text-white">Accurate Bridge</h1>
+          <h1 className="text-2xl font-bold text-white">Mediview Bridge</h1>
           <p className="text-center text-sm text-gray-400">DICOM Printing Bridge</p>
         </div>
 

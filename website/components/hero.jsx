@@ -82,7 +82,10 @@ const Hero = () => {
               <div className="absolute inset-16 rounded-full pulsering border border-teal/30" style={{ animationDelay: '0.8s' }} />
 
               <div className="relative rounded-3xl overflow-hidden rim-rose bg-slate-950 aspect-[4/3]">
-                <video src="assets/hero-volume.mp4" poster="assets/hero-volume-poster.png" autoPlay loop muted playsInline preload="metadata" className="w-full h-full object-cover" />
+                {/* preload="none" so the 22 MB MP4 doesn't block first paint
+                 * or the connection pool. The poster (~2 MB) carries the
+                 * hero visually while the video lazily loads later. */}
+                <video src="assets/hero-volume.mp4" poster="assets/hero-volume-poster.png" autoPlay loop muted playsInline preload="none" className="w-full h-full object-cover" />
                 <div className="pointer-events-none absolute inset-0 ring-1 ring-inset ring-white/10 rounded-3xl" />
                 <div className="absolute top-4 left-4 flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/55 backdrop-blur border border-white/10 text-[11px] font-mono text-white/80">
                   <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />

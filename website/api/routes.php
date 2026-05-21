@@ -29,6 +29,39 @@ $router->get( '/public/config',  fn($r) => $pub->config($r));
 $router->get( '/setup',          fn($r) => $pub->setupForm($r));
 $router->post('/setup',          fn($r) => $pub->setup($r));
 
+// ── Debug (temporary — remove after use) ──────────────────────────────────
+$router->get('/debug/tables', fn($r) => (function() {
+    try {
+        $tables = db()->query("SHOW TABLES")->fetchAll(PDO::FETCH_COLUMN);
+        $results = ['tables' => [], 'query_tests' => []];
+        foreach (['accounts','users','licenses','devices','payments','invoices','tickets','ticket_messages','audit_logs','wallets','transactions','bugs','referrals','api_keys','settings'] as $t) {
+            $results['tables'][$t] = in_array($t, $tables) ? 'exists' : 'MISSING';
+        }
+
+        // Test the exact failing admin queries
+        $tests = [
+            'accounts_join' => "SELECT a.id, u.email as owner_email FROM accounts a LEFT JOIN users u ON u.account_id=a.id AND u.role='admin' WHERE a.id != 'acc_superadmin00' LIMIT 1",
+            'licenses_join' => "SELECT l.id, a.name as account_name FROM licenses l JOIN accounts a ON a.id=l.account_id LIMIT 1",
+            'payments_join' => "SELECT p.id, a.name as account_name FROM payments p JOIN accounts a ON a.id=p.account_id LIMIT 1",
+            'tickets_join'  => "SELECT t.id, a.name as account_name FROM tickets t JOIN accounts a ON a.id=t.account_id LIMIT 1",
+            'users_cols'    => "SHOW COLUMNS FROM users",
+            'accounts_cols' => "SHOW COLUMNS FROM accounts",
+            'mysql_version' => "SELECT VERSION() as v",
+        ];
+        foreach ($tests as $name => $sql) {
+            try {
+                $rows = db()->query($sql)->fetchAll(PDO::FETCH_ASSOC);
+                $results['query_tests'][$name] = ['ok' => true, 'rows' => count($rows), 'sample' => $rows[0] ?? null];
+            } catch (\Throwable $e) {
+                $results['query_tests'][$name] = ['ok' => false, 'error' => $e->getMessage()];
+            }
+        }
+        Response::json($results);
+    } catch (\Throwable $e) {
+        Response::json(['error' => $e->getMessage()], 500);
+    }
+})());
+
 // ── Auth ───────────────────────────────────────────────────────────────────
 $router->post('/auth/signup',        fn($r) => $auth->signup($r));
 $router->post('/auth/login',         fn($r) => $auth->login($r));
@@ -56,13 +89,15 @@ $router->post('/license/activate',   fn($r) => $lic->activate($r));
 $router->post('/license/validate',   fn($r) => $lic->validate($r));
 $router->post('/license/heartbeat',  fn($r) => $lic->heartbeat($r));
 $router->post('/license/deactivate', fn($r) => $lic->deactivateKey($r));
+$router->post('/license/quota',      fn($r) => $lic->quota($r));
 
 // ── Wallet ─────────────────────────────────────────────────────────────────
 $router->get( '/wallet',         fn($r) => $wallet->index($r),  ['auth']);
 $router->post('/wallet/topup',   fn($r) => $wallet->topup($r),  ['auth']);
 $router->post('/wallet/verify',  fn($r) => $wallet->verify($r), ['auth']);
 $router->post('/wallet/auto',    fn($r) => $wallet->auto($r),   ['auth']);
-$router->post('/wallet/spend',   fn($r) => $wallet->spend($r));  // EXE, no JWT
+$router->post('/wallet/spend',   fn($r) => $wallet->spend($r));    // EXE, no JWT
+$router->get( '/wallet/balance', fn($r) => $wallet->balance($r));  // EXE, no JWT
 
 // ── Invoices ───────────────────────────────────────────────────────────────
 $router->get('/invoices',          fn($r) => $invoice->index($r), ['auth']);
@@ -119,14 +154,35 @@ $router->post('/settings', fn($r) => $settings->update($r),['auth']);
 
 // ── Admin (super_admin only) ───────────────────────────────────────────────
 $router->get( '/admin/overview',                   fn($r) => $admin->overview($r),                 ['auth','admin']);
+$router->get( '/admin/devices',                    fn($r) => $admin->devices($r),                  ['auth','admin']);
+$router->post('/admin/devices/{id}/deactivate',    fn($r) => $admin->deactivateDevice($r),         ['auth','admin']);
 $router->get( '/admin/accounts',                   fn($r) => $admin->accounts($r),                 ['auth','admin']);
+$router->get( '/admin/accounts/{id}',              fn($r) => $admin->accountDetail($r),            ['auth','admin']);
+$router->post('/admin/accounts/{id}/suspend',      fn($r) => $admin->suspendAccount($r),           ['auth','admin']);
+$router->post('/admin/accounts/{id}/resume',       fn($r) => $admin->resumeAccount($r),            ['auth','admin']);
+$router->delete('/admin/accounts/{id}',            fn($r) => $admin->deleteAccount($r),            ['auth','admin']);
 $router->get( '/admin/licenses',                   fn($r) => $admin->licenses($r),                 ['auth','admin']);
+$router->post('/admin/licenses/issue',             fn($r) => $admin->issueLicense($r),              ['auth','admin']);
 $router->post('/admin/licenses/{id}/revoke',       fn($r) => $admin->revokeLicense($r),            ['auth','admin']);
+$router->post('/admin/licenses/{id}/extend',       fn($r) => $admin->extendLicense($r),            ['auth','admin']);
+$router->post('/admin/licenses/{id}/transfer',     fn($r) => $admin->transferLicense($r),          ['auth','admin']);
+$router->post('/admin/licenses/{id}/regenerate',   fn($r) => $admin->regenerateLicense($r),        ['auth','admin']);
+$router->post('/admin/devices/{id}/unbind',        fn($r) => $admin->unbindSeat($r),               ['auth','admin']);
+$router->get( '/admin/revenue',                    fn($r) => $admin->revenue($r),                  ['auth','admin']);
+$router->get( '/admin/releases',                   fn($r) => $admin->listReleases($r),             ['auth','admin']);
+$router->post('/admin/releases',                   fn($r) => $admin->uploadRelease($r),            ['auth','admin']);
+$router->delete('/admin/releases/{id}',            fn($r) => $admin->deleteRelease($r),            ['auth','admin']);
+// PUBLIC release check + download (no auth — desktop apps hit on every launch)
+$router->get( '/release/check',                    fn($r) => $admin->releaseCheck($r));
+$router->get( '/release/download/{id}',            fn($r) => $admin->releaseDownload($r));
 $router->get( '/admin/payments',                   fn($r) => $admin->payments($r),                 ['auth','admin']);
 $router->get( '/admin/invoices',                   fn($r) => $admin->invoices($r),                 ['auth','admin']);
 $router->post('/admin/invoices/{id}/mark-paid',    fn($r) => $admin->markInvoicePaid($r),          ['auth','admin']);
 $router->get( '/admin/tickets',                    fn($r) => $admin->tickets($r),                  ['auth','admin']);
 $router->post('/admin/tickets/{id}/reply',         fn($r) => $admin->replyTicket($r),              ['auth','admin']);
+$router->post('/admin/tickets/{id}/resolve',       fn($r) => $admin->resolveTicket($r),            ['auth','admin']);
+$router->get( '/admin/bugs',                       fn($r) => $admin->bugs($r),                     ['auth','admin']);
+$router->post('/admin/bugs/{id}/status',           fn($r) => $admin->resolveBug($r),               ['auth','admin']);
 $router->get( '/admin/audit',                      fn($r) => $admin->audit($r),                    ['auth','admin']);
 $router->get( '/admin/settings',                   fn($r) => $admin->getSettings($r),              ['auth','admin']);
 $router->post('/admin/settings',                   fn($r) => $admin->saveSettings($r),             ['auth','admin']);
@@ -134,3 +190,10 @@ $router->post('/admin/test-smtp',                  fn($r) => $admin->testSmtp($r
 $router->post('/admin/test-razorpay',              fn($r) => $admin->testRazorpay($r),             ['auth','admin']);
 $router->post('/admin/test-gemini',                fn($r) => $admin->testGemini($r),               ['auth','admin']);
 $router->post('/admin/impersonate/{id}',           fn($r) => $admin->impersonate($r),              ['auth','admin']);
+$router->get( '/admin/licenses/{id}',              fn($r) => $admin->licenseDetail($r),            ['auth','admin']);
+$router->post('/admin/licenses/{id}/extend',       fn($r) => $admin->extendLicense($r),            ['auth','admin']);
+$router->post('/admin/licenses/{id}/update',       fn($r) => $admin->updateLicense($r),            ['auth','admin']);
+$router->post('/admin/licenses/{id}/quota',        fn($r) => $admin->setLicenseQuota($r),          ['auth','admin']);
+$router->get( '/admin/wallets',                    fn($r) => $admin->wallets($r),                  ['auth','admin']);
+$router->post('/admin/wallets/adjust',             fn($r) => $admin->adjustWallet($r),             ['auth','admin']);
+$router->get( '/admin/revenue-chart',              fn($r) => $admin->revenueChart($r),             ['auth','admin']);

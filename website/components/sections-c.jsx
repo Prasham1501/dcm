@@ -21,7 +21,7 @@ const PrintWallet = () => {
           <div className="relative">
             <Parallax speed={-25}>
               <div className="rounded-2xl overflow-hidden border border-[var(--line)] bg-white dark:bg-white/[0.03] p-6">
-                <img src="assets/wallet.png" alt="wallet" className="w-full block rounded-xl"/>
+                <img src="assets/wallet.png" alt="wallet" loading="lazy" decoding="async" className="w-full block rounded-xl"/>
               </div>
             </Parallax>
             <div className="mt-6 rounded-2xl overflow-hidden border border-[var(--line)] bg-slate-950">
@@ -64,7 +64,7 @@ const PrintWallet = () => {
           </Stagger>
 
           <div className="mt-6 flex flex-wrap items-center gap-3">
-            <Btn variant="primary" size="lg" icon={<I.Sparkles size={16}/>} magnetic>Recharge Now — UPI</Btn>
+            <Btn href="dashboard.html#/dashboard/wallet" variant="primary" size="lg" icon={<I.Sparkles size={16}/>} magnetic>Recharge Now — UPI</Btn>
             <div className="flex items-center gap-2 text-xs text-[var(--muted)] font-mono">
               <span className="px-2 py-1 rounded bg-paper2 dark:bg-white/5 border border-[var(--line)]">BHIM</span>
               <span className="px-2 py-1 rounded bg-paper2 dark:bg-white/5 border border-[var(--line)]">PhonePe</span>
@@ -125,6 +125,7 @@ const Pricing = () => {
       period: "no card required",
       desc: "Full DICOM viewer, measurements & reporting — yours to keep, on every machine.",
       cta: "Download Free",
+      href: "#/download",
       features: [
         "Full DICOM viewer (2D / MPR / 3D)",
         "All measurement tools",
@@ -139,6 +140,7 @@ const Pricing = () => {
       period: "per machine / month",
       desc: "Unlocks print metering, PACS sync, and team features. Cancel anytime.",
       cta: "Subscribe Monthly",
+      href: "dashboard.html#/dashboard/licenses",
       features: [
         "Everything in Free, plus:",
         "Print wallet & metering",
@@ -153,6 +155,7 @@ const Pricing = () => {
       period: "per machine / year",
       desc: "Equivalent to ₹7,500/mo — but get 12 months for ₹90K flat. Best for working radiologists.",
       cta: "Buy Annual License",
+      href: "dashboard.html#/dashboard/licenses",
       popular: true,
       features: [
         "Everything in Monthly, plus:",
@@ -168,6 +171,7 @@ const Pricing = () => {
       period: "multi-PC site license",
       desc: "Hospitals, chains and teleradiology groups. Perpetual licenses, on-prem, white-label.",
       cta: "Talk to Sales",
+      href: "#/contact",
       features: [
         "Perpetual or volume licensing",
         "On-premise / air-gapped deploy",
@@ -221,7 +225,7 @@ const Pricing = () => {
                   ))}
                 </ul>
                 <div className="mt-6">
-                  <Btn variant={c.popular ? "primary" : "ghost"} size="md" className="w-full">{c.cta}</Btn>
+                  <Btn href={c.href} variant={c.popular ? "primary" : "ghost"} size="md" className="w-full">{c.cta}</Btn>
                 </div>
               </div>
             </Spotlight>
@@ -264,7 +268,7 @@ const Pricing = () => {
                 </div>
                 <div className="mt-3 font-display text-xl font-semibold text-rose">{p.price}</div>
                 <div className="text-[12px] font-mono text-[var(--muted)] mt-0.5">{p.per}</div>
-                <Btn variant="ghost" size="sm" className="mt-5 w-full">Recharge</Btn>
+                <Btn href="dashboard.html#/dashboard/ai" variant="ghost" size="sm" className="mt-5 w-full">Recharge</Btn>
               </div>
             ))}
           </div>

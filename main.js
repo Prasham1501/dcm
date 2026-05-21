@@ -10,7 +10,7 @@
  * - React SPA served via PHP
  */
 
-const { app, BrowserWindow, dialog, Menu, shell, ipcMain } = require('electron');
+const { app, BrowserWindow, dialog, Menu, shell, ipcMain, globalShortcut } = require('electron');
 const path = require('path');
 const { spawn, execSync } = require('child_process');
 const http = require('http');
@@ -170,13 +170,23 @@ async function validateLicense() {
         const res = await apiRequest('/license/validate', {
             license_key: lic.licenseKey,
             fingerprint: lic.fingerprint,
+            app: 'viewer',
         });
         if (res.data?.valid) {
             lic.lastValidated = new Date().toISOString();
             lic.plan = res.data.plan || lic.plan;
             lic.expiresAt = res.data.expires_at || lic.expiresAt;
+            // Mirror quota fields so the UI can show them without an extra round-trip.
+            lic.quotaEnabled   = !!res.data.quota_enabled;
+            lic.quotaRemaining = parseInt(res.data.quota_remaining || 0, 10);
+            lic.quotaTotal     = parseInt(res.data.quota_total     || 0, 10);
             saveLicenseData(lic);
-            return { valid: true, plan: lic.plan, expiresAt: lic.expiresAt };
+            return {
+                valid: true, plan: lic.plan, expiresAt: lic.expiresAt,
+                quotaEnabled:   lic.quotaEnabled,
+                quotaRemaining: lic.quotaRemaining,
+                quotaTotal:     lic.quotaTotal,
+            };
         }
         return { valid: false, reason: res.data?.reason || 'invalid' };
     } catch {
@@ -223,12 +233,17 @@ function getLicenseStatus() {
         if (lic.expiresAt) {
             daysLeft = Math.max(0, Math.ceil((new Date(lic.expiresAt).getTime() - Date.now()) / (1000 * 60 * 60 * 24)));
         }
+        const os = require('os');
         return {
             type: 'licensed',
             licenseKey: lic.licenseKey,
             plan: lic.plan,
             expiresAt: lic.expiresAt,
             lastValidated: lic.lastValidated,
+            activatedAt: lic.activatedAt,
+            deviceId: lic.deviceId,
+            fingerprint: lic.fingerprint,
+            machineName: os.hostname(),
             daysLeft,
             expired: daysLeft !== null && daysLeft <= 0,
         };
@@ -324,9 +339,9 @@ function createMainWindow() {
         show: false,
         title: (() => {
             const lic = getLicenseData();
-            if (lic) return `Accurate — ${lic.plan.charAt(0).toUpperCase() + lic.plan.slice(1)} License`;
+            if (lic) return `Mediview — ${lic.plan.charAt(0).toUpperCase() + lic.plan.slice(1)} License`;
             const trial = getTrialInfo();
-            return `Accurate — Trial (${trial.remaining} days remaining)`;
+            return `Mediview — Trial (${trial.remaining} days remaining)`;
         })(),
         icon: path.join(__dirname, 'icon.ico'),
         webPreferences: {
@@ -377,8 +392,8 @@ function createMainWindow() {
                     label: 'About',
                     click: () => dialog.showMessageBox(mainWindow, {
                         type: 'info',
-                        title: 'About Accurate',
-                        message: 'Accurate',
+                        title: 'About Mediview',
+                        message: 'Mediview',
                         detail: 'Version 1.0.0 - Modern Desktop Edition\n\nProfessional DICOM viewing and analysis for healthcare professionals.\n\nFeatures:\n• Multi-format DICOM viewing\n• Network file receiving from USG/medical devices\n• Advanced image analysis tools\n• Offline operation\n• Secure file management'
                     })
                 }
@@ -855,12 +870,12 @@ async function checkViteRunning() {
 // =====================================================
 function configureFirewall() {
     const rules = [
-        { name: 'Accurate DICOM Viewer - Web Server', port: PHP_PORT },
-        { name: 'Accurate DICOM Viewer - DICOM Server', port: DICOM_PORT },
-        { name: 'Accurate DICOM Viewer - Orthanc HTTP', port: ORTHANC_PORT },
-        { name: 'Accurate DICOM Viewer - Orthanc DICOM', port: 3458 },
-        { name: 'Accurate DICOM Viewer - Network Receiver', port: 10104 },
-        { name: 'Accurate DICOM Viewer - MySQL', port: MYSQL_PORT },
+        { name: 'Mediview DICOM Viewer - Web Server', port: PHP_PORT },
+        { name: 'Mediview DICOM Viewer - DICOM Server', port: DICOM_PORT },
+        { name: 'Mediview DICOM Viewer - Orthanc HTTP', port: ORTHANC_PORT },
+        { name: 'Mediview DICOM Viewer - Orthanc DICOM', port: 3458 },
+        { name: 'Mediview DICOM Viewer - Network Receiver', port: 10104 },
+        { name: 'Mediview DICOM Viewer - MySQL', port: MYSQL_PORT },
     ];
 
     for (const rule of rules) {
@@ -1060,62 +1075,102 @@ function startDicomServer() {
         // Scan a directory for DICOM files and extract patient metadata
         // Supports streaming mode (?stream=1) for large directories
         if (parsedUrl.pathname === '/api/dicom/scan-patients') {
-            const dirPath = parsedUrl.query.dir;
+            const dirPath  = parsedUrl.query.dir;
+            // NEW: also accept an explicit file list (JSON-encoded array of
+            // absolute paths). Lets the renderer scan exactly the files the
+            // user picked in the open dialog instead of an entire folder.
+            const filesArg = parsedUrl.query.files;
             const limit = parseInt(parsedUrl.query.limit || '10000', 10);
             const streamMode = parsedUrl.query.stream === '1';
-            if (!dirPath) {
+
+            // Support POST too — multi-file selections can exceed URL length.
+            let postBody = null;
+            if (req.method === 'POST') {
+                postBody = await new Promise((resolve) => {
+                    let buf = '';
+                    req.on('data', c => buf += c);
+                    req.on('end', () => { try { resolve(JSON.parse(buf || '{}')); } catch { resolve({}); } });
+                    req.on('error', () => resolve({}));
+                });
+            }
+
+            const explicitFiles = (postBody && Array.isArray(postBody.files))
+                ? postBody.files
+                : (filesArg ? (() => { try { return JSON.parse(filesArg); } catch { return null; } })() : null);
+
+            if (!dirPath && (!explicitFiles || !explicitFiles.length)) {
                 res.statusCode = 400;
                 res.setHeader('Content-Type', 'application/json');
-                res.end(JSON.stringify({ success: false, error: 'Missing dir parameter' }));
+                res.end(JSON.stringify({ success: false, error: 'Provide either `dir` or `files` (array of paths)' }));
                 return;
             }
 
             try {
-                const resolved = path.resolve(dirPath);
-                if (!fs.existsSync(resolved) || !fs.statSync(resolved).isDirectory()) {
-                    res.statusCode = 404;
-                    res.setHeader('Content-Type', 'application/json');
-                    res.end(JSON.stringify({ success: false, error: 'Directory not found' }));
-                    return;
-                }
-
-                // Collect files (non-blocking via setImmediate batches)
                 const dicomFiles = [];
-                const collectFilesAsync = (dirs) => {
-                    return new Promise((resolve) => {
-                        let idx = 0;
-                        function processBatch() {
-                            const batchEnd = Math.min(idx + 200, dirs.length);
-                            while (idx < batchEnd) {
-                                if (dicomFiles.length >= limit) { resolve(); return; }
-                                const dir = dirs[idx++];
-                                try {
-                                    const entries = fs.readdirSync(dir, { withFileTypes: true });
-                                    for (const entry of entries) {
-                                        if (dicomFiles.length >= limit) { resolve(); return; }
-                                        const fullPath = path.join(dir, entry.name);
-                                        if (entry.isDirectory()) {
-                                            dirs.push(fullPath);
-                                        } else if (entry.isFile()) {
-                                            const name = entry.name.toLowerCase();
-                                            if (name.endsWith('.dcm') || name.endsWith('.dicom') || (!name.includes('.') && name !== 'dicomdir')) {
-                                                dicomFiles.push(fullPath);
+                let resolved = '';
+
+                if (explicitFiles && explicitFiles.length) {
+                    // Use the files the user explicitly picked. Filter for
+                    // plausible DICOM filenames AND verify each exists.
+                    for (const fp of explicitFiles) {
+                        if (dicomFiles.length >= limit) break;
+                        try {
+                            const abs = path.resolve(fp);
+                            if (!fs.existsSync(abs) || !fs.statSync(abs).isFile()) continue;
+                            const lower = path.basename(abs).toLowerCase();
+                            // Allow .dcm / .dicom / extensionless / unknown
+                            // extensions — let the parser decide. We do skip
+                            // common non-DICOM file types.
+                            if (/\.(png|jpe?g|gif|bmp|webp|pdf|txt|json|xml|zip|exe|dll|csv|xlsx?|docx?)$/i.test(lower)) continue;
+                            dicomFiles.push(abs);
+                        } catch { /* skip unreadable */ }
+                    }
+                    resolved = explicitFiles[0] ? path.dirname(path.resolve(explicitFiles[0])) : '';
+                } else {
+                    resolved = path.resolve(dirPath);
+                    if (!fs.existsSync(resolved) || !fs.statSync(resolved).isDirectory()) {
+                        res.statusCode = 404;
+                        res.setHeader('Content-Type', 'application/json');
+                        res.end(JSON.stringify({ success: false, error: 'Directory not found' }));
+                        return;
+                    }
+
+                    // Collect files (non-blocking via setImmediate batches)
+                    const collectFilesAsync = (dirs) => {
+                        return new Promise((resolve) => {
+                            let idx = 0;
+                            function processBatch() {
+                                const batchEnd = Math.min(idx + 200, dirs.length);
+                                while (idx < batchEnd) {
+                                    if (dicomFiles.length >= limit) { resolve(); return; }
+                                    const dir = dirs[idx++];
+                                    try {
+                                        const entries = fs.readdirSync(dir, { withFileTypes: true });
+                                        for (const entry of entries) {
+                                            if (dicomFiles.length >= limit) { resolve(); return; }
+                                            const fullPath = path.join(dir, entry.name);
+                                            if (entry.isDirectory()) {
+                                                dirs.push(fullPath);
+                                            } else if (entry.isFile()) {
+                                                const name = entry.name.toLowerCase();
+                                                if (name.endsWith('.dcm') || name.endsWith('.dicom') || (!name.includes('.') && name !== 'dicomdir')) {
+                                                    dicomFiles.push(fullPath);
+                                                }
                                             }
                                         }
-                                    }
-                                } catch { /* skip unreadable dirs */ }
+                                    } catch { /* skip unreadable dirs */ }
+                                }
+                                if (idx < dirs.length && dicomFiles.length < limit) {
+                                    setImmediate(processBatch);
+                                } else {
+                                    resolve();
+                                }
                             }
-                            if (idx < dirs.length && dicomFiles.length < limit) {
-                                setImmediate(processBatch);
-                            } else {
-                                resolve();
-                            }
-                        }
-                        processBatch();
-                    });
-                };
-
-                await collectFilesAsync([resolved]);
+                            processBatch();
+                        });
+                    };
+                    await collectFilesAsync([resolved]);
+                }
 
                 let dicomParser;
                 try {
@@ -1451,6 +1506,79 @@ function stopDicomServer() {
 // =====================================================
 // App Lifecycle
 // =====================================================
+// =====================================================
+// Auto-update — polls the Mediview website on launch + every 30 min and
+// notifies the renderer. If the latest release for `viewer` has
+// force_update=1, the renderer shows a non-dismissible modal that points
+// the user at the new installer.
+// =====================================================
+const APP_NAME_FOR_UPDATES = 'viewer';
+let LAST_KNOWN_RELEASE     = null;
+
+async function checkForUpdate() {
+    const https = require('https');
+    const cur   = app.getVersion ? app.getVersion() : '0.0.0';
+    const url   = LICENSE_API_BASE + '/release/check?app=' + APP_NAME_FOR_UPDATES + '&current=' + encodeURIComponent(cur);
+    return new Promise((resolve) => {
+        try {
+            const u = new URL(url);
+            const req = https.request({ hostname: u.hostname, port: 443, path: u.pathname + u.search, method: 'GET' }, (res) => {
+                let body = '';
+                res.on('data', (c) => body += c);
+                res.on('end', () => {
+                    try {
+                        const data = JSON.parse(body);
+                        LAST_KNOWN_RELEASE = data;
+                        // Broadcast to every open window so any of them can show the modal.
+                        BrowserWindow.getAllWindows().forEach(w => {
+                            try { w.webContents.send('update-info', data); } catch {}
+                        });
+                        resolve(data);
+                    } catch (e) { resolve(null); }
+                });
+            });
+            req.on('error', () => resolve(null));
+            req.setTimeout(15000, () => { req.destroy(); resolve(null); });
+            req.end();
+        } catch (e) { resolve(null); }
+    });
+}
+
+// IPC: renderer asks for current update info (cached or fresh).
+ipcMain.handle('check-for-update', async () => {
+    return await checkForUpdate();
+});
+ipcMain.handle('get-update-info', () => LAST_KNOWN_RELEASE);
+
+// IPC: renderer asks us to download + open the installer for the user.
+ipcMain.handle('download-and-install-update', async (_evt, { downloadUrl } = {}) => {
+    if (!downloadUrl) return { ok: false, error: 'No download URL' };
+    const https = require('https');
+    const dest  = path.join(app.getPath('temp'), `mediview-update-${Date.now()}.exe`);
+    return await new Promise((resolve) => {
+        const file = fs.createWriteStream(dest);
+        const u    = new URL(downloadUrl);
+        const get  = (link) => https.get(link, (res) => {
+            // Follow one level of redirect (GoDaddy sometimes 301/302 to /index.php).
+            if ([301,302,303,307,308].includes(res.statusCode) && res.headers.location) {
+                return get(res.headers.location);
+            }
+            if (res.statusCode !== 200) { file.close(); fs.unlink(dest, () => {}); return resolve({ ok: false, error: 'HTTP ' + res.statusCode }); }
+            res.pipe(file);
+            file.on('finish', () => {
+                file.close(() => {
+                    // Hand off to the OS — the .exe is signed by you, Windows opens UAC.
+                    shell.openPath(dest).then((err) => {
+                        if (err) resolve({ ok: false, error: err });
+                        else { resolve({ ok: true, path: dest }); setTimeout(() => app.quit(), 1500); }
+                    });
+                });
+            });
+        });
+        get(u.toString());
+    });
+});
+
 app.whenReady().then(async () => {
     const lic = getLicenseData();
     if (lic) {
@@ -1472,8 +1600,30 @@ app.whenReady().then(async () => {
             setInterval(sendHeartbeat, 30 * 60 * 1000); // every 30 min
         }
     }
+    // Check for desktop update on launch + every 30 min thereafter.
+    setTimeout(checkForUpdate, 4000);                                // first check 4s after window
+    setInterval(checkForUpdate, 30 * 60 * 1000);                     // every 30 min
+
     // Always start app — UI (LicenseGate) handles showing activation page if no license
     startApp();
+
+    // Global keybinding: Ctrl+Shift+Q opens the password-gated quota panel
+    // inside the active window. Mirrors Bridge's behaviour.
+    try {
+        const ok = globalShortcut.register('CommandOrControl+Shift+Q', () => {
+            const win = BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0];
+            if (win && !win.isDestroyed()) {
+                win.show();
+                win.focus();
+                win.webContents.send('mv:open-quota-settings');
+            }
+        });
+        if (!ok) console.warn('[Shortcut] Ctrl+Shift+Q could not be registered');
+    } catch (e) { console.warn('[Shortcut] register failed:', e.message); }
+});
+
+app.on('will-quit', () => {
+    try { globalShortcut.unregisterAll(); } catch {}
 });
 app.on('window-all-closed', () => { stopDicomServer(); stopDicomNetworkReceiver(); stopPhpServer(); stopOrthanc(); stopMySQL(); app.quit(); });
 app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) startApp(); });
@@ -1508,6 +1658,139 @@ ipcMain.handle('deactivate-license', async () => {
 
 ipcMain.handle('get-fingerprint', () => {
     return getFingerprint();
+});
+
+// Read the latest print quota straight from the website (so super-admin
+// changes show up immediately) and cache locally as a fallback for offline.
+ipcMain.handle('get-license-quota', async () => {
+    const lic = getLicenseData();
+    if (!lic) return { enabled: false, remaining: 0, total: 0, valid: false, reason: 'no_license' };
+    try {
+        const r = await apiRequest('/license/quota', {
+            license_key: lic.licenseKey, fingerprint: lic.fingerprint, app: 'viewer',
+        });
+        if (r.status >= 200 && r.status < 300 && r.data && (r.data.ok || r.data.enabled !== undefined)) {
+            lic.quotaEnabled   = !!(r.data.enabled);
+            lic.quotaRemaining = parseInt(r.data.remaining || 0, 10);
+            lic.quotaTotal     = parseInt(r.data.total     || 0, 10);
+            saveLicenseData(lic);
+            return { enabled: lic.quotaEnabled, remaining: lic.quotaRemaining, total: lic.quotaTotal, valid: true };
+        }
+        return { enabled: !!lic.quotaEnabled, remaining: lic.quotaRemaining || 0, total: lic.quotaTotal || 0, valid: false, reason: r.data?.reason };
+    } catch (e) {
+        return { enabled: !!lic.quotaEnabled, remaining: lic.quotaRemaining || 0, total: lic.quotaTotal || 0, valid: true, offline: true };
+    }
+});
+
+// Flip the sell-by-print mode (or set a counter directly). Requires the
+// admin PIN that's verified server-side, so this can't be misused by anyone
+// who only has renderer-process access.
+ipcMain.handle('set-license-quota', async (_e, { enabled, remaining, adminPin } = {}) => {
+    const lic = getLicenseData();
+    if (!lic) return { ok: false, reason: 'no_license' };
+    const body = { license_key: lic.licenseKey, fingerprint: lic.fingerprint, app: 'viewer', admin_pin: adminPin || '' };
+    if (typeof enabled   === 'boolean') body.set_enabled   = enabled;
+    if (Number.isFinite(remaining))     body.set_remaining = Math.max(0, parseInt(remaining, 10));
+    try {
+        const r = await apiRequest('/license/quota', body);
+        if (r.status >= 200 && r.status < 300) {
+            lic.quotaEnabled   = !!r.data.enabled;
+            lic.quotaRemaining = parseInt(r.data.remaining || 0, 10);
+            lic.quotaTotal     = parseInt(r.data.total     || 0, 10);
+            saveLicenseData(lic);
+            return { ok: true, enabled: lic.quotaEnabled, remaining: lic.quotaRemaining, total: lic.quotaTotal };
+        }
+        return { ok: false, reason: r.data?.error || 'rejected', status: r.status };
+    } catch (e) {
+        return { ok: false, reason: 'network', message: e.message };
+    }
+});
+
+// Decrement quota when the viewer actually sends a print job.
+ipcMain.handle('decrement-license-quota', async (_e, { pages = 1 } = {}) => {
+    const lic = getLicenseData();
+    if (!lic) return { ok: false, reason: 'no_license' };
+    try {
+        const r = await apiRequest('/license/quota', {
+            license_key: lic.licenseKey, fingerprint: lic.fingerprint, app: 'viewer',
+            decrement: Math.max(1, parseInt(pages, 10)),
+        });
+        if (r.status >= 200 && r.status < 300) {
+            lic.quotaRemaining = parseInt(r.data.remaining || 0, 10);
+            lic.quotaTotal     = parseInt(r.data.total     || 0, 10);
+            lic.quotaEnabled   = !!(r.data.enabled);
+            saveLicenseData(lic);
+            return { ok: true, remaining: lic.quotaRemaining, enabled: lic.quotaEnabled };
+        }
+        return { ok: false, reason: r.data?.reason || 'unknown' };
+    } catch (e) {
+        return { ok: false, reason: 'network', message: e.message };
+    }
+});
+
+// ===== Print Wallet (synced with website backend) ====================
+// These talk to the same wallet the dashboard at mehrgrewal.com reads,
+// so the balance is always in sync. If no key is active, the desktop
+// is in free mode — printing is disabled.
+
+async function walletApiGet(path) {
+    const https = require('https');
+    return new Promise((resolve, reject) => {
+        const urlObj = new URL(LICENSE_API_BASE + path);
+        const req = https.request({
+            hostname: urlObj.hostname, port: 443,
+            path: urlObj.pathname + urlObj.search, method: 'GET',
+        }, (res) => {
+            let body = '';
+            res.on('data', c => body += c);
+            res.on('end', () => {
+                try { resolve({ status: res.statusCode, data: JSON.parse(body) }); }
+                catch { resolve({ status: res.statusCode, data: { error: body } }); }
+            });
+        });
+        req.on('error', reject);
+        req.setTimeout(10000, () => { req.destroy(); reject(new Error('Timeout')); });
+        req.end();
+    });
+}
+
+ipcMain.handle('wallet-balance', async (_event, { type = 'print' } = {}) => {
+    const lic = getLicenseData();
+    if (!lic) return { ok: false, reason: 'no_license', balance: 0, type };
+    const q = new URLSearchParams({
+        license_key: lic.licenseKey, fingerprint: lic.fingerprint, type,
+    }).toString();
+    try {
+        const res = await walletApiGet('/wallet/balance?' + q);
+        if (res.status >= 200 && res.status < 300) {
+            return { ok: true, balance: (res.data.balance|0), type: res.data.type };
+        }
+        return { ok: false, reason: res.data?.error || 'http_' + res.status, balance: 0, type };
+    } catch (e) {
+        return { ok: false, reason: 'offline', balance: 0, type };
+    }
+});
+
+ipcMain.handle('wallet-spend', async (_event, { type = 'print', credits, meta = '' } = {}) => {
+    if (!credits || credits < 1) return { ok: false, reason: 'invalid_credits' };
+    const lic = getLicenseData();
+    if (!lic) return { ok: false, reason: 'no_license' };
+    try {
+        const res = await apiRequest('/wallet/spend', {
+            license_key: lic.licenseKey,
+            fingerprint:  lic.fingerprint,
+            type, credits, meta,
+        });
+        if (res.status === 402) {
+            return { ok: false, reason: 'insufficient', balance: (res.data.balance|0), required: credits };
+        }
+        if (res.status >= 200 && res.status < 300) {
+            return { ok: true, balance: (res.data.balance|0) };
+        }
+        return { ok: false, reason: res.data?.error || ('http_' + res.status) };
+    } catch (e) {
+        return { ok: false, reason: 'offline' };
+    }
 });
 // =====================================================
 
@@ -1694,6 +1977,32 @@ ipcMain.handle('print-to-printer', async (event, options) => {
         await printWindow.loadFile(tempFile);
         await waitForPrintableContent(printWindow);
 
+        // Detect "Print to PDF" virtual printers — they can't work in silent mode
+        const isPdfPrinter = printerName && /pdf/i.test(printerName);
+
+        if (isPdfPrinter) {
+            // Use Electron's printToPDF + save dialog instead of webContents.print()
+            // (virtual PDF printers like "Microsoft Print to PDF" can't work in silent mode)
+            const landscape = printSettings.orientation === 'landscape';
+            const pdfData = await printWindow.webContents.printToPDF({
+                landscape,
+                printBackground: true,
+                pageSize: printSettings.paperSize || 'A4',
+                margins: { top: 0, bottom: 0, left: 0, right: 0 },
+            });
+            const parentWin = BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0];
+            const saveResult = await dialog.showSaveDialog(parentWin, {
+                title: 'Save PDF',
+                defaultPath: path.join(app.getPath('documents'), `print_${Date.now()}.pdf`),
+                filters: [{ name: 'PDF Files', extensions: ['pdf'] }],
+            });
+            if (saveResult.canceled || !saveResult.filePath) {
+                return { success: false, error: 'Save cancelled by user' };
+            }
+            fs.writeFileSync(saveResult.filePath, pdfData);
+            return { success: true };
+        }
+
         const opts = buildElectronPrintOptions(printerName, printSettings);
         let result = await runElectronPrint(printWindow.webContents, opts);
 
@@ -1701,7 +2010,7 @@ ipcMain.handle('print-to-printer', async (event, options) => {
         if (!result.success) {
             console.warn('[Print] Silent print failed:', result.error, '— opening native print dialog');
             const dialogOpts = { ...opts, silent: false };
-            printWindow.showInactive();
+            printWindow.show();
             result = await runElectronPrint(printWindow.webContents, dialogOpts, 120000);
         }
 

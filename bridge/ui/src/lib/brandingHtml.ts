@@ -27,25 +27,48 @@ function getFormattedAddress(cfg: HospitalBranding): string {
   return parts.join(', ');
 }
 
-function renderPrintSlot(slot: string, cfg: HospitalBranding, customText: string, isFooter: boolean): string {
-  const fontSize = isFooter ? cfg.footerFontSize : 10;
-  const fontColor = isFooter ? cfg.footerFontColor : '#000';
-  const baseStyle = `font-size:${fontSize}px;color:${fontColor}`;
-  switch (slot) {
+/**
+ * Render one footer item. The footer supports the full set of hospital fields
+ * (name, services, address, phone, email, website, logo, custom) — each slot
+ * picker can stack any number of these on top of each other.
+ */
+function renderFooterItem(item: { type: string; customText?: string }, cfg: HospitalBranding): string {
+  const fs = cfg.footerFontSize || 8;
+  const fc = cfg.footerFontColor || '#666';
+  const base = `font-size:${fs}px;color:${fc};line-height:1.25`;
+  switch (item.type) {
     case 'logo':
       return cfg.logoDataUrl
-        ? `<img src="${cfg.logoDataUrl}" style="max-height:40px;max-width:120px;object-fit:contain" />`
+        ? `<img src="${cfg.logoDataUrl}" style="max-height:32px;max-width:140px;object-fit:contain" />`
         : '';
     case 'name':
-      return `<div style="font-weight:600;${baseStyle}">${esc(cfg.hospitalName)}</div>`;
+      return cfg.hospitalName ? `<div style="font-weight:600;${base}">${esc(cfg.hospitalName)}</div>` : '';
+    case 'services':
+      return cfg.servicesList ? `<div style="${base}">${esc(cfg.servicesList.split('|').join(' • '))}</div>` : '';
     case 'address':
-      return `<span style="${baseStyle}">${esc(getFormattedAddress(cfg))}</span>`;
+      return `<div style="${base}">${esc(getFormattedAddress(cfg))}</div>`;
+    case 'phone':
+      return cfg.phone   ? `<div style="${base}">☎ ${esc(cfg.phone)}</div>`   : '';
+    case 'email':
+      return cfg.email   ? `<div style="${base}">✉ ${esc(cfg.email)}</div>`   : '';
+    case 'website':
+      return cfg.website ? `<div style="${base}">🌐 ${esc(cfg.website)}</div>` : '';
     case 'custom':
-      return `<div style="${baseStyle}">${esc(customText || '')}</div>`;
+      return item.customText ? `<div style="${base}">${esc(item.customText)}</div>` : '';
     case 'none':
     default:
       return '';
   }
+}
+
+/** Convert an array of items (or a legacy single string) into a stacked HTML block. */
+function renderFooterStack(slotValue: any, customLegacy: string, cfg: HospitalBranding): string {
+  const items: { type: string; customText?: string }[] = Array.isArray(slotValue)
+    ? slotValue
+    : (slotValue && slotValue !== 'none'
+        ? [{ type: slotValue, customText: customLegacy }]
+        : []);
+  return items.map((it) => renderFooterItem(it, cfg)).filter(Boolean).join('');
 }
 
 export function buildBrandHeaderHtml(cfg: HospitalBranding): string {
@@ -55,10 +78,11 @@ export function buildBrandHeaderHtml(cfg: HospitalBranding): string {
   const servicesHtml = services.map(s => `<span>${esc(s.trim())}</span>`).join('<span style="margin:0 4px;color:#999">|</span>');
   const address = getFormattedAddress(cfg).toUpperCase();
 
-  const logoSize = cfg.headerLogoSize || 60;
-  const logoRadius = cfg.headerLogoShape === 'square' ? '6px' : '50%';
+  const logoSize = cfg.headerLogoSize || 80;
+  // `contain` so the whole logo fits; max-width capped at 1.8× the height so
+  // wordmark-style logos don't dominate the header.
   const logoHtml = (cfg.headerShowLogo !== false && cfg.logoDataUrl)
-    ? `<img src="${cfg.logoDataUrl}" style="width:${logoSize}px;height:${logoSize}px;border-radius:${logoRadius};object-fit:cover;border:1px solid #ddd" />`
+    ? `<img src="${cfg.logoDataUrl}" style="height:${logoSize}px;max-width:${Math.round(logoSize * 1.8)}px;width:auto;object-fit:contain;display:block" />`
     : '';
 
   const contactParts: string[] = [];
@@ -88,15 +112,17 @@ export function buildBrandHeaderHtml(cfg: HospitalBranding): string {
   const addrAlign = cfg.headerAddressAlign || 'left';
   const logoPos = cfg.headerLogoPosition || 'left';
 
-  const logoBoxWidth = Math.max(74, logoSize + 20);
+  const logoBoxWidth = Math.max(100, Math.round(logoSize * 1.8) + 16);
   const logoDivHtml = logoHtml ? `<div style="flex:0 0 ${logoBoxWidth}px;display:flex;justify-content:center;align-items:center">${logoHtml}</div>` : '';
   const logoSpacerHtml = logoHtml ? `<div style="flex:0 0 ${logoBoxWidth}px"></div>` : '';
 
   const namePart = cfg.headerShowName !== false
     ? `<div style="margin-bottom:2px;text-align:${nameAlign}"><span style="font-size:${nameFs}px;font-weight:800;color:${nameCol}">${esc(cfg.hospitalName)}</span>${cfg.brandNameSecondary ? `<span style="font-size:${nameFs}px;font-weight:400;color:${secCol};margin-left:5px">${esc(cfg.brandNameSecondary)}</span>` : ''}</div>`
     : '';
+  // Services line — plain text only; the old stethoscope/scanner glyph was
+  // removed per product spec.
   const svcPart = (cfg.headerShowServices !== false && services.length > 0)
-    ? `<div style="display:flex;align-items:center;justify-content:${svcJustify};gap:3px;font-size:${svcFs}px;font-weight:600;color:${svcCol};flex-wrap:wrap;margin-bottom:2px">${HEADER_ICONS.scanner}<span style="margin-right:2px"></span>${servicesHtml}</div>`
+    ? `<div style="display:flex;align-items:center;justify-content:${svcJustify};gap:3px;font-size:${svcFs}px;font-weight:600;color:${svcCol};flex-wrap:wrap;margin-bottom:2px">${servicesHtml}</div>`
     : '';
   const addrPart = (cfg.headerShowAddress !== false && address)
     ? `<div style="font-size:${addrFs}px;color:${addrCol};text-transform:uppercase;letter-spacing:0.5px;text-align:${addrAlign}">${esc(address)}</div>`
@@ -118,13 +144,18 @@ export function buildBrandHeaderHtml(cfg: HospitalBranding): string {
 
 export function buildFooterHtml(cfg: HospitalBranding): string {
   if (!cfg) return '';
-  const fl = cfg.footerLayout || { left: 'none', center: 'none', right: 'none' };
-  const l = renderPrintSlot(fl.left, cfg, cfg.customFooterLeft, true);
-  const c = renderPrintSlot(fl.center, cfg, cfg.customFooterCenter, true);
-  const r = renderPrintSlot(fl.right, cfg, cfg.customFooterRight, true);
+  const fl: any = cfg.footerLayout || { left: [], center: [], right: [] };
+  const l = renderFooterStack(fl.left,   (cfg as any).customFooterLeft   || '', cfg);
+  const c = renderFooterStack(fl.center, (cfg as any).customFooterCenter || '', cfg);
+  const r = renderFooterStack(fl.right,  (cfg as any).customFooterRight  || '', cfg);
   const bgCol = cfg.footerBgColor || '#ffffff';
   const borderCol = cfg.footerBorderTopColor || '#cccccc';
   const fontSize = cfg.footerFontSize || 8;
   const fontColor = cfg.footerFontColor || '#666666';
-  return `<div style="display:flex;justify-content:space-between;align-items:center;padding:2px 12px;border-top:1px solid ${borderCol};background:${bgCol};font-size:${fontSize}px;color:${fontColor};white-space:nowrap;overflow:hidden"><div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${l}</div><div style="text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${c}</div><div style="text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r}</div></div>`;
+  // align-items:flex-start so vertically-stacked items align cleanly per column.
+  return `<div style="display:flex;justify-content:space-between;align-items:flex-start;padding:4px 12px;border-top:1px solid ${borderCol};background:${bgCol};font-size:${fontSize}px;color:${fontColor}">
+    <div style="flex:1;text-align:left">${l}</div>
+    <div style="flex:1;text-align:center">${c}</div>
+    <div style="flex:1;text-align:right">${r}</div>
+  </div>`;
 }

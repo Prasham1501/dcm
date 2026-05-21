@@ -1,5 +1,28 @@
 // Multi-page Nav + Footer + Floating powered-by badge.
 
+// Warm the dashboard's HTML + script chunks on Sign-In hover so the click
+// is instant. The dashboard is heavy (Tailwind CDN, Babel transformer, all
+// jsx files), and on cold loads the user can feel the wait. Idempotent —
+// only runs once per page session.
+let _dashPrefetched = false;
+function prefetchDashboard() {
+  if (_dashPrefetched) return;
+  _dashPrefetched = true;
+  const urls = [
+    'dashboard.html',
+    'dashboard/api.js',
+    'dashboard/auth-context.jsx',
+    'dashboard/auth-pages.jsx',
+    'dashboard/dash-shell.jsx',
+  ];
+  for (const u of urls) {
+    const link = document.createElement('link');
+    link.rel  = 'prefetch';
+    link.href = u;
+    document.head.appendChild(link);
+  }
+}
+
 // Custom SVG logo — crosshair scope + signal pulse for "see more"
 const Logo = ({ dark = false, large = false }) => {
   const size = large ? 36 : 30;
@@ -26,6 +49,7 @@ const NAV_LINKS = [
   ['Home', '#/'],
   ['Features', '#/features'],
   ['AI', '#/ai'],
+  ['Bridge', '#/bridge'],
   ['Pricing', '#/pricing'],
   ['Download', '#/download'],
   ['Contact', '#/contact'],
@@ -72,7 +96,12 @@ const Nav = ({ dark, setDark, route }) => {
           >
             {dark ? <I.Sun size={16} /> : <I.Moon size={16} />}
           </button>
-          <a href="dashboard.html#/dashboard/login" onClick={() => { try { localStorage.removeItem('mv:user'); } catch(e){} }} className="hidden md:inline-flex items-center gap-1.5 px-3 h-9 rounded-full text-sm font-semibold text-ink/70 dark:text-paper/70 hover:text-rose transition-colors">
+          <a
+            href="dashboard.html#/dashboard/login"
+            onMouseEnter={prefetchDashboard}
+            onTouchStart={prefetchDashboard}
+            onClick={() => { try { localStorage.removeItem('mv:user'); } catch(e){} }}
+            className="hidden md:inline-flex items-center gap-1.5 px-3 h-9 rounded-full text-sm font-semibold text-ink/70 dark:text-paper/70 hover:text-rose transition-colors">
             <I.Key size={14}/> Sign in
           </a>
 
@@ -90,7 +119,7 @@ const Nav = ({ dark, setDark, route }) => {
               <a key={href} href={href} className={`px-3 py-2 text-sm font-medium ${route === href ? 'text-rose' : ''}`}>{label}</a>
             ))}
             <div className="h-px my-2 bg-[var(--line)]"/>
-            <a href="dashboard.html#/dashboard/login" onClick={() => { try { localStorage.removeItem('mv:user'); } catch(e){} }} className="px-3 py-2 text-sm font-semibold flex items-center gap-2"><I.Key size={14}/> Sign in</a>
+            <a href="dashboard.html#/dashboard/login" onTouchStart={prefetchDashboard} onClick={() => { try { localStorage.removeItem('mv:user'); } catch(e){} }} className="px-3 py-2 text-sm font-semibold flex items-center gap-2"><I.Key size={14}/> Sign in</a>
           </div>
         </div>
       )}
@@ -100,10 +129,10 @@ const Nav = ({ dark, setDark, route }) => {
 
 const Footer = () => {
   const cols = [
-    { t: "Product", links: [["Features", "#/features"], ["AI", "#/ai"], ["MPR", "#/features"], ["Pricing", "#/pricing"], ["Download", "#/download"], ["Changelog", "#"]] },
+    { t: "Product", links: [["Features", "#/features"], ["AI", "#/ai"], ["MPR", "#/features"], ["Pricing", "#/pricing"], ["Download", "#/download"]] },
     { t: "Account", links: [["Sign in", "dashboard.html#/dashboard/login"], ["Sign up", "dashboard.html#/dashboard/signup"], ["Dashboard", "dashboard.html"], ["Top up wallet", "dashboard.html#/dashboard/wallet"], ["Support", "dashboard.html#/dashboard/tickets"], ["Invoices", "dashboard.html#/dashboard/invoices"]] },
-    { t: "Resources", links: [["Docs", "#"], ["Setup Guide", "#/download"], ["Video Tutorials", "#"], ["Sample DICOMs", "#"], ["API", "#"], ["Community", "#"]] },
-    { t: "Company", links: [["About", "#"], ["Contact", "#/contact"], ["Blog", "#"], ["Privacy", "#"], ["Terms", "#"], ["Refund Policy", "#"]] },
+    { t: "Resources", links: [["Setup Guide", "#/download"], ["Features", "#/features"], ["AI capabilities", "#/ai"], ["Pricing", "#/pricing"], ["Support", "dashboard.html#/dashboard/tickets"]] },
+    { t: "Company", links: [["Contact", "#/contact"], ["Pricing", "#/pricing"], ["Privacy", "#/privacy"], ["Terms", "#/terms"], ["Refund Policy", "#/refund"]] },
   ];
   return (
     <footer className="relative border-t border-[var(--line)] bg-paper2/60 dark:bg-mid2/60">

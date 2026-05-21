@@ -54,11 +54,12 @@ const setToken = (t) => t ? localStorage.setItem(tokenKey, t) : localStorage.rem
 
 // ===== LIVE MODE — fetch wrapper =====================================================
 const liveFetch = async (path, opts = {}) => {
+  const token = getToken();
   const res = await fetch(API_BASE + path, {
     ...opts,
     headers: {
       'Content-Type': 'application/json',
-      ...(getToken() ? { 'Authorization': `Bearer ${getToken()}` } : {}),
+      ...(token ? { 'Authorization': `Bearer ${token}`, 'X-Authorization': `Bearer ${token}` } : {}),
       ...(opts.headers || {}),
     },
     body: opts.body && typeof opts.body !== 'string' ? JSON.stringify(opts.body) : opts.body,
@@ -69,7 +70,19 @@ const liveFetch = async (path, opts = {}) => {
 
   const text = await res.text();
   let data; try { data = text ? JSON.parse(text) : null; } catch { data = text; }
-  if (!res.ok) throw Object.assign(new Error(data?.error || res.statusText), { status: res.status, data });
+  if (!res.ok) {
+    // Build a descriptive message from field errors when available
+    let msg = data?.error || res.statusText;
+    if (data?.fields && typeof data.fields === 'object') {
+      const fieldMsgs = Object.values(data.fields).join('. ');
+      if (fieldMsgs) msg = fieldMsgs;
+    }
+    if (res.status === 401 && /token invalid|expired/i.test(String(msg))) {
+      setToken(null);
+      localStorage.removeItem(userKey);
+    }
+    throw Object.assign(new Error(msg), { status: res.status, data });
+  }
   return data;
 };
 
@@ -316,13 +329,30 @@ const mockFetch = async (method, path, body, query) => {
   return handler({ body: body || {}, query: query || {} });
 };
 
+// Live-mode auth wrapper: stores token + user on success so subsequent
+// authenticated requests don't 401.
+const liveAuth = async (path, data) => {
+  const res = await liveFetch(path, { method: 'POST', body: data });
+  if (res && res.token) setToken(res.token);
+  if (res && res.user)  localStorage.setItem(userKey, JSON.stringify(res.user));
+  return res;
+};
+
 // ===== UNIFIED API ====================================================================
 const api = {
   // Auth
-  signup:        (data) => API_MODE === 'live' ? liveFetch('/auth/signup', { method: 'POST', body: data }) : mockFetch('POST', '/auth/signup', data),
-  login:         (data) => API_MODE === 'live' ? liveFetch('/auth/login',  { method: 'POST', body: data }) : mockFetch('POST', '/auth/login',  data),
-  google:        (data) => API_MODE === 'live' ? liveFetch('/auth/google', { method: 'POST', body: data }) : mockFetch('POST', '/auth/google', data),
-  logout:        ()     => API_MODE === 'live' ? liveFetch('/auth/logout', { method: 'POST' })             : mockFetch('POST', '/auth/logout'),
+  signup:        (data) => API_MODE === 'live' ? liveAuth('/auth/signup', data) : mockFetch('POST', '/auth/signup', data),
+  login:         (data) => API_MODE === 'live' ? liveAuth('/auth/login',  data) : mockFetch('POST', '/auth/login',  data),
+  google:        (data) => API_MODE === 'live' ? liveAuth('/auth/google', data) : mockFetch('POST', '/auth/google', data),
+  logout:        async () => {
+    if (API_MODE === 'live') {
+      try { await liveFetch('/auth/logout', { method: 'POST' }); } catch {}
+      setToken(null);
+      localStorage.removeItem(userKey);
+      return { ok: true };
+    }
+    return mockFetch('POST', '/auth/logout');
+  },
   me:            ()     => API_MODE === 'live' ? liveFetch('/me')                                          : mockFetch('GET',  '/me'),
   forgot:        (data) => API_MODE === 'live' ? liveFetch('/auth/forgot', { method: 'POST', body: data }) : mockFetch('POST', '/auth/forgot', data),
   resetPassword: (data) => API_MODE === 'live' ? liveFetch('/auth/reset',  { method: 'POST', body: data }) : mockFetch('POST', '/auth/reset',  data),
@@ -356,7 +386,54 @@ const api = {
 
   // Invoices
   invoices:   (page = 1) => API_MODE === 'live' ? liveFetch(`/invoices?page=${page}`) : mockFetch('GET', '/invoices'),
-  invoicePdf: (id)       => `${API_BASE}/invoices/${id}/pdf`, // returns URL for <a href>
+  invoicePdf: (id)       => `${API_BASE}/invoices/${id}/pdf?token=${localStorage.getItem(tokenKey) || ''}`, // direct-URL fallback (token in query string)
+
+  /**
+   * Authenticated download — fetches the PDF as a blob with the Authorization
+   * header attached, then triggers a browser save. Works around extensions/
+   * browsers that drop query-string tokens, and avoids leaking JWTs in URLs.
+   *
+   * Usage:
+   *   <button onClick={() => mvApi.downloadInvoice(inv.id, inv.number)}>Download</button>
+   */
+  downloadInvoice: async (id, niceName = null) => {
+    const token = localStorage.getItem(tokenKey);
+    if (!token) throw new Error('Not signed in');
+    const res = await fetch(`${API_BASE}/invoices/${id}/pdf`, {
+      headers: { 'Authorization': `Bearer ${token}` },
+    });
+    if (!res.ok) {
+      let msg = 'Download failed';
+      try { const j = await res.json(); msg = j.error || msg; } catch {}
+      throw new Error(msg);
+    }
+    // Backend serves a real PDF when Dompdf is installed, otherwise an HTML
+    // fallback meant for browser print-to-PDF. Pick extension + open mode
+    // based on the actual Content-Type rather than blindly saving as .pdf.
+    const ctype = (res.headers.get('content-type') || '').toLowerCase();
+    const isPdf = ctype.includes('application/pdf');
+    const blob  = await res.blob();
+    const url   = URL.createObjectURL(blob);
+    const base  = niceName || ('invoice-' + id);
+
+    if (isPdf) {
+      const a = document.createElement('a');
+      a.href = url; a.download = base + '.pdf';
+      document.body.appendChild(a); a.click(); a.remove();
+    } else {
+      // HTML fallback: open in a new tab so the user can review and use
+      // browser's Print → "Save as PDF" — exactly what the backend HTML expects.
+      const win = window.open(url, '_blank');
+      if (!win) {
+        // Popup blocked — save the HTML to disk as a last resort.
+        const a = document.createElement('a');
+        a.href = url; a.download = base + '.html';
+        document.body.appendChild(a); a.click(); a.remove();
+        throw new Error('Pop-up blocked. Saved as HTML — open it and use Print → Save as PDF.');
+      }
+    }
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+  },
 
   // Team
   team:        ()     => API_MODE === 'live' ? liveFetch('/team')                                                 : mockFetch('GET',  '/team'),
@@ -374,6 +451,12 @@ const api = {
   createApiKey: (data) => API_MODE === 'live' ? liveFetch('/api-keys', { method: 'POST', body: data })              : mockFetch('POST',   '/api-keys', data),
   deleteApiKey: (id)   => API_MODE === 'live' ? liveFetch(`/api-keys/${id}`, { method: 'DELETE' })                  : mockFetch('DELETE', '/api-keys', { id }),
 
+  // Profile & security
+  updateProfile:   (data) => API_MODE === 'live' ? liveFetch('/me', { method: 'PATCH', body: data }) : Promise.resolve({ ok: true }),
+  changePassword:  (data) => API_MODE === 'live' ? liveFetch('/auth/change-password', { method: 'POST', body: data }) : Promise.resolve({ ok: true }),
+  userSettings:    ()     => API_MODE === 'live' ? liveFetch('/settings') : Promise.resolve({}),
+  saveUserSettings:(data) => API_MODE === 'live' ? liveFetch('/settings', { method: 'POST', body: data }) : Promise.resolve({ ok: true }),
+
   // Referrals
   referrals: () => API_MODE === 'live' ? liveFetch('/referrals') : mockFetch('GET', '/referrals'),
 
@@ -389,9 +472,54 @@ const api = {
   // Admin (super_admin only)
   adminOverview:     ()     => liveFetch('/admin/overview'),
   adminAccounts:     (p=1)  => liveFetch(`/admin/accounts?page=${p}`),
+  adminAccountDetail:(id)   => liveFetch(`/admin/accounts/${id}`),
+  adminDevices:      ({ page = 1, status = '', online = '', q = '' } = {}) => {
+    const qs = new URLSearchParams();
+    qs.set('page', String(page));
+    if (status) qs.set('status', status);
+    if (online !== '') qs.set('online', String(online));
+    if (q) qs.set('q', q);
+    return liveFetch(`/admin/devices?${qs.toString()}`);
+  },
+  deactivateAdminDevice: (id) => liveFetch(`/admin/devices/${id}/deactivate`, { method: 'POST' }),
   adminLicenses:     (p=1)  => liveFetch(`/admin/licenses?page=${p}`),
+  // Account lifecycle
+  adminSuspendAccount: (id) => liveFetch(`/admin/accounts/${id}/suspend`, { method: 'POST' }),
+  adminResumeAccount:  (id) => liveFetch(`/admin/accounts/${id}/resume`,  { method: 'POST' }),
+  adminDeleteAccount:  (id) => liveFetch(`/admin/accounts/${id}`,         { method: 'DELETE' }),
+  // License superpowers
+  adminExtendLicense:     (id, days)        => liveFetch(`/admin/licenses/${id}/extend`,     { method: 'POST', body: { days } }),
+  adminTransferLicense:   (id, account_id)  => liveFetch(`/admin/licenses/${id}/transfer`,   { method: 'POST', body: { account_id } }),
+  adminRegenerateLicense: (id)              => liveFetch(`/admin/licenses/${id}/regenerate`, { method: 'POST' }),
+  adminSetLicenseQuota:   (id, body)        => liveFetch(`/admin/licenses/${id}/quota`,      { method: 'POST', body }),
+  adminUnbindSeat:        (deviceId)        => liveFetch(`/admin/devices/${deviceId}/unbind`,{ method: 'POST' }),
+  // Revenue
+  adminRevenue:     (range = '30d') => liveFetch(`/admin/revenue?range=${range}`),
+  // Releases
+  adminReleases:    () => liveFetch('/admin/releases'),
+  adminDeleteRelease: (id) => liveFetch(`/admin/releases/${id}`, { method: 'DELETE' }),
+  /** Multipart upload — needs the bare token, not JSON. */
+  adminUploadRelease: async ({ app, version, changelog, force_update, file }) => {
+    const token = localStorage.getItem(tokenKey);
+    const fd = new FormData();
+    fd.append('app', app);
+    fd.append('version', version);
+    fd.append('changelog', changelog || '');
+    fd.append('force_update', force_update ? '1' : '');
+    fd.append('file', file);
+    const res = await fetch(API_BASE + '/admin/releases', {
+      method: 'POST',
+      headers: token ? { 'Authorization': 'Bearer ' + token } : {},
+      body: fd,
+    });
+    const txt = await res.text();
+    let data; try { data = txt ? JSON.parse(txt) : null; } catch { data = txt; }
+    if (!res.ok) throw Object.assign(new Error(data?.error || 'Upload failed'), { status: res.status });
+    return data;
+  },
   adminPayments:     (p=1)  => liveFetch(`/admin/payments?page=${p}`),
   adminTickets:      (p=1)  => liveFetch(`/admin/tickets?page=${p}`),
+  adminBugs:         (p=1)  => liveFetch(`/admin/bugs?page=${p}`),
   adminAudit:        (p=1)  => liveFetch(`/admin/audit?page=${p}`),
   adminInvoices:     (p=1)  => liveFetch(`/admin/invoices?page=${p}`),
   adminSettings:     ()     => liveFetch('/admin/settings'),
@@ -401,8 +529,17 @@ const api = {
   testGemini:        ()     => liveFetch('/admin/test-gemini', { method: 'POST', body: {} }),
   impersonate:       (id)   => liveFetch(`/admin/impersonate/${id}`, { method: 'POST' }),
   revokeAdminLicense:(id)   => liveFetch(`/admin/licenses/${id}/revoke`, { method: 'POST' }),
+  adminLicenseDetail:(id)   => liveFetch(`/admin/licenses/${id}`),
+  adminExtendLicense:(id, days) => liveFetch(`/admin/licenses/${id}/extend`, { method: 'POST', body: { days } }),
+  adminUpdateLicense:(id, data) => liveFetch(`/admin/licenses/${id}/update`, { method: 'POST', body: data }),
+  adminWallets:      (p=1)  => liveFetch(`/admin/wallets?page=${p}`),
+  adminAdjustWallet: (data) => liveFetch('/admin/wallets/adjust', { method: 'POST', body: data }),
+  adminRevenueChart: (months=12) => liveFetch(`/admin/revenue-chart?months=${months}`),
+  adminIssueLicense: (data) => liveFetch('/admin/licenses/issue', { method: 'POST', body: data }),
   markInvoicePaid:   (id)   => liveFetch(`/admin/invoices/${id}/mark-paid`, { method: 'POST' }),
   adminReplyTicket:  (id, data) => liveFetch(`/admin/tickets/${id}/reply`, { method: 'POST', body: data }),
+  adminResolveTicket:(id)   => liveFetch(`/admin/tickets/${id}/resolve`, { method: 'POST', body: {} }),
+  adminUpdateBug:    (id, status) => liveFetch(`/admin/bugs/${id}/status`, { method: 'POST', body: { status } }),
 
   // Utils
   getMode:       () => API_MODE,

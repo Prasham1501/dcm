@@ -1,5 +1,5 @@
 /**
- * Persistent JSON config store at %APPDATA%/AccurateBridge/config.json
+ * Persistent JSON config store at %APPDATA%/MediviewBridge/config.json
  */
 
 const fs = require('fs');
@@ -63,6 +63,17 @@ class ConfigStore {
   removeSlot(slotId) {
     const slots = this.config.slots.filter((s) => s.id !== slotId);
     return this.update({ slots });
+  }
+
+  /** Apply a partial patch to a single slot without forcing the caller to
+   *  re-send the whole object. Returns the updated slot (or null). */
+  patchSlot(slotId, patch) {
+    const slots = [...this.config.slots];
+    const idx = slots.findIndex((s) => s.id === slotId);
+    if (idx < 0) return null;
+    slots[idx] = { ...slots[idx], ...patch };
+    this.update({ slots });
+    return slots[idx];
   }
 }
 

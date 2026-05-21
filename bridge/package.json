@@ -1,7 +1,7 @@
 {
-  "name": "accurate-bridge",
+  "name": "mediview-bridge",
   "version": "1.0.0",
-  "description": "Accurate Bridge - DICOM Print Bridge for paper printers",
+  "description": "Mediview Bridge - DICOM Print Bridge for paper printers",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
@@ -12,7 +12,7 @@
     "build:win": "npm run build:ui && electron-builder --win",
     "pack": "electron-builder --dir"
   },
-  "author": "Accurate Team",
+  "author": "Mediview Team",
   "license": "MIT",
   "devDependencies": {
     "concurrently": "^8.2.2",
@@ -24,8 +24,8 @@
     "pngjs": "^7.0.0"
   },
   "build": {
-    "appId": "com.accurate.bridge",
-    "productName": "Accurate Bridge",
+    "appId": "com.mediview.bridge",
+    "productName": "Mediview Bridge",
     "icon": "icon.ico",
     "directories": {
       "output": "installer-output",
@@ -55,7 +55,7 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "Accurate Bridge",
+      "shortcutName": "Mediview Bridge",
       "installerIcon": "icon.ico",
       "uninstallerIcon": "icon.ico",
       "installerHeaderIcon": "icon.ico",

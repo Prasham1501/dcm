@@ -15,6 +15,7 @@ const AuthProvider = ({ children }) => {
     try {
       const { user: u } = await fn();
       setUser(u);
+      try { localStorage.setItem('mv:user', JSON.stringify(u)); } catch {}
       return u;
     } catch (e) {
       setError(e.message || 'Something went wrong');
@@ -28,7 +29,7 @@ const AuthProvider = ({ children }) => {
     login:  (data) => handleAuth(() => mvApi.login(data)),
     signup: (data) => handleAuth(() => mvApi.signup(data)),
     google: (data) => handleAuth(() => mvApi.google(data)),
-    logout: async () => { await mvApi.logout(); setUser(null); window.location.hash = '#/dashboard/login'; },
+    logout: async () => { await mvApi.logout(); setUser(null); try { localStorage.removeItem('mv:user'); } catch {}; window.location.hash = '#/dashboard/login'; },
     refresh: async () => { try { const { user: u } = await mvApi.me(); setUser(u); } catch { setUser(null); } },
   };
 

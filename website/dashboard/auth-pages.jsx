@@ -60,16 +60,23 @@ const GoogleButton = ({ onClick, label = "Continue with Google" }) => (
 
 const LoginPage = () => {
   const { login, google, loading, error, setError } = useAuth();
-  const [email, setEmail] = React.useState('demo@mediview.in');
-  const [password, setPassword] = React.useState('demo1234');
+  const [email, setEmail] = React.useState('');
+  const [password, setPassword] = React.useState('');
 
   const submit = async (e) => {
     e.preventDefault();
-    try { await login({ email, password }); window.location.hash = '#/dashboard'; }
+    try {
+      const u = await login({ email, password });
+      // super_admin's home is the operator console — never the user dashboard.
+      window.location.hash = (u?.role === 'super_admin') ? '#/dashboard/admin' : '#/dashboard';
+    }
     catch {}
   };
   const demoGoogle = async () => {
-    try { await google({ id_token: 'mock', email: 'doctor@hospital.in', name: 'Dr. Priya Sharma' }); window.location.hash = '#/dashboard'; }
+    try {
+      const u = await google({ id_token: 'mock', email: 'doctor@hospital.in', name: 'Dr. Priya Sharma' });
+      window.location.hash = (u?.role === 'super_admin') ? '#/dashboard/admin' : '#/dashboard';
+    }
     catch {}
   };
 
@@ -99,10 +106,6 @@ const LoginPage = () => {
         New to Mediview? <a href="#/dashboard/signup" className="text-rose font-semibold hover:underline">Create an account</a>
       </p>
 
-      <div className="mt-8 p-3.5 rounded-xl bg-paper2 dark:bg-white/[0.03] border border-[var(--line)] text-xs text-[var(--muted)] leading-relaxed">
-        <div className="font-semibold text-ink dark:text-paper mb-0.5">Demo credentials</div>
-        Email <span className="font-mono">demo@mediview.in</span> · Password <span className="font-mono">demo1234</span>
-      </div>
     </AuthShell>
   );
 };
@@ -116,10 +119,16 @@ const SignupPage = () => {
 
   const submit = async (e) => {
     e.preventDefault();
-    try { await signup({ name, email, password, role }); window.location.hash = '#/dashboard'; } catch {}
+    try {
+      const u = await signup({ name, email, password, role });
+      window.location.hash = (u?.role === 'super_admin') ? '#/dashboard/admin' : '#/dashboard';
+    } catch {}
   };
   const demoGoogle = async () => {
-    try { await google({ id_token: 'mock', email: 'doctor@hospital.in', name: 'Dr. Priya Sharma' }); window.location.hash = '#/dashboard'; }
+    try {
+      const u = await google({ id_token: 'mock', email: 'doctor@hospital.in', name: 'Dr. Priya Sharma' });
+      window.location.hash = (u?.role === 'super_admin') ? '#/dashboard/admin' : '#/dashboard';
+    }
     catch {}
   };
 

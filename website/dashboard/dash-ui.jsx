@@ -111,6 +111,8 @@ const ToastProvider = ({ children }) => {
     setToasts(t => [...t, { id, msg, tone }]);
     setTimeout(() => setToasts(t => t.filter(x => x.id !== id)), 4000);
   };
+  push.showToast = push;
+  push.addToast = push;
   return (
     <ToastCtx.Provider value={push}>
       {children}

@@ -19,8 +19,8 @@ const ContactPage = () => {
               {[
                 { i: <I.Mail size={18}/>, t: "Email", v: "prashamk15@gmail.com", h: "mailto:prashamk15@gmail.com" },
                 { i: <I.Phone size={18}/>, t: "Phone", v: "+91 91363 35529", h: "tel:+919136335529" },
-                { i: <I.MapPin size={18}/>, t: "HQ", v: "Mumbai · India", h: "#" },
-                { i: <I.MessageCircle size={18}/>, t: "Sales chat", v: "Live · Mon–Sat 10:00–19:00 IST", h: "#" },
+                { i: <I.MapPin size={18}/>, t: "HQ", v: "Mumbai · India", h: "https://maps.google.com/?q=Mumbai" },
+                { i: <I.MessageCircle size={18}/>, t: "Sales chat", v: "Live · Mon–Sat 10:00–19:00 IST", h: "mailto:prashamk15@gmail.com" },
               ].map(c => (
                 <a key={c.t} href={c.h} className="lift flex items-center gap-4 rounded-2xl border border-[var(--line)] bg-white dark:bg-white/[0.03] p-5">
                   <div className="h-11 w-11 grid place-items-center rounded-xl bg-rose-soft dark:bg-rose/15 text-rose">{c.i}</div>
@@ -35,7 +35,7 @@ const ContactPage = () => {
             <div className="mt-8 rounded-2xl border border-rose/30 bg-gradient-to-br from-rose-soft to-white dark:from-rose/10 dark:to-white/[0.02] p-6">
               <div className="font-display font-bold text-lg">Hospital pilot program</div>
               <p className="mt-2 text-sm text-[var(--muted)]">Free 60-day evaluation for chains with 5+ workstations. Includes onboarding + AI training on your study set.</p>
-              <div className="mt-4"><Btn href="#" variant="primary" size="sm" icon={<I.ArrowRight size={14}/>}>Apply for pilot</Btn></div>
+              <div className="mt-4"><Btn href="mailto:prashamk15@gmail.com?subject=Hospital%20pilot%20program%20application" variant="primary" size="sm" icon={<I.ArrowRight size={14}/>}>Apply for pilot</Btn></div>
             </div>
           </FadeUp>
 

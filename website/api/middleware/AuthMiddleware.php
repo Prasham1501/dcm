@@ -6,6 +6,11 @@ class AuthMiddleware {
     public static function handle(Request $req): void {
         $token = $req->bearerToken();
 
+        // Fallback: accept token from query string (for direct browser downloads like PDF)
+        if (!$token && !empty($_GET['token'])) {
+            $token = $_GET['token'];
+        }
+
         if (!$token) {
             Response::error('Authentication required', 401);
         }
