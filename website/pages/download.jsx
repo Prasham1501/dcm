@@ -3,7 +3,7 @@ const DownloadPage = () => (
   <div className="page-in">
     <PageHeader
       eyebrow="Download"
-      title={<>Get Mediview running <span className="italic text-grad-rose">in minutes.</span></>}
+      title={<>Get One Clickz running <span className="italic text-grad-rose">in minutes.</span></>}
       sub="Free 30-day trial. No credit card. Full feature unlock — Windows 10 / 11."
     />
 
@@ -13,7 +13,7 @@ const DownloadPage = () => (
         <FadeUp>
           <div className="lift rounded-3xl border border-rose/30 bg-gradient-to-br from-rose-soft via-white to-rose-soft/60 dark:from-rose/12 dark:via-white/[0.03] dark:to-rose/10 p-7 h-full">
             <Eyebrow tone="rose">DICOM Viewer · Recommended</Eyebrow>
-            <h2 className="font-display mt-4 text-3xl md:text-4xl font-bold leading-[1.05]">Mediview Viewer</h2>
+            <h2 className="font-display mt-4 text-3xl md:text-4xl font-bold leading-[1.05]">One Clickz Viewer</h2>
             <p className="mt-3 text-[var(--muted)] text-sm">Full DICOM workstation — MPR, AI reporting, print billing. Bundles XAMPP, MySQL, Orthanc.</p>
             <div className="mt-4 grid grid-cols-3 gap-2 text-xs">
               {[['Size','~180 MB'],['OS','Win 10/11'],['Plan','from ₹8K/mo']].map(([k,v]) => (
@@ -33,7 +33,7 @@ const DownloadPage = () => (
         <FadeUp delay={0.1}>
           <div className="lift rounded-3xl border border-amber-400/30 bg-gradient-to-br from-amber-50 via-white to-amber-50/60 dark:from-amber-500/[0.10] dark:via-white/[0.03] dark:to-amber-500/[0.06] p-7 h-full">
             <Eyebrow tone="gold">Bridge · Standalone product</Eyebrow>
-            <h2 className="font-display mt-4 text-3xl md:text-4xl font-bold leading-[1.05]">Mediview Bridge</h2>
+            <h2 className="font-display mt-4 text-3xl md:text-4xl font-bold leading-[1.05]">One Clickz Bridge</h2>
             <p className="mt-3 text-[var(--muted)] text-sm">Tray-only auto-print companion. Receives DICOM, routes per printer, prints silently. Needs its own license.</p>
             <div className="mt-4 grid grid-cols-3 gap-2 text-xs">
               {[['Size','~50 MB'],['OS','Win 10/11'],['Plan','₹3K/mo']].map(([k,v]) => (

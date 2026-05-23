@@ -34,9 +34,9 @@ window.DICOM_VIEWER.PrintWallet = (function () {
         if (!bal.ok) {
             // Map common reasons to user-friendly messages.
             const msg = bal.reason === 'no_license'
-                ? 'No license activated. Activate Mediview Pro to print, or buy print credits from the dashboard.'
+                ? 'No license activated. Activate One Clickz to print, or buy print credits from the dashboard.'
                 : bal.reason === 'offline'
-                    ? 'Cannot reach Mediview servers to verify credits. Connect to the internet and try again.'
+                    ? 'Cannot reach One Clickz servers to verify credits. Connect to the internet and try again.'
                     : 'Print credits unavailable: ' + (bal.reason || 'unknown');
             return { allowed: false, cost, balance: 0, reason: bal.reason, message: msg };
         }

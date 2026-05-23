@@ -39,7 +39,7 @@ const ProblemSolution = () => {
           </Stagger>
         </div>
         <div>
-          <FadeUp><Eyebrow tone="rose">Mediview fixes it</Eyebrow></FadeUp>
+          <FadeUp><Eyebrow tone="rose">One Clickz fixes it</Eyebrow></FadeUp>
           <FadeUp delay={0.05}>
             <h3 className="font-display mt-5 text-3xl md:text-5xl font-bold leading-[1.05]">
               One installer. <span className="italic text-grad-rose">Three problems solved.</span>
@@ -129,7 +129,7 @@ const CoreViewer = () => {
                 <span className="h-2.5 w-2.5 rounded-full bg-rose" />
                 <span className="h-2.5 w-2.5 rounded-full bg-amber-400" />
                 <span className="h-2.5 w-2.5 rounded-full bg-emerald-400" />
-                <span className="ml-3 text-[11px] font-mono text-[var(--muted)] truncate">mediview · workstation · CHEST PA / MRI BRAIN / CT ABD / OB-USG</span>
+                <span className="ml-3 text-[11px] font-mono text-[var(--muted)] truncate">one clickz · workstation · CHEST PA / MRI BRAIN / CT ABD / OB-USG</span>
                 <span className="hidden md:inline ml-auto text-[10px] font-mono uppercase tracking-[0.18em] text-[var(--muted)]">2×2 layout</span>
               </div>
               <img src="assets/viewer-2x2.png" alt="2x2 viewer" loading="lazy" decoding="async" className="w-full block" />
@@ -199,7 +199,7 @@ const CoreViewer = () => {
               Watch a multi-modality session in real time.
             </h4>
             <p className="mt-3 text-sm text-[var(--muted)] leading-relaxed">
-              No edits, no cuts. Recorded on a ₹50K mid-tier desktop running Mediview v2.4.
+              No edits, no cuts. Recorded on a ₹50K mid-tier desktop running One Clickz v3.0.
             </p>
           </div>
           <div className="lg:col-span-9 rounded-2xl overflow-hidden border border-[var(--line)] bg-slate-950 shadow-2xl">

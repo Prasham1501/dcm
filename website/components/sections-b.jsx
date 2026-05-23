@@ -42,7 +42,7 @@ const AISection = () => {
                 <span className="h-2.5 w-2.5 rounded-full bg-rose" />
                 <span className="h-2.5 w-2.5 rounded-full bg-amber-400" />
                 <span className="h-2.5 w-2.5 rounded-full bg-emerald-400" />
-                <span className="ml-3 text-[11px] font-mono text-white/50">mediview · ai radiologist · obstetric study</span>
+                <span className="ml-3 text-[11px] font-mono text-white/50">one clickz · ai radiologist · obstetric study</span>
                 <span className="ml-auto flex items-center gap-1.5 text-[11px] font-mono text-emerald-400">
                   <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse"/> generating · 28 tok/s
                 </span>

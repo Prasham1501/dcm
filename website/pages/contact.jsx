@@ -8,7 +8,7 @@ const ContactPage = () => {
     <div className="page-in">
       <PageHeader
         eyebrow="Contact"
-        title={<>Talk to the team <span className="italic text-grad-rose">behind Mediview.</span></>}
+        title={<>Talk to the team <span className="italic text-grad-rose">behind One Clickz.</span></>}
         sub="Demos, enterprise quotes, partnership, support — we reply within one business day."
       />
 

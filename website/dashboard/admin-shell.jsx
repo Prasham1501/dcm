@@ -53,7 +53,7 @@ const AdminShell = ({ route }) => {
               <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 20 20"><path d="M10.394 2.08a1 1 0 00-.788 0l-7 3a1 1 0 000 1.84L5.25 8.051a.999.999 0 01.356-.257l4-1.714a1 1 0 11.788 1.838L7.667 9.088l1.94.831a1 1 0 00.787 0l7-3a1 1 0 000-1.838l-7-3zM3.31 9.397L5 10.12v4.102a8.969 8.969 0 00-1.05-.174 1 1 0 01-.89-.89 11.115 11.115 0 01.25-3.762zM9.3 16.573A9.026 9.026 0 007 14.935v-3.957l1.818.78a3 3 0 002.364 0l5.508-2.361a11.026 11.026 0 01.25 3.762 1 1 0 01-.89.89 8.968 8.968 0 00-5.35 2.524 1 1 0 01-1.4 0z"/></svg>
             </div>
             <div>
-              <div className="text-white font-bold text-sm tracking-tight">Mediview</div>
+              <div className="text-white font-bold text-sm tracking-tight">One Clickz</div>
               <div className="text-[10px] text-slate-500 font-medium">Admin Console</div>
             </div>
           </div>
@@ -1464,7 +1464,7 @@ const AdminRevenue = () => {
     const blob = new Blob([header.join(',') + '\n' + rows.join('\n')], { type: 'text/csv' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = `mediview-revenue-${range}-${new Date().toISOString().slice(0,10)}.csv`;
+    a.download = `oneclickz-revenue-${range}-${new Date().toISOString().slice(0,10)}.csv`;
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(a.href), 60000);
   };
@@ -1598,7 +1598,7 @@ const AdminReleases = () => {
           {['viewer','bridge'].map(app => (
             <div key={app}>
               <div className="flex items-center justify-between mb-3">
-                <h3 className="text-sm font-semibold text-white uppercase tracking-wider">{app === 'viewer' ? 'Mediview Viewer (desktop)' : 'Mediview Bridge (tray)'}</h3>
+                <h3 className="text-sm font-semibold text-white uppercase tracking-wider">{app === 'viewer' ? 'One Clickz Viewer (desktop)' : 'One Clickz Bridge (tray)'}</h3>
                 <span className="text-[11px] text-slate-500">Newest at top — desktops always pull the top row.</span>
               </div>
               {grouped[app].length === 0 ? (

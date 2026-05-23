@@ -305,9 +305,9 @@ export function LicenseTab() {
       {/* Purchase Link */}
       <p className="text-center text-xs text-app-text-muted">
         Need a license?{' '}
-        <a href="https://mehrgrewal.com/oneclickz/" target="_blank" rel="noopener noreferrer"
+        <a href="https://mehrgrewal.com/mediview/" target="_blank" rel="noopener noreferrer"
            className="text-app-accent underline hover:opacity-80">
-          Purchase at mehrgrewal.com/oneclickz
+          Purchase at mehrgrewal.com/mediview
         </a>
       </p>
     </div>

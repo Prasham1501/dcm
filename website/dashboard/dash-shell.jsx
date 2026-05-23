@@ -180,7 +180,7 @@ const DashShell = ({ activeId, children, title, subtitle, action }) => {
           </button>
           <a href="#/" className="flex items-center gap-2 font-display font-bold">
             <div className="h-7 w-7 rounded-lg bg-rose text-white grid place-items-center text-xs font-bold">M</div>
-            <span className="hidden sm:inline">Mediview</span>
+            <span className="hidden sm:inline">One Clickz</span>
             <span className="hidden sm:inline text-[var(--muted)] text-xs font-mono ml-2 px-2 py-0.5 rounded bg-paper2 dark:bg-white/[0.06] border border-[var(--line)]">Dashboard</span>
           </a>
 

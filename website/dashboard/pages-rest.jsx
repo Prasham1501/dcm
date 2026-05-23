@@ -83,7 +83,7 @@ const PageDevices = () => {
       action={<DButton variant="primary" onClick={() => setShowRegister(true)}><I.Plus size={14}/> Register device</DButton>}>
       <div className="rounded-2xl border border-[var(--line)] bg-white dark:bg-mid2 overflow-hidden">
         {loading ? <Spinner/> : devices.length === 0 ? (
-          <EmptyState icon={<I.Monitor size={40}/>} title="No devices yet" subtitle="Install Mediview on a workstation and register it here." action={<DButton variant="primary" onClick={() => setShowRegister(true)}>Register first device</DButton>}/>
+          <EmptyState icon={<I.Monitor size={40}/>} title="No devices yet" subtitle="Install One Clickz on a workstation and register it here." action={<DButton variant="primary" onClick={() => setShowRegister(true)}>Register first device</DButton>}/>
         ) : (
           <table className="w-full text-sm">
             <thead className="bg-paper2 dark:bg-white/[0.04] text-xs uppercase tracking-wider text-[var(--muted)]">
@@ -126,7 +126,7 @@ const PageDevices = () => {
       {/* Register modal */}
       <Modal open={showRegister} onClose={() => setShowRegister(false)} title="Register a new device">
         <div className="space-y-4">
-          <p className="text-sm text-[var(--muted)]">The registration code is your license key. Install Mediview on the workstation, open Settings → License, paste one of the active keys below, and click Activate. The workstation will appear here after activation.</p>
+          <p className="text-sm text-[var(--muted)]">The registration code is your license key. Install One Clickz on the workstation, open Settings → License, paste one of the active keys below, and click Activate. The workstation will appear here after activation.</p>
           {licenses.filter(l => l.status === 'active').length === 0 ? (
             <div className="rounded-xl border border-dashed border-[var(--line)] p-4 text-sm text-[var(--muted)]">
               No active license is available. <a href="#/dashboard/licenses" className="text-rose font-semibold hover:underline">Order a license</a> first.
@@ -817,7 +817,7 @@ const PageAnalytics = () => {
       {daily.length === 0 ? (
         <div className="rounded-2xl border border-[var(--line)] bg-white dark:bg-mid2 p-12 text-center">
           <I.BarChart size={40} className="mx-auto mb-3 opacity-20"/>
-          <div className="text-sm text-[var(--muted)]">No activity data yet. Charts will appear as your team uses Mediview.</div>
+          <div className="text-sm text-[var(--muted)]">No activity data yet. Charts will appear as your team uses One Clickz.</div>
         </div>
       ) : (
         <div className="rounded-2xl border border-[var(--line)] bg-white dark:bg-mid2 p-5">
@@ -983,7 +983,7 @@ const PageReferrals = () => {
   }, []);
 
   // Prefer server-provided URL; fall back to constructing one from code
-  const link = ref?.referral_url || (ref?.code ? (window.location.origin + '/mediview/?ref=' + ref.code) : '');
+  const link = ref?.referral_url || (ref?.code ? (window.location.origin + '/oneclickz/?ref=' + ref.code) : '');
   const copy = () => { if (!link) return; navigator.clipboard.writeText(link); setCopied(true); setTimeout(() => setCopied(false), 2000); };
 
   return (
@@ -1105,7 +1105,7 @@ const SettingsTabProfile = () => {
           <div className="text-sm text-[var(--muted)]">Loading…</div>
         ) : licenses.length === 0 ? (
           <div className="rounded-xl border border-dashed border-[var(--line)] p-5 text-sm text-[var(--muted)]">
-            No licenses yet. <a href="#/dashboard/licenses" className="text-rose font-semibold hover:underline">Order one</a> to activate Mediview on a machine.
+            No licenses yet. <a href="#/dashboard/licenses" className="text-rose font-semibold hover:underline">Order one</a> to activate One Clickz on a machine.
           </div>
         ) : (
           <div className="space-y-3">
@@ -1542,7 +1542,7 @@ const PageLicenses = () => {
       const { order_id, rzp_key, amount } = orderResp;
       window.openRazorpay({
         key: rzp_key, amount, order_id,
-        name: 'Mediview License',
+        name: 'One Clickz License',
         description: PLAN_LABELS[selectedPlan] + ' License',
         handler: async (resp) => {
           await mvApi.verifyLicense({ order_id, payment_id: resp.razorpay_payment_id, signature: resp.razorpay_signature, plan: selectedPlan, product: selectedProduct });
@@ -1559,7 +1559,7 @@ const PageLicenses = () => {
   };
 
   return (
-    <DashShell activeId="licenses" title="Licenses" subtitle="Manage your Mediview software licenses.">
+    <DashShell activeId="licenses" title="Licenses" subtitle="Manage your One Clickz software licenses.">
       <div className="flex justify-end mb-6">
         <DButton variant="primary" onClick={() => setShowOrder(true)}>+ Order License</DButton>
       </div>

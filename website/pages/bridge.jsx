@@ -6,7 +6,7 @@
 const BridgePage = () => (
   <div className="page-in">
     <PageHeader
-      eyebrow="Mediview Bridge"
+      eyebrow="One Clickz Bridge"
       title={<>Auto-print every study. <span className="italic text-grad-rose">Untouched by hands.</span></>}
       sub="A tray-only Windows companion that listens on DICOM, renders, and routes to the right printer — automatically. Separate product, separate license, ₹3,000/month."
     />
@@ -20,7 +20,7 @@ const BridgePage = () => (
               <Eyebrow tone="gold">Standalone product · ₹3,000/month</Eyebrow>
               <h2 className="mt-5 font-display text-4xl md:text-5xl font-bold leading-[1.05]">Drop a study. <br/><span className="italic text-grad-rose">It prints. Done.</span></h2>
               <p className="mt-5 text-[var(--muted)] max-w-xl leading-relaxed">
-                Mediview Bridge runs in the system tray. When your modality (CT, MR, USG, CR) sends a DICOM
+                One Clickz Bridge runs in the system tray. When your modality (CT, MR, USG, CR) sends a DICOM
                 Storage SCU, Bridge receives it, renders to the layout you configured, and fires the print job
                 — all without a doctor ever touching a keyboard.
               </p>
@@ -149,7 +149,7 @@ const BridgePage = () => (
       </Stagger>
       <FadeUp delay={0.15}>
         <div className="mt-10 max-w-2xl mx-auto text-center text-xs text-[var(--muted)]">
-          Bridge is a separate product from Mediview Viewer. A Bridge key won't activate Viewer, and a Viewer key won't activate Bridge.
+          Bridge is a separate product from One Clickz Viewer. A Bridge key won't activate Viewer, and a Viewer key won't activate Bridge.
           You can run both on the same PC with two keys, or just one.
         </div>
       </FadeUp>

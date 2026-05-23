@@ -1,9 +1,9 @@
 @echo off
-REM Hospital DICOM Viewer Pro v2.0 - Quick Installation Script
+REM One Clickz v3.0 - Quick Installation Script
 REM Run this as Administrator
 
 echo ============================================
-echo Hospital DICOM Viewer Pro v2.0
+echo One Clickz v3.0
 echo Quick Installation Script
 echo ============================================
 echo.

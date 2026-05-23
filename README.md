@@ -1,4 +1,4 @@
-# 🏥 Accurate DICOM Viewer Pro
+# 🏥 One Clickz
 
 <div align="center">
 

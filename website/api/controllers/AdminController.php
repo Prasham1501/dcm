@@ -77,7 +77,7 @@ class AdminController {
     }
 
     /**
-     * GET /admin/devices — fleet view of every Mediview install.
+     * GET /admin/devices — fleet view of every software install.
      * Filterable by status / online / version / account / search term.
      * The single most important admin view: shows where the software lives,
      * when it last phoned home, which version it's running, and who owns it.
@@ -889,7 +889,7 @@ class AdminController {
         if ($u) {
             Mailer::send($u['email'], $u['name'], 'Reply to your support ticket: ' . $ticket['subject'], 'email-ticket-reply', [
                 'subject'    => $ticket['subject'],
-                'from'       => Settings::get('brand.name', 'Mediview Support'),
+                'from'       => Settings::get('brand.name', 'One Clickz Support'),
                 'message'    => $text,
                 'ticket_url' => rtrim(getenv('APP_URL'), '/') . '/dashboard.html#/dashboard/tickets',
             ]);
@@ -968,9 +968,9 @@ class AdminController {
         $body = $req->body();
         $to   = $body['to'] ?? $req->user['email'];
         try {
-            $sent = Mailer::send($to, 'Test', 'SMTP Test — Mediview', 'email-ticket-reply', [
+            $sent = Mailer::send($to, 'Test', 'SMTP Test — One Clickz', 'email-ticket-reply', [
                 'subject' => 'SMTP Test',
-                'from'    => 'Mediview Admin',
+                'from'    => 'One Clickz Admin',
                 'message' => 'If you received this email, your SMTP configuration is working correctly!',
                 'ticket_url' => '',
             ]);

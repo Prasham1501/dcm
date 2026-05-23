@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Mediview Dashboard — Account, billing & support</title>
-<meta name="description" content="Manage your Mediview Pro account: top up print credits, recharge AI, view invoices, raise tickets, and chat with our AI agent." />
+<title>One Clickz Dashboard — Account, billing & support</title>
+<meta name="description" content="Manage your One Clickz account: top up print credits, recharge AI, view invoices, raise tickets, and chat with our AI agent." />
 <link rel="icon" type="image/png" href="assets/favicon.png" />
 
 <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -41,7 +41,7 @@
 <!-- Environment config (override these per environment) -->
 <script>
   const isLocalDashboard = ['localhost', '127.0.0.1', '::1'].includes(window.location.hostname);
-  window.MEDIVIEW_API_BASE = isLocalDashboard ? 'http://127.0.0.1:8092' : '/mediview/api'; // hosted path: 'https://mehrgrewal.com/mediview/api'
+  window.ONE_CLICKZ_API_BASE = isLocalDashboard ? 'http://127.0.0.1:8092' : '/mediview/api'; // hosted path: 'https://mehrgrewal.com/mediview/api'
   window.MEDIVIEW_API_MODE = isLocalDashboard ? (localStorage.getItem('mv:mode') || 'mock') : 'live'; // 'live' | 'mock'
 
   // Impersonation handoff — when a super-admin opens this tab with ?imp=<token>,

@@ -1,16 +1,16 @@
-# Installation Guide — Mediview Bridge
+# Installation Guide — One Clickz Bridge
 
 ## For end users (after the installer is built)
 
-1. Get `MediviewBridge-Setup-1.0.0.exe` from `installer-output/`.
+1. Get `OneClickzBridge-Setup-1.0.0.exe` from `installer-output/`.
 2. **Right-click → Run as administrator** (or just double-click — Windows
    will prompt for UAC because the installer needs to add firewall rules
    and write to `Program Files`).
 3. Wizard flow:
    - Welcome → Next
-   - Choose install dir (default: `C:\Program Files\Mediview Bridge`) → Next
+   - Choose install dir (default: `C:\Program Files\One Clickz Bridge`) → Next
    - Install → wait
-   - **Leave the "Launch Mediview Bridge" checkbox ON** → Finish
+   - **Leave the "Launch One Clickz Bridge" checkbox ON** → Finish
 4. The bridge starts. You'll see:
    - A new tray icon (red Accurate logo) near the clock
    - The config window opens automatically on first launch
@@ -46,7 +46,7 @@ npm run build:win
 The signed/unsigned installer will be at:
 
 ```
-bridge\installer-output\MediviewBridge-Setup-1.0.0.exe
+bridge\installer-output\OneClickzBridge-Setup-1.0.0.exe
 ```
 
 Distribute that single file to clinic PCs.
@@ -57,7 +57,7 @@ Distribute that single file to clinic PCs.
 
 ### Tray icon doesn't appear
 
-- Check `%APPDATA%\MediviewBridge\logs\bridge-YYYY-MM-DD.log` for errors.
+- Check `%APPDATA%\OneClickzBridge\logs\bridge-YYYY-MM-DD.log` for errors.
 - Make sure no antivirus blocked the install.
 
 ### Bridge starts but modality says "Connection refused"
@@ -65,7 +65,7 @@ Distribute that single file to clinic PCs.
 - Check the slot is **Enabled** (green dot in the slot card header).
 - Check the firewall rule was added:
   ```powershell
-  netsh advfirewall firewall show rule name="Mediview Bridge - 7001"
+  netsh advfirewall firewall show rule name="One Clickz Bridge - 7001"
   ```
 - If missing, run as administrator once and the rule will be added.
 
@@ -79,6 +79,6 @@ Distribute that single file to clinic PCs.
 
 ### Auto-start at login isn't working
 
-- Open **Task Manager → Startup apps** — look for `Mediview Bridge`.
+- Open **Task Manager → Startup apps** — look for `One Clickz Bridge`.
 - If missing, open the bridge from the Start menu once; it re-registers on
   every launch.

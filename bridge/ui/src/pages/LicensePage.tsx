@@ -174,7 +174,7 @@ export function LicensePage() {
 
       <p className="text-center text-xs text-app-text-secondary">
         Need a license?{' '}
-        <a href="https://mehrgrewal.com/oneclickz/" target="_blank" rel="noopener noreferrer"
+        <a href="https://mehrgrewal.com/mediview/" target="_blank" rel="noopener noreferrer"
            className="text-app-accent underline hover:opacity-80">
           Purchase here
         </a>

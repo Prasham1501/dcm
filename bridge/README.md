@@ -1,4 +1,4 @@
-# Mediview Bridge
+# One Clickz Bridge
 
 A DICOM print bridge that sits in the Windows system tray, listens for DICOM
 images sent from MRI / CT / USG / CR modalities, and automatically prints
@@ -28,7 +28,7 @@ the same theme tokens and the same multi-image layout system as the viewer.
 
 ## Installation (end users)
 
-1. Double-click `MediviewBridge-Setup-1.0.0.exe`.
+1. Double-click `OneClickzBridge-Setup-1.0.0.exe`.
 2. Approve the UAC prompt (needed to add Windows firewall rules for the
    listener ports).
 3. Pick install directory → install.
@@ -78,7 +78,7 @@ cd bridge
 npm run build:win
 ```
 
-Output: `bridge\installer-output\MediviewBridge-Setup-1.0.0.exe`.
+Output: `bridge\installer-output\OneClickzBridge-Setup-1.0.0.exe`.
 
 ---
 
@@ -89,12 +89,12 @@ bridge/
 ├── main.js                 Electron main: tray, IPC, lifecycle, auto-start
 ├── preload.js              contextBridge API (window.bridgeAPI)
 ├── package.json            electron-builder config (NSIS, perMachine)
-├── icon.ico                Shared with Accurate viewer
+├── icon.ico                Shared with One Clickz viewer
 ├── src/
-│   ├── log/logger.js       Rotating file logger (%APPDATA%/MediviewBridge/logs)
+│   ├── log/logger.js       Rotating file logger (%APPDATA%/OneClickzBridge/logs)
 │   ├── config/
 │   │   ├── schema.js       PrinterSlot defaults + validation
-│   │   └── store.js        JSON config (%APPDATA%/MediviewBridge/config.json)
+│   │   └── store.js        JSON config (%APPDATA%/OneClickzBridge/config.json)
 │   ├── firewall/           Multi-port netsh firewall rule (UAC if needed)
 │   ├── autostart/          Electron setLoginItemSettings wrapper
 │   ├── scp/
@@ -133,7 +133,7 @@ Per-connection lifecycle:
 2. Bridge replies `A-ASSOCIATE-AC`, accepting all offered presentation
    contexts and preferring Explicit VR Little Endian.
 3. Modality sends one or more `C-STORE-RQ` operations; each `.dcm` is saved
-   to `%APPDATA%/MediviewBridge/incoming/<slotId>/`.
+   to `%APPDATA%/OneClickzBridge/incoming/<slotId>/`.
 4. Modality sends `A-RELEASE-RQ`; bridge replies `A-RELEASE-RP`.
 5. After `studyDebounceSeconds` of silence per Study UID, the job queue
    renders all images and prints to the configured Windows printer.

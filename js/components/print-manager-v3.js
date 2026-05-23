@@ -46,7 +46,7 @@ window.DICOM_VIEWER.PrintManager = class {
         const res = await wallet.spend({
             pages: charge.pages,
             colorMode: charge.colorMode,
-            meta: 'Mediview viewer print',
+            meta: 'One Clickz viewer print',
         });
         if (!res.ok) {
             const msg = res.reason === 'insufficient'
@@ -865,7 +865,7 @@ window.DICOM_VIEWER.PrintManager = class {
 
             <div class="page-footer">
                 <span>${settings.includeTimestamp ? `Generated: ${new Date().toLocaleString()}` : ''}</span>
-                <span>DICOM Viewer - Accurate Diagnostics</span>
+                <span>One Clickz</span>
                 <span>For Medical Use Only</span>
             </div>
         </div>

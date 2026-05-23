@@ -1,7 +1,7 @@
-# MediView Pro - Network DICOM Receiver Setup Guide
+# One Clickz - Network DICOM Receiver Setup Guide
 
 ## Overview
-MediView Pro now includes a network DICOM receiver that allows your USG (Ultrasound) machine and other medical devices to send DICOM files directly to your desktop application over WiFi.
+One Clickz now includes a network DICOM receiver that allows your USG (Ultrasound) machine and other medical devices to send DICOM files directly to your desktop application over WiFi.
 
 ## System Features
 - **Automatic File Reception**: Receives DICOM files from networked medical devices
@@ -11,8 +11,8 @@ MediView Pro now includes a network DICOM receiver that allows your USG (Ultraso
 
 ## Quick Start
 
-### Step 1: Start MediView Pro
-1. Launch the MediView Pro desktop application
+### Step 1: Start One Clickz
+1. Launch the One Clickz desktop application
 2. Go to **Settings** (or click the Config icon)
 3. Navigate to the **Network** tab
 

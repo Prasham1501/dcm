@@ -1,11 +1,11 @@
 =============================================================
-MediView Pro - Changes Summary
+One Clickz - Changes Summary
 =============================================================
 
 1. SOFTWARE RENAMING
-   ✓ Renamed from "Accurate 15.2.7" to "MediView Pro 1.0"
+   ✓ Renamed from "Accurate" and "MediView" to "One Clickz"
    ✓ Updated all pages: PatientListPage, PrintManagementPage, StudiesPage
-   ✓ Updated ToolsPanel dropdown options (Accurate -> MediView)
+   ✓ Updated ToolsPanel dropdown options
    ✓ Updated About dialog in main.js
 
 2. NETWORK DICOM RECEIVER (New Feature)

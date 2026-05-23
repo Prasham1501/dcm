@@ -10,8 +10,8 @@ const AuthShell = ({ children, title, sub }) => (
       </div>
       <div className="relative flex flex-col justify-between w-full max-w-lg">
         <a href="#/" className="inline-flex items-center gap-2 text-2xl font-display font-bold">
-          <div className="h-9 w-9 rounded-xl bg-white text-rose grid place-items-center font-bold">M</div>
-          Mediview
+          <div className="h-9 w-9 rounded-xl bg-white text-rose grid place-items-center font-bold">O</div>
+          One Clickz
         </a>
         <div>
           <div className="font-display text-5xl xl:text-6xl font-bold leading-[1.05] mb-6">See more.<br/>Diagnose faster.<br/>Bill accurately.</div>
@@ -22,7 +22,7 @@ const AuthShell = ({ children, title, sub }) => (
             <div><div className="font-display font-bold text-2xl text-white">99.9%</div>uptime</div>
           </div>
         </div>
-        <div className="text-xs text-white/60">© Mediview · ISO 13485 · DICOM compliant</div>
+        <div className="text-xs text-white/60">© One Clickz · ISO 13485 · DICOM compliant</div>
       </div>
     </div>
 
@@ -30,7 +30,7 @@ const AuthShell = ({ children, title, sub }) => (
     <div className="flex-1 flex items-center justify-center p-6 md:p-12 bg-paper dark:bg-midnight">
       <div className="w-full max-w-md">
         <a href="#/" className="lg:hidden inline-flex items-center gap-2 text-xl font-display font-bold mb-8">
-          <div className="h-8 w-8 rounded-lg bg-rose text-white grid place-items-center font-bold">M</div> Mediview
+          <div className="h-8 w-8 rounded-lg bg-rose text-white grid place-items-center font-bold">O</div> One Clickz
         </a>
         <h1 className="font-display text-4xl font-bold tracking-tight">{title}</h1>
         {sub && <p className="mt-2 text-[var(--muted)]">{sub}</p>}
@@ -81,7 +81,7 @@ const LoginPage = () => {
   };
 
   return (
-    <AuthShell title="Welcome back." sub="Sign in to your Mediview dashboard.">
+    <AuthShell title="Welcome back." sub="Sign in to your One Clickz dashboard.">
       {error && <div className="mb-4 p-3 rounded-lg bg-rose-soft text-rose-dark text-sm border border-rose/30">{error}</div>}
 
       <GoogleButton onClick={demoGoogle} />
@@ -103,7 +103,7 @@ const LoginPage = () => {
       </form>
 
       <p className="mt-6 text-sm text-[var(--muted)]">
-        New to Mediview? <a href="#/dashboard/signup" className="text-rose font-semibold hover:underline">Create an account</a>
+        New to One Clickz? <a href="#/dashboard/signup" className="text-rose font-semibold hover:underline">Create an account</a>
       </p>
 
     </AuthShell>

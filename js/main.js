@@ -144,10 +144,10 @@ document.addEventListener('DOMContentLoaded', function () {
         });
 
         setTimeout(() => {
-            window.DICOM_VIEWER.showAISuggestion('Welcome to Accurate Viewer! Upload DICOM files to start. MPR views will be automatically generated for multi-slice series.');
+            window.DICOM_VIEWER.showAISuggestion('Welcome to One Clickz! Upload DICOM files to start. MPR views will be automatically generated for multi-slice series.');
         }, 1000);
 
-        console.log('Accurate Viewer initialized - no default tool active');
+        console.log('One Clickz initialized - no default tool active');
     }
 
 

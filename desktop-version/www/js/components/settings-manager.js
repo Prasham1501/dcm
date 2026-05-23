@@ -401,7 +401,7 @@ window.DICOM_VIEWER.SettingsManager = {
 
             <h6 class="text-info mb-3 mt-4"><i class="bi bi-info-circle"></i> About</h6>
             <div class="alert alert-secondary">
-                <strong>DICOM Viewer Pro</strong><br>
+                <strong>One Clickz</strong><br>
                 <small>
                     Version: 2.0.0<br>
                     Build: Enhanced MPR<br>

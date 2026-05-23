@@ -169,7 +169,7 @@ const Footer = () => {
         </div>
 
         <div className="mt-14 pt-6 border-t border-[var(--line)] flex flex-col md:flex-row gap-4 md:items-center md:justify-between text-xs text-[var(--muted)]">
-          <div>© 2026 Mediview. All rights reserved.</div>
+          <div>© 2026 One Clickz. All rights reserved.</div>
           <div className="flex items-center gap-3 font-mono">
             <span>Cornerstone.js</span>
             <span className="opacity-40">·</span>

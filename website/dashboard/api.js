@@ -1,4 +1,4 @@
-// Mediview API client — talks to PHP backend OR localStorage mock.
+// One Clickz API client — talks to PHP backend OR localStorage mock.
 // Flip MODE to 'live' once your engineer deploys the PHP backend.
 //
 // Backend contract (each endpoint accepts/returns JSON):
@@ -43,11 +43,11 @@
 //   POST /api/license/deactivate{ license_key, fingerprint }               -> ok
 //   POST /api/wallet/spend      { license_key, fingerprint, type, credits } -> { balance }
 
-const API_MODE = (window.MEDIVIEW_API_MODE || localStorage.getItem('mv:mode') || 'live'); // 'mock' | 'live'
-const API_BASE = window.MEDIVIEW_API_BASE || '/api';
+const API_MODE = (window.ONE_CLICKZ_API_MODE || localStorage.getItem('oc:mode') || 'live'); // 'mock' | 'live'
+const API_BASE = window.ONE_CLICKZ_API_BASE || '/api';
 
-const tokenKey = 'mv:token';
-const userKey  = 'mv:user';
+const tokenKey = 'oc:token';
+const userKey  = 'oc:user';
 
 const getToken = () => localStorage.getItem(tokenKey);
 const setToken = (t) => t ? localStorage.setItem(tokenKey, t) : localStorage.removeItem(tokenKey);
@@ -91,7 +91,7 @@ const mockDB = (() => {
   const KEY = 'mv:db';
   const seed = () => ({
     users: [
-      { id: 'u1', name: 'Demo Doctor', email: 'demo@mediview.in', password: 'demo1234', role: 'radiologist', created: Date.now() - 86400000 * 30, verified: true },
+      { id: 'u1', name: 'Demo Doctor', email: 'demo@oneclickz.in', password: 'demo1234', role: 'radiologist', created: Date.now() - 86400000 * 30, verified: true },
     ],
     devices: [
       { id: 'd1', account_id: 'acc1', machine_name: 'Reception-PC-01', fingerprint: 'AB:CD:EF:01:23:45', activated_at: Date.now() - 86400000 * 12, last_heartbeat_at: Date.now() - 60000, status: 'active', os: 'Windows 11 Pro', key_code: 'MV-ABCD-EFGH-IJKL-MNOP', plan: 'annual', seats: 3, seats_used: 2 },
@@ -122,7 +122,7 @@ const mockDB = (() => {
       { id: 'inv_002', number: 'MV-2025-0002', subtotal_inr: 500, gst_inr: 0, total_inr: 500, status: 'paid', created_at: Date.now() - 86400000 * 4 },
     ],
     team: {
-      members: [{ id: 'u1', name: 'Demo Doctor', email: 'demo@mediview.in', role: 'admin', created_at: Date.now() - 86400000 * 30, last_login_at: Date.now() - 60000 }],
+      members: [{ id: 'u1', name: 'Demo Doctor', email: 'demo@oneclickz.in', role: 'admin', created_at: Date.now() - 86400000 * 30, last_login_at: Date.now() - 60000 }],
       invites: [],
     },
     audit: [
@@ -177,7 +177,7 @@ const mockHandlers = {
   'POST /auth/google': async ({ body }) => {
     await sleep(500);
     const db = mockDB.get();
-    const email = body.email || 'demo@mediview.in';
+    const email = body.email || 'demo@oneclickz.in';
     let user = db.users.find(u => u.email === email);
     if (!user) {
       user = { id: 'u' + uid(), name: body.name || 'Google User', email, role: 'radiologist', created_at: now(), verified: true };
@@ -314,8 +314,8 @@ const mockHandlers = {
   'POST /contact': async ({ body }) => { await sleep(600); return { ok: true }; },
 
   'GET /public/config': async () => ({
-    brand_name: 'Mediview', rzp_key_id: 'rzp_test_DEMO',
-    google_client_id: '', support_email: 'support@mediview.in',
+    brand_name: 'One Clickz', rzp_key_id: 'rzp_test_DEMO',
+    google_client_id: '', support_email: 'support@oneclickz.in',
   }),
 };
 

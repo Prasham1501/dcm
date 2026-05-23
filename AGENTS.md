@@ -1,7 +1,7 @@
-# DICOM Viewer Pro
+# One Clickz
 
 ## Project Overview
-A professional DICOM medical image viewer built as a desktop-style web application. Designed to replicate and improve upon the Accurate DICOM Viewer software with modern web technologies. Runs as an Electron desktop app with a Vite/React frontend.
+A professional DICOM medical image viewer built as a desktop-style web application. Designed to replicate and improve upon modern medical software with modern web technologies. Runs as an Electron desktop app with a Vite/React frontend.
 
 ## Tech Stack
 - **Frontend**: React 18 + TypeScript + Vite 5

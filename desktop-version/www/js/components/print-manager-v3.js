@@ -803,7 +803,7 @@ window.DICOM_VIEWER.PrintManager = class {
 
             <div class="page-footer">
                 <span>${settings.includeTimestamp ? `Generated: ${new Date().toLocaleString()}` : ''}</span>
-                <span>DICOM Viewer - Accurate Diagnostics</span>
+                <span>One Clickz</span>
                 <span>For Medical Use Only</span>
             </div>
         </div>

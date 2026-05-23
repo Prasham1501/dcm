@@ -48,7 +48,7 @@ for (const d of [userDataRoot, logDir, historyDir, incomingRoot, printedRoot, fa
 }
 
 // ===== License & Trial System =====
-const LICENSE_API_BASE = 'https://mehrgrewal.com/oneclickz/api';
+const LICENSE_API_BASE = 'https://mehrgrewal.com/mediview/api';
 const TRIAL_DAYS = 7;
 
 function getFingerprint() {

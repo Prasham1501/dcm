@@ -45,7 +45,7 @@ const mysqlClientPath = path.join(mysqlDir, 'bin', 'mysql.exe');
 const userDataPath = app.getPath('userData');
 
 // ===== License & Trial System =====
-const LICENSE_API_BASE = 'https://mehrgrewal.com/oneclickz/api';
+const LICENSE_API_BASE = 'https://mehrgrewal.com/mediview/api';
 const TRIAL_DAYS = 7;
 const trialFile = path.join(userDataPath, '.trial');
 const licenseFile = path.join(userDataPath, '.license');

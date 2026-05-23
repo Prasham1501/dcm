@@ -1,5 +1,5 @@
--- Mediview SaaS — Seed Data
--- Run AFTER 001_schema.sql:  mysql -u user -p mediview < 002_seed.sql
+-- One Clickz SaaS — Seed Data
+-- Run AFTER 001_schema.sql:  mysql -u user -p oneclickz < 002_seed.sql
 -- Edit SUPER_ADMIN_EMAIL below before running!
 
 SET NAMES utf8mb4;
@@ -10,7 +10,7 @@ SET NAMES utf8mb4;
 
 INSERT IGNORE INTO settings (`key`, `value`) VALUES
 -- Brand
-('brand.name',          'Mediview'),
+('brand.name',          'One Clickz'),
 ('brand.tagline',       'See more. Diagnose faster. Bill accurately.'),
 ('brand.support_email', ''),
 ('brand.phone',         ''),
@@ -24,7 +24,7 @@ INSERT IGNORE INTO settings (`key`, `value`) VALUES
 ('smtp.username',       ''),
 ('smtp.password',       ''),
 ('smtp.from_email',     ''),
-('smtp.from_name',      'Mediview'),
+('smtp.from_name',      'One Clickz'),
 
 -- Razorpay (fill via Admin → Settings)
 ('razorpay.key_id',       ''),
@@ -38,7 +38,7 @@ INSERT IGNORE INTO settings (`key`, `value`) VALUES
 -- Gemini AI
 ('gemini.api_key',      ''),
 ('gemini.model',        'gemini-1.5-flash'),
-('gemini.system_prompt','You are a helpful support assistant for Mediview, a professional DICOM medical imaging viewer. Help users with billing, license activation, technical issues, and product questions. Be concise and professional.'),
+('gemini.system_prompt','You are a helpful support assistant for One Clickz, a professional DICOM medical imaging viewer. Help users with billing, license activation, technical issues, and product questions. Be concise and professional.'),
 
 -- Pricing (INR)
 ('pricing.monthly_inr',  '8000'),
@@ -87,4 +87,4 @@ UPDATE users
 SET email = 'prashamk15@gmail.com',
     password_hash = '$2y$12$AsUBady.MIRKOARMPYdWF.TuEyJmNWS9xjypy4RQPdfdtz5.FnAsa'
 WHERE id = 'usr_superadmin00'
-  AND (email = 'admin@mediview.in' OR password_hash LIKE '$2y$12$placeholder%');
+  AND (email = 'admin@oneclickz.in' OR password_hash LIKE '$2y$12$placeholder%');

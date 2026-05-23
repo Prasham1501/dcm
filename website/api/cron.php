@@ -1,6 +1,6 @@
 <?php
 /**
- * Mediview Cron Jobs
+ * One Clickz Cron Jobs
  * ---------------------------------------------------------
  * Run every hour via cPanel Cron Jobs:
  *   php /home/<user>/public_html/api/cron.php
@@ -167,7 +167,7 @@ function job_send_trial_expiry_warnings(): void
             Mailer::send(
                 $row['email'],
                 $row['name'],
-                'Your Mediview trial expires soon',
+                'Your One Clickz trial expires soon',
                 'email-trial-warning',
                 [
                     'name'        => $row['name'],

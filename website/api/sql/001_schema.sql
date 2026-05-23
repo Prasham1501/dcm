@@ -1,5 +1,5 @@
--- Mediview SaaS — Full MySQL Schema
--- Run this once against your database: mysql -u user -p mediview < 001_schema.sql
+-- One Clickz SaaS — Full MySQL Schema
+-- Run this once against your database: mysql -u user -p oneclickz < 001_schema.sql
 -- All IDs are 16-char hex strings (bin2hex(random_bytes(8)))
 -- All timestamps stored as DATETIME in UTC
 

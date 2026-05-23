@@ -252,7 +252,7 @@ function BridgeLicenseActivationPage({ expired = false, trialExpired = false, on
 
             <p className="mt-6 text-center text-xs text-gray-500">
               Need a license?{' '}
-              <a href="https://mehrgrewal.com/oneclickz/" target="_blank" rel="noopener noreferrer"
+              <a href="https://mehrgrewal.com/mediview/" target="_blank" rel="noopener noreferrer"
                 className="text-red-400 hover:text-red-300 underline">
                 Purchase here
               </a>

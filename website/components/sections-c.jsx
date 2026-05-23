@@ -15,7 +15,7 @@ const PrintWallet = () => {
   ];
   return (
     <Section id="recharge" className="bg-paper2/40 dark:bg-white/[0.02] border-y border-[var(--line)]">
-      <SectionHead layout="stack" eyebrow="Print wallet" title={<>Pay only for what <span className="italic text-grad-rose">you print.</span></>} sub="Top up your print wallet. Mediview meters every page. No surprises." />
+      <SectionHead layout="stack" eyebrow="Print wallet" title={<>Pay only for what <span className="italic text-grad-rose">you print.</span></>} sub="Top up your print wallet. One Clickz meters every page. No surprises." />
       <div className="mt-14 grid lg:grid-cols-2 gap-10 items-start">
         <FadeUp>
           <div className="relative">

@@ -154,7 +154,7 @@ const PageOverview = () => {
             </div>
           </div>
           <div className="mt-4 p-3 rounded-xl bg-white/60 dark:bg-white/[0.04] border border-[var(--line)] text-xs text-[var(--muted)]">
-            <span className="font-semibold text-ink dark:text-paper">How to activate:</span> Open Mediview Viewer or Bridge → Settings → License → paste the key above and click Activate.
+            <span className="font-semibold text-ink dark:text-paper">How to activate:</span> Open One Clickz Viewer or Bridge → Settings → License → paste the key above and click Activate.
           </div>
         </div>
       )}
@@ -166,7 +166,7 @@ const PageOverview = () => {
               <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.16em] font-bold text-rose">
                 <I.Gift size={14}/> Free plan
               </div>
-              <div className="mt-2 font-display text-xl font-bold">You're on Mediview Free.</div>
+              <div className="mt-2 font-display text-xl font-bold">You're on One Clickz Free.</div>
               <p className="mt-1.5 text-sm text-[var(--muted)]">
                 Free viewer, measurements, and reporting — no key required. Buy a license to unlock print billing, PACS sync, and multi-PC seats.
               </p>

@@ -34,7 +34,7 @@ const PricingPage = () => (
       </Stagger>
       <FadeUp delay={0.15}>
         <div className="mt-8 text-center text-xs text-[var(--muted)] max-w-2xl mx-auto">
-          A Bridge key only activates Mediview Bridge. A Viewer key only activates Mediview Viewer.
+          A Bridge key only activates One Clickz Bridge. A Viewer key only activates One Clickz Viewer.
           You can run both on the same PC with two keys.
         </div>
       </FadeUp>

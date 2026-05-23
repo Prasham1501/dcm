@@ -90,8 +90,8 @@ const SysReq = () => {
 
 const Testimonials = () => {
   const tt = [
-    { q: "Mediview cut my obstetric reporting time by 70%. The AI catches percentile outliers I'd skim past at 9 PM.", n: "Dr. Rohan Patel", r: "Sonologist, Mumbai", a: "doctor-1" },
-    { q: "We installed Mediview across 4 of our centres. Single license server, per-machine billing — finally, our print costs make sense.", n: "Dr. Ananya Sharma", r: "Radiology Head, Multi-Specialty Hospital, Delhi", a: "doctor-2" },
+    { q: "One Clickz cut my obstetric reporting time by 70%. The AI catches percentile outliers I'd skim past at 9 PM.", n: "Dr. Rohan Patel", r: "Sonologist, Mumbai", a: "doctor-1" },
+    { q: "We installed One Clickz across 4 of our centres. Single license server, per-machine billing — finally, our print costs make sense.", n: "Dr. Ananya Sharma", r: "Radiology Head, Multi-Specialty Hospital, Delhi", a: "doctor-2" },
     { q: "The MPR is as smooth as my Philips workstation. At one-tenth the price.", n: "Dr. Karthik Iyer", r: "Consultant Radiologist, Bangalore", a: "doctor-3" },
   ];
   const all = [...tt, ...tt];
@@ -125,11 +125,11 @@ const Testimonials = () => {
 
 const FAQ = () => {
   const items = [
-    ["Does Mediview work offline?", "Yes. Once activated, you get a 7-day offline grace period. The license re-validates with our servers every 24 hours when online."],
+    ["Does One Clickz work offline?", "Yes. Once activated, you get a 7-day offline grace period. The license re-validates with our servers every 24 hours when online."],
     ["One license = one PC?", "Correct. Each license is bound to a machine fingerprint. You can deactivate from one PC and move to another from your dashboard."],
     ["How does print billing work?", "Every print is metered against your wallet. Recharge via UPI. GST invoices auto-generated."],
-    ["Can I use my existing PACS?", "Yes — Mediview connects to any DICOM-compliant PACS, including Orthanc, DCM4CHEE, and most hospital PACS via DIMSE/STOW-RS."],
-    ["Which AI model — is patient data sent to Google?", "Mediview uses a Gemini-based image analysis pipeline. Patient identifiers (PHI) are stripped before any image leaves your machine. Only pixel data + de-identified DICOM tags are sent."],
+    ["Can I use my existing PACS?", "Yes — One Clickz connects to any DICOM-compliant PACS, including Orthanc, DCM4CHEE, and most hospital PACS via DIMSE/STOW-RS."],
+    ["Which AI model — is patient data sent to Google?", "One Clickz uses a Gemini-based image analysis pipeline. Patient identifiers (PHI) are stripped before any image leaves your machine. Only pixel data + de-identified DICOM tags are sent."],
     ["What hardware do I need?", "Minimum dual-core, 4 GB RAM, 20 GB free storage. Recommended: quad-core, 8 GB RAM, 100 GB. Windows 10 or 11."],
     ["Can I generate GST invoices for print credits?", "Yes — every recharge generates a GST-compliant invoice automatically."],
     ["Refund / trial policy?", "30-day free trial — no credit card. Annual plans: 7-day money-back guarantee. Print credits are non-refundable but never expire."],

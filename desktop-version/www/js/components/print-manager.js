@@ -1083,7 +1083,7 @@ window.DICOM_VIEWER.PrintManager = class {
             <div class="page-footer">
                 <span>Generated: ${new Date().toLocaleString()}</span>
                 <span>Page ${page + 1} of ${totalPages}</span>
-                <span>DICOM Viewer Pro | For Medical Use Only</span>
+                <span>One Clickz | For Medical Use Only</span>
             </div>
         </div>
 `;
