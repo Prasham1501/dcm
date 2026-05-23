@@ -86,7 +86,7 @@ export function UpdateModal() {
           <div className="flex items-start gap-3 mb-4">
             <div className="w-10 h-10 rounded-full bg-red-500/20 grid place-items-center text-red-400 text-xl shrink-0">⚠</div>
             <div>
-              <h2 className="text-lg font-bold text-app-text">Required update — Mediview v{info.latest_version}</h2>
+              <h2 className="text-lg font-bold text-app-text">Required update — One Clickz v{info.latest_version}</h2>
               <p className="text-sm text-app-text-secondary mt-0.5">You're on v{info.current_version}. This update is mandatory before you can continue using the application.</p>
             </div>
           </div>

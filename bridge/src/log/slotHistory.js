@@ -1,7 +1,7 @@
 /**
  * SlotHistory — append-only JSON-Lines per-day log of print/receive events
  * for each printer slot. Stored under
- *   %APPDATA%\MediviewBridge\history\<slotId>\YYYY-MM-DD.jsonl
+ *   %APPDATA%\OneClickzBridge\history\<slotId>\YYYY-MM-DD.jsonl
  *
  * The renderer reads these files via IPC (bridge:get-slot-history) and
  * filters them by date range (today, this month, this year).

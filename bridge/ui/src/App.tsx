@@ -77,8 +77,8 @@ export function App() {
       <header className="flex items-center justify-between bg-white px-4 py-2.5 shadow-sm dark:bg-app-surface">
         <div className="flex items-center gap-3">
           <img
-            src="./mediview-logo.png"
-            alt="Mediview"
+            src="./oneclickz-logo.png"
+            alt="One Clickz"
             className="h-7 w-auto"
             draggable={false}
           />
@@ -181,7 +181,7 @@ function BridgeLicenseActivationPage({ expired = false, trialExpired = false, on
           <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-red-600/20">
             <Shield className="h-8 w-8 text-red-500" />
           </div>
-          <h1 className="text-2xl font-bold text-white">Mediview Bridge</h1>
+          <h1 className="text-2xl font-bold text-white">One Clickz Bridge</h1>
           <p className="text-center text-sm text-gray-400">DICOM Printing Bridge</p>
         </div>
 
@@ -252,7 +252,7 @@ function BridgeLicenseActivationPage({ expired = false, trialExpired = false, on
 
             <p className="mt-6 text-center text-xs text-gray-500">
               Need a license?{' '}
-              <a href="https://mehrgrewal.com/mediview/" target="_blank" rel="noopener noreferrer"
+              <a href="https://mehrgrewal.com/oneclickz/" target="_blank" rel="noopener noreferrer"
                 className="text-red-400 hover:text-red-300 underline">
                 Purchase here
               </a>

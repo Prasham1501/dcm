@@ -34,7 +34,7 @@ export type Orientation = 'portrait' | 'landscape';
 export type PaperSize = 'A4' | 'A3' | 'Letter' | 'Legal';
 
 /**
- * Layout definitions matching Accurate DICOM Viewer.
+ * Layout definitions matching One Clickz DICOM Viewer.
  * Organized in tabs matching the reference project's layout selector modal.
  */
 export const LAYOUT_CATEGORIES: LayoutCategory[] = [

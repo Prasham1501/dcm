@@ -51,7 +51,7 @@ $importStats['backed_up_count'] = $backupCount['backed_up_count'] ?? 0;
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="base-path" content="<?= BASE_PATH ?>">
-    <title>Hospital Data Configuration - Accurate Viewer</title>
+    <title>Hospital Data Configuration - One Clickz Viewer</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
     <style>
@@ -171,7 +171,7 @@ $importStats['backed_up_count'] = $backupCount['backed_up_count'] ?? 0;
         <div class="container-fluid">
             <a class="navbar-brand text-white" href="<?= BASE_PATH ?>/patients.php">
                 <i class="bi bi-heart-pulse-fill text-primary"></i>
-                Accurate Viewer
+                One Clickz Viewer
             </a>
             <div class="d-flex align-items-center gap-3">
                 <a href="<?= BASE_PATH ?>/admin/settings.php" class="btn btn-sm btn-outline-secondary">

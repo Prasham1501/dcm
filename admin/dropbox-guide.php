@@ -12,7 +12,7 @@ requireLogin();
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dropbox Setup Guide - Accurate Viewer</title>
+    <title>Dropbox Setup Guide - One Clickz Viewer</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
     <style>
@@ -148,7 +148,7 @@ requireLogin();
             <div class="d-flex align-items-start gap-3">
                 <div class="step-number">5</div>
                 <div class="flex-grow-1">
-                    <h4>Add to Accurate Viewer</h4>
+                    <h4>Add to One Clickz Viewer</h4>
                     <p>Paste the access token in backup configuration:</p>
                     <ol>
                         <li>Go to Hospital Configuration</li>

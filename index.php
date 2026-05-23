@@ -30,7 +30,7 @@ $userRole = $_SESSION['role'] ?? 'viewer';
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="base-path" content="<?= BASE_PATH ?>">
     <meta name="base-url" content="<?= BASE_URL ?>">
-    <title>Accurate Viewer</title>
+    <title>One Clickz Viewer</title>
 
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
@@ -51,7 +51,7 @@ $userRole = $_SESSION['role'] ?? 'viewer';
                 display: none;
             }
             .navbar-brand::after {
-                content: "Accurate";
+                content: "One Clickz";
                 font-size: 1.1rem;
                 font-weight: bold;
             }
@@ -402,7 +402,7 @@ $userRole = $_SESSION['role'] ?? 'viewer';
         <div class="container-fluid">
             <a class="navbar-brand d-flex align-items-center" href="<?= BASE_PATH ?>/">
                 <i class="bi bi-heart-pulse-fill text-primary fs-4 me-2"></i>
-                <span class="fw-semibold">Accurate Viewer</span>
+                <span class="fw-semibold">One Clickz Viewer</span>
             </a>
             
             <!-- Patient Info in Navbar -->

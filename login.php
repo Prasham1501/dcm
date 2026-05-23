@@ -17,7 +17,7 @@ if (isLoggedIn()) {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="base-path" content="<?= BASE_PATH ?>">
     <meta name="base-url" content="<?= BASE_URL ?>">
-    <title>Login - Accurate Viewer</title>
+    <title>Login - One Clickz Viewer</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
     <style>

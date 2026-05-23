@@ -44,7 +44,7 @@ define('SESSION_NAME', $_ENV['SESSION_NAME'] ?? 'DICOM_VIEWER_SESSION');
 // Application Configuration
 define('APP_ENV', $_ENV['APP_ENV'] ?? 'development');
 define('APP_URL', $_ENV['APP_URL'] ?? 'http://localhost');
-define('APP_NAME', $_ENV['APP_NAME'] ?? 'Hospital DICOM Viewer Pro v2.0');
+define('APP_NAME', $_ENV['APP_NAME'] ?? 'One Clickz');
 define('APP_VERSION', $_ENV['APP_VERSION'] ?? '2.0.0');
 define('APP_TIMEZONE', $_ENV['APP_TIMEZONE'] ?? 'UTC');
 

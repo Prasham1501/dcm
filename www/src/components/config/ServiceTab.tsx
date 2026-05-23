@@ -4,7 +4,7 @@ export function ServiceTab() {
   const [settings, setSettings] = useState({
     dicomListenerEnabled: true,
     listenerPort: '11112',
-    listenerAet: 'ACCURATE',
+    listenerAet: 'ONECLICKZ',
     autoImportEnabled: false,
     watchFolder: 'C:\\DICOM\\Import',
     autoDeleteAfterImport: false,

@@ -318,7 +318,7 @@ async function run() {
   const firstBuf = fs.readFileSync(expanded[0]);
   const firstMeta = parseMeta(firstBuf);
 
-  console.log(`\nMediview Bridge — DICOM C-STORE sender`);
+  console.log(`\nOne Clickz Bridge — DICOM C-STORE sender`);
   console.log(`Target  : ${HOST}:${PORT}  (AET: ${CALLED_AET})`);
   console.log(`Calling : ${CALLING_AET}`);
   console.log(`Files   : ${expanded.length}`);

@@ -16,7 +16,7 @@ export function LayoutSelector() {
       <div className="bg-app-bg border border-app-border rounded-lg shadow-xl w-[740px] max-h-[520px] flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-2 border-b border-app-border">
-          <span className="text-sm font-bold text-app-accent">ACCURATE</span>
+          <span className="text-sm font-bold text-app-accent">ONE CLICKZ</span>
           <button onClick={() => setShowLayoutModal(false)} className="text-app-text-muted hover:text-app-text">
             <X className="w-4 h-4" />
           </button>

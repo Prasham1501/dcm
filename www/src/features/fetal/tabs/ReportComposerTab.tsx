@@ -29,16 +29,19 @@ import { resolvePlaceholders, type PlaceholderContext } from '@/features/fetal/l
 
 const SECTION_LABELS: { key: ReportSectionKey; label: string; required?: boolean }[] = [
   { key: 'header',          label: 'Header / Branding', required: true },
-  { key: 'patient',         label: 'Patient demographics' },
-  { key: 'dating',          label: 'Dating (LMP / GA / EDD)' },
-  { key: 'biometry',        label: 'Fetal Biometry' },
-  { key: 'structural',      label: 'Structural Assessment' },
-  { key: 'risk',            label: 'Risk Assessment' },
-  { key: 'findings',        label: 'Diagnoses & Investigations' },
-  { key: 'intervention',    label: 'Interventions & Counselling' },
-  { key: 'content',         label: 'Report Content (free text)' },
+  { key: 'patient',         label: 'Patient bar & title' },
+  { key: 'dating',          label: 'Dating (LMP · GA · EDD)' },
+  { key: 'pregnancy',       label: 'Pregnancy (Type · G/P/A/L/E)' },
+  { key: 'maternal',        label: 'Maternal assessment' },
+  { key: 'family',          label: 'Family history' },
+  { key: 'biometry',        label: 'Fetal biometry' },
+  { key: 'structural',      label: 'Structural assessment' },
+  { key: 'risk',            label: 'Risk assessment' },
+  { key: 'findings',        label: 'Diagnoses & investigations' },
+  { key: 'intervention',    label: 'Interventions & counselling' },
+  { key: 'content',         label: 'Report content (free text)' },
   { key: 'recommendations', label: 'Recommendations' },
-  { key: 'charts',          label: 'Growth Charts' },
+  { key: 'charts',          label: 'Growth charts' },
 ];
 
 export function ReportComposerTab() {
@@ -144,7 +147,7 @@ export function ReportComposerTab() {
 
     return {
       hospital: {
-        name:        hospital.hospitalName || 'Accurate Fetal Medicine',
+        name:        hospital.hospitalName || 'One Clickz Fetal Medicine',
         address:     [hospital.address1, hospital.address2, hospital.address3].filter(Boolean).join(', '),
         phone:       hospital.phone,
         email:       hospital.email,

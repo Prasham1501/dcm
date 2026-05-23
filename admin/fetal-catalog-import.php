@@ -46,7 +46,7 @@ foreach (['finding_syndrome_map', 'syndrome_gene_map', 'finding_investigation_ma
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>Fetal Catalog Import — Accurate Admin</title>
+  <title>Fetal Catalog Import — One Clickz Admin</title>
   <style>
     * { box-sizing: border-box; }
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;

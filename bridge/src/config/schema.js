@@ -72,7 +72,7 @@ function migrateConfig(cfg) {
     cfg.branding = { ...DEFAULT_BRANDING, ...(cfg.branding || {}) };
     cfg.version = 2;
   }
-  // v2 → v3: AE title prefix BRIDGE_P → MVBRIDGE_P (product rename to "Mediview Bridge").
+  // v2 → v3: AE title prefix BRIDGE_P → MVBRIDGE_P (product rename to "One Clickz Bridge").
   // Existing modalities will need their destination AET updated, but new installs
   // and re-saved slots use the new prefix.
   if (cfg.version < 3) {

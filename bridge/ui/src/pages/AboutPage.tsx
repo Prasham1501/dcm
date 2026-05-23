@@ -8,7 +8,7 @@ export function AboutPage() {
   return (
     <div className="space-y-6 p-6">
       <section className="rounded border-2 border-app-accent bg-app-surface p-6">
-        <h1 className="text-2xl font-bold tracking-wide text-app-accent">MEDIVIEW BRIDGE</h1>
+        <h1 className="text-2xl font-bold tracking-wide text-app-accent">ONE CLICKZ BRIDGE</h1>
         <p className="text-sm text-app-text-secondary">DICOM print bridge for paper printers</p>
         <p className="mt-2 text-xs text-app-text-muted">Version 1.0.0</p>
       </section>
@@ -29,7 +29,7 @@ export function AboutPage() {
           <dt className="text-app-text-muted">Auto-start at login</dt>
           <dd>{startup?.openAtLogin ? '✓ Enabled' : 'Disabled'}</dd>
           <dt className="text-app-text-muted">Runs in background</dt>
-          <dd>Mediview Bridge lives in the system tray. Click the tray icon (bottom-right) to open this window again.</dd>
+          <dd>One Clickz Bridge lives in the system tray. Click the tray icon (bottom-right) to open this window again.</dd>
         </dl>
       </section>
     </div>

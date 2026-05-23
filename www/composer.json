@@ -1,6 +1,6 @@
 {
-    "name": "hospital/dicom-viewer-pro",
-    "description": "Hospital DICOM Viewer Pro v2.0 - Production-ready medical imaging system",
+    "name": "hospital/one-clickz",
+    "description": "One Clickz - Production-ready medical imaging system",
     "type": "project",
     "version": "2.0.0",
     "require": {

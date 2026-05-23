@@ -1,10 +1,10 @@
 /**
- * Mediview Bridge — Electron main process.
+ * One Clickz Bridge — Electron main process.
  *
  * Tray-only app (config window opens on demand). Auto-starts at Windows
  * login. Owns:
- *   - Logger (rotating file in %APPDATA%/MediviewBridge/logs)
- *   - ConfigStore (%APPDATA%/MediviewBridge/config.json)
+ *   - Logger (rotating file in %APPDATA%/OneClickzBridge/logs)
+ *   - ConfigStore (%APPDATA%/OneClickzBridge/config.json)
  *   - SlotManager (one DICOM Storage SCP per enabled printer slot)
  *   - JobQueue (debounced by Study UID)
  *   - PrintWorker (renders DICOM to PNG and prints via Electron)
@@ -34,7 +34,7 @@ if (!gotLock) {
 }
 
 // --- Paths ---
-const userDataRoot = path.join(app.getPath('appData'), 'MediviewBridge');
+const userDataRoot = path.join(app.getPath('appData'), 'OneClickzBridge');
 const logDir = path.join(userDataRoot, 'logs');
 const historyDir = path.join(userDataRoot, 'history');
 const configPath = path.join(userDataRoot, 'config.json');
@@ -48,7 +48,7 @@ for (const d of [userDataRoot, logDir, historyDir, incomingRoot, printedRoot, fa
 }
 
 // ===== License & Trial System =====
-const LICENSE_API_BASE = 'https://mehrgrewal.com/mediview/api';
+const LICENSE_API_BASE = 'https://mehrgrewal.com/oneclickz/api';
 const TRIAL_DAYS = 7;
 
 function getFingerprint() {
@@ -212,7 +212,7 @@ function buildTrayMenu(slotStatus) {
     enabled: false,
   }));
   return Menu.buildFromTemplate([
-    { label: 'Mediview Bridge', enabled: false },
+    { label: 'One Clickz Bridge', enabled: false },
     { type: 'separator' },
     ...(slotItems.length ? slotItems : [{ label: 'No slots configured', enabled: false }]),
     { type: 'separator' },
@@ -220,7 +220,7 @@ function buildTrayMenu(slotStatus) {
     { label: 'Open Logs Folder', click: () => shell.openPath(logDir) },
     { label: 'Open Storage Folder', click: () => shell.openPath(userDataRoot) },
     { type: 'separator' },
-    { label: 'Quit Mediview Bridge', click: () => quitApp() },
+    { label: 'Quit One Clickz Bridge', click: () => quitApp() },
   ]);
 }
 
@@ -229,14 +229,14 @@ function refreshTray() {
   const status = slotManager ? slotManager.getStatus() : [];
   tray.setContextMenu(buildTrayMenu(status));
   const enabled = status.filter((s) => s.listening).length;
-  tray.setToolTip(`Mediview Bridge — ${enabled} slot${enabled === 1 ? '' : 's'} listening`);
+  tray.setToolTip(`One Clickz Bridge — ${enabled} slot${enabled === 1 ? '' : 's'} listening`);
 }
 
 function setupTray() {
   const iconPath = path.join(__dirname, 'icon.ico');
   const icon = fs.existsSync(iconPath) ? nativeImage.createFromPath(iconPath) : nativeImage.createEmpty();
   tray = new Tray(icon);
-  tray.setToolTip('Mediview Bridge');
+  tray.setToolTip('One Clickz Bridge');
   tray.on('click', openConfigWindow);
   tray.on('double-click', openConfigWindow);
   refreshTray();
@@ -255,7 +255,7 @@ function openConfigWindow() {
     minHeight: 600,
     show: false,
     icon: path.join(__dirname, 'icon.ico'),
-    title: 'Mediview Bridge',
+    title: 'One Clickz Bridge',
     autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -466,7 +466,7 @@ function setupIpc() {
     if (!downloadUrl) return { ok: false, error: 'No download URL' };
     const https = require('https');
     const tmpDir = app.getPath('temp');
-    const dest   = path.join(tmpDir, `mediview-bridge-update-${Date.now()}.exe`);
+    const dest   = path.join(tmpDir, `oneclickz-bridge-update-${Date.now()}.exe`);
     return await new Promise((resolve) => {
       const file = fs.createWriteStream(dest);
       const get  = (link) => https.get(link, (res) => {
@@ -545,7 +545,7 @@ function notifySlotEvent(type, payload) {
 
 // --- Lifecycle ---
 app.whenReady().then(async () => {
-  logger.info(`[Boot] Mediview Bridge starting (hidden=${isHiddenLaunch()})`);
+  logger.info(`[Boot] One Clickz Bridge starting (hidden=${isHiddenLaunch()})`);
 
   // --- License check ---
   const lic = getLicenseData();
@@ -614,12 +614,12 @@ app.whenReady().then(async () => {
       // Fire warning at <= 50, separate notice at 0.
       if (Notification.isSupported() && after === 0) {
         new Notification({
-          title: 'Mediview Bridge — quota exhausted',
+          title: 'One Clickz Bridge — quota exhausted',
           body: `${job.slot.name}: print quota is 0. Printing is now paused for this slot.`,
         }).show();
       } else if (Notification.isSupported() && before > 50 && after <= 50) {
         new Notification({
-          title: 'Mediview Bridge — low quota',
+          title: 'One Clickz Bridge — low quota',
           body: `${job.slot.name}: only ${after} prints remaining. Top up soon.`,
         }).show();
       }
@@ -631,7 +631,7 @@ app.whenReady().then(async () => {
 
     if (Notification.isSupported()) {
       new Notification({
-        title: 'Mediview Bridge — sent to printer',
+        title: 'One Clickz Bridge — sent to printer',
         body: `${job.slot.name}: ${job.result.pages} page(s) sent to printer (${job.result.layoutId})`,
       }).show();
     }
@@ -650,7 +650,7 @@ app.whenReady().then(async () => {
     });
     if (Notification.isSupported()) {
       new Notification({
-        title: 'Mediview Bridge — print failed',
+        title: 'One Clickz Bridge — print failed',
         body: `${job.slot.name}: ${job.error}`,
       }).show();
     }
@@ -662,25 +662,25 @@ app.whenReady().then(async () => {
   // — modalities send many files per study and we don't want a flood.
   const recentStudyNotifs = new Map();
   slotManager.on('file', ({ slot, info }) => {
+    // Still fire the in-app event so the renderer can refresh its status
+    // dot, but the history log and OS notifications are deliberately quiet
+    // here — the user only wants entries when a job actually prints, fails,
+    // or a verification ping arrives.
     notifySlotEvent('file', { slotId: slot.id, callingAE: info.callingAE, sopInstanceUid: info.sopInstanceUid });
+
     if (Notification.isSupported()) {
-      const key = (info.studyInstanceUid || info.sopInstanceUid || '') + '|' + slot.id;
+      // Throttle by slot + calling AE so a single modality blasting many
+      // images in a row only generates one "study received" notification
+      // per 30 seconds. (sopInstanceUid changes per file, so it couldn't
+      // throttle effectively; studyInstanceUid isn't parsed here either.)
+      const key  = `${slot.id}|${info.callingAE || 'unknown'}`;
       const last = recentStudyNotifs.get(key) || 0;
       if (Date.now() - last > 30_000) {
         recentStudyNotifs.set(key, Date.now());
         new Notification({
-          title: 'Mediview Bridge — study received',
+          title: 'One Clickz Bridge — study received',
           body:  `${slot.name}: receiving from ${info.callingAE || 'unknown AE'}`,
         }).show();
-        // Record one "received" history row per study (not per file).
-        slotHistory.record(slot.id, {
-          kind: 'received',
-          slotName: slot.name,
-          aeTitle: slot.aeTitle,
-          port: slot.port,
-          callingAE: info.callingAE || '',
-          studyUid: info.studyInstanceUid || '',
-        });
       }
     }
   });

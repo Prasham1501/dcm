@@ -6,7 +6,7 @@
  * printer, paper size, study UID, error.
  */
 import { useEffect, useMemo, useState } from 'react';
-import { X, RefreshCw, FileText, Printer, AlertTriangle, Inbox, Wifi } from 'lucide-react';
+import { X, RefreshCw, FileText, Printer, AlertTriangle, Wifi } from 'lucide-react';
 import type { PrinterSlot, SlotHistoryEvent } from '@/types/bridge';
 
 type Range = 'today' | 'month' | 'year';
@@ -44,7 +44,11 @@ export function SlotHistoryModal({ slot, onClose }: { slot: PrinterSlot; onClose
     setLoading(true);
     try {
       const list = await window.bridgeAPI.getSlotHistory({ slotId: slot.id, fromTs, toTs, limit: 2000 });
-      setEvents(list || []);
+      // Filter out the noisy "received" rows (one per DICOM file). The
+      // history is intentionally focused on outcomes: printed, failed,
+      // and verification pings (echo).
+      const filtered = (list || []).filter((e) => e.kind !== 'received');
+      setEvents(filtered);
     } catch {
       setEvents([]);
     } finally {
@@ -55,11 +59,10 @@ export function SlotHistoryModal({ slot, onClose }: { slot: PrinterSlot; onClose
   useEffect(() => { load(); /* eslint-disable-line */ }, [slot.id, fromTs, toTs]);
 
   const stats = useMemo(() => {
-    const printed  = events.filter((e) => e.kind === 'printed').length;
-    const failed   = events.filter((e) => e.kind === 'failed').length;
-    const received = events.filter((e) => e.kind === 'received').length;
-    const echos    = events.filter((e) => e.kind === 'echo').length;
-    return { printed, failed, received, echos };
+    const printed = events.filter((e) => e.kind === 'printed').length;
+    const failed  = events.filter((e) => e.kind === 'failed').length;
+    const echos   = events.filter((e) => e.kind === 'echo').length;
+    return { printed, failed, echos };
   }, [events]);
 
   return (
@@ -106,9 +109,6 @@ export function SlotHistoryModal({ slot, onClose }: { slot: PrinterSlot; onClose
             </span>
             <span className="flex items-center gap-1 text-app-text-secondary">
               <AlertTriangle className="h-3 w-3 text-red-500" /> <b className="text-app-text">{stats.failed}</b> failed
-            </span>
-            <span className="flex items-center gap-1 text-app-text-secondary">
-              <Inbox className="h-3 w-3 text-app-accent" /> <b className="text-app-text">{stats.received}</b> studies received
             </span>
             <span className="flex items-center gap-1 text-app-text-secondary">
               <Wifi className="h-3 w-3 text-sky-500" /> <b className="text-app-text">{stats.echos}</b> pings
@@ -175,7 +175,7 @@ export function SlotHistoryModal({ slot, onClose }: { slot: PrinterSlot; onClose
 
         <div className="border-t border-app-border bg-app-header-bg px-4 py-1.5 text-[10px] text-app-text-muted">
           Capped at 2,000 rows per view. Older entries remain on disk at
-          <span className="ml-1 font-mono">%APPDATA%\MediviewBridge\history\{slot.id}\YYYY-MM-DD.jsonl</span>.
+          <span className="ml-1 font-mono">%APPDATA%\OneClickzBridge\history\{slot.id}\YYYY-MM-DD.jsonl</span>.
         </div>
       </div>
     </div>

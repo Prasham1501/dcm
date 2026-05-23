@@ -1,5 +1,5 @@
 /**
- * BrandingPage — ported from the Mediview Viewer's PrintSettingsTab.
+ * BrandingPage — ported from the One Clickz Viewer's PrintSettingsTab.
  *
  * Vertical sections (no left/right split). Each of Header and Footer shows a
  * full-width landscape preview followed by inline per-element controls:
@@ -360,7 +360,7 @@ function FooterPreview({ branding }: { branding: HospitalBranding }) {
 /* ── Logo controls (upload + size + position; shape removed) ──
  *
  * The preview thumbnail is now a 16:6 landscape box with `object-fit:contain`
- * so wide wordmark-style logos (like Mediview's) aren't cropped. */
+ * so wide wordmark-style logos (like One Clickz's) aren't cropped. */
 
 function LogoControls({
   logoDataUrl, onLogoChange, size, onSize, position, onPosition,

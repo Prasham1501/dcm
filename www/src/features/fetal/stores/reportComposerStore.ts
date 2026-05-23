@@ -13,7 +13,7 @@ export type ReportSectionKey =
   | 'header'           // practice branding (always on)
   | 'patient'          // demographics
   | 'dating'           // LMP / GA / EDD
-  | 'obstetric'        // pregnancy & obstetric history
+  | 'pregnancy'        // pregnancy type + obstetric G/P/A/L/E
   | 'maternal'         // maternal assessment
   | 'family'           // family history
   | 'biometry'         // fetal biometry table
@@ -44,7 +44,7 @@ interface State {
 }
 
 const DEFAULT_SECTIONS: Record<ReportSectionKey, boolean> = {
-  header: true, patient: true, dating: true, obstetric: true, maternal: true,
+  header: true, patient: true, dating: true, pregnancy: true, maternal: true,
   family: true, biometry: true, structural: true, risk: true, findings: true,
   intervention: true, content: true, recommendations: true, charts: true,
 };

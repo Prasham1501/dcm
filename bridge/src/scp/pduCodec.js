@@ -9,14 +9,14 @@
  *   - Command set parser (Implicit VR LE)
  *   - DICOM Part 10 File Meta Information header builder
  *
- * The original dcm code hardcoded a single AET ('ACCURATE'). This version
+ * The original dcm code hardcoded a single AET ('ONECLICKZ'). This version
  * accepts the called AET as a parameter so each printer slot can listen
  * with its own AE title.
  */
 
 const DICOM_MAX_PDU = 131072; // 128KB — compatible with most devices
 const IMPLEMENTATION_CLASS_UID = '1.2.826.0.1.3680043.8.498.1';
-const IMPLEMENTATION_VERSION_NAME = 'ACCURATE_BRIDGE';
+const IMPLEMENTATION_VERSION_NAME = 'ONECLICKZ_BRG';
 
 function padAE(str) {
   return (str + '                ').slice(0, 16);

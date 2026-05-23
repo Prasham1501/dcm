@@ -89,7 +89,7 @@ export function PrintPreviewModal({
     await fetchPrintCount();
     const live = usePrintStore.getState().printCountRemaining;
     if (live < 1) {
-      alert('Not enough print credits to generate this report. Top up from the Mediview dashboard.');
+      alert('Not enough print credits to generate this report. Top up from the One Clickz dashboard.');
       return;
     }
     // 2) Atomic debit (1 credit per report print, regardless of paper / pages)

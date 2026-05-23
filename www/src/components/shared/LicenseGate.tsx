@@ -82,7 +82,7 @@ function LicenseActivationPage({ expired = false, trialExpired = false }: { expi
           <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-red-600/20">
             <Shield className="h-8 w-8 text-red-500" />
           </div>
-          <h1 className="text-2xl font-bold text-white">Accurate</h1>
+          <h1 className="text-2xl font-bold text-white">One Clickz</h1>
           <p className="text-center text-sm text-gray-400">
             Professional DICOM Viewer
           </p>
@@ -160,7 +160,7 @@ function LicenseActivationPage({ expired = false, trialExpired = false }: { expi
             <p className="mt-6 text-center text-xs text-gray-500">
               Need a license?{' '}
               <a
-                href="https://mehrgrewal.com/mediview/"
+                href="https://mehrgrewal.com/oneclickz/"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-red-400 hover:text-red-300 underline"

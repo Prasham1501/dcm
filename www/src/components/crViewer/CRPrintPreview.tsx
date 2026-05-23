@@ -355,7 +355,7 @@ export function CRPrintPreview({ onClose, initialPageMode = 'all' }: CRPrintPrev
       const cost = Math.max(1, localCopies | 0);
       const live = usePrintStore.getState().printCountRemaining;
       if (live < cost) {
-        alert(`Not enough print credits (have ${live}, need ${cost}). Top up from the Mediview dashboard.`);
+        alert(`Not enough print credits (have ${live}, need ${cost}). Top up from the One Clickz dashboard.`);
         return;
       }
       const debit = await logPrintToApi({

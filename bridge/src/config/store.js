@@ -1,5 +1,5 @@
 /**
- * Persistent JSON config store at %APPDATA%/MediviewBridge/config.json
+ * Persistent JSON config store at %APPDATA%/OneClickzBridge/config.json
  */
 
 const fs = require('fs');

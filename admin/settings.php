@@ -147,7 +147,7 @@ $detectedIP = getLocalIPAddress();
         <div class="container-fluid">
             <a class="navbar-brand text-white" href="<?= BASE_PATH ?>/patients.php">
                 <i class="bi bi-heart-pulse-fill text-primary"></i>
-                DICOM Viewer Pro
+                One Clickz
             </a>
             <div class="d-flex align-items-center gap-3">
                 <a href="<?= BASE_PATH ?>/pages/patients.html" class="btn btn-sm btn-outline-secondary">

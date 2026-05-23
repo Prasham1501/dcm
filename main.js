@@ -1,5 +1,5 @@
 /**
- * Hospital DICOM Viewer Pro - Modern Desktop Edition
+ * One Clickz - Modern Desktop Edition
  * Electron Main Process
  *
  * Manages:
@@ -45,7 +45,7 @@ const mysqlClientPath = path.join(mysqlDir, 'bin', 'mysql.exe');
 const userDataPath = app.getPath('userData');
 
 // ===== License & Trial System =====
-const LICENSE_API_BASE = 'https://mehrgrewal.com/mediview/api';
+const LICENSE_API_BASE = 'https://mehrgrewal.com/oneclickz/api';
 const TRIAL_DAYS = 7;
 const trialFile = path.join(userDataPath, '.trial');
 const licenseFile = path.join(userDataPath, '.license');
@@ -264,7 +264,7 @@ const orthancStorageDir = path.join(userDataPath, 'orthanc-storage');
 const orthancDbDir = path.join(userDataPath, 'orthanc-db');
 const logsDir = path.join(userDataPath, 'logs');
 
-console.log('[Electron] Starting DICOM Viewer Pro...');
+console.log('[Electron] Starting One Clickz...');
 console.log('[Electron] isDev:', isDev);
 console.log('[Electron] appPath:', appPath);
 console.log('[Electron] wwwPath:', wwwPath);
@@ -339,9 +339,9 @@ function createMainWindow() {
         show: false,
         title: (() => {
             const lic = getLicenseData();
-            if (lic) return `Mediview — ${lic.plan.charAt(0).toUpperCase() + lic.plan.slice(1)} License`;
+            if (lic) return `One Clickz — ${lic.plan.charAt(0).toUpperCase() + lic.plan.slice(1)} License`;
             const trial = getTrialInfo();
-            return `Mediview — Trial (${trial.remaining} days remaining)`;
+            return `One Clickz — Trial (${trial.remaining} days remaining)`;
         })(),
         icon: path.join(__dirname, 'icon.ico'),
         webPreferences: {
@@ -392,8 +392,8 @@ function createMainWindow() {
                     label: 'About',
                     click: () => dialog.showMessageBox(mainWindow, {
                         type: 'info',
-                        title: 'About Mediview',
-                        message: 'Mediview',
+                        title: 'About One Clickz',
+                        message: 'One Clickz',
                         detail: 'Version 1.0.0 - Modern Desktop Edition\n\nProfessional DICOM viewing and analysis for healthcare professionals.\n\nFeatures:\n• Multi-format DICOM viewing\n• Network file receiving from USG/medical devices\n• Advanced image analysis tools\n• Offline operation\n• Secure file management'
                     })
                 }
@@ -665,7 +665,7 @@ function generateOrthancConfig() {
         Plugins: [pluginsDir],
         DicomPort: 3458,
         DicomServerEnabled: true,
-        DicomAet: 'ACCURATE',
+        DicomAet: 'ONECLICKZ',
         DicomCheckCalledAet: false,
         AuthenticationEnabled: true,
         RegisteredUsers: { orthanc: 'orthanc', admin: 'admin123' },
@@ -870,12 +870,12 @@ async function checkViteRunning() {
 // =====================================================
 function configureFirewall() {
     const rules = [
-        { name: 'Mediview DICOM Viewer - Web Server', port: PHP_PORT },
-        { name: 'Mediview DICOM Viewer - DICOM Server', port: DICOM_PORT },
-        { name: 'Mediview DICOM Viewer - Orthanc HTTP', port: ORTHANC_PORT },
-        { name: 'Mediview DICOM Viewer - Orthanc DICOM', port: 3458 },
-        { name: 'Mediview DICOM Viewer - Network Receiver', port: 10104 },
-        { name: 'Mediview DICOM Viewer - MySQL', port: MYSQL_PORT },
+        { name: 'One Clickz - Web Server', port: PHP_PORT },
+        { name: 'One Clickz - DICOM Server', port: DICOM_PORT },
+        { name: 'One Clickz - Orthanc HTTP', port: ORTHANC_PORT },
+        { name: 'One Clickz - Orthanc DICOM', port: 3458 },
+        { name: 'One Clickz - Network Receiver', port: 10104 },
+        { name: 'One Clickz - MySQL', port: MYSQL_PORT },
     ];
 
     for (const rule of rules) {
@@ -1507,7 +1507,7 @@ function stopDicomServer() {
 // App Lifecycle
 // =====================================================
 // =====================================================
-// Auto-update — polls the Mediview website on launch + every 30 min and
+// Auto-update — polls the One Clickz website on launch + every 30 min and
 // notifies the renderer. If the latest release for `viewer` has
 // force_update=1, the renderer shows a non-dismissible modal that points
 // the user at the new installer.
@@ -1554,7 +1554,7 @@ ipcMain.handle('get-update-info', () => LAST_KNOWN_RELEASE);
 ipcMain.handle('download-and-install-update', async (_evt, { downloadUrl } = {}) => {
     if (!downloadUrl) return { ok: false, error: 'No download URL' };
     const https = require('https');
-    const dest  = path.join(app.getPath('temp'), `mediview-update-${Date.now()}.exe`);
+    const dest  = path.join(app.getPath('temp'), `oneclickz-update-${Date.now()}.exe`);
     return await new Promise((resolve) => {
         const file = fs.createWriteStream(dest);
         const u    = new URL(downloadUrl);
@@ -2121,7 +2121,7 @@ ipcMain.handle('open-cr-viewer', (event, { isPortrait, imageCount, cols, rows })
         height: winH,
         minWidth: 500,
         minHeight: 400,
-        title: `DICOM Viewer Pro - Viewer (${imageCount} images)`,
+        title: `One Clickz - Viewer (${imageCount} images)`,
         icon: path.join(__dirname, 'icon.ico'),
         webPreferences: {
             nodeIntegration: false,
@@ -2196,7 +2196,7 @@ ipcMain.handle('open-viewer', (event, { isPortrait, imageCount, cols, rows }) =>
         height: winH,
         minWidth: 500,
         minHeight: 400,
-        title: `DICOM Viewer Pro - CR Viewer (${imageCount} images)`,
+        title: `One Clickz - CR Viewer (${imageCount} images)`,
         icon: path.join(__dirname, 'icon.ico'),
         webPreferences: {
             nodeIntegration: false,
@@ -2302,7 +2302,7 @@ ipcMain.handle('open-viewer-with-report', (event, { isPortrait, imageCount, cols
         y: winY,
         minWidth: 500,
         minHeight: 400,
-        title: `DICOM Viewer Pro - Viewer (${imageCount} images)`,
+        title: `One Clickz - Viewer (${imageCount} images)`,
         icon: path.join(__dirname, 'icon.ico'),
         webPreferences: {
             nodeIntegration: false,
@@ -2328,7 +2328,7 @@ ipcMain.handle('open-viewer-with-report', (event, { isPortrait, imageCount, cols
         minWidth: 400,
         minHeight: 400,
         alwaysOnTop: true,
-        title: 'DICOM Viewer Pro - Report Editor',
+        title: 'One Clickz - Report Editor',
         icon: path.join(__dirname, 'icon.ico'),
         webPreferences: {
             nodeIntegration: false,
@@ -2365,7 +2365,7 @@ ipcMain.handle('open-report-editor', async () => {
         y: winY,
         minWidth: 500,
         minHeight: 400,
-        title: 'DICOM Viewer Pro - Report Editor',
+        title: 'One Clickz - Report Editor',
         icon: path.join(__dirname, 'icon.ico'),
         webPreferences: {
             nodeIntegration: false,
@@ -2670,7 +2670,7 @@ ipcMain.handle('get-dicom-modalities', async () => {
 // association negotiation and C-STORE reception.
 // =====================================================
 const DICOM_LISTEN_PORT = 10104;
-const DICOM_AE_TITLE = 'ACCURATE';
+const DICOM_AE_TITLE = 'ONECLICKZ';
 const DICOM_MAX_PDU = 131072; // 128KB — compatible with most devices
 let dicomNetworkServer = null;
 const dicomSettingsPath = path.join(userDataPath, 'dicom-scp-settings.json');
@@ -2800,7 +2800,7 @@ function buildAssociateAC(rqBuffer) {
     implUidBytes.copy(implSub, 4);
 
     // Implementation Version Name
-    const implVerName = 'ACCURATE_SCP';
+    const implVerName = 'ONECLICKZ_SCP';
     const implVerBytes = Buffer.from(implVerName, 'ascii');
     const implVerSub = Buffer.alloc(4 + implVerBytes.length);
     implVerSub[0] = 0x55; implVerSub[1] = 0x00;
@@ -3008,7 +3008,7 @@ function buildFileMetaHeader(sopClassUid, sopInstanceUid, transferSyntax) {
     // (0002,0012) Implementation Class UID — UI
     parts.push(addShortVR(0x0002, 0x0012, 'UI', '1.2.826.0.1.3680043.8.498.1'));
     // (0002,0013) Implementation Version Name — SH
-    const verName = 'ACCURATE_SCP ';
+    const verName = 'ONECLICKZ_SCP ';
     parts.push(addShortVR(0x0002, 0x0013, 'SH', Buffer.from(verName.length % 2 !== 0 ? verName + ' ' : verName, 'ascii')));
 
     const metaContent = Buffer.concat(parts);
@@ -3035,8 +3035,8 @@ function addFirewallRule() {
         const { execSync, exec } = require('child_process');
         // Check if rule already exists
         try {
-            const check = execSync('netsh advfirewall firewall show rule name="DICOM Viewer Pro SCP"', { encoding: 'utf8', timeout: 5000, windowsHide: true });
-            if (check.includes('DICOM Viewer Pro SCP')) {
+            const check = execSync('netsh advfirewall firewall show rule name="One Clickz SCP"', { encoding: 'utf8', timeout: 5000, windowsHide: true });
+            if (check.includes('One Clickz SCP')) {
                 console.log('[DICOM SCP] Firewall rule already exists');
                 return;
             }
@@ -3044,14 +3044,14 @@ function addFirewallRule() {
 
         // Try adding directly first (works if app is already admin)
         try {
-            execSync(`netsh advfirewall firewall add rule name="DICOM Viewer Pro SCP" dir=in action=allow protocol=TCP localport=${DICOM_LISTEN_PORT} profile=any`, { timeout: 10000, windowsHide: true });
+            execSync(`netsh advfirewall firewall add rule name="One Clickz SCP" dir=in action=allow protocol=TCP localport=${DICOM_LISTEN_PORT} profile=any`, { timeout: 10000, windowsHide: true });
             console.log(`[DICOM SCP] Firewall rule added for port ${DICOM_LISTEN_PORT}`);
             return;
         } catch (e) { /* needs elevation */ }
 
         // Request elevation via PowerShell — shows UAC prompt
         console.log('[DICOM SCP] Requesting admin elevation for firewall rule...');
-        const cmd = `Start-Process -FilePath 'netsh' -ArgumentList 'advfirewall firewall add rule name=\\"DICOM Viewer Pro SCP\\" dir=in action=allow protocol=TCP localport=${DICOM_LISTEN_PORT} profile=any' -Verb RunAs -WindowStyle Hidden -Wait`;
+        const cmd = `Start-Process -FilePath 'netsh' -ArgumentList 'advfirewall firewall add rule name=\\"One Clickz SCP\\" dir=in action=allow protocol=TCP localport=${DICOM_LISTEN_PORT} profile=any' -Verb RunAs -WindowStyle Hidden -Wait`;
         exec(`powershell -NoProfile -Command "${cmd}"`, { timeout: 30000, windowsHide: true }, (err) => {
             if (err) {
                 console.warn(`[DICOM SCP] Firewall rule not added (user may have declined UAC): ${err.message}`);
@@ -3355,7 +3355,7 @@ ipcMain.handle('get-network-dicom-path', () => {
         path: networkDicomStorage,
         port: DICOM_LISTEN_PORT,
         ip: localIp,
-        aet: 'ACCURATE',
+        aet: 'ONECLICKZ',
         isRunning: dicomNetworkServer !== null,
         success: true
     };
@@ -4109,7 +4109,7 @@ ipcMain.handle('ocr-dicom-batch', async (event, { filePaths }) => {
 });
 
 // Start network receiver on app startup
-// NOTE: Port 3458 is now owned by Orthanc (DICOM SCP with AE=ACCURATE).
+// NOTE: Port 3458 is now owned by Orthanc (DICOM SCP with AE=ONECLICKZ).
 // The custom TCP receiver is disabled to avoid port conflict.
 function startNetworkReceiverOnAppReady() {
     startDicomNetworkReceiver();

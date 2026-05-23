@@ -1,7 +1,7 @@
 {
-    "name": "mediview",
+    "name": "one-clickz",
     "version": "1.0.0",
-    "description": "Mediview - Professional Medical Imaging Desktop Application",
+    "description": "One Clickz - Professional Medical Imaging Desktop Application",
     "main": "main.js",
     "scripts": {
         "start": "concurrently \"cd www && npm run dev\" \"electron .\"",
@@ -13,7 +13,7 @@
         "build:quick": "electron-builder --win",
         "pack": "electron-builder --dir"
     },
-    "author": "Mediview Team",
+    "author": "One Clickz Team",
     "license": "MIT",
     "devDependencies": {
         "concurrently": "^8.2.2",
@@ -21,8 +21,8 @@
         "electron-builder": "^24.9.1"
     },
     "build": {
-        "appId": "com.mediview.viewer",
-        "productName": "Mediview",
+        "appId": "com.oneclickz.viewer",
+        "productName": "One Clickz",
         "icon": "icon.ico",
         "directories": {
             "output": "installer-output",
@@ -102,7 +102,7 @@
             "allowToChangeInstallationDirectory": true,
             "createDesktopShortcut": true,
             "createStartMenuShortcut": true,
-            "shortcutName": "Mediview",
+            "shortcutName": "One Clickz",
             "installerIcon": "icon.ico",
             "uninstallerIcon": "icon.ico",
             "installerHeaderIcon": "icon.ico",

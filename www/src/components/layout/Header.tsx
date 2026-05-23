@@ -21,7 +21,7 @@ export function Header() {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  const pageTitle = pageTitles[location.pathname] || 'Accurate';
+  const pageTitle = pageTitles[location.pathname] || 'One Clickz';
 
   // Close dropdown on outside click
   useEffect(() => {

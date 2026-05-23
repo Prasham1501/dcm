@@ -96,7 +96,7 @@ export function PatientListPage() {
       <div className="flex items-center justify-between px-2 2xl:px-5 py-1 2xl:py-2 bg-app-header-bg border-b-2 border-app-accent flex-wrap gap-y-0.5">
         <div className="flex items-center gap-1.5 flex-wrap min-w-0">
           <span className="text-base 2xl:text-xl font-bold text-app-accent tracking-wide whitespace-nowrap">
-            Accurate
+            One Clickz
           </span>
           <span className="text-[10px] 2xl:text-xs text-app-text-secondary whitespace-nowrap">
             {licenseStatus?.type === 'licensed'
