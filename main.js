@@ -1676,6 +1676,13 @@ ipcMain.handle('get-license-quota', async () => {
             saveLicenseData(lic);
             return { enabled: lic.quotaEnabled, remaining: lic.quotaRemaining, total: lic.quotaTotal, valid: true };
         }
+        // Hard server reject — key deleted / revoked / wrong product. Purge
+        // the local cache so we stop showing a phantom "X prints left".
+        const hardReasons = ['not_found', 'revoked', 'deactivated', 'wrong_product', 'expired'];
+        if (r.status >= 200 && r.status < 300 && r.data?.reason && hardReasons.includes(r.data.reason)) {
+            clearLicenseData();
+            return { enabled: false, remaining: 0, total: 0, valid: false, reason: r.data.reason, invalidated: true };
+        }
         return { enabled: !!lic.quotaEnabled, remaining: lic.quotaRemaining || 0, total: lic.quotaTotal || 0, valid: false, reason: r.data?.reason };
     } catch (e) {
         return { enabled: !!lic.quotaEnabled, remaining: lic.quotaRemaining || 0, total: lic.quotaTotal || 0, valid: true, offline: true };

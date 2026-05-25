@@ -160,9 +160,6 @@ export function PatientListPage() {
       {/* Status bar */}
       <PatientStatusBar />
       
-      {/* Report Editor modal */}
-      <ReportEditor />
-
       {/* Report-type picker modal (auto-detects fetal vs radiology, etc.) */}
       <ReportRouterHost />
 

@@ -36,19 +36,10 @@ export function SlotsPage() {
     return () => { try { off && off(); } catch {} };
   }, []);
 
-  // Global keybinding (registered in main process) → ask for password,
-  // then open the quota modal for the first slot.
-  useEffect(() => {
-    const off = window.bridgeAPI.onOpenQuotaSettings?.(() => {
-      const first = useConfigStore.getState().config?.slots?.[0];
-      if (!first) {
-        alert('Add a printer slot first.');
-        return;
-      }
-      setPasswordIntent({ kind: 'quota', slotId: first.id });
-    });
-    return () => { try { off && off(); } catch {} };
-  }, []);
+  // Ctrl+Shift+Q now opens the CENTRAL quota modal (mounted in App.tsx)
+  // that talks to /license/quota — the same counter the website and viewer
+  // share. Per-slot local quotas are still accessible from each slot card's
+  // "Coins" button, which sets `quotaSlot` directly.
 
   const primaryIp = ips[0]?.address || 'localhost';
 

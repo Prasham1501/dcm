@@ -692,6 +692,21 @@ class AdminController {
              VALUES (?,?,?,?,?,?,?,?,?,?,?)"
         )->execute([$licId, $accountId, $keyCode, $plan, $product, $seats, 'active', $now, $expires, $hmac, $now]);
 
+        // Free-trial seeding: every trial key starts with 100 prints and
+        // quota mode ON so the bridge/viewer header immediately shows
+        // "100 prints left" and the counter decrements as prints happen.
+        // Admins can still override later via /license/quota.
+        if ($plan === 'trial') {
+            $seedPrints = (int)($body['quota_remaining'] ?? 100);
+            db()->prepare(
+                "UPDATE licenses
+                    SET quota_enabled   = 1,
+                        quota_remaining = ?,
+                        quota_total     = GREATEST(quota_total, ?)
+                  WHERE id = ?"
+            )->execute([$seedPrints, $seedPrints, $licId]);
+        }
+
         AuditLog::fromRequest($req, 'admin.license.issue', "$keyCode ($product / $plan, $seats seats, $days days) → {$account['name']}");
 
         // If the operator collected money, record it in the payments table

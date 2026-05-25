@@ -12,7 +12,6 @@
  */
 import type { ReportTypeDef, DetectionResult } from './types';
 import { useReportStore } from '@/stores/reportStore';
-import type { Patient } from '@/types/patient';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 const norm = (s: string | null | undefined) => (s ?? '').toUpperCase();
@@ -101,11 +100,21 @@ export const fetalMedicineType: ReportTypeDef = {
   },
 
   openCreate(ctx, patient) {
-    // Show fetal panel inline within the CR viewer (50/50 split with images)
+    // Fetal panel only renders on the CR Viewer page — navigate there first
+    // (no-op if already there) so the panel has a host regardless of where
+    // the user clicked Report from.
+    if (typeof window !== 'undefined' && window.location.hash.indexOf('/cr-viewer') === -1
+        && !window.location.pathname.endsWith('/cr-viewer')) {
+      ctx.navigate('/cr-viewer');
+    }
     useReportStore.getState().setShowFetalPanel(true, patient.patientId || patient.id);
   },
 
   openExisting(ctx, patient) {
+    if (typeof window !== 'undefined' && window.location.hash.indexOf('/cr-viewer') === -1
+        && !window.location.pathname.endsWith('/cr-viewer')) {
+      ctx.navigate('/cr-viewer');
+    }
     useReportStore.getState().setShowFetalPanel(true, patient.patientId || patient.id);
   },
 };
@@ -146,49 +155,17 @@ export const radiologyType: ReportTypeDef = {
     return useReportStore.getState().getReportsForPatient(patient.patientId || patient.id).length;
   },
 
-  async openCreate(ctx, patient) {
-    // Preserve the Electron dual-window flow when images are available
-    if (patient.filePaths && patient.filePaths.length > 0) {
-      const launchData = {
-        patientName: patient.patientName,
-        patientId: patient.patientId || patient.id,
-        studyDate: patient.studyDate,
-        modality: (patient as Patient).modality,
-        studyDescription: (patient as Patient).studyDescription,
-        timestamp: Date.now(),
-      };
-      localStorage.setItem(
-        'viewer-launch',
-        JSON.stringify({ ...launchData, filePaths: patient.filePaths }),
-      );
-      localStorage.setItem('report-launch', JSON.stringify(launchData));
-
-      const electron = (window as any).electronAPI;
-      if (electron?.openViewerWithReport) {
-        try {
-          await electron.openViewerWithReport({
-            isPortrait: false,
-            imageCount: patient.filePaths.length,
-            cols: 2,
-            rows: 2,
-          });
-          return;
-        } catch (e) {
-          console.warn('Failed to open dual windows:', e);
-        }
-      }
-      ctx.openLegacyReportEditor(patient.id, patient.patientName);
-      useReportStore.getState().setShowInlineReport(true);
-      ctx.navigate('/cr-viewer');
-      return;
-    }
-
+  openCreate(ctx, patient) {
+    // Always render the inline report panel in the current viewer window
+    // (splits the viewport 50/50) — no separate Electron windows. The
+    // viewer pages mount InlineReportPanel based on `showInlineReport`.
     ctx.openLegacyReportEditor(patient.id, patient.patientName);
     useReportStore.getState().setShowInlineReport(true);
   },
 
   openExisting(ctx, patient) {
     ctx.openLegacyReportEditor(patient.id, patient.patientName);
+    useReportStore.getState().setShowInlineReport(true);
   },
 };
 

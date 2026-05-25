@@ -7,6 +7,7 @@ import { BrandingPage } from './pages/BrandingPage';
 import { LicensePage } from './pages/LicensePage';
 import { StatusBar } from './components/StatusBar';
 import { UpdateModal } from './components/UpdateModal';
+import { BridgeLicenseQuotaModal } from './components/BridgeLicenseQuotaModal';
 
 type Tab = 'slots' | 'branding' | 'license' | 'about';
 
@@ -25,6 +26,9 @@ export function App() {
   const refresh = useConfigStore((s) => s.refreshSlotStatus);
   const [licenseStatus, setLicenseStatus] = useState<any>(null);
   const [licenseLoading, setLicenseLoading] = useState(true);
+  // Central sell-by-print quota — polled every 5s and pushed on every print
+  // so the header count stays live without a window refresh.
+  const [quota, setQuota] = useState<{ enabled: boolean; remaining: number; total: number } | null>(null);
 
   const fetchLicense = async () => {
     try {
@@ -34,13 +38,28 @@ export function App() {
     setLicenseLoading(false);
   };
 
+  const fetchQuota = async () => {
+    try {
+      const q = await window.bridgeAPI.getLicenseQuota();
+      if (q) setQuota({ enabled: !!q.enabled, remaining: q.remaining || 0, total: q.total || 0 });
+    } catch {}
+  };
+
   useEffect(() => {
     load();
     loadPrinters();
     fetchLicense();
+    fetchQuota();
     const id = setInterval(refresh, 3000);
     const licInterval = setInterval(fetchLicense, 10 * 60 * 1000);
-    return () => { clearInterval(id); clearInterval(licInterval); };
+    const quotaInterval = setInterval(fetchQuota, 5 * 1000);
+    const off = window.bridgeAPI.onQuotaChanged?.((q) => setQuota(q));
+    return () => {
+      clearInterval(id);
+      clearInterval(licInterval);
+      clearInterval(quotaInterval);
+      try { off && off(); } catch {}
+    };
   }, [load, loadPrinters, refresh]);
 
   useEffect(() => {
@@ -77,16 +96,18 @@ export function App() {
       <header className="flex items-center justify-between bg-white px-4 py-2.5 shadow-sm dark:bg-app-surface">
         <div className="flex items-center gap-3">
           <img
-            src="./oneclickz-logo.png"
+            src="./mediview-logo.png"
             alt="One Clickz"
             className="h-7 w-auto"
             draggable={false}
           />
           <span className="text-sm font-semibold tracking-wide text-app-text">Bridge</span>
           <span className="ml-2 hidden text-xs font-normal text-app-text-secondary md:inline">
-            {licenseStatus?.type === 'licensed'
-              ? `License ${licenseStatus.licenseKey?.split('-').pop() || ''} · ${licenseStatus.daysLeft ?? '—'} days left`
-              : 'Printing bridge for DICOM modalities'}
+            {quota?.enabled
+              ? `${quota.remaining} prints left`
+              : licenseStatus?.type === 'licensed'
+                ? `License ${licenseStatus.licenseKey?.split('-').pop() || ''} · ${licenseStatus.daysLeft ?? '—'} days left`
+                : 'Printing bridge for DICOM modalities'}
           </span>
         </div>
         <div className="flex items-center gap-1">
@@ -144,6 +165,7 @@ export function App() {
 
       <StatusBar />
       <UpdateModal />
+      <BridgeLicenseQuotaModal />
     </div>
   );
 }

@@ -93,18 +93,39 @@ export function CRViewerPage() {
     } catch { /* ignore parse errors */ }
   }, [loadStudy]);
 
+  // Auto-run OCR / DICOM extraction the moment a study finishes loading
+  // (regardless of whether it came from the popup launch path or the in-app
+  // navigation). Runs once per study by checking extractionStatus.
+  useEffect(() => {
+    const imgs = useCRViewerStore.getState().images;
+    if (imgs.length === 0) return;
+    if (useReportStore.getState().extractionStatus !== 'idle') return;
+    const filePaths = imgs.map((img: any) => img.filePath).filter(Boolean);
+    if (filePaths.length === 0) return;
+    autoExtract(filePaths, patientId || 'auto');
+  }, [patientId, totalImages]);
+
   // Keyboard navigation for pages
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement)?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      // Don't fight the inline report editor when the cursor is in it.
+      if ((e.target as HTMLElement)?.isContentEditable) return;
 
-      if (e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === 'PageDown') {
-        e.preventDefault();
-        useCRViewerStore.getState().nextPage();
-      } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp' || e.key === 'PageUp') {
-        e.preventDefault();
-        useCRViewerStore.getState().prevPage();
+      const delta = (e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === 'PageDown') ? 1
+                  : (e.key === 'ArrowLeft'  || e.key === 'ArrowUp'   || e.key === 'PageUp')   ? -1
+                  : 0;
+      if (delta === 0) return;
+      e.preventDefault();
+
+      const store = useCRViewerStore.getState();
+      if (store.totalPages > 1) {
+        delta > 0 ? store.nextPage() : store.prevPage();
+      } else {
+        // Single-page layout — rotate the active viewport's image
+        // through the full stack so arrows still change the picture.
+        store.rotateActiveViewportImage(delta);
       }
     };
     window.addEventListener('keydown', handleKeyDown, { capture: true });

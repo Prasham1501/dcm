@@ -27,23 +27,15 @@ export function useReportRouter() {
 
   const createReport = useCallback(
     async (patient: Patient) => {
-      // Step 1: peek at the DICOM file's tags so we have BodyPart / ProtocolName /
-      //         SeriesDescription on top of whatever's in the cached patient row.
-      //         Cheap (single file, header only) and runs in parallel with React
-      //         render, so the UX delay is imperceptible (~50–100 ms).
+      // Enrich first (cheap header-only DICOM read) so the picker's
+      // confidence badges and preselection reflect the actual study tags.
       const enriched = await enrichPatientFromDicom(patient);
 
+      // Always surface the picker so the operator can choose between
+      // Fetal Medicine and General Radiology, even when one type would
+      // auto-resolve as "high" confidence. This stops a US scan from
+      // jumping straight into the fetal panel without consent.
       const decision = routeFor(enriched);
-
-      if (decision.mode === 'auto' && decision.preselected) {
-        const def = REPORT_TYPES.find((t) => t.id === decision.preselected);
-        if (def) {
-          def.openCreate(ctx, enriched);
-          return;
-        }
-      }
-
-      // Ambiguous → show picker
       showPicker({
         mode: 'create',
         patient: enriched,

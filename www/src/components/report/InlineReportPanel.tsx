@@ -66,20 +66,27 @@ async function runOcrExtraction(
 ) {
   setStatus('running');
   try {
-    // Try CR viewer first, fall back to normal viewer
-    const { useCRViewerStore } = await import('@/stores/crViewerStore');
+    // Pull images from whichever viewer is actually open. We check all three
+    // sources (CR, Dual active panel, then main Viewer) so the Scan button
+    // works regardless of which page the inline report panel was opened on.
+    const { useCRViewerStore }   = await import('@/stores/crViewerStore');
+    const { useDualViewerStore } = await import('@/stores/dualViewerStore');
+    const { useViewerStore }     = await import('@/stores/viewerStore');
+
     const crImages = useCRViewerStore.getState().images;
+    const dualState = useDualViewerStore.getState();
+    const dualActiveImages = dualState.panels[dualState.activePanel]?.images ?? [];
 
     let filePaths: string[] = [];
     let imageUrls: string[] = [];
 
     if (crImages.length > 0) {
-      // CR viewer has images (opened via "Open in CR format")
       filePaths = crImages.map((img: any) => img.filePath).filter(Boolean);
       imageUrls = crImages.map((img: any) => img.imageUrl);
+    } else if (dualActiveImages.length > 0) {
+      filePaths = dualActiveImages.map((img: any) => img.filePath).filter(Boolean);
+      imageUrls = dualActiveImages.map((img: any) => img.imageUrl);
     } else {
-      // Fall back to normal viewer store
-      const { useViewerStore } = await import('@/stores/viewerStore');
       const viewerImages = useViewerStore.getState().images;
       imageUrls = viewerImages.map(img => img.imageUrl);
       // Extract file paths from wadouri URLs (format: wadouri:...?path=<encodedPath>)
@@ -199,18 +206,43 @@ export function InlineReportPanel() {
 
   /* ── Insert HTML into editor ─────────────────────────────── */
   const insertHtmlIntoEditor = useCallback((html: string) => {
-    if (!editorRef.current || !html) return;
-    editorRef.current.focus();
+    const el = editorRef.current;
+    if (!el || !html) return;
+
+    // If the user has a cursor inside the editor, insert at that caret.
+    el.focus();
     const sel = window.getSelection();
-    if (sel && sel.rangeCount > 0 && editorRef.current.contains(sel.anchorNode)) {
+    if (sel && sel.rangeCount > 0 && el.contains(sel.anchorNode)) {
       const range = sel.getRangeAt(0);
       range.deleteContents();
-      range.insertNode(range.createContextualFragment(html));
+      const frag = range.createContextualFragment(html);
+      const lastNode = frag.lastChild;
+      range.insertNode(frag);
+      if (lastNode) {
+        const newRange = document.createRange();
+        newRange.setStartAfter(lastNode);
+        newRange.collapse(true);
+        sel.removeAllRanges();
+        sel.addRange(newRange);
+        (lastNode as HTMLElement)?.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' });
+      }
+      return;
+    }
+
+    // No caret in editor — append to the end. Use insertAdjacentHTML so the
+    // rest of the editor's DOM isn't re-parsed (which `innerHTML +=` does
+    // and can silently drop content / handlers).
+    el.insertAdjacentHTML('beforeend', html);
+    const lastChild = el.lastElementChild as HTMLElement | null;
+    if (lastChild) {
+      lastChild.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      // Place caret at end of editor so subsequent typing continues there.
+      const range = document.createRange();
+      range.selectNodeContents(el);
       range.collapse(false);
-      sel.removeAllRanges();
-      sel.addRange(range);
-    } else {
-      editorRef.current.innerHTML += html;
+      const s = window.getSelection();
+      s?.removeAllRanges();
+      s?.addRange(range);
     }
   }, []);
 
@@ -219,7 +251,8 @@ export function InlineReportPanel() {
     runOcrExtraction(uid, setExtractionStatus, setActiveReadingSet);
   }, [patientId, setExtractionStatus, setActiveReadingSet]);
 
-  // Load latest report for this patient on open
+  // Load latest report for this patient on open. If none exists, see if
+  // the report-router handed us a pending template to pre-fill from.
   useEffect(() => {
     if (!patientId) return;
     const reports = getReportsForPatient(patientId);
@@ -232,9 +265,30 @@ export function InlineReportPanel() {
         setStatus(latest.status);
         setCurrentReportId(latest.id);
       }, 50);
+      // A picked template only applies to a fresh report — clear it here
+      // so it doesn't pollute the existing one.
+      useReportStore.getState().clearPendingTemplate();
     } else {
       setTitle(`USG Report — ${patientName}`);
       setAutoFillDone(false);
+
+      const pendingId = useReportStore.getState().pendingTemplateId;
+      if (pendingId) {
+        const tpl = templates.find((t) => t.id === pendingId);
+        if (tpl) {
+          const html = tpl.content
+            ?? [
+              tpl.findings    ? `<h3>Findings</h3><p>${tpl.findings}</p>`       : '',
+              tpl.impression  ? `<h3>Impression</h3><p>${tpl.impression}</p>`   : '',
+              tpl.recommendation ? `<h3>Recommendation</h3><p>${tpl.recommendation}</p>` : '',
+            ].join('');
+          setTimeout(() => {
+            if (editorRef.current && html) editorRef.current.innerHTML = html;
+          }, 50);
+          if (tpl.name) setTitle(tpl.name);
+        }
+        useReportStore.getState().clearPendingTemplate();
+      }
     }
   }, [patientId]);
 

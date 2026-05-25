@@ -182,6 +182,9 @@ interface CRViewerState {
   // Manual image placement (Drag and Drop)
   viewportImageOverrides: Record<number, string>;
   setViewportImage: (imageUrl: string, viewportIndex: number) => void;
+  /** Cycle the currently-selected viewport's image through the full
+   *  image stack. Used by arrow keys when there's only one layout page. */
+  rotateActiveViewportImage: (delta: 1 | -1) => void;
   deleteImageFromViewport: (viewportIndex: number) => void;
   clearViewportOverride: (globalIndex: number) => void;
   clearAllViewportOverrides: () => void;
@@ -813,6 +816,20 @@ export const useCRViewerStore = create<CRViewerState>((set, get) => ({
     const globalIdx = (currentPage - 1) * currentLayout.spots + viewportIndex;
     set({
       viewportImageOverrides: { ...viewportImageOverrides, [globalIdx]: imageUrl },
+    });
+  },
+
+  rotateActiveViewportImage: (delta) => {
+    const { images, selectedViewport, viewportImageOverrides, currentPage, currentLayout } = get();
+    if (images.length <= 1) return;
+    const slot = selectedViewport ?? 0;
+    const globalIdx = (currentPage - 1) * currentLayout.spots + slot;
+    const currentUrl = viewportImageOverrides[globalIdx] ?? images[globalIdx]?.imageUrl;
+    const currentIx = images.findIndex((img) => img.imageUrl === currentUrl);
+    if (currentIx < 0) return;
+    const nextIx = (currentIx + delta + images.length) % images.length;
+    set({
+      viewportImageOverrides: { ...viewportImageOverrides, [globalIdx]: images[nextIx].imageUrl },
     });
   },
 

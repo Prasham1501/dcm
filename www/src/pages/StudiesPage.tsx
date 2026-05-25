@@ -269,7 +269,6 @@ export function StudiesPage() {
           />
         );
       })()}
-      {showReportEditor && <ReportEditor />}
     </div>
   );
 }

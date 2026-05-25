@@ -1,6 +1,6 @@
 {
   "name": "one-clickz-bridge",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "One Clickz Bridge - DICOM Print Bridge for paper printers",
   "main": "main.js",
   "scripts": {

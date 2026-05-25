@@ -372,7 +372,9 @@ class LicenseController {
 
         // Verify the key+device is active for this product.
         $stmt = db()->prepare(
-            "SELECT l.id, l.status, l.product, l.expires_at, d.status as device_status
+            "SELECT l.id, l.plan, l.status, l.product, l.expires_at,
+                    l.quota_enabled, l.quota_remaining, l.quota_total,
+                    d.status as device_status
              FROM licenses l LEFT JOIN devices d ON d.license_id=l.id AND d.fingerprint=?
              WHERE l.key_code=?"
         );
@@ -382,6 +384,21 @@ class LicenseController {
         if ($row['status']    !== 'active')                     Response::json(['ok'=>false,'reason'=>$row['status']]);
         if (($row['product'] ?? 'viewer') !== $app)             Response::json(['ok'=>false,'reason'=>'wrong_product']);
         if ($row['device_status'] !== 'active')                 Response::json(['ok'=>false,'reason'=>'deactivated']);
+
+        // Defensive lazy-seed: any plan='trial' license that was issued
+        // before the seeding patch landed (or had its quota wiped by the
+        // reset script) gets 100 prints + quota mode ON on first read.
+        // Idempotent — only fires once per license.
+        if ($row['plan'] === 'trial'
+            && (int)$row['quota_enabled']   === 0
+            && (int)$row['quota_remaining'] === 0
+            && (int)$row['quota_total']     === 0) {
+            db()->prepare(
+                "UPDATE licenses
+                    SET quota_enabled = 1, quota_remaining = 100, quota_total = 100
+                  WHERE id = ?"
+            )->execute([$row['id']]);
+        }
 
         if ($dec > 0) {
             db()->prepare("UPDATE licenses SET quota_remaining = GREATEST(0, quota_remaining - ?) WHERE id = ? AND quota_enabled = 1")

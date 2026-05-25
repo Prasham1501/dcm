@@ -166,7 +166,10 @@ export function CRViewportGrid() {
           }
 
           return (
-            <div key={`cr-vp-${i}`} className={`relative overflow-hidden min-h-0 ${isArrangeMode ? 'cursor-pointer' : ''}`} style={areaStyle} onMouseDown={(e) => handleViewportMouseDown(i, e)} onDoubleClick={() => handleViewportDoubleClick(i)}
+            // Key includes imageId so the CRViewport remounts (and cornerstone
+            // re-displays from scratch) whenever the slot's image changes —
+            // page-nav and active-viewport image rotation both rely on this.
+            <div key={`cr-vp-${i}-${imageId ?? 'empty'}`} className={`relative overflow-hidden min-h-0 ${isArrangeMode ? 'cursor-pointer' : ''}`} style={areaStyle} onMouseDown={(e) => handleViewportMouseDown(i, e)} onDoubleClick={() => handleViewportDoubleClick(i)}
               onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; }}
               onDrop={(e) => {
                 e.preventDefault();

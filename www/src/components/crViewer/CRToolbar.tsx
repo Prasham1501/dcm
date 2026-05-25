@@ -4,6 +4,7 @@
  */
 import { useState } from 'react';
 import { useCRViewerStore, CR_LAYOUTS, type CRLayout } from '@/stores/crViewerStore';
+import { useReportStore } from '@/stores/reportStore';
 import { useReportRouter } from '@/features/report-router/useReportRouter';
 import {
   ChevronLeft, ChevronRight, Printer, ListOrdered, FileText,
@@ -16,8 +17,11 @@ export function CRToolbar() {
     isArrangeMode, toggleArrangeMode,
     nextPage, prevPage, currentPage, totalPages,
     patientName, patientId, studyDate, modality, studyDescription,
+    images,
   } = useCRViewerStore();
   const reportRouter = useReportRouter();
+  const showInlineReport = useReportStore((s) => s.showInlineReport);
+  const setShowInlineReport = useReportStore((s) => s.setShowInlineReport);
 
   const [showPrintPreview, setShowPrintPreview] = useState(false);
   const [printFilter, setPrintFilter] = useState<'All' | 'Current'>('All');
@@ -104,9 +108,15 @@ export function CRToolbar() {
           Print
         </button>
 
-        {/* Report button - highlighted */}
+        {/* Report — toggles the inline report panel, mirrors the main
+            Viewer header behaviour. Passes filePaths so the Electron
+            dual-window flow can kick in when available. */}
         <button
           onClick={() => {
+            if (showInlineReport) {
+              setShowInlineReport(false);
+              return;
+            }
             reportRouter.createReport({
               id: patientId,
               patientId,
@@ -114,16 +124,17 @@ export function CRToolbar() {
               studyDate,
               modality,
               studyDescription,
+              filePaths: images.map((img) => img.filePath).filter(Boolean),
               age: '',
               sex: '',
-              images: 0,
+              images: images.length,
               accessionNumber: '',
               referringPhysician: '',
               printed: false,
             });
           }}
-          className="flex items-center gap-1 2xl:gap-1.5 px-2.5 2xl:px-3.5 py-1 2xl:py-1.5 text-xs 2xl:text-sm font-semibold border-2 border-app-accent text-white bg-app-accent rounded hover:opacity-90 transition-colors"
-          title="Create Report"
+          className={`flex items-center gap-1 2xl:gap-1.5 px-2.5 2xl:px-3.5 py-1 2xl:py-1.5 text-xs 2xl:text-sm font-semibold border-2 border-app-accent rounded transition-colors ${showInlineReport ? 'text-white bg-app-accent hover:opacity-90' : 'text-app-accent bg-app-bg hover:bg-app-accent hover:text-white'}`}
+          title={showInlineReport ? 'Hide Report Panel' : 'Create Report'}
         >
           <FileText className="w-3.5 h-3.5 2xl:w-4.5 2xl:h-4.5" />
           Report

@@ -155,6 +155,9 @@ interface DualViewerState {
   togglePanelViewportSelection: (panelId: PanelId, index: number) => void;
   selectAllPanelViewports: (panelId: PanelId) => void;
   panelSwapImages: (panelId: PanelId, idxA: number, idxB: number) => void;
+  /** Cycle the panel's active viewport image through the full image
+   *  stack. Used by arrow keys when there's only one layout page. */
+  panelRotateActiveImage: (panelId: PanelId, delta: 1 | -1) => void;
   togglePanelArrangeMode: (panelId: PanelId) => void;
   togglePanelArrangeViewport: (panelId: PanelId, index: number) => void;
   applyPanelArrange: (panelId: PanelId) => void;
@@ -419,6 +422,21 @@ export const useDualViewerStore = create<DualViewerState>((set, get) => {
       nextImages[idxB] = temp;
       return updatePanel(state, panelId, { images: nextImages });
     });
+  },
+
+  panelRotateActiveImage: (panelId, delta) => {
+    const panel = get().panels[panelId];
+    const { images, selectedViewport, currentPage, currentLayout } = panel;
+    if (!images || images.length <= 1) return;
+    const slot = selectedViewport ?? 0;
+    const globalIdx = (currentPage - 1) * currentLayout.spots + slot;
+    if (globalIdx >= images.length) return;
+    const nextIdx = (globalIdx + delta + images.length) % images.length;
+    if (nextIdx === globalIdx) return;
+    // Swap the active slot with the next image in the stack. The other
+    // viewports may shift content as a side-effect — there's no per-slot
+    // override system on Dual today.
+    get().panelSwapImages(panelId, globalIdx, nextIdx);
   },
 
   togglePanelArrangeMode: (panelId) => {

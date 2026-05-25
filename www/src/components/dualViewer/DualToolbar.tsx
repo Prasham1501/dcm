@@ -5,6 +5,7 @@
 import { useState, useEffect } from 'react';
 import { useDualViewerStore } from '@/stores/dualViewerStore';
 import { useUndoStore } from '@/stores/undoStore';
+import { useReportStore } from '@/stores/reportStore';
 import { useReportRouter } from '@/features/report-router/useReportRouter';
 import {
   ChevronLeft, ChevronRight, Printer, ListOrdered, MoveHorizontal, Move3d, Undo2, FileText,
@@ -25,6 +26,8 @@ export function DualToolbar() {
 
   const [showPrintPreview, setShowPrintPreview] = useState(false);
   const reportRouter = useReportRouter();
+  const showInlineReport = useReportStore((s) => s.showInlineReport);
+  const setShowInlineReport = useReportStore((s) => s.setShowInlineReport);
 
   // Delete key: delete active annotation from dual viewports
   useEffect(() => {
@@ -164,9 +167,14 @@ export function DualToolbar() {
           Print
         </button>
 
-        {/* Report button - highlighted */}
+        {/* Report — toggles the inline report panel; passes filePaths from
+            the active panel so the Electron dual-window flow can kick in. */}
         <button
           onClick={() => {
+            if (showInlineReport) {
+              setShowInlineReport(false);
+              return;
+            }
             const p = activeP;
             reportRouter.createReport({
               id: p.patientId,
@@ -175,16 +183,17 @@ export function DualToolbar() {
               studyDate: p.studyDate,
               modality: p.modality,
               studyDescription: p.studyDescription,
+              filePaths: p.images.map((img) => img.filePath).filter(Boolean),
               age: '',
               sex: '',
-              images: 0,
+              images: p.images.length,
               accessionNumber: '',
               referringPhysician: '',
               printed: false,
             });
           }}
-          className="flex items-center gap-1 px-2.5 py-1 text-xs font-semibold border-2 border-app-accent text-white bg-app-accent rounded hover:opacity-90 transition-colors"
-          title="Create Report"
+          className={`flex items-center gap-1 px-2.5 py-1 text-xs font-semibold border-2 border-app-accent rounded transition-colors ${showInlineReport ? 'text-white bg-app-accent hover:opacity-90' : 'text-app-accent bg-app-bg hover:bg-app-accent hover:text-white'}`}
+          title={showInlineReport ? 'Hide Report Panel' : 'Create Report'}
         >
           <FileText className="w-3.5 h-3.5" />
           Report

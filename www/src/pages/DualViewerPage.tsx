@@ -6,6 +6,39 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useDualViewerStore } from '@/stores/dualViewerStore';
 import { useReportStore } from '@/stores/reportStore';
+
+/** Auto-run OCR / DICOM extraction for the Dual viewer's active panel.
+ *  Same idea as CRViewerPage's autoExtract — fires once per study load
+ *  (gated by extractionStatus === 'idle') so the operator doesn't have to
+ *  click Scan manually. */
+async function dualAutoExtract(filePaths: string[], patientId: string) {
+  const store = useReportStore.getState();
+  if (store.extractionStatus === 'running') return;
+  const api = (window as any).electronAPI;
+  if (api?.invoke && filePaths.length > 0) {
+    try {
+      const meta = await api.invoke('extract-dicom-metadata', { filePaths });
+      if (meta && Object.keys(meta).length > 0) store.setDicomMetadata(meta);
+    } catch { /* best-effort */ }
+  }
+  store.setExtractionStatus('running');
+  try {
+    const { extractReadings } = await import('@/lib/usgExtraction/extractReadings');
+    const { useDualViewerStore } = await import('@/stores/dualViewerStore');
+    const dualState = useDualViewerStore.getState();
+    const imageUrls = dualState.panels[dualState.activePanel]?.images.map((img: any) => img.imageUrl) ?? [];
+    const result = await extractReadings({
+      studyUID: patientId || 'auto',
+      orthancStudyId: '', orthancInstanceIds: [],
+      imageUrls, filePaths, hfToken: '',
+    });
+    store.setActiveReadingSet(result.readings.length > 0 ? result : null);
+    store.setExtractionStatus('done');
+  } catch (err) {
+    console.warn('[dualAutoExtract] failed:', err);
+    store.setExtractionStatus('failed');
+  }
+}
 import { DualToolbar } from '@/components/dualViewer/DualToolbar';
 import { ReportRouterHost } from '@/features/report-router/ReportRouterHost';
 import { DualViewportPanel } from '@/components/dualViewer/DualViewportPanel';
@@ -60,6 +93,19 @@ export function DualViewerPage() {
     } catch { /* ignore parse errors */ }
   }, [loadPanelStudy]);
 
+  // Auto-extract once a panel's images have loaded. Triggers on the active
+  // panel so the inline report panel gets readings without manual Scan.
+  const activeImagesCount = panels[activePanel]?.images.length ?? 0;
+  const activePatientId   = panels[activePanel]?.patientId ?? '';
+  useEffect(() => {
+    if (activeImagesCount === 0) return;
+    if (useReportStore.getState().extractionStatus !== 'idle') return;
+    const imgs = useDualViewerStore.getState().panels[activePanel]?.images ?? [];
+    const filePaths = imgs.map((img: any) => img.filePath).filter(Boolean);
+    if (filePaths.length === 0) return;
+    dualAutoExtract(filePaths, activePatientId || 'auto');
+  }, [activePanel, activeImagesCount, activePatientId]);
+
   const isPopup = typeof window !== 'undefined' && (window.opener != null || window.history.length <= 1);
 
   // Keyboard navigation for pages (arrow keys on active panel)
@@ -67,24 +113,26 @@ export function DualViewerPage() {
     const handleKeyDown = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement)?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      // Don't fight the inline report editor when the cursor is in it.
+      if ((e.target as HTMLElement)?.isContentEditable) return;
 
-      const { syncMove, activePanel } = useDualViewerStore.getState();
+      const delta = (e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === 'PageDown') ? 1
+                  : (e.key === 'ArrowLeft'  || e.key === 'ArrowUp'   || e.key === 'PageUp')   ? -1
+                  : 0;
+      if (delta === 0) return;
+      e.preventDefault();
 
-      if (e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === 'PageDown') {
-        e.preventDefault();
-        if (syncMove) {
-          useDualViewerStore.getState().panelNextPage('left');
-          useDualViewerStore.getState().panelNextPage('right');
+      const store = useDualViewerStore.getState();
+      const { syncMove, activePanel, panels } = store;
+      const panelsToHit: ('left' | 'right')[] = syncMove ? ['left', 'right'] : [activePanel];
+
+      for (const panelId of panelsToHit) {
+        const panel = panels[panelId];
+        if (panel.totalPages > 1) {
+          delta > 0 ? store.panelNextPage(panelId) : store.panelPrevPage(panelId);
         } else {
-          useDualViewerStore.getState().panelNextPage(activePanel);
-        }
-      } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp' || e.key === 'PageUp') {
-        e.preventDefault();
-        if (syncMove) {
-          useDualViewerStore.getState().panelPrevPage('left');
-          useDualViewerStore.getState().panelPrevPage('right');
-        } else {
-          useDualViewerStore.getState().panelPrevPage(activePanel);
+          // Single-page layout — cycle the active viewport's image.
+          store.panelRotateActiveImage(panelId, delta);
         }
       }
     };

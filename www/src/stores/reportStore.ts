@@ -10,6 +10,9 @@ export interface ReportTemplate {
   impression: string;
   recommendation: string;
   content?: string; // Rich HTML content for full-page editor templates
+  /** Optional report-type tag so the template picker can filter. When
+   *  absent the template shows up under every type (back-compat). */
+  type?: 'radiology' | 'fetal' | string;
   createdAt: number;
 }
 
@@ -72,6 +75,12 @@ interface ReportStore {
   // DICOM metadata (patient/study/machine info extracted from tags)
   dicomMetadata: Record<string, string> | null;
   setDicomMetadata: (m: Record<string, string> | null) => void;
+  /** Template selected in the report-router picker. Editors read this on
+   *  mount, pre-fill from it, and call clearPendingTemplate() so the next
+   *  Report click starts from a blank slate. */
+  pendingTemplateId: string | null;
+  setPendingTemplate: (id: string | null) => void;
+  clearPendingTemplate: () => void;
 }
 
 export const useReportStore = create<ReportStore>()(
@@ -95,6 +104,9 @@ export const useReportStore = create<ReportStore>()(
       setExtractionStatus: (status) => set({ extractionStatus: status }),
       dicomMetadata: null,
       setDicomMetadata: (m) => set({ dicomMetadata: m }),
+      pendingTemplateId: null,
+      setPendingTemplate: (id) => set({ pendingTemplateId: id }),
+      clearPendingTemplate: () => set({ pendingTemplateId: null }),
 
       getReport: (studyId: string) => {
         return get().reports[studyId];

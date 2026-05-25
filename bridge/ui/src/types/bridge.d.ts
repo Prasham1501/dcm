@@ -215,6 +215,12 @@ export interface BridgeAPI {
   // Branding
   saveBranding: (branding: Partial<HospitalBranding>) => Promise<HospitalBranding>;
   pickAndEncodeLogo: () => Promise<string | null>;
+
+  // Central sell-by-print quota (shared with viewer + website).
+  getLicenseQuota: () => Promise<{ enabled: boolean; remaining: number; total: number; valid?: boolean; offline?: boolean; reason?: string }>;
+  decrementLicenseQuota: (pages: number) => Promise<{ ok: boolean; enabled?: boolean; remaining?: number; total?: number; reason?: string }>;
+  setLicenseQuota: (args: { enabled?: boolean; remaining?: number; adminPin: string }) => Promise<{ ok: boolean; enabled?: boolean; remaining?: number; total?: number; reason?: string }>;
+  onQuotaChanged: (cb: (q: { enabled: boolean; remaining: number; total: number }) => void) => () => void;
 }
 
 declare global {

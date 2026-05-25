@@ -152,9 +152,6 @@ export function ViewerPage() {
       {showPrintPreview && <PrintPreview />}
       {showPrinterModal && <PrinterModal />}
 
-      {/* Report Editor modal */}
-      <ReportEditor />
-
       {/* Report type picker modal */}
       <ReportRouterHost />
     </div>

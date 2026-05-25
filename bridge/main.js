@@ -158,7 +158,15 @@ async function validateBridgeLicense() {
       saveLicenseData(lic);
       return { valid: true, plan: lic.plan, expiresAt: lic.expiresAt };
     }
-    return { valid: false, reason: res.data?.reason || 'invalid' };
+    // Server says the key is dead — purge the local cache so the bridge
+    // stops claiming "license active / N prints left" against a deleted
+    // or revoked key. Same hard-reject list as getCentralQuota.
+    const hardReasons = ['not_found', 'revoked', 'deactivated', 'wrong_product', 'expired'];
+    const reason = res.data?.reason || 'invalid';
+    if (hardReasons.includes(reason)) {
+      clearLicenseData();
+    }
+    return { valid: false, reason };
   } catch {
     if (lic.lastValidated) {
       const daysSince = (Date.now() - new Date(lic.lastValidated).getTime()) / (1000 * 60 * 60 * 24);
@@ -185,10 +193,105 @@ function getLicenseStatus() {
     if (lic.expiresAt) {
       daysLeft = Math.max(0, Math.ceil((new Date(lic.expiresAt).getTime() - Date.now()) / (1000 * 60 * 60 * 24)));
     }
-    return { type: 'licensed', licenseKey: lic.licenseKey, plan: lic.plan, expiresAt: lic.expiresAt, lastValidated: lic.lastValidated, daysLeft, expired: daysLeft !== null && daysLeft <= 0 };
+    return {
+      type: 'licensed',
+      licenseKey: lic.licenseKey,
+      plan: lic.plan,
+      expiresAt: lic.expiresAt,
+      lastValidated: lic.lastValidated,
+      daysLeft,
+      expired: daysLeft !== null && daysLeft <= 0,
+      // Cached sell-by-print quota (refreshed by getCentralQuota / the UI poll).
+      quotaEnabled:   !!lic.quotaEnabled,
+      quotaRemaining: parseInt(lic.quotaRemaining || 0, 10),
+      quotaTotal:     parseInt(lic.quotaTotal     || 0, 10),
+    };
   }
   const trial = getTrialInfo();
   return { type: 'trial', remaining: trial.remaining, expired: trial.expired, totalDays: TRIAL_DAYS };
+}
+
+// ===== Central sell-by-print quota (shared with viewer + website) =====
+// The bridge polls the same /license/quota endpoint the viewer uses so the
+// header "X prints left" stays in sync across all software.  On every
+// successful print the bridge decrements the central counter — local per-slot
+// quotas (if the user has set any) keep working in parallel for back-compat.
+
+async function getCentralQuota() {
+  const lic = getLicenseData();
+  if (!lic) return { enabled: false, remaining: 0, total: 0, valid: false, reason: 'no_license' };
+  try {
+    const r = await bridgeApiRequest('/license/quota', {
+      license_key: lic.licenseKey, fingerprint: lic.fingerprint, app: 'bridge',
+    });
+    if (r.status >= 200 && r.status < 300 && r.data && (r.data.ok || r.data.enabled !== undefined)) {
+      lic.quotaEnabled   = !!r.data.enabled;
+      lic.quotaRemaining = parseInt(r.data.remaining || 0, 10);
+      lic.quotaTotal     = parseInt(r.data.total     || 0, 10);
+      saveLicenseData(lic);
+      return { enabled: lic.quotaEnabled, remaining: lic.quotaRemaining, total: lic.quotaTotal, valid: true };
+    }
+    // Hard server reject (key deleted on the server, revoked, or wrong product)
+    // — purge the local cache so we don't keep showing a phantom "X prints left".
+    const hardReasons = ['not_found', 'revoked', 'deactivated', 'wrong_product', 'expired'];
+    if (r.status >= 200 && r.status < 300 && r.data?.reason && hardReasons.includes(r.data.reason)) {
+      clearLicenseData();
+      return { enabled: false, remaining: 0, total: 0, valid: false, reason: r.data.reason, invalidated: true };
+    }
+    return { enabled: !!lic.quotaEnabled, remaining: lic.quotaRemaining || 0, total: lic.quotaTotal || 0, valid: false, reason: r.data?.reason };
+  } catch (e) {
+    return { enabled: !!lic.quotaEnabled, remaining: lic.quotaRemaining || 0, total: lic.quotaTotal || 0, valid: true, offline: true };
+  }
+}
+
+async function decrementCentralQuota(pages) {
+  const lic = getLicenseData();
+  if (!lic) return { ok: false, reason: 'no_license' };
+  try {
+    const r = await bridgeApiRequest('/license/quota', {
+      license_key: lic.licenseKey, fingerprint: lic.fingerprint, app: 'bridge',
+      decrement: Math.max(1, parseInt(pages, 10)),
+    });
+    if (r.status >= 200 && r.status < 300) {
+      lic.quotaEnabled   = !!r.data.enabled;
+      lic.quotaRemaining = parseInt(r.data.remaining || 0, 10);
+      lic.quotaTotal     = parseInt(r.data.total     || 0, 10);
+      saveLicenseData(lic);
+      return { ok: true, enabled: lic.quotaEnabled, remaining: lic.quotaRemaining, total: lic.quotaTotal };
+    }
+    return { ok: false, reason: r.data?.error || 'rejected', status: r.status };
+  } catch (e) {
+    return { ok: false, reason: 'network', message: e.message };
+  }
+}
+
+// Server-side toggle of sell-by-print mode (or direct counter set).
+// Mirrors the viewer's `set-license-quota` IPC so any number the operator
+// types in Ctrl+Shift+Q is the same number the website immediately shows.
+async function setCentralQuota({ enabled, remaining, adminPin } = {}) {
+  const lic = getLicenseData();
+  if (!lic) return { ok: false, reason: 'no_license' };
+  const body = {
+    license_key: lic.licenseKey,
+    fingerprint: lic.fingerprint,
+    app:         'bridge',
+    admin_pin:   adminPin || '',
+  };
+  if (typeof enabled === 'boolean') body.set_enabled = enabled;
+  if (Number.isFinite(remaining))   body.set_remaining = Math.max(0, parseInt(remaining, 10));
+  try {
+    const r = await bridgeApiRequest('/license/quota', body);
+    if (r.status >= 200 && r.status < 300 && r.data && (r.data.ok || r.data.enabled !== undefined)) {
+      lic.quotaEnabled   = !!r.data.enabled;
+      lic.quotaRemaining = parseInt(r.data.remaining || 0, 10);
+      lic.quotaTotal     = parseInt(r.data.total     || 0, 10);
+      saveLicenseData(lic);
+      return { ok: true, enabled: lic.quotaEnabled, remaining: lic.quotaRemaining, total: lic.quotaTotal };
+    }
+    return { ok: false, reason: r.data?.error || r.data?.reason || 'rejected', status: r.status };
+  } catch (e) {
+    return { ok: false, reason: 'network', message: e.message };
+  }
 }
 
 // --- Singletons ---
@@ -431,6 +534,14 @@ function setupIpc() {
   // --- License IPC ---
   ipcMain.handle('bridge:get-license-status', () => getLicenseStatus());
 
+  // Central sell-by-print quota — same endpoint the viewer uses, so the
+  // header count stays in sync across viewer, website, and bridge.
+  ipcMain.handle('bridge:get-license-quota', async () => getCentralQuota());
+  ipcMain.handle('bridge:decrement-license-quota', async (_e, { pages = 1 } = {}) =>
+    decrementCentralQuota(pages)
+  );
+  ipcMain.handle('bridge:set-license-quota', async (_e, args = {}) => setCentralQuota(args));
+
   ipcMain.handle('bridge:activate-license', async (_e, licenseKey) => {
     return await activateBridgeLicense(licenseKey);
   });
@@ -628,6 +739,32 @@ app.whenReady().then(async () => {
         configWindow.webContents.send('bridge:config-changed', config.get());
       }
     }
+
+    // Central sell-by-print quota — single counter shared with viewer/website.
+    // Runs in addition to (not instead of) any local per-slot quota so existing
+    // setups keep working. Server is the source of truth.
+    const pagesPrinted = Math.max(1, parseInt(job.result.pages || 1, 10));
+    decrementCentralQuota(pagesPrinted).then((q) => {
+      if (q && q.ok && configWindow && !configWindow.isDestroyed()) {
+        // Tell the renderer to refetch quota immediately for live UI.
+        configWindow.webContents.send('bridge:quota-changed', {
+          enabled: q.enabled, remaining: q.remaining, total: q.total,
+        });
+      }
+      if (q && q.ok && q.enabled && Notification.isSupported()) {
+        if (q.remaining === 0) {
+          new Notification({
+            title: 'One Clickz Bridge — print quota exhausted',
+            body: 'Central print balance is 0. Top up to resume printing.',
+          }).show();
+        } else if (q.remaining <= 50) {
+          new Notification({
+            title: 'One Clickz Bridge — low print quota',
+            body: `${q.remaining} prints remaining across all software.`,
+          }).show();
+        }
+      }
+    }).catch(() => {});
 
     if (Notification.isSupported()) {
       new Notification({
