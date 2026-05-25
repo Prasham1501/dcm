@@ -60,7 +60,7 @@ interface ReportStore {
   deleteSavedReport: (reportId: string) => void;
   markReportPrinted: (reportId: string) => void;
   getReportPrintCount: (reportId: string) => number;
-  addRichTemplate: (template: { name: string; content: string }) => void;
+  addRichTemplate: (template: { name: string; content: string; type?: string }) => void;
   appendReadingsToReport: (params: {
     patientId: string;
     patientName: string;
@@ -262,6 +262,7 @@ export const useReportStore = create<ReportStore>()(
             impression: '',
             recommendation: '',
             content: template.content,
+            type: template.type,
             createdAt: Date.now(),
           }],
         }));

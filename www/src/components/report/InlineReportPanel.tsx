@@ -231,18 +231,61 @@ export function InlineReportPanel() {
 
     // No caret in editor — append to the end. Use insertAdjacentHTML so the
     // rest of the editor's DOM isn't re-parsed (which `innerHTML +=` does
-    // and can silently drop content / handlers).
-    el.insertAdjacentHTML('beforeend', html);
+    // and can silently drop content / handlers). Wrap the new block with
+    // empty paragraphs so the user always has clickable editable space
+    // above and below it (otherwise contentEditable refuses to place a
+    // caret outside the bordered findings/readings tables).
+    const wrapped = `<p><br></p>${html}<p><br></p>`;
+    el.insertAdjacentHTML('beforeend', wrapped);
     const lastChild = el.lastElementChild as HTMLElement | null;
     if (lastChild) {
       lastChild.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-      // Place caret at end of editor so subsequent typing continues there.
+      // Place caret in the trailing empty <p> so subsequent typing
+      // continues *after* the inserted block, not inside it.
       const range = document.createRange();
-      range.selectNodeContents(el);
-      range.collapse(false);
+      range.setStart(lastChild, 0);
+      range.collapse(true);
       const s = window.getSelection();
       s?.removeAllRanges();
       s?.addRange(range);
+    }
+  }, []);
+
+  /* ── Insert a page break ────────────────────────────────────
+     Adds a visible separator (screen) + CSS page-break (print) +
+     a fresh empty paragraph so the caret lands on the new page. */
+  const handleAddPage = useCallback(() => {
+    const el = editorRef.current;
+    if (!el) return;
+    const pageBreak = `<div class="report-page-break" style="page-break-before:always;break-before:page;border-top:1px dashed #bbb;margin:24px -50px;padding-top:8px;font-size:10px;color:#888;text-align:center;user-select:none" contenteditable="false">— Page break —</div><p><br></p>`;
+    el.focus();
+    const sel = window.getSelection();
+    if (sel && sel.rangeCount > 0 && el.contains(sel.anchorNode)) {
+      const range = sel.getRangeAt(0);
+      range.deleteContents();
+      const frag = range.createContextualFragment(pageBreak);
+      const lastNode = frag.lastChild as HTMLElement | null;
+      range.insertNode(frag);
+      if (lastNode) {
+        const newRange = document.createRange();
+        newRange.setStart(lastNode, 0);
+        newRange.collapse(true);
+        sel.removeAllRanges();
+        sel.addRange(newRange);
+        lastNode.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      }
+    } else {
+      el.insertAdjacentHTML('beforeend', pageBreak);
+      const last = el.lastElementChild as HTMLElement | null;
+      if (last) {
+        last.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        const range = document.createRange();
+        range.setStart(last, 0);
+        range.collapse(true);
+        const s = window.getSelection();
+        s?.removeAllRanges();
+        s?.addRange(range);
+      }
     }
   }, []);
 
@@ -259,7 +302,7 @@ export function InlineReportPanel() {
     if (reports.length > 0) {
       const latest = [...reports].sort((a, b) => b.updatedAt - a.updatedAt)[0];
       setTimeout(() => {
-        if (editorRef.current) editorRef.current.innerHTML = latest.content;
+        if (editorRef.current) editorRef.current.innerHTML = `<p><br></p>${latest.content}<p><br></p>`;
         setTitle(latest.title);
         setDoctor(latest.doctor);
         setStatus(latest.status);
@@ -283,7 +326,7 @@ export function InlineReportPanel() {
               tpl.recommendation ? `<h3>Recommendation</h3><p>${tpl.recommendation}</p>` : '',
             ].join('');
           setTimeout(() => {
-            if (editorRef.current && html) editorRef.current.innerHTML = html;
+            if (editorRef.current && html) editorRef.current.innerHTML = `<p><br></p>${html}<p><br></p>`;
           }, 50);
           if (tpl.name) setTitle(tpl.name);
         }
@@ -348,7 +391,9 @@ export function InlineReportPanel() {
 
   const loadReport = useCallback((report: SavedReport) => {
     if (!editorRef.current) return;
-    editorRef.current.innerHTML = report.content;
+    // Bookend with empty paragraphs so the user can always click above
+    // or below the saved content to add free text.
+    editorRef.current.innerHTML = `<p><br></p>${report.content}<p><br></p>`;
     setTitle(report.title);
     setDoctor(report.doctor);
     setStatus(report.status);
@@ -616,6 +661,10 @@ export function InlineReportPanel() {
 
               <ToolbarSep />
 
+              <FmtBtn onClick={handleAddPage} tip="Add new page (page break)"><span className="text-[10px] font-bold">+ Page</span></FmtBtn>
+
+              <ToolbarSep />
+
               {/* Clear All — single click with confirm dialog */}
               <button
                 onClick={() => {
@@ -734,7 +783,13 @@ export function InlineReportPanel() {
                 </div>
               </div>
 
-              {/* ── Editable Content ── */}
+              {/* ── Editable Content ──
+                  Styled like an A4 page so the user has a visual sense of
+                  page boundaries. A repeating background gradient marks
+                  every ~A4 page height with a dashed rule so they know
+                  where to insert a `+ Page` break. True auto-pagination
+                  (split content at page edges automatically) is a
+                  separate, larger feature. */}
               <div
                 ref={editorRef}
                 contentEditable
@@ -744,8 +799,13 @@ export function InlineReportPanel() {
                   fontFamily: "'Times New Roman', Georgia, serif",
                   fontSize: '16px',
                   lineHeight: '1.9',
-                  minHeight: '400px',
+                  // A4 portrait is roughly 1123px tall at 96 DPI.
+                  // Repeating dashed line every page height as a visual cue.
+                  minHeight: '1123px',
                   padding: '16px 50px 40px 50px',
+                  backgroundImage:
+                    'repeating-linear-gradient(to bottom, transparent 0, transparent 1122px, rgba(0,0,0,0.08) 1122px, rgba(0,0,0,0.08) 1123px)',
+                  cursor: 'text',
                 }}
                 onKeyDown={(e) => {
                   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
@@ -756,7 +816,31 @@ export function InlineReportPanel() {
                 onKeyUp={updateFormatState}
                 onMouseUp={updateFormatState}
                 onSelect={updateFormatState}
-                onClick={() => { setShowFontColor(false); setShowHighlight(false); }}
+                onClick={(e) => {
+                  setShowFontColor(false);
+                  setShowHighlight(false);
+                  // If the click landed directly on the editor (i.e. on
+                  // empty padding/space, not on a text node), drop the
+                  // caret at the end so the user can always type below
+                  // tables/charts.
+                  const el = editorRef.current;
+                  if (!el) return;
+                  if (e.target === el) {
+                    // Ensure there's a trailing empty paragraph to land in.
+                    const last = el.lastElementChild as HTMLElement | null;
+                    if (!last || last.tagName !== 'P' || last.textContent?.trim()) {
+                      el.insertAdjacentHTML('beforeend', '<p><br></p>');
+                    }
+                    const target = el.lastElementChild as HTMLElement;
+                    const range = document.createRange();
+                    range.setStart(target, 0);
+                    range.collapse(true);
+                    const s = window.getSelection();
+                    s?.removeAllRanges();
+                    s?.addRange(range);
+                    el.focus();
+                  }
+                }}
               />
 
               {/* ── Doctor Signature area (non-editable) ── */}
