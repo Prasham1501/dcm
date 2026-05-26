@@ -11,11 +11,13 @@ import {
   List, ListOrdered, Undo2, Redo2, Save, Printer, X,
   Sparkles, ChevronDown, ChevronUp, Loader2, ScanSearch, AlertTriangle, ShieldCheck,
   Pencil, Type, Minus, Eraser, Trash2,
-  Superscript, Subscript, Highlighter,
+  Superscript, Subscript, Highlighter, BookmarkPlus,
   RotateCcw, TableProperties, PanelLeftClose, PanelLeft, FileText,
 } from 'lucide-react';
 import type { ReadingSet, Reading } from '@/lib/usgExtraction/types';
 import { buildReportHtml } from '@/lib/usgExtraction/templates/buildReportHtml';
+import { substituteTemplateTokens } from '@/lib/templateTokens';
+import { buildBrandHeaderHtml, buildFooterHtml } from '@/stores/hospitalConfigStore';
 import {
   computeOBData, formatGA, parseGAtoWeeks, ordinal,
   FLAG_COLORS, type OBComputedReading, type OBComputedResult,
@@ -129,6 +131,10 @@ async function runOcrExtraction(
 
 export function InlineReportPanel() {
   const editorRef = useRef<HTMLDivElement>(null);
+  // Original (unsubstituted) HTML of the template the editor was launched
+  // with. Lets us re-run token substitution once extraction completes if
+  // readings weren't ready at template load time.
+  const pendingTemplateRawRef = useRef<string | null>(null);
 
   // Report store
   const {
@@ -319,21 +325,53 @@ export function InlineReportPanel() {
       if (pendingId) {
         const tpl = templates.find((t) => t.id === pendingId);
         if (tpl) {
-          const html = tpl.content
+          const rawHtml = tpl.content
             ?? [
               tpl.findings    ? `<h3>Findings</h3><p>${tpl.findings}</p>`       : '',
               tpl.impression  ? `<h3>Impression</h3><p>${tpl.impression}</p>`   : '',
               tpl.recommendation ? `<h3>Recommendation</h3><p>${tpl.recommendation}</p>` : '',
             ].join('');
+          // Hydrate any {{TOKEN}} placeholders in the template with the
+          // live study's readings + patient context. Readings may not be
+          // ready yet at this point — a follow-up effect re-runs the
+          // substitution once extraction completes.
+          const html = substituteTemplateTokens(rawHtml, {
+            patientName, patientId, studyDate,
+            modality:  dicomMeta?.modality,
+            title:     tpl.name,
+            readings:  readingSet?.readings,
+          });
           setTimeout(() => {
             if (editorRef.current && html) editorRef.current.innerHTML = `<p><br></p>${html}<p><br></p>`;
           }, 50);
           if (tpl.name) setTitle(tpl.name);
+          // Remember the original template html so we can re-substitute
+          // when readings finish extracting (handled by a separate effect).
+          pendingTemplateRawRef.current = rawHtml;
         }
         useReportStore.getState().clearPendingTemplate();
       }
     }
   }, [patientId]);
+
+  /* ── Re-hydrate a template once readings finish extracting ──
+     If the user picked a template before autoExtract finished, the
+     {{TOKEN}} placeholders were filled with "—". Once readings are
+     available, re-run substitution on the stored raw template HTML so
+     the editor shows real values. Skipped if the user has already typed
+     anything (we don't want to clobber edits). */
+  useEffect(() => {
+    if (!pendingTemplateRawRef.current) return;
+    if (!readingSet || readingSet.readings.length === 0) return;
+    if (!editorRef.current) return;
+    const html = substituteTemplateTokens(pendingTemplateRawRef.current, {
+      patientName, patientId, studyDate,
+      modality:  dicomMeta?.modality,
+      readings:  readingSet.readings,
+    });
+    editorRef.current.innerHTML = `<p><br></p>${html}<p><br></p>`;
+    pendingTemplateRawRef.current = null;
+  }, [readingSet]);
 
   /* ── execCommand wrapper ─────────────────────────────────── */
   const exec = useCallback((cmd: string, val?: string) => {
@@ -402,6 +440,23 @@ export function InlineReportPanel() {
 
   const patientReports = patientId ? getReportsForPatient(patientId) : [];
 
+  /* ── Save-as-template modal state ───────────────────────────── */
+  const [showSaveTemplate, setShowSaveTemplate] = useState(false);
+  const [templateName, setTemplateName]   = useState('');
+  const [templateType, setTemplateType]   = useState<'radiology' | 'fetal'>('radiology');
+  const addRichTemplate = useReportStore((s) => s.addRichTemplate);
+  const submitSaveTemplate = useCallback(() => {
+    const html = editorRef.current?.innerHTML?.trim() ?? '';
+    const name = templateName.trim();
+    if (!name) return;
+    if (!html) return;
+    addRichTemplate({ name, content: html, type: templateType });
+    setShowSaveTemplate(false);
+    setTemplateName('');
+    setSaveMsg(`Saved as template "${name}"`);
+    setTimeout(() => setSaveMsg(''), 2000);
+  }, [templateName, templateType, addRichTemplate]);
+
   /* ═══════════════════════════════════════════════════════════ */
   /*  RENDER                                                     */
   /* ═══════════════════════════════════════════════════════════ */
@@ -430,6 +485,7 @@ export function InlineReportPanel() {
             }`}
           >{status === 'draft' ? 'DRAFT' : 'FINAL'}</button>
           <ToolbarIconBtn onClick={handleSave} tip="Save (Ctrl+S)" accent><Save className="w-4 h-4" /></ToolbarIconBtn>
+          <ToolbarIconBtn onClick={() => { setTemplateName(title || ''); setShowSaveTemplate(true); }} tip="Save current content as a template"><BookmarkPlus className="w-4 h-4" /></ToolbarIconBtn>
           <ToolbarIconBtn onClick={handlePrint} tip="Print"><Printer className="w-4 h-4" /></ToolbarIconBtn>
           <ToolbarIconBtn onClick={() => setShowInlineReport(false)} tip="Close" danger><X className="w-4 h-4" /></ToolbarIconBtn>
         </div>
@@ -700,34 +756,17 @@ export function InlineReportPanel() {
               className="bg-white dark:bg-neutral-50 text-neutral-900 rounded-lg shadow-md border border-neutral-300/60 mx-auto"
               style={{ maxWidth: '780px', fontFamily: "'Times New Roman', Georgia, serif" }}
             >
-              {/* ── Hospital Header (non-editable) ── */}
-              <div className="select-none" style={{ padding: '30px 50px 0 50px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', paddingBottom: '8px', borderBottom: '2px solid #333', marginBottom: '6px' }}>
-                  {/* LEFT: Logo */}
-                  {hLogoDataUrl && (
-                    <div style={{ flexShrink: 0 }}>
-                      <img src={hLogoDataUrl} alt="" style={{ maxHeight: '55px', maxWidth: '70px', objectFit: 'contain' }} />
-                    </div>
-                  )}
-                  {/* CENTER: Name + Address + Contact */}
-                  <div style={{ flex: 1, textAlign: 'center' }}>
-                    <div style={{ fontSize: '20px', fontWeight: 'bold', color: '#1a1a1a', letterSpacing: '0.5px' }}>{hospitalName}</div>
-                    {(() => {
-                      const addrLine = [hAddr1, hAddr2, [hCity, hState, hPincode].filter(Boolean).join(', ')].filter(Boolean).join(', ');
-                      return addrLine ? <div style={{ fontSize: '10px', color: '#555', marginTop: '2px' }}>{addrLine}</div> : null;
-                    })()}
-                    {(() => {
-                      const parts: string[] = [];
-                      if (hPhone) parts.push(`Tel: ${hPhone}`);
-                      if (hEmail) parts.push(hEmail);
-                      if (hWebsite) parts.push(hWebsite);
-                      if (hRegistration) parts.push(`Reg: ${hRegistration}`);
-                      return parts.length > 0
-                        ? <div style={{ fontSize: '9px', color: '#888', marginTop: '2px' }}>{parts.join('  |  ')}</div>
-                        : null;
-                    })()}
-                  </div>
-                </div>
+              {/* ── Hospital Header (non-editable) ──
+                  Rendered from the same buildBrandHeaderHtml() that Print
+                  uses, so any layout / logo / contact / service fields
+                  configured in the Print Settings tab show up identically
+                  in the report. */}
+              <div
+                className="select-none"
+                style={{ padding: '30px 50px 0 50px' }}
+                dangerouslySetInnerHTML={{ __html: buildBrandHeaderHtml(useHospitalConfigStore.getState()) }}
+              />
+              <div className="select-none" style={{ padding: '0 50px' }}>
 
                 {/* ── Patient Demographics Bar ── */}
                 <div style={{
@@ -856,50 +895,14 @@ export function InlineReportPanel() {
                 </div>
               )}
 
-              {/* ── Footer (config-driven) ── */}
-              {(() => {
-                if (!enableFooter) return null;
-                const hasFooter = footerLayout.left !== 'none' || footerLayout.center !== 'none' || footerLayout.right !== 'none';
-                if (!hasFooter) return null;
-                const renderSlot = (slot: string, align: 'left' | 'center' | 'right') => {
-                  const ta = align === 'left' ? 'left' : align === 'right' ? 'right' : 'center';
-                  const customText = align === 'left' ? (customFooterLeft || customFooterText)
-                    : align === 'center' ? (customFooterCenter || customFooterText)
-                    : (customFooterRight || customFooterText);
-                  let content: React.ReactNode = null;
-                  switch (slot) {
-                    case 'logo':
-                      content = hLogoDataUrl ? <img src={hLogoDataUrl} alt="" style={{ maxHeight: '30px', maxWidth: '80px', objectFit: 'contain' }} /> : null;
-                      break;
-                    case 'name':
-                      content = <span style={{ fontWeight: 600 }}>{hospitalName}</span>;
-                      break;
-                    case 'address': {
-                      const addr = [hAddr1, hAddr2, [hCity, hState, hPincode].filter(Boolean).join(', ')].filter(Boolean).join(', ');
-                      content = <span>{addr}{hPhone ? ` | Tel: ${hPhone}` : ''}</span>;
-                      break;
-                    }
-                    case 'custom':
-                      content = customText ? <span>{customText}</span> : null;
-                      break;
-                    default:
-                      return null;
-                  }
-                  if (!content) return null;
-                  return <div style={{ flex: 1, textAlign: ta }}>{content}</div>;
-                };
-                return (
-                  <div className="select-none" style={{
-                    padding: '6px 50px', borderTop: '1px solid #ccc', marginTop: '10px',
-                    display: 'flex', alignItems: 'center', gap: '8px',
-                    fontSize: '9px', color: '#888',
-                  }}>
-                    {renderSlot(footerLayout.left, 'left')}
-                    {renderSlot(footerLayout.center, 'center')}
-                    {renderSlot(footerLayout.right, 'right')}
-                  </div>
-                );
-              })()}
+              {/* ── Footer ── identical to Print's footer (buildFooterHtml). */}
+              {enableFooter && (
+                <div
+                  className="select-none"
+                  style={{ padding: '0 50px', marginTop: '10px' }}
+                  dangerouslySetInnerHTML={{ __html: buildFooterHtml(useHospitalConfigStore.getState()) }}
+                />
+              )}
             </div>
           </div>
 
@@ -1041,6 +1044,58 @@ export function InlineReportPanel() {
               onInsert={(html) => { insertHtmlIntoEditor(html); setShowFindings(false); }}
               compact
             />
+          </div>
+        </div>
+      )}
+
+      {/* ═══ SAVE-AS-TEMPLATE MODAL ════════════════════════════ */}
+      {showSaveTemplate && (
+        <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/60 p-4" onClick={() => setShowSaveTemplate(false)}>
+          <div className="w-full max-w-md rounded-lg bg-app-bg shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between border-b border-app-border bg-app-header-bg px-4 py-2">
+              <div className="flex items-center gap-2">
+                <BookmarkPlus className="w-4 h-4 text-app-accent" />
+                <h3 className="text-sm font-bold text-app-text">Save as template</h3>
+              </div>
+              <button onClick={() => setShowSaveTemplate(false)} className="rounded p-1 text-app-text-secondary hover:bg-app-hover">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="space-y-3 p-4 text-sm">
+              <p className="text-xs text-app-text-secondary">
+                Saves the current editor content as a reusable template. It will appear in the template picker the next time you create a report of this type.
+              </p>
+              <label className="block">
+                <span className="block text-xs font-bold uppercase text-app-text-secondary mb-1">Template name</span>
+                <input
+                  type="text"
+                  autoFocus
+                  value={templateName}
+                  onChange={(e) => setTemplateName(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') submitSaveTemplate(); }}
+                  placeholder="e.g. Abdomen — Normal study"
+                  className="w-full rounded border border-app-border bg-app-bg px-2 py-1.5 text-sm text-app-text focus:border-app-accent focus:outline-none"
+                />
+              </label>
+              <label className="block">
+                <span className="block text-xs font-bold uppercase text-app-text-secondary mb-1">Report type</span>
+                <select
+                  value={templateType}
+                  onChange={(e) => setTemplateType(e.target.value as 'radiology' | 'fetal')}
+                  className="w-full rounded border border-app-border bg-app-bg px-2 py-1.5 text-sm text-app-text focus:border-app-accent focus:outline-none"
+                >
+                  <option value="radiology">General Radiology</option>
+                  <option value="fetal">Fetal Medicine</option>
+                </select>
+              </label>
+              <div className="flex justify-end gap-2 pt-2">
+                <button onClick={() => setShowSaveTemplate(false)} className="rounded border border-app-border bg-app-bg px-3 py-1.5 text-xs text-app-text hover:bg-app-hover">Cancel</button>
+                <button onClick={submitSaveTemplate} disabled={!templateName.trim()} className="flex items-center gap-1.5 rounded bg-app-accent px-4 py-1.5 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50">
+                  <BookmarkPlus className="w-3.5 h-3.5" />
+                  Save template
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

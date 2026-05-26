@@ -373,14 +373,44 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      // Proxy non-DICOM API calls to PHP/Apache when running
+      // Proxy non-DICOM API calls to PHP/Apache when running.
+      // Default = http://localhost (XAMPP's Apache port 80). Override
+      // via env var VITE_API_PROXY if Apache lives elsewhere, e.g.:
+      //   VITE_API_PROXY=http://localhost:8080 npm run dev
+      // When unreachable we log a one-time hint instead of spamming
+      // the console with ECONNREFUSED — usually means XAMPP's Apache
+      // simply isn't started.
       '/api': {
-        target: 'http://localhost:8080',
+        target: process.env.VITE_API_PROXY || 'http://127.0.0.1',
         changeOrigin: true,
+        // Apache's docroot is C:\xampp\htdocs\ — the project lives at
+        // C:\xampp\htdocs\dcm\, so a request to /api/cloud/x.php needs
+        // to be rewritten to /dcm/api/cloud/x.php before it leaves Vite.
+        // Override with VITE_API_PREFIX="" if your Apache vhost serves
+        // the project at the document root.
+        rewrite: (path: string) => (process.env.VITE_API_PREFIX ?? '/dcm') + path,
         // Don't proxy if handled by our middleware
         bypass: (req: any) => {
           if (req.url?.startsWith('/api/dicom/')) return req.url;
           return undefined;
+        },
+        configure: (proxy: any) => {
+          let warned = false;
+          proxy.on('error', (err: any, _req: any, res: any) => {
+            if (err?.code === 'ECONNREFUSED' && !warned) {
+              warned = true;
+              // eslint-disable-next-line no-console
+              console.warn(
+                `\n[vite proxy] /api → ${process.env.VITE_API_PROXY || 'http://localhost'} is not reachable.\n` +
+                `  → Start XAMPP's Apache, or set VITE_API_PROXY to wherever your PHP lives.\n`,
+              );
+            }
+            if (res && !res.headersSent) {
+              res.statusCode = 502;
+              res.setHeader('Content-Type', 'application/json');
+              res.end(JSON.stringify({ ok: false, error: 'PHP backend unreachable — start XAMPP Apache or set VITE_API_PROXY env var.' }));
+            }
+          });
         },
       },
     },

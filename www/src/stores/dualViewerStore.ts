@@ -323,6 +323,16 @@ export const useDualViewerStore = create<DualViewerState>((set, get) => {
     // Prefetch first page
     const firstPageIds = dualImages.slice(0, layout.spots).map(img => img.imageUrl);
     prefetchImages(firstPageIds, 4).catch(() => {});
+
+    // Cross-window registry — Cloud backup tab reads from this.
+    import('@/lib/loadedStudiesRegistry').then(({ recordLoadedStudy }) => {
+      recordLoadedStudy({
+        viewer:       panelId === 'left' ? 'dual-left' : 'dual-right',
+        patient_name: params.patientName,
+        patient_id:   params.patientId,
+        files:        params.filePaths,
+      });
+    }).catch(() => {});
   },
 
   setPanelLayout: (panelId, layout) => {

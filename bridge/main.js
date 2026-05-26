@@ -50,6 +50,10 @@ for (const d of [userDataRoot, logDir, historyDir, incomingRoot, printedRoot, fa
 // ===== License & Trial System =====
 const LICENSE_API_BASE = 'https://mehrgrewal.com/mediview/api';
 const TRIAL_DAYS = 7;
+/** Local install-trial print budget. Mirrors the viewer's TRIAL_PRINTS so
+ *  an unactivated bridge has something to print with — the header shows
+ *  "X prints left" out of the box, decrementing as jobs are processed. */
+const TRIAL_PRINTS = 100;
 
 function getFingerprint() {
   const crypto = require('crypto');
@@ -79,20 +83,41 @@ function clearLicenseData() {
 }
 
 function getTrialInfo() {
-  let installDate;
+  let installDate, printsRemaining = TRIAL_PRINTS;
   try {
     if (fs.existsSync(trialFile)) {
       const data = JSON.parse(fs.readFileSync(trialFile, 'utf8'));
       installDate = new Date(data.installDate);
+      if (Number.isFinite(data.printsRemaining)) printsRemaining = Math.max(0, data.printsRemaining);
     }
   } catch {}
   if (!installDate || isNaN(installDate.getTime())) {
     installDate = new Date();
-    try { fs.writeFileSync(trialFile, JSON.stringify({ installDate: installDate.toISOString() }), 'utf8'); } catch {}
+    printsRemaining = TRIAL_PRINTS;
+    saveTrialInfo({ installDate, printsRemaining });
   }
   const elapsed = Math.floor((Date.now() - installDate.getTime()) / (1000 * 60 * 60 * 24));
   const remaining = Math.max(0, TRIAL_DAYS - elapsed);
-  return { remaining, expired: remaining <= 0, totalDays: TRIAL_DAYS };
+  return {
+    remaining, expired: remaining <= 0, totalDays: TRIAL_DAYS,
+    printsRemaining, printsTotal: TRIAL_PRINTS, installDate,
+  };
+}
+
+function saveTrialInfo({ installDate, printsRemaining }) {
+  try {
+    fs.writeFileSync(trialFile, JSON.stringify({
+      installDate: installDate.toISOString(),
+      printsRemaining,
+    }), 'utf8');
+  } catch {}
+}
+
+function decrementTrialPrints(pages) {
+  const t = getTrialInfo();
+  const next = Math.max(0, t.printsRemaining - Math.max(1, parseInt(pages, 10) || 1));
+  saveTrialInfo({ installDate: t.installDate, printsRemaining: next });
+  return next;
 }
 
 function bridgeApiRequest(endpoint, body) {
@@ -219,7 +244,18 @@ function getLicenseStatus() {
 
 async function getCentralQuota() {
   const lic = getLicenseData();
-  if (!lic) return { enabled: false, remaining: 0, total: 0, valid: false, reason: 'no_license' };
+  if (!lic) {
+    // No server license yet — surface the local install-trial budget so
+    // the header shows "X prints left" without needing activation.
+    const t = getTrialInfo();
+    return {
+      enabled:   true,
+      remaining: t.printsRemaining,
+      total:     t.printsTotal,
+      valid:     !t.expired,
+      reason:    'local_trial',
+    };
+  }
   try {
     const r = await bridgeApiRequest('/license/quota', {
       license_key: lic.licenseKey, fingerprint: lic.fingerprint, app: 'bridge',
@@ -246,7 +282,12 @@ async function getCentralQuota() {
 
 async function decrementCentralQuota(pages) {
   const lic = getLicenseData();
-  if (!lic) return { ok: false, reason: 'no_license' };
+  if (!lic) {
+    // Local trial — decrement the on-disk counter so the header reflects
+    // the new value within the next poll tick.
+    const remaining = decrementTrialPrints(pages);
+    return { ok: true, enabled: true, remaining, total: TRIAL_PRINTS, source: 'local_trial' };
+  }
   try {
     const r = await bridgeApiRequest('/license/quota', {
       license_key: lic.licenseKey, fingerprint: lic.fingerprint, app: 'bridge',

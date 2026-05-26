@@ -15,10 +15,53 @@ import { ToastContainer } from '@/components/shared/Toast';
 import { LicenseGate } from '@/components/shared/LicenseGate';
 import { UpdateModal } from '@/components/UpdateModal';
 import { LicenseQuotaModal } from '@/components/LicenseQuotaModal';
+import { useCloudStore, intervalMs } from '@/stores/cloudStore';
+import { useReportStore } from '@/stores/reportStore';
+import { useViewerStore } from '@/stores/viewerStore';
+import { useCRViewerStore } from '@/stores/crViewerStore';
+import { useDualViewerStore } from '@/stores/dualViewerStore';
+import { listLoadedStudies, listLoadedStudyFolders } from '@/lib/loadedStudiesRegistry';
+
+/** Snapshot file paths from each viewer store grouped by patient. Used by
+ *  the cloud auto-sync to include the locally-loaded DICOM folders in the
+ *  backup bundle even though they're not tracked in any DB table. */
+function collectStudyPathsForBackup(): Array<{ patient_name: string; patient_id: string; files: string[] }> {
+  const out: Array<{ patient_name: string; patient_id: string; files: string[] }> = [];
+
+  const v = useViewerStore.getState();
+  const vFiles = (v.images ?? [])
+    .map((img: any) => {
+      const m = String(img.imageUrl ?? '').match(/[?&]path=([^&]+)/);
+      return m ? decodeURIComponent(m[1]) : '';
+    })
+    .filter(Boolean);
+  if (vFiles.length) out.push({ patient_name: v.patientName || 'viewer', patient_id: v.patientId || '', files: vFiles });
+
+  const c = useCRViewerStore.getState();
+  const cFiles = (c.images ?? []).map((img: any) => img.filePath).filter(Boolean);
+  if (cFiles.length) out.push({ patient_name: c.patientName || 'cr', patient_id: c.patientId || '', files: cFiles });
+
+  const d = useDualViewerStore.getState();
+  for (const panelId of ['left', 'right'] as const) {
+    const p = d.panels[panelId];
+    const files = (p?.images ?? []).map((img: any) => img.filePath).filter(Boolean);
+    if (files.length) out.push({ patient_name: p.patientName || `dual-${panelId}`, patient_id: p.patientId || '', files });
+  }
+  // Cross-window registry — covers Electron multi-window setups.
+  for (const s of listLoadedStudies()) out.push(s);
+  // Dedupe by patient_id + first file.
+  const seen = new Set<string>();
+  return out.filter((s) => {
+    const key = `${s.patient_id}|${s.files[0] || ''}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
 
 export default function App() {
   const { mode } = useThemeStore();
-  const { printCountRemaining, fetchPrintCount } = usePrintStore();
+  const { printCountRemaining, quotaEnabled: printQuotaEnabled, fetchPrintCount } = usePrintStore();
   const alertShown = useRef(false);
 
   // Apply theme class to html element
@@ -45,10 +88,56 @@ export default function App() {
     };
   }, [fetchPrintCount]);
 
+  // ── Cloud auto-sync ────────────────────────────────────────
+  // Walks the cloud config every minute and fires a backup whenever the
+  // user-configured interval (hourly / daily / weekly) has elapsed since
+  // the last successful sync. The actual upload is delegated to
+  // /api/cloud/backup.php; this hook just decides when to call it.
+  useEffect(() => {
+    const tick = async () => {
+      const cfg = useCloudStore.getState();
+      if (cfg.provider === 'none' || !cfg.accessToken) return;
+      const step = intervalMs(cfg.syncInterval);
+      if (step === 0) return; // user picked "Manual only"
+      const last = cfg.lastSyncAt ?? 0;
+      if (Date.now() - last < step) return;
+      if (cfg.lastStatus === 'running') return;
+      cfg.setRunStatus('running');
+      try {
+        const templates    = useReportStore.getState().templates;
+        const studyPaths   = collectStudyPathsForBackup();
+        const studyFolders = listLoadedStudyFolders();
+        const resp = await fetch('/api/cloud/backup.php', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            provider:     cfg.provider,
+            access_token: cfg.accessToken,
+            remote_folder: cfg.remoteFolder || '/dcm-backups',
+            scopes:       cfg.scopes,
+            templates,
+            study_paths:   studyPaths,
+            study_folders: studyFolders,
+          }),
+        });
+        const data = await resp.json();
+        if (!resp.ok || !data.ok) throw new Error(data.error || `HTTP ${resp.status}`);
+        cfg.markSynced();
+      } catch (e: any) {
+        cfg.setRunStatus('failed', e?.message || 'Auto-sync failed');
+      }
+    };
+    // Check on mount, then every minute.
+    tick();
+    const id = window.setInterval(tick, 60_000);
+    return () => window.clearInterval(id);
+  }, []);
+
   // One-time startup alert when print count is low (waits for the first
   // wallet sync so we don't fire it on the placeholder 0).
   useEffect(() => {
     if (alertShown.current) return;
+    if (!printQuotaEnabled) return;       // unlimited prints — no alert needed
     if (printCountRemaining === 0) return; // not yet synced
     if (printCountRemaining < 50) {
       alertShown.current = true;
@@ -58,7 +147,7 @@ export default function App() {
         );
       }, 1500);
     }
-  }, [printCountRemaining]);
+  }, [printCountRemaining, printQuotaEnabled]);
 
   return (
     <>

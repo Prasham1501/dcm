@@ -59,10 +59,13 @@ const PageOverview = () => {
   const activeDevices = devices.filter(d => d.status === 'active');
   const members       = team.members || [];
   const pendingInvites= (team.invites || []).length;
-  // Only paid licenses get the headline card. Free / trial users see a
-  // "Free plan" callout instead — no license key is needed for the free tier.
-  const activeLicense = licenses.find(l => l.status === 'active' && l.plan !== 'trial');
-  const isTrialActive = false;
+  // Show the headline license card for ANY active license — including
+  // trials — so the operator can see their key + remaining prints at a
+  // glance. Trial licenses are auto-seeded with 100 prints on the server.
+  const paidLicense  = licenses.find(l => l.status === 'active' && l.plan !== 'trial');
+  const trialLicense = licenses.find(l => l.status === 'active' && l.plan === 'trial');
+  const activeLicense = paidLicense || trialLicense;
+  const isTrialActive = !paidLicense && !!trialLicense;
 
   return (
     <DashShell activeId="home" title={`Welcome back, ${user?.name?.split(' ')[0] || 'Doctor'}`} subtitle="Here's what matters today.">
@@ -148,8 +151,27 @@ const PageOverview = () => {
               })()}
             </div>
             <div className="text-right">
-              <div className="text-sm text-[var(--muted)]">Devices activated</div>
-              <div className="text-2xl font-bold">{activeLicense.seats_used ?? 0}<span className="text-sm font-normal text-[var(--muted)]">/{activeLicense.seats}</span></div>
+              {/* When sell-by-print mode is on (trials always are), surface
+                  the live counter from licenses.quota_remaining — same value
+                  the bridge & viewer headers read via /license/quota. */}
+              {activeLicense.quota_enabled ? (
+                <>
+                  <div className="text-sm text-[var(--muted)]">Prints remaining</div>
+                  <div className={`text-2xl font-bold ${
+                    (activeLicense.quota_remaining ?? 0) === 0
+                      ? 'text-rose'
+                      : (activeLicense.quota_remaining ?? 0) <= 50
+                        ? 'text-amber-600 dark:text-amber-400'
+                        : 'text-emerald-600 dark:text-emerald-400'
+                  }`}>{activeLicense.quota_remaining ?? 0}<span className="text-sm font-normal text-[var(--muted)]"> / {activeLicense.quota_total ?? activeLicense.quota_remaining ?? 0}</span></div>
+                  <div className="text-[10px] text-[var(--muted)] mt-1">{activeLicense.seats_used ?? 0}/{activeLicense.seats} device{activeLicense.seats !== 1 ? 's' : ''}</div>
+                </>
+              ) : (
+                <>
+                  <div className="text-sm text-[var(--muted)]">Devices activated</div>
+                  <div className="text-2xl font-bold">{activeLicense.seats_used ?? 0}<span className="text-sm font-normal text-[var(--muted)]">/{activeLicense.seats}</span></div>
+                </>
+              )}
               <a href="#/dashboard/licenses" className="inline-flex items-center gap-1 mt-2 text-xs font-bold text-rose hover:underline">Manage <I.ArrowRight size={11}/></a>
             </div>
           </div>

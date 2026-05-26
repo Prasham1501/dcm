@@ -1123,6 +1123,24 @@ const SettingsTabProfile = () => {
                     {copied === lic.key_code ? '✓ Copied' : 'Copy key'}
                   </button>
                 </div>
+                {/* Sell-by-print balance — shown when this license has quota
+                    mode enabled (bridge + viewer share the same counter
+                    via /license/quota). Trial keys are auto-seeded with
+                    100 prints so the operator can see what's left. */}
+                {!!lic.quota_enabled && (
+                  <div className={`mt-2 inline-flex items-center gap-1.5 text-xs font-semibold rounded-full px-2.5 py-1 ${
+                    (lic.quota_remaining ?? 0) === 0
+                      ? 'bg-rose-500/10 text-rose-600 dark:text-rose-300'
+                      : (lic.quota_remaining ?? 0) <= 50
+                        ? 'bg-amber-500/10 text-amber-600 dark:text-amber-300'
+                        : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-300'
+                  }`}>
+                    🖨 {lic.quota_remaining ?? 0} prints left
+                    {!!lic.quota_total && (
+                      <span className="opacity-60 font-normal">· lifetime {lic.quota_total}</span>
+                    )}
+                  </div>
+                )}
                 {lic.expires_at && <div className="text-xs text-[var(--muted)] mt-2">Expires {fmtDateOnly(lic.expires_at)}</div>}
               </div>
             ))}

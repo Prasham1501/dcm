@@ -48,6 +48,7 @@ export function PatientListPage() {
   const mode = useThemeStore((s) => s.mode);
   const toggleTheme = useThemeStore((s) => s.toggleTheme);
   const printCountRemaining = usePrintStore((s) => s.printCountRemaining);
+  const quotaEnabled        = usePrintStore((s) => s.quotaEnabled);
   const licenseStatus = useLicenseStore((s) => s.status);
   const printedCount = filteredPatients.filter((p) => p.printed).length;
 
@@ -105,9 +106,11 @@ export function PatientListPage() {
                 ? `| Trial: ${licenseStatus.remaining} day${licenseStatus.remaining !== 1 ? 's' : ''} left`
                 : '| No License'}
           </span>
-          <span className="text-[10px] 2xl:text-xs text-app-text-secondary whitespace-nowrap">
-            | Prints Left: {printCountRemaining}
-          </span>
+          {quotaEnabled && (
+            <span className="text-[10px] 2xl:text-xs text-app-text-secondary whitespace-nowrap">
+              | Prints Left: {printCountRemaining}
+            </span>
+          )}
           <span className="text-[10px] 2xl:text-xs text-app-text-secondary whitespace-nowrap">
             | Records: {filteredPatients.length}
           </span>

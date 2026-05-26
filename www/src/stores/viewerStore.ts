@@ -986,6 +986,19 @@ export const useViewerStore = create<ViewerState>((set, get) => ({
       loadingStudy: false,
       studyError: null,
     });
+    // Cross-window registry — Cloud backup tab reads from this.
+    import('@/lib/loadedStudiesRegistry').then(({ recordLoadedStudy }) => {
+      const paths = dicomImages.map((img) => {
+        const m = img.imageUrl.match(/[?&]path=([^&]+)/);
+        return m ? decodeURIComponent(m[1]) : '';
+      }).filter(Boolean);
+      recordLoadedStudy({
+        viewer: 'main',
+        patient_name: 'LOCAL FILES',
+        patient_id: '',
+        files: paths,
+      });
+    }).catch(() => {});
   },
 
   loadLocalDirectory: async (dirPath: string) => {
@@ -1022,6 +1035,21 @@ export const useViewerStore = create<ViewerState>((set, get) => ({
       const firstPageIds = dicomImages.slice(0, layout.spots).map(img => img.imageUrl);
       prefetchImages(firstPageIds, 4, (loaded, total) => {
         set({ loadProgress: Math.round((loaded / total) * 100) });
+      }).catch(() => {});
+
+      // Cross-window registry — Cloud backup tab reads from this.
+      import('@/lib/loadedStudiesRegistry').then(({ recordLoadedStudy }) => {
+        const paths = dicomImages.map((img) => {
+          const m = img.imageUrl.match(/[?&]path=([^&]+)/);
+          return m ? decodeURIComponent(m[1]) : '';
+        }).filter(Boolean);
+        const dirName = dirPath.split('/').pop() || dirPath.split('\\').pop() || 'LOCAL';
+        recordLoadedStudy({
+          viewer: 'main',
+          patient_name: dirName,
+          patient_id: dirName,
+          files: paths,
+        });
       }).catch(() => {});
     } catch (err: any) {
       set({

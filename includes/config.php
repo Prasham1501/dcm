@@ -127,8 +127,13 @@ if (APP_ENV === 'development') {
  * @return mysqli Database connection
  * @throws Exception If connection fails
  */
-function getDbConnection() {
+function &__dbConnectionRef() {
     static $connection = null;
+    return $connection;
+}
+
+function getDbConnection() {
+    $connection = &__dbConnectionRef();
 
     if ($connection === null) {
         $connection = new mysqli(DB_HOST, DB_USER, DB_PASSWORD, DB_NAME);
@@ -147,11 +152,17 @@ function getDbConnection() {
 
 /**
  * Close Database Connection
+ *
+ * Only closes if one was actually opened during this request — previously
+ * this called getDbConnection() which would lazily OPEN a connection at
+ * shutdown just to close it, fatal-erroring whenever MySQL is down even
+ * for endpoints that never touched the DB (e.g. /api/cloud/list.php).
  */
 function closeDbConnection() {
-    $connection = getDbConnection();
-    if ($connection) {
-        $connection->close();
+    $connection = &__dbConnectionRef();
+    if ($connection instanceof mysqli) {
+        try { $connection->close(); } catch (\Throwable $e) { /* silent at shutdown */ }
+        $connection = null;
     }
 }
 

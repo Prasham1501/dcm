@@ -47,6 +47,11 @@ const userDataPath = app.getPath('userData');
 // ===== License & Trial System =====
 const LICENSE_API_BASE = 'https://mehrgrewal.com/mediview/api';
 const TRIAL_DAYS = 7;
+/** Local install-trial print budget. Used when no server license is
+ *  activated yet — gives the operator something to test with so the
+ *  header isn't stuck at "Prints Left: 0". Persisted alongside
+ *  installDate in the .trial file. */
+const TRIAL_PRINTS = 100;
 const trialFile = path.join(userDataPath, '.trial');
 const licenseFile = path.join(userDataPath, '.license');
 
@@ -85,25 +90,46 @@ function clearLicenseData() {
 }
 
 function getTrialInfo() {
-    let installDate;
+    let installDate, printsRemaining = TRIAL_PRINTS;
     try {
         if (fs.existsSync(trialFile)) {
             const data = JSON.parse(fs.readFileSync(trialFile, 'utf8'));
             installDate = new Date(data.installDate);
+            if (Number.isFinite(data.printsRemaining)) printsRemaining = Math.max(0, data.printsRemaining);
         }
     } catch { /* corrupt file — treat as new install */ }
 
     if (!installDate || isNaN(installDate.getTime())) {
         installDate = new Date();
-        try {
-            fs.writeFileSync(trialFile, JSON.stringify({ installDate: installDate.toISOString() }), 'utf8');
-        } catch { /* ignore write errors */ }
+        printsRemaining = TRIAL_PRINTS;
+        saveTrialInfo({ installDate, printsRemaining });
     }
 
     const now = new Date();
     const elapsed = Math.floor((now - installDate) / (1000 * 60 * 60 * 24));
     const remaining = Math.max(0, TRIAL_DAYS - elapsed);
-    return { installDate, elapsed, remaining, expired: remaining <= 0 };
+    return {
+        installDate, elapsed, remaining, expired: remaining <= 0,
+        printsRemaining, printsTotal: TRIAL_PRINTS,
+    };
+}
+
+function saveTrialInfo({ installDate, printsRemaining }) {
+    try {
+        fs.writeFileSync(trialFile, JSON.stringify({
+            installDate: installDate.toISOString(),
+            printsRemaining,
+        }), 'utf8');
+    } catch { /* ignore */ }
+}
+
+/** Decrement the local trial print counter when no server license is
+ *  activated. Returns the updated remaining count. */
+function decrementTrialPrints(pages) {
+    const t = getTrialInfo();
+    const next = Math.max(0, t.printsRemaining - Math.max(1, parseInt(pages, 10) || 1));
+    saveTrialInfo({ installDate: t.installDate, printsRemaining: next });
+    return next;
 }
 
 async function apiRequest(endpoint, body) {
@@ -1664,7 +1690,19 @@ ipcMain.handle('get-fingerprint', () => {
 // changes show up immediately) and cache locally as a fallback for offline.
 ipcMain.handle('get-license-quota', async () => {
     const lic = getLicenseData();
-    if (!lic) return { enabled: false, remaining: 0, total: 0, valid: false, reason: 'no_license' };
+    if (!lic) {
+        // No server license activated — fall back to the local install
+        // trial print budget so the operator can still test printing
+        // without first acquiring a key.
+        const t = getTrialInfo();
+        return {
+            enabled:   true,
+            remaining: t.printsRemaining,
+            total:     t.printsTotal,
+            valid:     !t.expired,
+            reason:    'local_trial',
+        };
+    }
     try {
         const r = await apiRequest('/license/quota', {
             license_key: lic.licenseKey, fingerprint: lic.fingerprint, app: 'viewer',
@@ -1716,7 +1754,13 @@ ipcMain.handle('set-license-quota', async (_e, { enabled, remaining, adminPin } 
 // Decrement quota when the viewer actually sends a print job.
 ipcMain.handle('decrement-license-quota', async (_e, { pages = 1 } = {}) => {
     const lic = getLicenseData();
-    if (!lic) return { ok: false, reason: 'no_license' };
+    if (!lic) {
+        // Decrement the local install-trial counter so the header reflects
+        // it. When the user activates a license, future calls hit the
+        // server quota instead.
+        const remaining = decrementTrialPrints(pages);
+        return { ok: true, enabled: true, remaining, total: TRIAL_PRINTS, source: 'local_trial' };
+    }
     try {
         const r = await apiRequest('/license/quota', {
             license_key: lic.licenseKey, fingerprint: lic.fingerprint, app: 'viewer',

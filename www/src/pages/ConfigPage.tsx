@@ -8,8 +8,9 @@ import { ClinicalTab } from '@/components/config/ClinicalTab';
 import { NetworkReceiverTab } from '@/components/config/NetworkReceiverTab';
 import { PrintSettingsTab } from '@/components/config/PrintSettingsTab';
 import { LicenseTab } from '@/components/config/LicenseTab';
+import { CloudTab } from '@/components/config/CloudTab';
 
-const TABS = ['General', 'Print', 'Server', 'Send', 'Clinical', 'Network', 'License'] as const;
+const TABS = ['General', 'Print', 'Server', 'Send', 'Clinical', 'Network', 'License', 'Cloud'] as const;
 type TabName = typeof TABS[number];
 
 export function ConfigPage() {
@@ -25,6 +26,7 @@ export function ConfigPage() {
       case 'Clinical': return <ClinicalTab />;
       case 'Network': return <NetworkReceiverTab />;
       case 'License': return <LicenseTab />;
+      case 'Cloud':   return <CloudTab />;
     }
   };
 

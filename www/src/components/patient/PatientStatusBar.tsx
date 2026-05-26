@@ -6,7 +6,7 @@ import { PrinterModal } from '@/components/print/PrinterModal';
 export function PatientStatusBar() {
   const navigate = useNavigate();
   const { filteredPatients, patients } = usePatientStore();
-  const { printCountRemaining, showPrinterModal, setShowPrinterModal } = usePrintStore();
+  const { printCountRemaining, quotaEnabled, showPrinterModal, setShowPrinterModal } = usePrintStore();
 
   // Compute real stats from patient data
   const totalImages = patients.reduce((sum, p) => sum + (p.filePaths?.length ?? 0), 0);
@@ -46,8 +46,12 @@ export function PatientStatusBar() {
         </div>
 
         <div className="flex items-center gap-2 2xl:gap-4 text-[10px] 2xl:text-sm text-app-text-secondary flex-wrap">
-          <span>Print count left- A4: {printCountRemaining}</span>
-          <span className="text-app-border">|</span>
+          {quotaEnabled && (
+            <>
+              <span>Print count left- A4: {printCountRemaining}</span>
+              <span className="text-app-border">|</span>
+            </>
+          )}
           <span>Images occupied : {totalImages > 0 ? `${totalImages} (${sizeDisplay})` : '0'}</span>
           <span className="text-app-border">|</span>
           <span>Total patient records : {patients.length}</span>

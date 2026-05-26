@@ -90,7 +90,7 @@ const MM_TO_PX = 3.7795275591;
 interface DualPrintPreviewProps { onClose: () => void; }
 
 export function DualPrintPreview({ onClose }: DualPrintPreviewProps) {
-  const { settings, updateSettings, addPrintJob, logPrintToApi, fetchPrintCount, printCountRemaining } = usePrintStore();
+  const { settings, updateSettings, addPrintJob, logPrintToApi, fetchPrintCount, printCountRemaining, quotaEnabled } = usePrintStore();
   // Refresh the wallet balance from the website on open.
   useEffect(() => { fetchPrintCount(); }, [fetchPrintCount]);
   const { panels, setPanelPage, dualFooterEnabled, dualFooterLayout, dualFooterFontSize, dualFooterFontColor, dualFooterBgColor, dualFooterBorderTopColor, dualFooterCustomLeft, dualFooterCustomCenter, dualFooterCustomRight } = useDualViewerStore();
@@ -503,7 +503,13 @@ export function DualPrintPreview({ onClose }: DualPrintPreviewProps) {
         className="flex flex-col flex-1 min-h-0 overflow-hidden"
         style={{ borderRight: isLast ? 'none' : '1px dashed #555' }}
       >
-        {settings.headerEnabled && renderBrandHeaderPv()}
+        {settings.headerEnabled && (
+          <div
+            className="flex-shrink-0"
+            style={{ width: '100%' }}
+            dangerouslySetInnerHTML={{ __html: buildBrandHeaderHtml(hospitalConfig as any) }}
+          />
+        )}
         <div style={{ border: wrapperBorder, display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }}>
           {renderPanelMetadataPv(panel, pageNum)}
           <div style={{
@@ -574,7 +580,9 @@ export function DualPrintPreview({ onClose }: DualPrintPreviewProps) {
           {!capturing && <span className="text-xs text-app-text-muted">{totalDualPages} page{totalDualPages > 1 ? 's' : ''} · {totalDualImages} images</span>}
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-xs text-app-text-secondary whitespace-nowrap">Prints: <span className={`font-bold ${printCountRemaining < 50 ? 'text-red-500' : 'text-green-600'}`}>{printCountRemaining}</span></span>
+          {quotaEnabled && (
+            <span className="text-xs text-app-text-secondary whitespace-nowrap">Prints: <span className={`font-bold ${printCountRemaining < 50 ? 'text-red-500' : 'text-green-600'}`}>{printCountRemaining}</span></span>
+          )}
           <button onClick={() => setZoom(Math.max(0.3, zoom - 0.1))} className="p-1 text-app-text-secondary hover:bg-app-hover rounded"><ZoomOut className="w-4 h-4" /></button>
           <span className="text-xs text-app-text w-10 text-center">{Math.round(zoom * 100)}%</span>
           <button onClick={() => setZoom(Math.min(2.0, zoom + 0.1))} className="p-1 text-app-text-secondary hover:bg-app-hover rounded"><ZoomIn className="w-4 h-4" /></button>
@@ -597,7 +605,7 @@ export function DualPrintPreview({ onClose }: DualPrintPreviewProps) {
             ) : <span className="text-[10px] text-red-400 italic">No printers configured</span>}
             <button onClick={() => setShowPrinterMgr(v => !v)} className={`h-7 px-2 text-[10px] border rounded transition-colors ${showPrinterMgr ? 'border-app-accent bg-app-accent/10 text-app-accent' : 'border-app-border text-app-text-secondary hover:bg-app-hover'}`} title="Manage printers">⚙</button>
           </div>
-          <button onClick={handlePrint} disabled={printing || capturing || printCountRemaining <= 0 || activePrinters.length === 0} className="flex items-center gap-2 px-5 py-1.5 text-xs font-bold bg-app-accent text-white rounded hover:brightness-110 disabled:opacity-50 transition-colors">
+          <button onClick={handlePrint} disabled={printing || capturing || (quotaEnabled && printCountRemaining <= 0) || activePrinters.length === 0} className="flex items-center gap-2 px-5 py-1.5 text-xs font-bold bg-app-accent text-white rounded hover:brightness-110 disabled:opacity-50 transition-colors">
             <Printer className="w-4 h-4" />{printing ? 'Printing…' : capturing ? 'Capturing…' : `Print${pagesToShow.length > 1 ? ` (${pagesToShow.length}p)` : ''}`}
           </button>
         </div>

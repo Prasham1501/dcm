@@ -340,6 +340,17 @@ export const useCRViewerStore = create<CRViewerState>((set, get) => ({
     // Prefetch first page
     const firstPageIds = crImages.slice(0, layout.spots).map(img => img.imageUrl);
     prefetchImages(firstPageIds, 4).catch(() => {});
+
+    // Record this study in the cross-window registry so the Cloud-backup
+    // tab (which lives in a separate Electron window) can find it.
+    import('@/lib/loadedStudiesRegistry').then(({ recordLoadedStudy }) => {
+      recordLoadedStudy({
+        viewer:       'cr',
+        patient_name: params.patientName,
+        patient_id:   params.patientId,
+        files:        params.filePaths,
+      });
+    }).catch(() => {});
   },
 
   setLayout: (layout) => {

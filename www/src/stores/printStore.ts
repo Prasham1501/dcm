@@ -33,6 +33,11 @@ interface PrintStore {
   printCountTotal: number;
   printCountUsed: number;
   printCountRemaining: number;
+  /** True when the active license has sell-by-print mode enabled (or no
+   *  license is activated and we're on the local install trial). When
+   *  false, prints are unlimited and the count UI should be hidden — the
+   *  number in `printCountRemaining` is meaningless in that state. */
+  quotaEnabled: boolean;
 
   // Print settings
   settings: PrintSettings;
@@ -74,6 +79,7 @@ export const usePrintStore = create<PrintStore>()(
       printCountTotal: 0,
       printCountUsed: 0,
       printCountRemaining: 0,
+      quotaEnabled: false,
 
       settings: {
         defaultPrinter: 'HP LaserJet Pro M404dn',
@@ -159,25 +165,51 @@ export const usePrintStore = create<PrintStore>()(
        */
       fetchPrintCount: async () => {
         const api = walletBridge();
-        if (api?.getWalletBalance) {
+        if (api) {
+          // Prefer the central license-quota counter (the sell-by-print
+          // model used by bridge + viewer headers and the website's
+          // /license/quota endpoint). Trial keys are auto-seeded with 100
+          // prints, so this surfaces them immediately. Fall back to the
+          // legacy wallet balance only when no license has quota mode on.
           try {
-            const res = await api.getWalletBalance('print');
-            if (res?.ok) {
+            const q = api.getLicenseQuota ? await api.getLicenseQuota() : null;
+            if (q) {
+              // Reflect quota-enabled state so the UI can hide the count
+              // entirely when the operator has turned sell-by-print off.
+              const remaining = q.remaining | 0;
               set((state) => ({
-                printCountRemaining: res.balance | 0,
-                // Keep the running "used" counter coherent: total = used + remaining.
-                printCountTotal: state.printCountUsed + (res.balance | 0),
+                quotaEnabled: !!q.enabled,
+                printCountRemaining: remaining,
+                printCountTotal: state.printCountUsed + remaining,
               }));
+              if (q.enabled) return;
+              // quota mode is off — let the wallet branch run as a
+              // secondary signal for the legacy credit display.
+            }
+          } catch (err) {
+            console.warn('[printStore] license quota fetch failed, trying wallet:', err);
+          }
+
+          if (api.getWalletBalance) {
+            try {
+              const res = await api.getWalletBalance('print');
+              if (res?.ok) {
+                set((state) => ({
+                  printCountRemaining: res.balance | 0,
+                  // Keep the running "used" counter coherent: total = used + remaining.
+                  printCountTotal: state.printCountUsed + (res.balance | 0),
+                }));
+                return;
+              }
+              // Wallet unreachable / no license — show 0 so the user can't
+              // be misled into thinking they have credits they don't.
+              set({ printCountRemaining: 0 });
+              return;
+            } catch (err) {
+              console.error('[printStore] wallet balance failed:', err);
+              set({ printCountRemaining: 0 });
               return;
             }
-            // Wallet unreachable / no license — show 0 so the user can't
-            // be misled into thinking they have credits they don't.
-            set({ printCountRemaining: 0 });
-            return;
-          } catch (err) {
-            console.error('[printStore] wallet balance failed:', err);
-            set({ printCountRemaining: 0 });
-            return;
           }
         }
 
@@ -203,6 +235,33 @@ export const usePrintStore = create<PrintStore>()(
       logPrintToApi: async (data) => {
         const credits = Math.max(1, (data.credits ?? 1) | 0);
         const api = walletBridge();
+
+        // When the active license has sell-by-print mode enabled (or we're
+        // on the local install trial) the display reads from the license
+        // quota, NOT the legacy wallet — so the decrement must also hit
+        // license quota. Otherwise the user sees "500 prints left" in the
+        // header but "balance 0 < required 1" when they try to print.
+        if (get().quotaEnabled && api?.decrementLicenseQuota) {
+          try {
+            const res = await api.decrementLicenseQuota(credits);
+            if (res?.ok) {
+              const newBal = (res.remaining ?? 0) | 0;
+              set((state) => ({
+                printCountUsed:      state.printCountUsed + credits,
+                printCountRemaining: newBal,
+                printCountTotal:     state.printCountUsed + credits + newBal,
+              }));
+              return { ok: true, balance: newBal };
+            }
+            console.warn('[printStore] license-quota decrement failed:', res?.reason);
+            return { ok: false, balance: (res?.remaining ?? 0) | 0, reason: res?.reason };
+          } catch (err) {
+            console.error('[printStore] license-quota decrement errored:', err);
+            return { ok: false, balance: 0, reason: 'bridge_error' };
+          }
+        }
+
+        // Quota mode off — fall back to the legacy wallet credit system.
         if (api?.spendWalletCredits) {
           try {
             const res = await api.spendWalletCredits(credits, 'print',

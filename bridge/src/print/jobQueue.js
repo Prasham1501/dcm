@@ -25,10 +25,19 @@ class JobQueue extends EventEmitter {
     this.printWorker = printWorker;
     this.printedRoot = printedRoot;
     this.failedRoot = failedRoot;
+    // Optional preflight check: async () => ({ block: bool, reason?: string }).
+    // Used by main.js to refuse jobs when the CENTRAL (server-shared) print
+    // quota is exhausted, alongside the per-slot quota check below.
+    this.preflightCheck = null;
     // Map<slotId, Map<studyUid, { slot, files: [{filepath, info}], timer }>>
     this.studies = new Map();
     this.processing = false;
     this.queue = [];
+  }
+
+  /** Wire an async preflight check that can block a job before it prints. */
+  setPreflightCheck(fn) {
+    this.preflightCheck = typeof fn === 'function' ? fn : null;
   }
 
   enqueueFile(slot, info) {
@@ -77,6 +86,24 @@ class JobQueue extends EventEmitter {
           this._move(job.files, this.failedRoot);
           this.emit('failed', { ...job, slot: fresh, error: 'Print quota exhausted (0 remaining). Top up via Quota Settings.' });
           continue;
+        }
+
+        // Central sell-by-print quota check — refuses to print when the
+        // server-shared counter (also used by the viewer + website) is
+        // exhausted. Wired in main.js via setPreflightCheck.
+        if (this.preflightCheck) {
+          try {
+            const verdict = await this.preflightCheck(job);
+            if (verdict && verdict.block) {
+              const reason = verdict.reason || 'Print quota exhausted';
+              this.logger.warn(`[Queue] preflight blocked slot=${fresh.name}: ${reason}`);
+              this._move(job.files, this.failedRoot);
+              this.emit('failed', { ...job, slot: fresh, error: reason });
+              continue;
+            }
+          } catch (e) {
+            this.logger.warn(`[Queue] preflight check errored, continuing: ${e?.message || e}`);
+          }
         }
         this.logger.info(`[Queue] printing slot=${fresh.name} study=${job.studyUid} files=${job.files.length}`);
         const result = await this.printWorker.print({ ...job, slot: fresh });
