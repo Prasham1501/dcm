@@ -2645,6 +2645,46 @@ ipcMain.handle('show-open-dialog', async (event, options) => {
     }
 });
 
+// Read a file as ArrayBuffer (for passing image data to the renderer)
+ipcMain.handle('read-file-buffer', async (_event, filePath) => {
+    const resolved = path.resolve(filePath);
+    if (!fs.existsSync(resolved)) throw new Error('File not found: ' + filePath);
+    const buf = fs.readFileSync(resolved);
+    return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
+});
+
+// List image files (PNG/JPEG) in a folder (recursive, same pattern as list-dicom-files)
+ipcMain.handle('list-image-files', async (_event, folderPath) => {
+    try {
+        const resolved = path.resolve(folderPath);
+        if (!fs.existsSync(resolved) || !fs.statSync(resolved).isDirectory()) {
+            return { success: false, files: [], error: 'Not a valid directory' };
+        }
+        const IMAGE_RE = /\.(png|jpe?g)$/i;
+        const files = [];
+        const limit = 500;
+        const walk = (dir) => {
+            if (files.length >= limit) return;
+            try {
+                const entries = fs.readdirSync(dir, { withFileTypes: true });
+                for (const entry of entries) {
+                    if (files.length >= limit) return;
+                    const fullPath = path.join(dir, entry.name);
+                    if (entry.isDirectory()) {
+                        walk(fullPath);
+                    } else if (entry.isFile() && IMAGE_RE.test(entry.name)) {
+                        files.push(fullPath);
+                    }
+                }
+            } catch { /* skip unreadable dirs */ }
+        };
+        walk(resolved);
+        return { success: true, files };
+    } catch (e) {
+        return { success: false, files: [], error: e.message };
+    }
+});
+
 // =====================================================
 // List DICOM files in a folder (recursive)
 // =====================================================

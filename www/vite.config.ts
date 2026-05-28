@@ -516,9 +516,9 @@ export default defineConfig({
         // Override with VITE_API_PREFIX="" if your Apache vhost serves
         // the project at the document root.
         rewrite: (path: string) => (process.env.VITE_API_PREFIX ?? '/dcm') + path,
-        // Don't proxy if handled by our middleware
+        // Don't proxy if handled by our middleware (serve-file + scan)
         bypass: (req: any) => {
-          if (req.url?.startsWith('/api/dicom/')) return req.url;
+          if (req.url?.startsWith('/api/dicom/serve-file.php') || req.url?.startsWith('/api/dicom/scan-local.php')) return req.url;
           return undefined;
         },
         configure: (proxy: any) => {

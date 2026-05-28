@@ -1,6 +1,23 @@
 import { useState, useRef } from 'react';
 import type { Patient } from '@/types/patient';
 
+const IMAGE_EXTS = /\.(png|jpe?g)$/i;
+
+/** Upload image files to the PHP converter, returns .dcm file paths. */
+async function convertImagesToDicom(
+  imageFiles: File[],
+  meta: { patient_name: string; patient_id: string; age: string; sex: string; modality: string; study_description: string; referring_physician: string; accession_number: string },
+): Promise<{ files: string[]; errors: string[] }> {
+  const fd = new FormData();
+  for (const f of imageFiles) fd.append('images[]', f);
+  for (const [k, v] of Object.entries(meta)) fd.append(k, v);
+
+  const resp = await fetch('/api/dicom/convert-image.php', { method: 'POST', body: fd });
+  const data = await resp.json();
+  if (!resp.ok || !data.ok) throw new Error(data.error || `HTTP ${resp.status}`);
+  return { files: data.files ?? [], errors: data.errors ?? [] };
+}
+
 interface CreatePatientModalProps {
   onSave: (patient: Patient) => void;
   onClose: () => void;
@@ -18,9 +35,11 @@ export function CreatePatientModal({ onSave, onClose }: CreatePatientModalProps)
     accessionNumber: '',
   });
   const [filePaths, setFilePaths] = useState<string[]>([]);
+  const [imageFiles, setImageFiles] = useState<File[]>([]);  // browser-side PNG/JPEG
+  const [converting, setConverting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  /** Pick DCM files via Electron dialog (if available) or browser file input */
+  /** Pick DCM or image files via Electron dialog (if available) or browser file input */
   const handleBrowseFiles = async () => {
     const api = (window as any).electronAPI;
     if (api?.invoke) {
@@ -28,13 +47,35 @@ export function CreatePatientModal({ onSave, onClose }: CreatePatientModalProps)
         const result = await api.invoke('show-open-dialog', {
           properties: ['openFile', 'multiSelections'],
           filters: [
-            { name: 'DICOM Files', extensions: ['dcm', 'DCM'] },
+            { name: 'DICOM & Images', extensions: ['dcm', 'DCM', 'png', 'jpg', 'jpeg'] },
             { name: 'All Files', extensions: ['*'] },
           ],
-          title: 'Select DICOM Files',
+          title: 'Select DICOM or Image Files',
         });
         if (result && !result.canceled && result.filePaths?.length) {
-          setFilePaths(result.filePaths);
+          const dcm: string[] = [];
+          const imgs: string[] = [];
+          for (const fp of result.filePaths as string[]) {
+            if (IMAGE_EXTS.test(fp)) imgs.push(fp);
+            else dcm.push(fp);
+          }
+          setFilePaths(dcm);
+          // For Electron, read image files into File objects so we can POST them
+          if (imgs.length) {
+            const files: File[] = [];
+            for (const fp of imgs) {
+              try {
+                const buf: ArrayBuffer = await api.invoke('read-file-buffer', fp);
+                const name = fp.split(/[\\/]/).pop() || 'image.png';
+                const ext = name.split('.').pop()?.toLowerCase();
+                const mime = ext === 'png' ? 'image/png' : 'image/jpeg';
+                files.push(new File([buf], name, { type: mime }));
+              } catch { /* skip unreadable */ }
+            }
+            setImageFiles(files);
+          } else {
+            setImageFiles([]);
+          }
         }
       } catch { /* fallback to native input */ fileInputRef.current?.click(); }
     } else {
@@ -48,16 +89,44 @@ export function CreatePatientModal({ onSave, onClose }: CreatePatientModalProps)
       try {
         const result = await api.invoke('show-open-dialog', {
           properties: ['openDirectory'],
-          title: 'Select DICOM Folder',
+          title: 'Select DICOM or Image Folder',
         });
         if (result && !result.canceled && result.filePaths?.length) {
-          // Scan folder for DICOM files
-          const scanResult = await api.invoke('list-dicom-files', result.filePaths[0]);
-          if (scanResult?.success && scanResult.files.length > 0) {
-            setFilePaths(scanResult.files);
+          const folderPath = result.filePaths[0];
+
+          // Scan for DICOM files
+          const scanResult = await api.invoke('list-dicom-files', folderPath);
+          const dcmFiles: string[] = scanResult?.success ? scanResult.files : [];
+
+          // Scan for image files (PNG/JPEG) in the same folder
+          let imgFilePaths: string[] = [];
+          try {
+            const imgResult = await api.invoke('list-image-files', folderPath);
+            if (imgResult?.success) imgFilePaths = imgResult.files;
+          } catch { /* IPC not available, skip */ }
+
+          if (dcmFiles.length) setFilePaths(dcmFiles);
+          else setFilePaths([]);
+
+          // Read image files into File objects for conversion
+          if (imgFilePaths.length) {
+            const files: File[] = [];
+            for (const fp of imgFilePaths) {
+              try {
+                const buf: ArrayBuffer = await api.invoke('read-file-buffer', fp);
+                const name = fp.split(/[\\/]/).pop() || 'image.png';
+                const ext = name.split('.').pop()?.toLowerCase();
+                const mime = ext === 'png' ? 'image/png' : 'image/jpeg';
+                files.push(new File([buf], name, { type: mime }));
+              } catch { /* skip unreadable */ }
+            }
+            setImageFiles(files);
           } else {
-            // Fallback: store folder path if scan finds nothing or fails
-            setFilePaths(result.filePaths);
+            setImageFiles([]);
+          }
+
+          if (!dcmFiles.length && !imgFilePaths.length) {
+            alert('No DICOM or image files found in the selected folder.');
           }
         }
       } catch { /* ignore */ }
@@ -66,17 +135,59 @@ export function CreatePatientModal({ onSave, onClose }: CreatePatientModalProps)
 
   const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
-    // In browser mode, file.path may not be available; use file.name as fallback
-    const paths = files.map((f: any) => f.path || f.name).filter(Boolean);
-    if (paths.length) setFilePaths(paths);
+    const dcmPaths: string[] = [];
+    const imgs: File[] = [];
+    for (const f of files) {
+      if (IMAGE_EXTS.test(f.name)) {
+        imgs.push(f);
+      } else {
+        dcmPaths.push((f as any).path || f.name);
+      }
+    }
+    if (dcmPaths.length) setFilePaths(dcmPaths);
+    if (imgs.length) setImageFiles(imgs);
+    if (!dcmPaths.length && !imgs.length) {
+      // All files, treat as DCM
+      const paths = files.map((f: any) => f.path || f.name).filter(Boolean);
+      if (paths.length) setFilePaths(paths);
+    }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.patientName.trim()) {
       alert('Patient name is required');
       return;
     }
+
+    let allPaths = [...filePaths];
+
+    // Convert PNG/JPEG files to DICOM first
+    if (imageFiles.length > 0) {
+      setConverting(true);
+      try {
+        const result = await convertImagesToDicom(imageFiles, {
+          patient_name: form.patientName,
+          patient_id: form.patientId || `P${Date.now()}`,
+          age: form.age,
+          sex: form.sex,
+          modality: form.modality,
+          study_description: form.studyDescription,
+          referring_physician: form.referringPhysician,
+          accession_number: form.accessionNumber,
+        });
+        allPaths = [...allPaths, ...result.files];
+        if (result.errors.length) {
+          console.warn('[CreatePatient] Conversion warnings:', result.errors);
+        }
+      } catch (err: any) {
+        alert('Image conversion failed: ' + (err.message || 'Unknown error'));
+        setConverting(false);
+        return;
+      }
+      setConverting(false);
+    }
+
     const today = new Date();
     const studyDate = `${String(today.getDate()).padStart(2, '0')}-${String(today.getMonth() + 1).padStart(2, '0')}-${today.getFullYear()}`;
     const patient: Patient = {
@@ -87,12 +198,12 @@ export function CreatePatientModal({ onSave, onClose }: CreatePatientModalProps)
       sex: form.sex,
       studyDate,
       studyDescription: form.studyDescription,
-      images: filePaths.length || 0,
+      images: allPaths.length || 0,
       modality: form.modality,
       accessionNumber: form.accessionNumber,
       referringPhysician: form.referringPhysician,
       printed: false,
-      filePaths: filePaths.length ? filePaths : undefined,
+      filePaths: allPaths.length ? allPaths : undefined,
     };
     onSave(patient);
     onClose();
@@ -104,7 +215,7 @@ export function CreatePatientModal({ onSave, onClose }: CreatePatientModalProps)
       <input
         ref={fileInputRef}
         type="file"
-        accept=".dcm,.DCM"
+        accept=".dcm,.DCM,.png,.jpg,.jpeg"
         multiple
         style={{ display: 'none' }}
         onChange={handleFileInputChange}
@@ -199,21 +310,27 @@ export function CreatePatientModal({ onSave, onClose }: CreatePatientModalProps)
           </div>
           {/* DCM File / Folder Path */}
           <div>
-            <label className="block text-xs text-app-text-secondary mb-1">DCM Files / Folder (optional)</label>
+            <label className="block text-xs text-app-text-secondary mb-1">DICOM / Image Files (optional)</label>
             <div className="flex gap-2">
               <div className="flex-1 px-3 py-2 text-xs border border-app-border rounded bg-app-bg text-app-text truncate">
-                {filePaths.length === 0
+                {filePaths.length === 0 && imageFiles.length === 0
                   ? <span className="text-app-text-muted">No files selected</span>
-                  : filePaths.length === 1
-                    ? filePaths[0]
-                    : `${filePaths.length} files selected`
+                  : (() => {
+                      const total = filePaths.length + imageFiles.length;
+                      const parts: string[] = [];
+                      if (filePaths.length) parts.push(`${filePaths.length} DICOM`);
+                      if (imageFiles.length) parts.push(`${imageFiles.length} image${imageFiles.length > 1 ? 's' : ''}`);
+                      return total === 1
+                        ? (filePaths[0] || imageFiles[0]?.name || '1 file')
+                        : `${total} files (${parts.join(' + ')})`;
+                    })()
                 }
               </div>
               <button
                 type="button"
                 onClick={handleBrowseFiles}
                 className="px-3 py-2 text-xs border border-app-border rounded text-app-text hover:bg-app-hover transition-colors whitespace-nowrap"
-                title="Select .dcm files"
+                title="Select .dcm, .png, .jpg files"
               >
                 Files
               </button>
@@ -241,9 +358,10 @@ export function CreatePatientModal({ onSave, onClose }: CreatePatientModalProps)
             </button>
             <button
               type="submit"
-              className="px-4 py-2 text-sm rounded bg-app-accent text-white hover:bg-app-accent/80 transition-colors"
+              disabled={converting}
+              className="px-4 py-2 text-sm rounded bg-app-accent text-white hover:bg-app-accent/80 transition-colors disabled:opacity-50"
             >
-              Create
+              {converting ? 'Converting images…' : 'Create'}
             </button>
           </div>
         </form>

@@ -653,59 +653,132 @@ const DROPBOX_STEPS: Array<{ title: string; body: React.ReactNode }> = [
 
 const GOOGLE_STEPS: Array<{ title: string; body: React.ReactNode }> = [
   {
-    title: 'Enable the Drive API',
+    title: '1. Create a Google Cloud project',
+    body: (
+      <>
+        Go to{' '}
+        <a className="text-app-accent underline" href="https://console.cloud.google.com/projectcreate" target="_blank" rel="noreferrer">
+          console.cloud.google.com → New Project
+        </a>.
+        <ul className="list-disc pl-4 space-y-0.5 mt-1">
+          <li>Project name: <b>MediView Backup</b> (or any name you like).</li>
+          <li>Organization: leave as <b>No organization</b> (for personal accounts).</li>
+          <li>Click <b>Create</b> and wait a few seconds for it to be ready.</li>
+          <li>Make sure the new project is selected in the top-left dropdown.</li>
+        </ul>
+      </>
+    ),
+  },
+  {
+    title: '2. Enable the Google Drive API',
+    body: (
+      <>
+        Open{' '}
+        <a className="text-app-accent underline" href="https://console.cloud.google.com/apis/library/drive.googleapis.com" target="_blank" rel="noreferrer">
+          APIs &amp; Services → Library → Google Drive API
+        </a>{' '}
+        and click <b>Enable</b>.
+        <div className="mt-1 text-[11px] text-app-text-secondary">
+          If the button says "Manage" instead of "Enable", it's already on — skip to the next step.
+        </div>
+      </>
+    ),
+  },
+  {
+    title: '3. Configure the OAuth consent screen',
+    body: (
+      <>
+        Go to{' '}
+        <a className="text-app-accent underline" href="https://console.cloud.google.com/apis/credentials/consent" target="_blank" rel="noreferrer">
+          APIs &amp; Services → OAuth consent screen
+        </a>.
+        <ul className="list-disc pl-4 space-y-0.5 mt-1">
+          <li>User type: select <b>External</b> → click <b>Create</b>.</li>
+          <li>App name: <b>MediView Backup</b>.</li>
+          <li>User support email: select <b>your Gmail address</b>.</li>
+          <li>Developer contact: enter <b>your email</b> again → click <b>Save and Continue</b>.</li>
+        </ul>
+      </>
+    ),
+  },
+  {
+    title: '4. Add the Drive scope',
+    body: (
+      <>
+        On the <b>Scopes</b> step (you'll land here after saving the consent screen):
+        <ul className="list-disc pl-4 space-y-0.5 mt-1">
+          <li>Click <b>Add or Remove Scopes</b>.</li>
+          <li>In the filter box type <code>drive.file</code>.</li>
+          <li>Tick <code>https://www.googleapis.com/auth/drive.file</code> → click <b>Update</b>.</li>
+          <li>Click <b>Save and Continue</b>.</li>
+        </ul>
+      </>
+    ),
+  },
+  {
+    title: '5. Add yourself as a test user',
+    body: (
+      <>
+        On the <b>Test users</b> step:
+        <ul className="list-disc pl-4 space-y-0.5 mt-1">
+          <li>Click <b>Add Users</b>.</li>
+          <li>Enter <b>your own Gmail address</b> (the one that owns Google Drive).</li>
+          <li>Click <b>Add</b> → <b>Save and Continue</b> → <b>Back to Dashboard</b>.</li>
+        </ul>
+        <div className="mt-1 text-amber-600 text-[11px]">
+          ⚠️ Without adding yourself as a test user, the OAuth flow will refuse to sign you in.
+        </div>
+      </>
+    ),
+  },
+  {
+    title: '6. Create OAuth Client ID credentials',
+    body: (
+      <>
+        Go to{' '}
+        <a className="text-app-accent underline" href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noreferrer">
+          APIs &amp; Services → Credentials
+        </a>.
+        <ul className="list-disc pl-4 space-y-0.5 mt-1">
+          <li>Click <b>+ Create Credentials</b> → <b>OAuth client ID</b>.</li>
+          <li>Application type: <b>Web application</b>.</li>
+          <li>Name: <b>MediView Backup Client</b> (any name).</li>
+          <li>Under <b>Authorized redirect URIs</b>, click <b>Add URI</b> and enter:<br />
+            <code className="break-all select-all">https://developers.google.com/oauthplayground</code>
+          </li>
+          <li>Click <b>Create</b>.</li>
+          <li>A popup shows your <b>Client ID</b> and <b>Client secret</b> — <b>copy both</b> and keep them handy.</li>
+        </ul>
+      </>
+    ),
+  },
+  {
+    title: '7. Get an access token via OAuth Playground',
     body: (
       <>
         Open the{' '}
-        <a className="text-app-accent underline" href="https://console.cloud.google.com/apis/library/drive.googleapis.com" target="_blank" rel="noreferrer">
-          Google Cloud Console → Drive API
-        </a>{' '}
-        and click <b>Enable</b> (create a project first if needed).
-      </>
-    ),
-  },
-  {
-    title: 'Configure the OAuth consent screen',
-    body: (
-      <ul className="list-disc pl-4 space-y-0.5">
-        <li>User type: <b>External</b>.</li>
-        <li>Scopes: add <code>https://www.googleapis.com/auth/drive.file</code>.</li>
-        <li>Test users: add your own Google account so you can sign in.</li>
-      </ul>
-    ),
-  },
-  {
-    title: 'Create OAuth credentials',
-    body: (
-      <ul className="list-disc pl-4 space-y-0.5">
-        <li>APIs & Services → <b>Credentials</b> → <b>Create credentials → OAuth client ID</b>.</li>
-        <li>Application type: <b>Desktop app</b>.</li>
-        <li>Note down the <b>Client ID</b> and <b>Client secret</b>.</li>
-      </ul>
-    ),
-  },
-  {
-    title: 'Exchange for an access token',
-    body: (
-      <>
-        Easiest: open the{' '}
         <a className="text-app-accent underline" href="https://developers.google.com/oauthplayground/" target="_blank" rel="noreferrer">
-          OAuth Playground
-        </a>{' '}
-        → gear icon → tick <b>Use your own OAuth credentials</b> → paste the Client ID + Secret →
-        select scope <code>https://www.googleapis.com/auth/drive.file</code> →
-        <b> Authorize APIs</b> → <b>Exchange authorization code for tokens</b>.
+          Google OAuth Playground
+        </a>:
+        <ul className="list-disc pl-4 space-y-0.5 mt-1">
+          <li>Click the <b>⚙ gear icon</b> (top-right) → tick <b>Use your own OAuth credentials</b>.</li>
+          <li>Paste your <b>Client ID</b> and <b>Client secret</b> from step 6.</li>
+          <li><b>Step 1</b> (left panel): scroll to <b>Drive API v3</b>, expand it and tick <code>https://www.googleapis.com/auth/drive.file</code>.</li>
+          <li>Click <b>Authorize APIs</b> → sign in with the Gmail you added as a test user → click <b>Continue</b> (even if Google warns "unverified app") → <b>Allow</b>.</li>
+          <li><b>Step 2</b>: click <b>Exchange authorization code for tokens</b>.</li>
+          <li>Copy the <b>Access token</b> (starts with <code>ya29.…</code>).</li>
+        </ul>
       </>
     ),
   },
   {
-    title: 'Paste the access token above',
+    title: '8. Paste the access token above',
     body: (
       <>
-        Copy the <b>Access token</b> (starts with <code>ya29.…</code>) into the token field.
+        Paste the <b>Access token</b> into the token field above. Set <b>Remote folder</b> to any name (default <code>/dcm-backups</code>).
         <div className="mt-1 text-amber-600 text-[11px]">
-          ⚠️ Google access tokens expire after ~1 hour. For unattended auto-sync you'll need to refresh —
-          for now use Dropbox for hands-off backups, or click <b>Sync now</b> manually.
+          ⚠️ Google access tokens expire after ~1 hour. For longer use, go back to OAuth Playground Step 2 and click
+          <b> Refresh access token</b> to get a new one. For fully unattended auto-sync, Dropbox (no-expiry tokens) is recommended.
         </div>
       </>
     ),
