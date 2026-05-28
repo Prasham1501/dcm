@@ -1162,6 +1162,9 @@ function startDicomServer() {
                     }
 
                     // Collect files (non-blocking via setImmediate batches)
+                    // Use exclusion-based filter: skip known non-DICOM types, include everything else.
+                    // The parser will validate — non-DICOM files silently fail.
+                    const NON_DICOM_RE = /\.(png|jpe?g|gif|bmp|webp|tiff?|pdf|txt|json|xml|html?|css|zip|rar|7z|gz|tar|exe|dll|msi|bat|sh|py|js|ts|csv|xlsx?|docx?|pptx?|ini|log|cfg|yaml|yml|md|sql|db|sqlite|mp[34]|avi|mov|mkv|wav|flac)$/i;
                     const collectFilesAsync = (dirs) => {
                         return new Promise((resolve) => {
                             let idx = 0;
@@ -1179,9 +1182,9 @@ function startDicomServer() {
                                                 dirs.push(fullPath);
                                             } else if (entry.isFile()) {
                                                 const name = entry.name.toLowerCase();
-                                                if (name.endsWith('.dcm') || name.endsWith('.dicom') || (!name.includes('.') && name !== 'dicomdir')) {
-                                                    dicomFiles.push(fullPath);
-                                                }
+                                                if (name === 'dicomdir') continue;
+                                                if (NON_DICOM_RE.test(name)) continue;
+                                                dicomFiles.push(fullPath);
                                             }
                                         }
                                     } catch { /* skip unreadable dirs */ }
@@ -1216,6 +1219,136 @@ function startDicomServer() {
                     try { return (dataSet.string(tag) || '').trim(); } catch { return ''; }
                 }
 
+                // Parse DICOMDIR files: extract patient/study metadata and referenced image file paths
+                function parseDicomDir(filePath, fullBuffer, dicomParserLib) {
+                    const results = []; // array of { studyUID, patientName, patientId, age, sex, studyDate, studyDescription, modality, accessionNumber, referringPhysician, referencedFiles[] }
+                    try {
+                        const dataSet = dicomParserLib.parseDicom(new Uint8Array(fullBuffer));
+                        const dirRecSeq = dataSet.elements['x00041220'];
+                        if (!dirRecSeq || !dirRecSeq.items) return results;
+
+                        const dirBase = path.dirname(filePath);
+                        let currentPatient = {};
+                        let currentStudy = {};
+                        let currentSeries = {};
+
+                        for (const item of dirRecSeq.items) {
+                            const ds = item.dataSet;
+                            if (!ds) continue;
+                            const recType = (ds.string('x00041430') || '').trim().toUpperCase();
+
+                            if (recType === 'PATIENT') {
+                                const rawName = (ds.string('x00100010') || '').replace(/\^/g, ' ').trim();
+                                currentPatient = {
+                                    patientName: rawName || 'Unknown',
+                                    patientId: (ds.string('x00100020') || '').trim() || 'N/A',
+                                    sex: (ds.string('x00100040') || '').trim(),
+                                };
+                            } else if (recType === 'STUDY') {
+                                const rawDate = (ds.string('x00080020') || '').trim();
+                                let formattedDate = rawDate;
+                                if (rawDate.length === 8) {
+                                    formattedDate = `${rawDate.slice(6, 8)}-${rawDate.slice(4, 6)}-${rawDate.slice(0, 4)}`;
+                                }
+                                currentStudy = {
+                                    studyUID: (ds.string('x0020000d') || '').trim(),
+                                    studyDate: formattedDate || new Date().toLocaleDateString(),
+                                    studyDescription: (ds.string('x00081030') || '').trim(),
+                                    accessionNumber: (ds.string('x00080050') || '').trim(),
+                                    age: (ds.string('x00101010') || '').trim(),
+                                };
+                            } else if (recType === 'SERIES') {
+                                currentSeries = {
+                                    modality: (ds.string('x00080060') || '').trim() || 'OT',
+                                };
+                            } else if (recType === 'IMAGE') {
+                                const refFileId = (ds.string('x00041500') || '').trim();
+                                if (refFileId) {
+                                    // Resolve the referenced file path relative to the DICOMDIR
+                                    const refPath = path.join(dirBase, ...refFileId.split('\\'));
+                                    const studyUID = currentStudy.studyUID || `dicomdir-${path.basename(filePath)}-${results.length}`;
+                                    // Check if we already have an entry for this study
+                                    let entry = results.find(r => r.studyUID === studyUID);
+                                    if (!entry) {
+                                        entry = {
+                                            studyUID,
+                                            patientName: currentPatient.patientName || 'Unknown',
+                                            patientId: currentPatient.patientId || 'N/A',
+                                            age: currentStudy.age || '',
+                                            sex: currentPatient.sex || '',
+                                            studyDate: currentStudy.studyDate || '',
+                                            studyDescription: currentStudy.studyDescription || '',
+                                            modality: currentSeries.modality || 'OT',
+                                            accessionNumber: currentStudy.accessionNumber || '',
+                                            referringPhysician: '',
+                                            referencedFiles: [],
+                                        };
+                                        results.push(entry);
+                                    }
+                                    if (fs.existsSync(refPath) && fs.statSync(refPath).isFile()) {
+                                        entry.referencedFiles.push(refPath);
+                                    }
+                                }
+                            }
+                        }
+
+                        // If no referenced files were found on disk, create a study entry anyway
+                        // using the DICOMDIR file itself so the patient at least appears in the list
+                        if (results.length === 0 && dirRecSeq.items.length > 0) {
+                            // Extract patient info from records
+                            for (const item of dirRecSeq.items) {
+                                const ds = item.dataSet;
+                                if (!ds) continue;
+                                const recType = (ds.string('x00041430') || '').trim().toUpperCase();
+                                if (recType === 'PATIENT') {
+                                    const rawName = (ds.string('x00100010') || '').replace(/\^/g, ' ').trim();
+                                    const studyUID = `dicomdir-${path.basename(filePath)}-${results.length}`;
+                                    results.push({
+                                        studyUID,
+                                        patientName: rawName || path.basename(filePath),
+                                        patientId: (ds.string('x00100020') || '').trim() || 'N/A',
+                                        age: '',
+                                        sex: (ds.string('x00100040') || '').trim(),
+                                        studyDate: new Date().toLocaleDateString(),
+                                        studyDescription: '',
+                                        modality: 'OT',
+                                        accessionNumber: '',
+                                        referringPhysician: '',
+                                        referencedFiles: [filePath], // use DICOMDIR itself as fallback
+                                    });
+                                    break; // one patient entry per DICOMDIR
+                                }
+                            }
+                        }
+                    } catch { /* DICOMDIR parse failed — skip */ }
+                    return results;
+                }
+
+                function addStudyEntry(studies, studyUID, meta, filePaths) {
+                    if (!studies[studyUID]) {
+                        studies[studyUID] = {
+                            patientName: meta.patientName || 'Unknown',
+                            patientId: meta.patientId || 'N/A',
+                            age: meta.age || '',
+                            sex: meta.sex || '',
+                            studyDate: meta.studyDate || new Date().toLocaleDateString(),
+                            studyDescription: meta.studyDescription || '',
+                            modality: meta.modality || 'OT',
+                            accessionNumber: meta.accessionNumber || '',
+                            referringPhysician: meta.referringPhysician || '',
+                            studyInstanceUID: studyUID,
+                            files: [],
+                            sopInstanceUIDs: new Set(),
+                        };
+                    }
+                    for (const fp of filePaths) {
+                        const normalized = fp.replace(/\\/g, '/');
+                        if (!studies[studyUID].files.includes(normalized)) {
+                            studies[studyUID].files.push(normalized);
+                        }
+                    }
+                }
+
                 // Stream mode: send progress events via SSE
                 if (streamMode) {
                     res.setHeader('Content-Type', 'text/event-stream');
@@ -1234,8 +1367,9 @@ function startDicomServer() {
                         for (let fi = startIdx; fi < endIdx; fi++) {
                             const filePath = dicomFiles[fi];
                             try {
+                                const fileSize = fs.statSync(filePath).size;
                                 const fd = fs.openSync(filePath, 'r');
-                                const headerSize = Math.min(fs.statSync(filePath).size, 65536);
+                                const headerSize = Math.min(fileSize, 65536);
                                 const buffer = Buffer.alloc(headerSize);
                                 fs.readSync(fd, buffer, 0, headerSize, 0);
                                 fs.closeSync(fd);
@@ -1244,7 +1378,16 @@ function startDicomServer() {
                                 const dataSet = dicomParser.parseDicom(byteArray, { untilTag: 'x7fe00010' });
 
                                 const sopClassUID = readTag(dataSet, 'x00020002');
-                                if (sopClassUID === '1.2.840.10008.1.3.10') continue;
+
+                                // DICOMDIR: parse directory records for patient metadata & referenced files
+                                if (sopClassUID === '1.2.840.10008.1.3.10') {
+                                    const fullBuf = fs.readFileSync(filePath);
+                                    const entries = parseDicomDir(filePath, fullBuf, dicomParser);
+                                    for (const entry of entries) {
+                                        addStudyEntry(studies, entry.studyUID, entry, entry.referencedFiles);
+                                    }
+                                    continue;
+                                }
 
                                 const rawStudyUID = readTag(dataSet, 'x0020000d');
                                 if (!rawStudyUID && !readTag(dataSet, 'x00100010') && !readTag(dataSet, 'x00100020')) continue;
@@ -1277,7 +1420,20 @@ function startDicomServer() {
                                 if (sopInstanceUID && studies[studyUID].sopInstanceUIDs.has(sopInstanceUID)) continue;
                                 if (sopInstanceUID) studies[studyUID].sopInstanceUIDs.add(sopInstanceUID);
                                 studies[studyUID].files.push(filePath.replace(/\\/g, '/'));
-                            } catch { /* skip unparseable files */ }
+                            } catch {
+                                // Header-only parse failed — try full-file read as potential DICOMDIR
+                                try {
+                                    const fullBuf = fs.readFileSync(filePath);
+                                    const fullDs = dicomParser.parseDicom(new Uint8Array(fullBuf));
+                                    const sop2 = (fullDs.string('x00020002') || '').trim();
+                                    if (sop2 === '1.2.840.10008.1.3.10') {
+                                        const entries = parseDicomDir(filePath, fullBuf, dicomParser);
+                                        for (const entry of entries) {
+                                            addStudyEntry(studies, entry.studyUID, entry, entry.referencedFiles);
+                                        }
+                                    }
+                                } catch { /* truly unparseable — skip */ }
+                            }
                         }
 
                         // Send progress
@@ -1325,8 +1481,9 @@ function startDicomServer() {
                             for (let fi = idx; fi < endIdx; fi++) {
                                 const filePath = dicomFiles[fi];
                                 try {
+                                    const fileSize = fs.statSync(filePath).size;
                                     const fd = fs.openSync(filePath, 'r');
-                                    const headerSize = Math.min(fs.statSync(filePath).size, 65536);
+                                    const headerSize = Math.min(fileSize, 65536);
                                     const buffer = Buffer.alloc(headerSize);
                                     fs.readSync(fd, buffer, 0, headerSize, 0);
                                     fs.closeSync(fd);
@@ -1335,7 +1492,16 @@ function startDicomServer() {
                                     const dataSet = dicomParser.parseDicom(byteArray, { untilTag: 'x7fe00010' });
 
                                     const sopClassUID = readTag(dataSet, 'x00020002');
-                                    if (sopClassUID === '1.2.840.10008.1.3.10') continue;
+
+                                    // DICOMDIR: parse directory records for patient metadata & referenced files
+                                    if (sopClassUID === '1.2.840.10008.1.3.10') {
+                                        const fullBuf = fs.readFileSync(filePath);
+                                        const entries = parseDicomDir(filePath, fullBuf, dicomParser);
+                                        for (const entry of entries) {
+                                            addStudyEntry(studies, entry.studyUID, entry, entry.referencedFiles);
+                                        }
+                                        continue;
+                                    }
 
                                     const rawStudyUID = readTag(dataSet, 'x0020000d');
                                     if (!rawStudyUID && !readTag(dataSet, 'x00100010') && !readTag(dataSet, 'x00100020')) continue;
@@ -1368,7 +1534,20 @@ function startDicomServer() {
                                     if (sopInstanceUID && studies[studyUID].sopInstanceUIDs.has(sopInstanceUID)) continue;
                                     if (sopInstanceUID) studies[studyUID].sopInstanceUIDs.add(sopInstanceUID);
                                     studies[studyUID].files.push(filePath.replace(/\\/g, '/'));
-                                } catch { /* skip unparseable files */ }
+                                } catch {
+                                    // Header-only parse failed — try full-file read as potential DICOMDIR
+                                    try {
+                                        const fullBuf = fs.readFileSync(filePath);
+                                        const fullDs = dicomParser.parseDicom(new Uint8Array(fullBuf));
+                                        const sop2 = (fullDs.string('x00020002') || '').trim();
+                                        if (sop2 === '1.2.840.10008.1.3.10') {
+                                            const entries = parseDicomDir(filePath, fullBuf, dicomParser);
+                                            for (const entry of entries) {
+                                                addStudyEntry(studies, entry.studyUID, entry, entry.referencedFiles);
+                                            }
+                                        }
+                                    } catch { /* truly unparseable — skip */ }
+                                }
                             }
                             idx = endIdx;
                             if (idx < dicomFiles.length) {
