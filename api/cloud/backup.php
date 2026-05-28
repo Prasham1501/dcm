@@ -31,6 +31,15 @@ $clientTpls   = (array) ($body['templates']    ?? []);
 $studyPaths   = (array) ($body['study_paths']   ?? []);  // currently-loaded files
 $studyFolders = (array) ($body['study_folders'] ?? []);  // parent folders to scan recursively
 
+// Incremental sync: the client sends paths it has already backed up so we
+// can skip them. Build a fast lookup (forward-slash normalised).
+$rawAlreadySynced = (array)($body['already_synced'] ?? []);
+$alreadySynced    = [];
+foreach ($rawAlreadySynced as $p) {
+    $norm = str_replace('\\', '/', (string)$p);
+    if ($norm !== '') $alreadySynced[$norm] = true;
+}
+
 if (!in_array($provider, ['dropbox', 'google'], true)) cloud_error('Unsupported provider', 400);
 if ($token === '') cloud_error('Access token is required', 400);
 
@@ -61,14 +70,15 @@ try {
     // captures ad-hoc local imports (Downloads folder, network shares).
     $studyDebug  = [];
     $folderDebug = [];
+    $syncedPaths = [];  // newly synced file paths (for incremental tracking)
     if (!empty($scopes['dicom']) && $studyPaths) {
-        $counts['studies'] = cloud_snapshot_study_paths($tempDir, $studyPaths, $studyDebug);
+        $counts['studies'] = cloud_snapshot_study_paths($tempDir, $studyPaths, $studyDebug, $alreadySynced, $syncedPaths);
     }
     // Walk each parent folder for ALL DICOMs (covers the case where the
     // viewer only loaded one study from a folder of many). Grouped by
     // Study Instance UID inside the bundle.
     if (!empty($scopes['dicom']) && $studyFolders) {
-        $counts['studies'] += cloud_snapshot_study_folders($tempDir, $studyFolders, $folderDebug);
+        $counts['studies'] += cloud_snapshot_study_folders($tempDir, $studyFolders, $folderDebug, $alreadySynced, $syncedPaths);
     }
     if (!empty($scopes['templates']))        $counts['templates'] = cloud_snapshot_templates($tempDir, $clientTpls);
     if (!empty($scopes['branding'])  && $db) $counts['branding']  = cloud_snapshot_branding($tempDir, $db);
@@ -104,6 +114,8 @@ try {
         'bundle_name' => $bundleName,
         'bytes'       => (int)$bytes,
         'counts'      => $counts,
+        'synced_files' => $syncedPaths,
+        'already_synced_count' => count($alreadySynced),
         'debug'       => [
             'study_paths_received' => array_map(static function ($s) {
                 return [

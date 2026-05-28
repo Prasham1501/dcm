@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState } from 'react';
 import JSZip from 'jszip';
 import { usePatientStore } from '@/stores/patientStore';
 import { openCRViewerPopup } from '@/stores/crViewerStore';
@@ -52,7 +52,6 @@ export function PatientActionBar() {
     editPatient,
     createPatient,
     deleteSelected,
-    importPatients,
     importFolder,
     syncing,
     syncProgress,
@@ -64,7 +63,6 @@ export function PatientActionBar() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [importing, setImporting] = useState(false);
-  const backupInputRef = useRef<HTMLInputElement>(null);
 
   const handleImportDicom = async () => {
     const api = (window as any).electronAPI;
@@ -92,42 +90,7 @@ export function PatientActionBar() {
     setImporting(false);
   };
 
-  const handleReadBackup = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    e.target.value = '';
 
-    try {
-      if (file.name.endsWith('.zip')) {
-        const zip = await JSZip.loadAsync(file);
-        const jsonFile = zip.file('patients.json');
-        if (!jsonFile) {
-          alert('Invalid backup ZIP: patients.json not found');
-          return;
-        }
-        const text = await jsonFile.async('string');
-        const data = JSON.parse(text);
-        if (Array.isArray(data)) {
-          importPatients(data);
-          alert(`Restored ${data.length} patient(s) from ZIP backup`);
-        } else {
-          alert('Invalid backup format in ZIP');
-        }
-      } else {
-        // JSON file
-        const text = await file.text();
-        const data = JSON.parse(text);
-        if (Array.isArray(data)) {
-          importPatients(data);
-          alert(`Restored ${data.length} patient(s) from backup`);
-        } else {
-          alert('Invalid backup format: expected an array of patients');
-        }
-      }
-    } catch {
-      alert('Failed to read backup file');
-    }
-  };
 
   const handleExportSelected = async () => {
     const selected = patients.filter((p) => selectedPatients.has(p.id));
@@ -247,12 +210,6 @@ export function PatientActionBar() {
         </div>
 
         <ActionButton label="Export selected" onClick={handleExportSelected} />
-        <ActionButton label="Read backup" onClick={() => backupInputRef.current?.click()} />
-
-        <label className="flex items-center gap-1.5 text-xs text-app-text-secondary ml-2">
-          <input type="checkbox" className="accent-app-accent w-3 h-3" />
-          Delete after backup
-        </label>
 
         <ActionButton
           label="Exit"
@@ -261,15 +218,6 @@ export function PatientActionBar() {
           }}
         />
       </div>
-
-      {/* Hidden file inputs */}
-      <input
-        ref={backupInputRef}
-        type="file"
-        accept=".json,.zip"
-        className="hidden"
-        onChange={handleReadBackup}
-      />
 
       {/* Modals */}
       {showEditModal && selectedPatient && (

@@ -41,6 +41,10 @@ export interface CloudConfig {
   /** Last run's status — surfaced in the tab. */
   lastStatus:  'idle' | 'running' | 'ok' | 'failed';
   lastError:   string;
+  /** Normalised file paths that have been successfully synced to the cloud.
+   *  Key = forward-slash path, value = epoch ms when synced. Used for
+   *  incremental backup — only files NOT in this map are uploaded. */
+  syncedFiles: Record<string, number>;
   setProvider:    (p: CloudProvider) => void;
   setAccessToken: (t: string) => void;
   setRemoteFolder:(f: string) => void;
@@ -48,6 +52,10 @@ export interface CloudConfig {
   setSyncInterval:(i: SyncInterval) => void;
   setRunStatus:   (s: 'running' | 'ok' | 'failed', error?: string) => void;
   markSynced:     () => void;
+  /** Record newly synced file paths after a successful backup. */
+  recordSyncedFiles: (files: string[]) => void;
+  /** Wipe the sync-tracking cache so the next run uploads everything. */
+  clearSyncHistory: () => void;
 }
 
 const DEFAULT_SCOPES: BackupScopes = {
@@ -68,14 +76,30 @@ export const useCloudStore = create<CloudConfig>()(
       lastSyncAt:   null,
       lastStatus:   'idle',
       lastError:    '',
+      syncedFiles:  {},
 
-      setProvider:     (provider) => set({ provider }),
+      setProvider:     (provider) => set((s) => ({
+        provider,
+        // Clear sync history when switching providers — old tracking is
+        // irrelevant for a different destination.
+        syncedFiles: provider !== s.provider ? {} : s.syncedFiles,
+      })),
       setAccessToken:  (accessToken) => set({ accessToken }),
       setRemoteFolder: (remoteFolder) => set({ remoteFolder }),
       setScope:        (key, value) => set((s) => ({ scopes: { ...s.scopes, [key]: value } })),
       setSyncInterval: (syncInterval) => set({ syncInterval }),
       setRunStatus:    (lastStatus, error) => set({ lastStatus, lastError: error ?? '' }),
       markSynced:      () => set({ lastSyncAt: Date.now(), lastStatus: 'ok', lastError: '' }),
+      recordSyncedFiles: (files) => set((s) => {
+        const now = Date.now();
+        const next = { ...s.syncedFiles };
+        for (const f of files) {
+          const norm = f.replace(/\\/g, '/');
+          if (norm) next[norm] = now;
+        }
+        return { syncedFiles: next };
+      }),
+      clearSyncHistory: () => set({ syncedFiles: {} }),
     }),
     {
       name: 'dcm-cloud-config',
@@ -87,6 +111,7 @@ export const useCloudStore = create<CloudConfig>()(
         scopes:       s.scopes,
         syncInterval: s.syncInterval,
         lastSyncAt:   s.lastSyncAt,
+        syncedFiles:  s.syncedFiles,
       }),
     },
   ),

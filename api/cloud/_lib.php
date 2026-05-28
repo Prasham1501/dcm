@@ -192,7 +192,7 @@ function cloud_snapshot_dicom(string $tempDir, mysqli $db): int {
  *  Input shape (from client):
  *    [ { "patient_name": "ALSAMIN MOMEEN", "patient_id": "P1", "files": ["C:\\…\\img1.dcm", …] } ]
  */
-function cloud_snapshot_study_paths(string $tempDir, array $studies, array &$debug = null): int {
+function cloud_snapshot_study_paths(string $tempDir, array $studies, array &$debug = null, array $alreadySynced = [], array &$syncedPaths = null): int {
     $base = $tempDir . DIRECTORY_SEPARATOR . 'studies';
     @mkdir($base, 0777, true);
     $count = 0;
@@ -211,6 +211,13 @@ function cloud_snapshot_study_paths(string $tempDir, array $studies, array &$deb
                 $skipped[] = ['path' => '', 'reason' => 'empty'];
                 continue;
             }
+            // Check if this file was already synced — skip to avoid
+            // re-uploading unchanged DICOM files on scheduled runs.
+            $normForward = str_replace('\\', '/', $src);
+            if (isset($alreadySynced[$normForward])) {
+                $skipped[] = ['path' => $src, 'reason' => 'already_synced'];
+                continue;
+            }
             // Normalise Windows paths — viewer stores often use forward
             // slashes that confuse file_exists().
             $normalised = str_replace('/', DIRECTORY_SEPARATOR, $src);
@@ -226,6 +233,7 @@ function cloud_snapshot_study_paths(string $tempDir, array $studies, array &$deb
             if (@copy($normalised, $dst)) {
                 $count++;
                 $copied[] = $src;
+                if ($syncedPaths !== null) $syncedPaths[] = $normForward;
             } else {
                 $skipped[] = ['path' => $src, 'reason' => 'copy_failed'];
             }
@@ -248,7 +256,7 @@ function cloud_snapshot_study_paths(string $tempDir, array $studies, array &$deb
  *  Each top-level folder becomes a bucket; inside, files are split into
  *  subfolders per Study UID so the bundle stays organised.
  */
-function cloud_snapshot_study_folders(string $tempDir, array $folders, array &$debug = null): int {
+function cloud_snapshot_study_folders(string $tempDir, array $folders, array &$debug = null, array $alreadySynced = [], array &$syncedPaths = null): int {
     $base = $tempDir . DIRECTORY_SEPARATOR . 'studies';
     @mkdir($base, 0777, true);
     $count = 0;
@@ -268,13 +276,21 @@ function cloud_snapshot_study_folders(string $tempDir, array $folders, array &$d
         $bucketDir = $base . DIRECTORY_SEPARATOR . $bucket;
         @mkdir($bucketDir, 0777, true);
 
-        $perFolder[] = ['folder' => $folder, 'bucket' => $bucket, 'files' => 0, 'unknown_study' => 0];
+        $perFolder[] = ['folder' => $folder, 'bucket' => $bucket, 'files' => 0, 'skipped_synced' => 0, 'unknown_study' => 0];
         $idx = count($perFolder) - 1;
 
         $it = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($normalised, RecursiveDirectoryIterator::SKIP_DOTS));
         foreach ($it as $file) {
             if ($file->isDir()) continue;
             $path = $file->getPathname();
+
+            // Skip files the client has already backed up.
+            $pathForward = str_replace('\\', '/', $path);
+            if (isset($alreadySynced[$pathForward])) {
+                $perFolder[$idx]['skipped_synced']++;
+                continue;
+            }
+
             // Cheap heuristic — DICOM files usually have a `DICM` magic
             // at byte 128, or end with .dcm / .dicom. Accept both.
             $ext = strtolower(pathinfo($path, PATHINFO_EXTENSION));
@@ -298,6 +314,7 @@ function cloud_snapshot_study_folders(string $tempDir, array $folders, array &$d
             if (@copy($path, $target . DIRECTORY_SEPARATOR . basename($path))) {
                 $count++;
                 $perFolder[$idx]['files']++;
+                if ($syncedPaths !== null) $syncedPaths[] = $pathForward;
                 if (!$studyUid) $perFolder[$idx]['unknown_study']++;
             }
         }

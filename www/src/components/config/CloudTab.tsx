@@ -109,6 +109,8 @@ export function CloudTab() {
     const templates    = useReportStore.getState().templates;
     const studyPaths   = collectStudyPaths();
     const studyFolders = listLoadedStudyFolders();
+    // Incremental: send paths already backed up so the server skips them.
+    const alreadySynced = Object.keys(cfg.syncedFiles);
     try {
       const resp = await fetch('/api/cloud/backup.php', {
         method: 'POST',
@@ -121,11 +123,16 @@ export function CloudTab() {
           templates,
           study_paths:   studyPaths,
           study_folders: studyFolders,
+          already_synced: alreadySynced,
         }),
       });
       const data = await resp.json();
       if (!resp.ok || !data.ok) throw new Error(data.error || `HTTP ${resp.status}`);
       cfg.markSynced();
+      // Track newly synced files so future runs skip them.
+      if (Array.isArray(data.synced_files) && data.synced_files.length > 0) {
+        cfg.recordSyncedFiles(data.synced_files);
+      }
       const c = data.counts || {};
       const total = (c.reports ?? 0) + (c.dicom ?? 0) + (c.studies ?? 0) + (c.templates ?? 0) + (c.branding ?? 0);
       const bytes = data.bytes ?? 0;
@@ -133,8 +140,10 @@ export function CloudTab() {
         ? (bytes / 1024 / 1024).toFixed(2) + ' MB'
         : (bytes / 1024).toFixed(1) + ' KB';
       const dicomTotal = (c.studies ?? 0) + (c.dicom ?? 0);
+      const skippedCount = data.already_synced_count ?? 0;
+      const skippedNote = skippedCount > 0 ? ` · ${skippedCount} already synced` : '';
       addToast(
-        `Backup uploaded: ${data.bundle_name} (${sizeStr} · ${total} items: ${dicomTotal} dicom, ${c.reports ?? 0} reports, ${c.templates ?? 0} templates)`,
+        `Backup uploaded: ${data.bundle_name} (${sizeStr} · ${total} new items: ${dicomTotal} dicom, ${c.reports ?? 0} reports, ${c.templates ?? 0} templates${skippedNote})`,
         'success', 6000,
       );
       if (total === 0) {
@@ -267,9 +276,26 @@ export function CloudTab() {
           </select>
         </Row>
         <p className="text-[11px] text-app-text-secondary">
-          Each scheduled run creates one zip named <code>dcm-backup_YYYY-MM-DD_HHMM.zip</code>
-          containing every patient folder + selected scopes, and uploads it to your provider.
+          Incremental sync — only new / unsynced files are uploaded each run.
+          Already-backed-up files are skipped automatically.
         </p>
+        {Object.keys(cfg.syncedFiles).length > 0 && (
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] text-app-text-secondary">
+              {Object.keys(cfg.syncedFiles).length} file{Object.keys(cfg.syncedFiles).length === 1 ? '' : 's'} tracked as synced
+            </span>
+            <button
+              type="button"
+              onClick={() => {
+                cfg.clearSyncHistory();
+                addToast('Sync history cleared — next run will upload everything.', 'success', 3000);
+              }}
+              className="text-[11px] text-red-500 hover:underline"
+            >
+              Reset sync history
+            </button>
+          </div>
+        )}
       </Section>
 
       {/* ── Run + status ─────────────────────────────────────── */}

@@ -107,6 +107,8 @@ export default function App() {
         const templates    = useReportStore.getState().templates;
         const studyPaths   = collectStudyPathsForBackup();
         const studyFolders = listLoadedStudyFolders();
+        // Incremental: send paths already backed up so the server skips them.
+        const alreadySynced = Object.keys(cfg.syncedFiles);
         const resp = await fetch('/api/cloud/backup.php', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -118,11 +120,16 @@ export default function App() {
             templates,
             study_paths:   studyPaths,
             study_folders: studyFolders,
+            already_synced: alreadySynced,
           }),
         });
         const data = await resp.json();
         if (!resp.ok || !data.ok) throw new Error(data.error || `HTTP ${resp.status}`);
         cfg.markSynced();
+        // Track newly synced files so future runs skip them.
+        if (Array.isArray(data.synced_files) && data.synced_files.length > 0) {
+          cfg.recordSyncedFiles(data.synced_files);
+        }
       } catch (e: any) {
         cfg.setRunStatus('failed', e?.message || 'Auto-sync failed');
       }

@@ -166,6 +166,88 @@ function dicomServerPlugin() {
             return results;
           }
 
+          /** Extract study metadata from a parsed DataSet and add to studies map. */
+          function extractAndAddStudy(dataSet: any, studiesMap: Record<string, StudyGroup>, filePath: string): boolean {
+            const rawStudyUID = readTag(dataSet, 'x0020000d');
+            const rawName     = readTag(dataSet, 'x00100010');
+            const rawPid      = readTag(dataSet, 'x00100020');
+            if (!rawStudyUID && !rawName && !rawPid) return false;
+            const studyUID = rawStudyUID || `unknown-${Object.keys(studiesMap).length}`;
+            if (!studiesMap[studyUID]) {
+              const rawDate = readTag(dataSet, 'x00080020');
+              let formattedDate = rawDate;
+              if (rawDate.length === 8) formattedDate = `${rawDate.slice(6,8)}-${rawDate.slice(4,6)}-${rawDate.slice(0,4)}`;
+              studiesMap[studyUID] = {
+                patientName: rawName.replace(/\^/g, ' ') || 'Unknown',
+                patientId: rawPid || 'N/A',
+                age: readTag(dataSet, 'x00101010') || '',
+                sex: readTag(dataSet, 'x00100040') || '',
+                studyDate: formattedDate || new Date().toLocaleDateString(),
+                studyDescription: readTag(dataSet, 'x00081030') || '',
+                modality: readTag(dataSet, 'x00080060') || 'OT',
+                accessionNumber: readTag(dataSet, 'x00080050') || '',
+                referringPhysician: readTag(dataSet, 'x00080090')?.replace(/\^/g, ' ') || '',
+                studyInstanceUID: studyUID,
+                files: [],
+              };
+            }
+            studiesMap[studyUID].files.push(filePath.replace(/\\/g, '/'));
+            return true;
+          }
+
+          /** Same as extractAndAddStudy but for the partial DataSet thrown
+           *  by dicom-parser when the buffer is truncated. */
+          function extractFromPartial(ds: any, studiesMap: Record<string, StudyGroup>, filePath: string): boolean {
+            const uid  = (ds.string('x0020000d') || '').trim();
+            const name = (ds.string('x00100010') || '').replace(/\^/g, ' ').trim();
+            const pid  = (ds.string('x00100020') || '').trim();
+            if (!uid && !name && !pid) return false;
+            const suid = uid || `unknown-${Object.keys(studiesMap).length}`;
+            if (!studiesMap[suid]) {
+              const rd = (ds.string('x00080020') || '').trim();
+              let fd = rd;
+              if (rd.length === 8) fd = `${rd.slice(6,8)}-${rd.slice(4,6)}-${rd.slice(0,4)}`;
+              studiesMap[suid] = {
+                patientName: name || 'Unknown',
+                patientId: pid || 'N/A',
+                age: (ds.string('x00101010') || '').trim(),
+                sex: (ds.string('x00100040') || '').trim(),
+                studyDate: fd || new Date().toLocaleDateString(),
+                studyDescription: (ds.string('x00081030') || '').trim(),
+                modality: (ds.string('x00080060') || '').trim() || 'OT',
+                accessionNumber: (ds.string('x00080050') || '').trim(),
+                referringPhysician: (ds.string('x00080090') || '').replace(/\^/g, ' ').trim(),
+                studyInstanceUID: suid,
+                files: [],
+              };
+            }
+            studiesMap[suid].files.push(filePath.replace(/\\/g, '/'));
+            return true;
+          }
+
+          /** Full-file fallback — reads the entire file, handles both
+           *  DICOMDIR and regular DICOM files that fail the 64 KB header parse. */
+          function fullFileFallback(filePath: string, studiesMap: Record<string, StudyGroup>): void {
+            const fullBuf = fs.readFileSync(filePath);
+            const fullDs = dicomParserLib.parseDicom(new Uint8Array(fullBuf));
+            const sop = (fullDs.string('x00020002') || '').trim();
+            if (sop === '1.2.840.10008.1.3.10') {
+              const entries = parseDicomDir(filePath, fullBuf);
+              for (const entry of entries) {
+                const suid = entry.studyUID;
+                if (!studiesMap[suid]) {
+                  studiesMap[suid] = { patientName: entry.patientName, patientId: entry.patientId, age: entry.age, sex: entry.sex, studyDate: entry.studyDate, studyDescription: entry.studyDescription, modality: entry.modality, accessionNumber: entry.accessionNumber, referringPhysician: entry.referringPhysician, studyInstanceUID: suid, files: [] };
+                }
+                for (const fp of entry.referencedFiles) {
+                  const norm = fp.replace(/\\/g, '/');
+                  if (!studiesMap[suid].files.includes(norm)) studiesMap[suid].files.push(norm);
+                }
+              }
+            } else {
+              extractAndAddStudy(fullDs, studiesMap, filePath);
+            }
+          }
+
           for (const filePath of dicomFiles) {
             try {
               // Read header for tag parsing (64KB covers most headers)
@@ -196,58 +278,15 @@ function dicomServerPlugin() {
                 continue;
               }
 
-              // Skip files with no study UID and no patient-level tags
-              const rawStudyUID = readTag(dataSet, 'x0020000d');
-              if (!rawStudyUID && !readTag(dataSet, 'x00100010') && !readTag(dataSet, 'x00100020')) continue;
-
-              const studyUID = rawStudyUID || `unknown-${Object.keys(studies).length}`;
-
-              if (!studies[studyUID]) {
-                const rawDate = readTag(dataSet, 'x00080020'); // YYYYMMDD
-                let formattedDate = rawDate;
-                if (rawDate.length === 8) {
-                  formattedDate = `${rawDate.slice(6, 8)}-${rawDate.slice(4, 6)}-${rawDate.slice(0, 4)}`;
-                }
-
-                const rawName = readTag(dataSet, 'x00100010').replace(/\^/g, ' ');
-                const rawAge = readTag(dataSet, 'x00101010'); // e.g. "045Y"
-
-                studies[studyUID] = {
-                  patientName: rawName || 'Unknown',
-                  patientId: readTag(dataSet, 'x00100020') || 'N/A',
-                  age: rawAge || '',
-                  sex: readTag(dataSet, 'x00100040') || '',
-                  studyDate: formattedDate || new Date().toLocaleDateString(),
-                  studyDescription: readTag(dataSet, 'x00081030') || '',
-                  modality: readTag(dataSet, 'x00080060') || 'OT',
-                  accessionNumber: readTag(dataSet, 'x00080050') || '',
-                  referringPhysician: readTag(dataSet, 'x00080090')?.replace(/\^/g, ' ') || '',
-                  studyInstanceUID: studyUID,
-                  files: [],
-                };
+              extractAndAddStudy(dataSet, studies, filePath);
+            } catch (parseErr: any) {
+              // 1) Use partial dataSet from truncated-buffer parse
+              if (parseErr?.dataSet && extractFromPartial(parseErr.dataSet, studies, filePath)) {
+                continue;
               }
-
-              studies[studyUID].files.push(filePath.replace(/\\/g, '/'));
-            } catch {
-              // Header-only parse failed — try full-file read as potential DICOMDIR
-              try {
-                const fullBuf = fs.readFileSync(filePath);
-                const fullDs = dicomParserLib.parseDicom(new Uint8Array(fullBuf));
-                const sop2 = (fullDs.string('x00020002') || '').trim();
-                if (sop2 === '1.2.840.10008.1.3.10') {
-                  const entries = parseDicomDir(filePath, fullBuf);
-                  for (const entry of entries) {
-                    const suid = entry.studyUID;
-                    if (!studies[suid]) {
-                      studies[suid] = { patientName: entry.patientName, patientId: entry.patientId, age: entry.age, sex: entry.sex, studyDate: entry.studyDate, studyDescription: entry.studyDescription, modality: entry.modality, accessionNumber: entry.accessionNumber, referringPhysician: entry.referringPhysician, studyInstanceUID: suid, files: [] };
-                    }
-                    for (const fp of entry.referencedFiles) {
-                      const norm = fp.replace(/\\/g, '/');
-                      if (!studies[suid].files.includes(norm)) studies[suid].files.push(norm);
-                    }
-                  }
-                }
-              } catch { /* truly unparseable — skip */ }
+              // 2) Full-file fallback: handles DICOMDIRs AND normal
+              //    DICOM files that need more than 64 KB to parse.
+              try { fullFileFallback(filePath, studies); } catch { /* truly unparseable — skip */ }
             }
           }
 
