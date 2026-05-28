@@ -14,14 +14,21 @@ async function dicomToJpeg(imageId: string): Promise<Blob | null> {
   try {
     const image = await cs.loadAndCacheImage(imageId);
     const div = document.createElement('div');
-    div.style.cssText = `width:${image.width}px;height:${image.height}px;position:fixed;left:-99999px;top:0;visibility:hidden;`;
+    // Use off-screen positioning without visibility:hidden — cornerstone needs a visible canvas to render
+    div.style.cssText = `width:${image.width}px;height:${image.height}px;position:fixed;left:-99999px;top:0;`;
     document.body.appendChild(div);
     try {
       cs.enable(div);
       cs.displayImage(div, image);
-      const el = cs.getEnabledElement(div);
+      // Force a render cycle so the canvas is painted
+      try { cs.updateImage(div); } catch { /* ignore */ }
+      // Wait for the canvas paint to complete
+      await new Promise(r => setTimeout(r, 100));
+      const enabledEl = cs.getEnabledElement(div);
+      const canvas = enabledEl?.canvas || enabledEl?.element?.querySelector('canvas');
+      if (!canvas) return null;
       return await new Promise<Blob>((resolve, reject) => {
-        el.canvas.toBlob(
+        canvas.toBlob(
           (b: Blob | null) => (b ? resolve(b) : reject(new Error('toBlob failed'))),
           'image/jpeg',
           0.92
