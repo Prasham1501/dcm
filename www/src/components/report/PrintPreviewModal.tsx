@@ -4,7 +4,7 @@
  * Prints from iframe so Windows native print dialog shows full preview + all options.
  * Tracks print count and prompts on re-print.
  */
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Printer, CheckCircle2, AlertTriangle } from 'lucide-react';
 import { generatePrintHtml } from '@/lib/reportPrintTemplate';
@@ -44,6 +44,19 @@ export function PrintPreviewModal({
   const { markReportPrinted, getReportPrintCount } = useReportStore();
   const { logPrintToApi, fetchPrintCount } = usePrintStore();
   const printCount = reportId ? getReportPrintCount(reportId) : 0;
+
+  // Configured printers — same list as DICOM print preview
+  const configuredPrinters = useHospitalConfigStore((s) => s.printers);
+  const activePrinters = useMemo(() => (configuredPrinters || []).filter((p: any) => p.isActive), [configuredPrinters]);
+  const defaultPrinter = useMemo(() => activePrinters.find((p: any) => p.isDefault) || activePrinters[0], [activePrinters]);
+  const [selectedPrinter, setSelectedPrinter] = useState(defaultPrinter?.name || '');
+
+  // Keep selectedPrinter in sync when printers change
+  useEffect(() => {
+    if (!selectedPrinter || !activePrinters.some((p: any) => p.name === selectedPrinter)) {
+      setSelectedPrinter(defaultPrinter?.name || '');
+    }
+  }, [activePrinters, defaultPrinter, selectedPrinter]);
 
   // Pull the latest wallet balance when this modal opens so the debit
   // pre-flight sees up-to-date credits.
@@ -116,9 +129,22 @@ export function PrintPreviewModal({
     }
     const html = previewHtml();
     const api = (window as any).electronAPI;
-    if (api?.printReportDialog) {
-      // Electron: uses hidden BrowserWindow + silent:false → Chromium print dialog WITH preview
-      const pageSizeMap: Record<PaperSize, string> = { a4: 'A4', a5: 'A5', letter: 'Letter' };
+    const pageSizeMap: Record<PaperSize, string> = { a4: 'A4', a5: 'A5', letter: 'Letter' };
+
+    if (api?.printToPrinter && selectedPrinter) {
+      // Electron: silent print directly to the selected configured printer
+      try {
+        const result = await api.printToPrinter({
+          printerName: selectedPrinter,
+          htmlContent: html,
+          printSettings: { paperSize: pageSizeMap[paperSize], orientation: 'portrait', copies: 1, colorMode: 'color', margins: 'none' },
+        });
+        if (!result.success) console.error('Print failed:', result.error);
+      } catch (e) {
+        console.warn('Electron printToPrinter failed, falling back:', e);
+      }
+    } else if (api?.printReportDialog) {
+      // Electron fallback: Chromium print dialog
       try {
         await api.printReportDialog({ htmlContent: html, paperSize: pageSizeMap[paperSize] });
       } catch (e) {
@@ -134,7 +160,7 @@ export function PrintPreviewModal({
         setTimeout(() => w.print(), 400);
       }
     }
-  }, [previewHtml, reportId, markReportPrinted, paperSize, patientId, patientName, fetchPrintCount, logPrintToApi]);
+  }, [previewHtml, reportId, markReportPrinted, paperSize, selectedPrinter, patientId, patientName, fetchPrintCount, logPrintToApi]);
 
   const handlePrint = useCallback(() => {
     if (printCount > 0 && !showReprintConfirm) {
@@ -215,6 +241,26 @@ export function PrintPreviewModal({
               </div>
             </div>
 
+            {/* Printer Selection */}
+            <div>
+              <label className="text-[10px] font-bold text-app-text-secondary uppercase tracking-widest mb-2 block">
+                Printer
+              </label>
+              {activePrinters.length > 0 ? (
+                <select
+                  value={selectedPrinter}
+                  onChange={(e) => setSelectedPrinter(e.target.value)}
+                  className="w-full px-3 py-2 text-xs border border-app-border bg-app-bg text-app-text rounded-lg"
+                >
+                  {activePrinters.map((p: any) => (
+                    <option key={p.name} value={p.name}>{p.displayName || p.name}</option>
+                  ))}
+                </select>
+              ) : (
+                <p className="text-[10px] text-red-400 italic">No printers configured. Add one in Config → Print Settings.</p>
+              )}
+            </div>
+
             {/* Report Info */}
             <div className="text-[10px] text-app-text-secondary space-y-1 border-t border-app-border pt-3">
               <div className="flex justify-between">
@@ -262,7 +308,7 @@ export function PrintPreviewModal({
 
             {/* Hint */}
             <div className="text-[9px] text-app-text-secondary/60 leading-snug">
-              The Windows print dialog will open with full preview and all print options (copies, orientation, color, page range, etc.)
+              The report will be printed directly to the selected printer. Configure printers in Config → Print Settings.
             </div>
 
             {/* Print Button */}

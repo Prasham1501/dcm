@@ -424,8 +424,11 @@ export function InlineReportPanel() {
 
   const handlePrint = useCallback(() => {
     if (!editorRef.current) return;
+    // Auto-save before printing so the report has an ID and the
+    // "Rep" column in the patients tab updates after printing.
+    handleSave();
     setShowPrintPreview(true);
-  }, []);
+  }, [handleSave]);
 
   const loadReport = useCallback((report: SavedReport) => {
     if (!editorRef.current) return;
