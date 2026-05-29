@@ -85,26 +85,30 @@ export function PrintPreviewModal({
   // Wallet pre-flight + atomic debit happens BEFORE the print dialog opens so
   // a Save-as-PDF still counts as a print and a 0 balance refuses to proceed.
   const doPrint = useCallback(async () => {
-    // 1) Refresh wallet from the website
-    await fetchPrintCount();
-    const live = usePrintStore.getState().printCountRemaining;
-    if (live < 1) {
-      alert('Not enough print credits to generate this report. Top up from the One Clickz dashboard.');
-      return;
-    }
-    // 2) Atomic debit (1 credit per report print, regardless of paper / pages)
-    const debit = await logPrintToApi({
-      patientId, patientName,
-      layoutType: 'report-' + paperSize,
-      credits: 1,
-    });
-    if (!debit.ok) {
-      alert(
-        debit.reason === 'insufficient'
-          ? `Print cancelled: balance ${debit.balance} < required 1.`
-          : `Print cancelled: wallet update failed (${debit.reason || 'unknown'}).`
-      );
-      return;
+    // Only enforce wallet/quota when quota mode is ON.
+    const isQuotaOn = usePrintStore.getState().quotaEnabled;
+    if (isQuotaOn) {
+      // 1) Refresh wallet from the website
+      await fetchPrintCount();
+      const live = usePrintStore.getState().printCountRemaining;
+      if (live < 1) {
+        alert('Not enough print credits to generate this report. Top up from the One Clickz dashboard.');
+        return;
+      }
+      // 2) Atomic debit (1 credit per report print, regardless of paper / pages)
+      const debit = await logPrintToApi({
+        patientId, patientName,
+        layoutType: 'report-' + paperSize,
+        credits: 1,
+      });
+      if (!debit.ok) {
+        alert(
+          debit.reason === 'insufficient'
+            ? `Print cancelled: balance ${debit.balance} < required 1.`
+            : `Print cancelled: wallet update failed (${debit.reason || 'unknown'}).`
+        );
+        return;
+      }
     }
 
     if (reportId) {

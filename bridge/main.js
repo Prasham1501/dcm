@@ -781,11 +781,13 @@ app.whenReady().then(async () => {
       }
     }
 
-    // Central sell-by-print quota — single counter shared with viewer/website.
-    // Runs in addition to (not instead of) any local per-slot quota so existing
-    // setups keep working. Server is the source of truth.
+    // Central sell-by-print quota — only decrement when quota mode is ON.
+    // When quota is off, printing is unlimited — no server call needed.
     const pagesPrinted = Math.max(1, parseInt(job.result.pages || 1, 10));
-    decrementCentralQuota(pagesPrinted).then((q) => {
+    const licData = getLicenseData();
+    const centralQuotaOn = licData ? !!licData.quotaEnabled : true; // trial = always on
+    if (centralQuotaOn) {
+      decrementCentralQuota(pagesPrinted).then((q) => {
       if (q && q.ok && configWindow && !configWindow.isDestroyed()) {
         // Tell the renderer to refetch quota immediately for live UI.
         configWindow.webContents.send('bridge:quota-changed', {
@@ -806,6 +808,7 @@ app.whenReady().then(async () => {
         }
       }
     }).catch(() => {});
+    } // end centralQuotaOn
 
     if (Notification.isSupported()) {
       new Notification({

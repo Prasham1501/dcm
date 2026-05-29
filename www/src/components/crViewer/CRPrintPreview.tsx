@@ -350,26 +350,32 @@ export function CRPrintPreview({ onClose, initialPageMode = 'all' }: CRPrintPrev
 
     setPrinting(true);
     try {
-      // Wallet pre-flight — verify on the website BEFORE we print anything.
-      await fetchPrintCount();
-      const cost = Math.max(1, localCopies | 0);
-      const live = usePrintStore.getState().printCountRemaining;
-      if (live < cost) {
-        alert(`Not enough print credits (have ${live}, need ${cost}). Top up from the One Clickz dashboard.`);
-        return;
-      }
-      const debit = await logPrintToApi({
-        patientId, patientName,
-        layoutType: `cr-${currentLayout.spots}-spot`,
-        credits: cost,
-      });
-      if (!debit.ok) {
-        alert(
-          debit.reason === 'insufficient'
-            ? `Print cancelled: balance ${debit.balance} < required ${cost}.`
-            : `Print cancelled: wallet update failed (${debit.reason || 'unknown'}).`
-        );
-        return;
+      // Wallet pre-flight — only enforce when quota mode is ON.
+      // When quotaEnabled is false, allow unlimited prints.
+      const isQuotaOn = usePrintStore.getState().quotaEnabled;
+      if (isQuotaOn) {
+        await fetchPrintCount();
+        const cost = Math.max(1, localCopies | 0);
+        const live = usePrintStore.getState().printCountRemaining;
+        if (live < cost) {
+          alert(`Not enough print credits (have ${live}, need ${cost}). Top up from the One Clickz dashboard.`);
+          setPrinting(false);
+          return;
+        }
+        const debit = await logPrintToApi({
+          patientId, patientName,
+          layoutType: `cr-${currentLayout.spots}-spot`,
+          credits: cost,
+        });
+        if (!debit.ok) {
+          alert(
+            debit.reason === 'insufficient'
+              ? `Print cancelled: balance ${debit.balance} < required ${cost}.`
+              : `Print cancelled: wallet update failed (${debit.reason || 'unknown'}).`
+          );
+          setPrinting(false);
+          return;
+        }
       }
 
       updateSettings({ paperSize: localPaperSize, orientation: localOrientation, copies: localCopies });
