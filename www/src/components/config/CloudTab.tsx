@@ -20,22 +20,30 @@ import {
 } from 'lucide-react';
 import { useCloudStore, type CloudProvider, type SyncInterval } from '@/stores/cloudStore';
 import { useReportStore } from '@/stores/reportStore';
+import { usePatientStore } from '@/stores/patientStore';
 import { useViewerStore } from '@/stores/viewerStore';
 import { useCRViewerStore } from '@/stores/crViewerStore';
 import { useDualViewerStore } from '@/stores/dualViewerStore';
 import { useUIStore } from '@/stores/uiStore';
-import { listLoadedStudies, listLoadedStudyFolders, clearLoadedStudiesRegistry } from '@/lib/loadedStudiesRegistry';
+import { listLoadedStudies, clearLoadedStudiesRegistry } from '@/lib/loadedStudiesRegistry';
 
-/** Snapshot study folders for the cloud backup. We pull from BOTH the
- *  in-memory Zustand stores (current window) AND the localStorage-backed
- *  cross-window registry (other Electron BrowserWindows). The registry is
- *  what lets the Cloud tab — opened from a different window than the
- *  viewer — actually see what's loaded. */
+/** Collect DICOM file paths for cloud backup.
+ *  Sources (deduplicated, no recursive folder scanning):
+ *    1. patientStore — every patient visible in the patients tab that has filePaths
+ *    2. Viewer stores — currently-open studies (Orthanc-backed patients get files here)
+ *    3. Cross-window registry — studies opened in other Electron windows */
 function collectStudyPaths(): Array<{ patient_name: string; patient_id: string; files: string[] }> {
   const out: Array<{ patient_name: string; patient_id: string; files: string[] }> = [];
 
-  // 1) Current window's stores (covers the common case where viewer + Config
-  //    share a window).
+  // 1) Patient store — locally-created / folder-scanned patients
+  const patients = usePatientStore.getState().patients;
+  for (const p of patients) {
+    if (p.filePaths && p.filePaths.length > 0) {
+      out.push({ patient_name: p.patientName || 'Unknown', patient_id: p.patientId || p.id, files: p.filePaths });
+    }
+  }
+
+  // 2) Currently-open viewer stores (covers Orthanc patients open in viewer)
   const v = useViewerStore.getState();
   const vFiles = (v.images ?? [])
     .map((img: any) => {
@@ -56,12 +64,10 @@ function collectStudyPaths(): Array<{ patient_name: string; patient_id: string; 
     if (files.length) out.push({ patient_name: p.patientName || `dual-${panelId}`, patient_id: p.patientId || '', files });
   }
 
-  // 2) Cross-window registry (covers Electron multi-window setups where
-  //    the viewer is in a different BrowserWindow than this Config window).
+  // 3) Cross-window registry (studies opened in other Electron BrowserWindows)
   for (const s of listLoadedStudies()) out.push(s);
 
-  // Dedupe by patient_id + first file (same study can be open in multiple
-  // places) so the zip doesn't contain copies.
+  // Dedupe by patient_id so the zip doesn't contain copies
   const seen = new Set<string>();
   return out.filter((s) => {
     const key = `${s.patient_id}|${s.files[0] || ''}`;
@@ -108,7 +114,9 @@ export function CloudTab() {
 
     const templates    = useReportStore.getState().templates;
     const studyPaths   = collectStudyPaths();
-    const studyFolders = listLoadedStudyFolders();
+    // All patient IDs visible in the patients tab — server uses these to
+    // filter Orthanc-backed DICOM files (which have no client-side paths).
+    const patientIds = usePatientStore.getState().patients.map((p) => p.patientId || p.id);
     // Incremental: send paths already backed up so the server skips them.
     const alreadySynced = Object.keys(cfg.syncedFiles);
     try {
@@ -122,7 +130,7 @@ export function CloudTab() {
           scopes:       cfg.scopes,
           templates,
           study_paths:   studyPaths,
-          study_folders: studyFolders,
+          patient_ids:   patientIds,
           already_synced: alreadySynced,
         }),
       });

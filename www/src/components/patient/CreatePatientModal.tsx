@@ -1,7 +1,12 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useMemo } from 'react';
 import type { Patient } from '@/types/patient';
 
 const IMAGE_EXTS = /\.(png|jpe?g)$/i;
+const REFERRING_KEY = 'clinical-referring-physicians';
+
+function loadReferringPhysicians(): string[] {
+  try { return JSON.parse(localStorage.getItem(REFERRING_KEY) || '[]'); } catch { return []; }
+}
 
 /** Upload image files to the PHP converter, returns .dcm file paths. */
 async function convertImagesToDicom(
@@ -38,6 +43,7 @@ export function CreatePatientModal({ onSave, onClose }: CreatePatientModalProps)
   const [imageFiles, setImageFiles] = useState<File[]>([]);  // browser-side PNG/JPEG
   const [converting, setConverting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const referringList = useMemo(() => loadReferringPhysicians(), []);
 
   /** Pick DCM or image files via Electron dialog (if available) or browser file input */
   const handleBrowseFiles = async () => {
@@ -281,12 +287,25 @@ export function CreatePatientModal({ onSave, onClose }: CreatePatientModalProps)
           </div>
           <div>
             <label className="block text-xs text-app-text-secondary mb-1">Referring Physician</label>
-            <input
-              type="text"
-              value={form.referringPhysician}
-              onChange={(e) => setForm({ ...form, referringPhysician: e.target.value })}
-              className="w-full px-3 py-2 text-sm border border-app-border rounded bg-app-bg text-app-text"
-            />
+            {referringList.length > 0 ? (
+              <select
+                value={form.referringPhysician}
+                onChange={(e) => setForm({ ...form, referringPhysician: e.target.value })}
+                className="w-full px-3 py-2 text-sm border border-app-border rounded bg-app-bg text-app-text"
+              >
+                <option value="">-- Select --</option>
+                {referringList.map((name) => (
+                  <option key={name} value={name}>{name}</option>
+                ))}
+              </select>
+            ) : (
+              <input
+                type="text"
+                value={form.referringPhysician}
+                onChange={(e) => setForm({ ...form, referringPhysician: e.target.value })}
+                className="w-full px-3 py-2 text-sm border border-app-border rounded bg-app-bg text-app-text"
+              />
+            )}
           </div>
           <div className="flex gap-3">
             <div className="flex-1">

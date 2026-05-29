@@ -28,8 +28,8 @@ $token        = trim((string)($body['access_token'] ?? ''));
 $remoteFolder = (string)($body['remote_folder'] ?? '/dcm-backups');
 $scopes       = (array) ($body['scopes']       ?? []);
 $clientTpls   = (array) ($body['templates']    ?? []);
-$studyPaths   = (array) ($body['study_paths']   ?? []);  // currently-loaded files
-$studyFolders = (array) ($body['study_folders'] ?? []);  // parent folders to scan recursively
+$studyPaths   = (array) ($body['study_paths']   ?? []);  // patient file paths from the patients tab
+$patientIds   = (array) ($body['patient_ids']    ?? []);  // visible patient IDs from the patients tab
 
 // Incremental sync: the client sends paths it has already backed up so we
 // can skip them. Build a fast lookup (forward-slash normalised).
@@ -63,22 +63,14 @@ $tempDir = cloud_make_temp_dir();
 $counts = ['reports' => 0, 'dicom' => 0, 'studies' => 0, 'templates' => 0, 'branding' => 0];
 
 try {
-    if (!empty($scopes['reports'])   && $db) $counts['reports']   = cloud_snapshot_reports($tempDir, $db);
-    if (!empty($scopes['dicom'])     && $db) $counts['dicom']     = cloud_snapshot_dicom($tempDir, $db);
-    // Client-supplied study folders: included whenever the DICOM scope is on,
-    // regardless of whether a DB mapping exists. This is the path that
-    // captures ad-hoc local imports (Downloads folder, network shares).
-    $studyDebug  = [];
-    $folderDebug = [];
     $syncedPaths = [];  // newly synced file paths (for incremental tracking)
+    if (!empty($scopes['reports'])   && $db) $counts['reports']   = cloud_snapshot_reports($tempDir, $db);
+    if (!empty($scopes['dicom'])     && $db) $counts['dicom']     = cloud_snapshot_dicom($tempDir, $db, $patientIds, $alreadySynced, $syncedPaths);
+    // Client-supplied study files: only the exact files visible in the
+    // patients tab are included — no recursive folder scanning.
+    $studyDebug  = [];
     if (!empty($scopes['dicom']) && $studyPaths) {
         $counts['studies'] = cloud_snapshot_study_paths($tempDir, $studyPaths, $studyDebug, $alreadySynced, $syncedPaths);
-    }
-    // Walk each parent folder for ALL DICOMs (covers the case where the
-    // viewer only loaded one study from a folder of many). Grouped by
-    // Study Instance UID inside the bundle.
-    if (!empty($scopes['dicom']) && $studyFolders) {
-        $counts['studies'] += cloud_snapshot_study_folders($tempDir, $studyFolders, $folderDebug, $alreadySynced, $syncedPaths);
     }
     if (!empty($scopes['templates']))        $counts['templates'] = cloud_snapshot_templates($tempDir, $clientTpls);
     if (!empty($scopes['branding'])  && $db) $counts['branding']  = cloud_snapshot_branding($tempDir, $db);
@@ -123,9 +115,7 @@ try {
                     'files'   => count((array)($s['files'] ?? [])),
                 ];
             }, $studyPaths),
-            'study_folders_received' => $studyFolders,
             'studies'        => $studyDebug,
-            'folder_scan'    => $folderDebug,
         ],
     ]);
 } catch (\Throwable $e) {

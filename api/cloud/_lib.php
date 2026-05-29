@@ -145,11 +145,19 @@ function cloud_snapshot_reports(string $tempDir, mysqli $db): int {
  *  PatientID using a simple DB lookup so each patient gets their own
  *  folder. If storage isn't reachable (e.g. cloud-only setup), skip.
  */
-function cloud_snapshot_dicom(string $tempDir, mysqli $db): int {
+function cloud_snapshot_dicom(string $tempDir, mysqli $db, array $visiblePatientIds = [], array $alreadySynced = [], array &$syncedPaths = null): int {
     if (!defined('ORTHANC_STORAGE_PATH') || !is_dir(ORTHANC_STORAGE_PATH)) return 0;
     $base = $tempDir . DIRECTORY_SEPARATOR . 'dicom';
     @mkdir($base, 0777, true);
     $count = 0;
+    // Build a fast lookup of visible patient IDs so we only back up what's
+    // in the patients tab.
+    $visibleSet = [];
+    foreach ($visiblePatientIds as $pid) {
+        $norm = trim((string)$pid);
+        if ($norm !== '') $visibleSet[strtolower($norm)] = true;
+    }
+    $hasFilter = count($visibleSet) > 0;
     // Best-effort patient grouping — use whatever patient → file mapping the
     // local DB exposes. If no such table exists, dump under "all/".
     $hasMap = (bool)$db->query("SHOW TABLES LIKE 'patient_studies'")?->num_rows;
@@ -157,23 +165,19 @@ function cloud_snapshot_dicom(string $tempDir, mysqli $db): int {
         $res = $db->query("SELECT patient_name, patient_id, file_path FROM patient_studies WHERE file_path IS NOT NULL");
         while ($res && ($row = $res->fetch_assoc())) {
             if (!$row['file_path'] || !file_exists($row['file_path'])) continue;
+            // Filter to visible patients only
+            if ($hasFilter) {
+                $pid = strtolower(trim((string)($row['patient_id'] ?? '')));
+                if (!isset($visibleSet[$pid])) continue;
+            }
+            // Incremental: skip already-synced files
+            $normPath = str_replace('\\', '/', $row['file_path']);
+            if (isset($alreadySynced[$normPath])) continue;
             $folder = cloud_safe_name((string)($row['patient_name'] ?: $row['patient_id']));
             $patientDir = $base . DIRECTORY_SEPARATOR . $folder;
             @mkdir($patientDir, 0777, true);
             @copy($row['file_path'], $patientDir . DIRECTORY_SEPARATOR . basename($row['file_path']));
-            $count++;
-        }
-    } else {
-        // Fallback: copy the entire Orthanc tree (warn: can be large)
-        $all = $base . DIRECTORY_SEPARATOR . 'all';
-        @mkdir($all, 0777, true);
-        $it = new RecursiveIteratorIterator(new RecursiveDirectoryIterator(ORTHANC_STORAGE_PATH, RecursiveDirectoryIterator::SKIP_DOTS));
-        foreach ($it as $file) {
-            if ($file->isDir()) continue;
-            $local = str_replace(ORTHANC_STORAGE_PATH, '', $file->getPathname());
-            $target = $all . $local;
-            @mkdir(dirname($target), 0777, true);
-            @copy($file->getPathname(), $target);
+            if (is_array($syncedPaths)) $syncedPaths[] = $row['file_path'];
             $count++;
         }
     }

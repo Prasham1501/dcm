@@ -17,17 +17,27 @@ import { UpdateModal } from '@/components/UpdateModal';
 import { LicenseQuotaModal } from '@/components/LicenseQuotaModal';
 import { useCloudStore, intervalMs } from '@/stores/cloudStore';
 import { useReportStore } from '@/stores/reportStore';
+import { usePatientStore } from '@/stores/patientStore';
 import { useViewerStore } from '@/stores/viewerStore';
 import { useCRViewerStore } from '@/stores/crViewerStore';
 import { useDualViewerStore } from '@/stores/dualViewerStore';
-import { listLoadedStudies, listLoadedStudyFolders } from '@/lib/loadedStudiesRegistry';
+import { listLoadedStudies } from '@/lib/loadedStudiesRegistry';
 
-/** Snapshot file paths from each viewer store grouped by patient. Used by
- *  the cloud auto-sync to include the locally-loaded DICOM folders in the
- *  backup bundle even though they're not tracked in any DB table. */
+/** Collect DICOM file paths for cloud backup.
+ *  Combines patientStore (local patients) + viewer stores (open studies)
+ *  + cross-window registry. No recursive folder scanning. */
 function collectStudyPathsForBackup(): Array<{ patient_name: string; patient_id: string; files: string[] }> {
   const out: Array<{ patient_name: string; patient_id: string; files: string[] }> = [];
 
+  // 1) Patient store — locally-created / folder-scanned patients
+  const patients = usePatientStore.getState().patients;
+  for (const p of patients) {
+    if (p.filePaths && p.filePaths.length > 0) {
+      out.push({ patient_name: p.patientName || 'Unknown', patient_id: p.patientId || p.id, files: p.filePaths });
+    }
+  }
+
+  // 2) Currently-open viewer stores (covers Orthanc patients open in viewer)
   const v = useViewerStore.getState();
   const vFiles = (v.images ?? [])
     .map((img: any) => {
@@ -47,9 +57,11 @@ function collectStudyPathsForBackup(): Array<{ patient_name: string; patient_id:
     const files = (p?.images ?? []).map((img: any) => img.filePath).filter(Boolean);
     if (files.length) out.push({ patient_name: p.patientName || `dual-${panelId}`, patient_id: p.patientId || '', files });
   }
-  // Cross-window registry — covers Electron multi-window setups.
+
+  // 3) Cross-window registry
   for (const s of listLoadedStudies()) out.push(s);
-  // Dedupe by patient_id + first file.
+
+  // Dedupe
   const seen = new Set<string>();
   return out.filter((s) => {
     const key = `${s.patient_id}|${s.files[0] || ''}`;
@@ -106,7 +118,7 @@ export default function App() {
       try {
         const templates    = useReportStore.getState().templates;
         const studyPaths   = collectStudyPathsForBackup();
-        const studyFolders = listLoadedStudyFolders();
+        const patientIds   = usePatientStore.getState().patients.map((p) => p.patientId || p.id);
         // Incremental: send paths already backed up so the server skips them.
         const alreadySynced = Object.keys(cfg.syncedFiles);
         const resp = await fetch('/api/cloud/backup.php', {
@@ -119,7 +131,7 @@ export default function App() {
             scopes:       cfg.scopes,
             templates,
             study_paths:   studyPaths,
-            study_folders: studyFolders,
+            patient_ids:   patientIds,
             already_synced: alreadySynced,
           }),
         });

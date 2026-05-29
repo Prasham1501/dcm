@@ -1,5 +1,10 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import type { Patient } from '@/types/patient';
+
+const REFERRING_KEY = 'clinical-referring-physicians';
+function loadReferringPhysicians(): string[] {
+  try { return JSON.parse(localStorage.getItem(REFERRING_KEY) || '[]'); } catch { return []; }
+}
 
 interface EditPatientModalProps {
   patient: Patient;
@@ -17,6 +22,7 @@ export function EditPatientModal({ patient, onSave, onClose }: EditPatientModalP
     modality: patient.modality,
     accessionNumber: patient.accessionNumber,
   });
+  const referringList = useMemo(() => loadReferringPhysicians(), []);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -76,12 +82,25 @@ export function EditPatientModal({ patient, onSave, onClose }: EditPatientModalP
           </div>
           <div>
             <label className="block text-xs text-app-text-secondary mb-1">Referring Physician</label>
-            <input
-              type="text"
-              value={form.referringPhysician}
-              onChange={(e) => setForm({ ...form, referringPhysician: e.target.value })}
-              className="w-full px-3 py-2 text-sm border border-app-border rounded bg-app-bg text-app-text"
-            />
+            {referringList.length > 0 ? (
+              <select
+                value={form.referringPhysician}
+                onChange={(e) => setForm({ ...form, referringPhysician: e.target.value })}
+                className="w-full px-3 py-2 text-sm border border-app-border rounded bg-app-bg text-app-text"
+              >
+                <option value="">-- Select --</option>
+                {referringList.map((name) => (
+                  <option key={name} value={name}>{name}</option>
+                ))}
+              </select>
+            ) : (
+              <input
+                type="text"
+                value={form.referringPhysician}
+                onChange={(e) => setForm({ ...form, referringPhysician: e.target.value })}
+                className="w-full px-3 py-2 text-sm border border-app-border rounded bg-app-bg text-app-text"
+              />
+            )}
           </div>
           <div className="flex gap-3">
             <div className="flex-1">
