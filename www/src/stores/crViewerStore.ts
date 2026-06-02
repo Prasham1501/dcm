@@ -3,7 +3,8 @@
  * Completely separate from viewerStore to avoid conflicts.
  */
 import { create } from 'zustand';
-import { localFileToImageId, prefetchImages } from '@/lib/dicomLoader';
+import { localFileToImageId, prefetchImages, purgeCache } from '@/lib/dicomLoader';
+import { useReportStore } from '@/stores/reportStore';
 import { getAutoOrientationForLayout } from '@/lib/layoutUtils';
 import { useUndoStore } from '@/stores/undoStore';
 
@@ -305,6 +306,20 @@ export const useCRViewerStore = create<CRViewerState>((set, get) => ({
   applyToAll: false,
 
   loadStudy: (params) => {
+    // Different patient → evict the previous study's decoded images so the
+    // renderer doesn't accumulate RAM across reused-window opens.
+    const prev = useCRViewerStore.getState();
+    if (prev.patientId && prev.patientId !== params.patientId) {
+      purgeCache();
+    }
+
+    // Reset shared OCR / extraction state so the next study can run fresh
+    // (the autoExtract gate keys on extractionStatus === 'idle').
+    try {
+      useReportStore.getState().setExtractionStatus('idle');
+      useReportStore.getState().setActiveReadingSet(null);
+    } catch { /* ignore */ }
+
     set({ isLoading: true });
     useUndoStore.getState().clear('crViewer');
 

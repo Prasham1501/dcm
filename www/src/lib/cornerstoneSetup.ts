@@ -21,8 +21,10 @@ export function initCornerstone(): void {
   cornerstoneTools.external.cornerstoneMath = cornerstoneMath;
   cornerstoneTools.external.Hammer = Hammer;
 
-  // Configure web worker for image decoding
-  const maxWorkers = Math.max(navigator.hardwareConcurrency || 4, 2);
+  // Configure web worker for image decoding.
+  // Cap workers at 4 — more than that just thrashes the renderer process on
+  // typical 6-8 core machines and balloons RAM with web worker overhead.
+  const maxWorkers = Math.min(4, Math.max(navigator.hardwareConcurrency || 4, 2));
   const config = {
     maxWebWorkers: maxWorkers,
     startWebWorkersOnDemand: true,
@@ -35,6 +37,16 @@ export function initCornerstone(): void {
     },
   };
   cornerstoneWADOImageLoader.webWorkerManager.initialize(config);
+
+  // Cap the cornerstone image cache so memory doesn't grow unbounded as
+  // the user opens study after study (especially when we reuse the viewer
+  // BrowserWindow across opens). When over budget, cornerstone evicts the
+  // oldest images first.
+  try {
+    cornerstone.imageCache.setMaximumSizeBytes(384 * 1024 * 1024); // 384 MB
+  } catch {
+    // Older cornerstone builds may not expose this — safe to ignore.
+  }
 
   // Initialize cornerstone tools
   cornerstoneTools.init({

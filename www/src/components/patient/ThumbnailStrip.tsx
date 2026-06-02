@@ -5,6 +5,21 @@ import { useNavigate } from 'react-router-dom';
 import { cornerstone } from '@/lib/cornerstoneSetup';
 import { localFileToImageId } from '@/lib/dicomLoader';
 
+// Process-wide cache of rendered thumbnail data URLs, keyed by file path.
+// Persists across patient selections so switching back to a previously-viewed
+// study redraws instantly without re-decoding any DICOM (issue #2).
+const THUMB_CACHE_LIMIT = 400;
+const thumbCache = new Map<string, string>();
+function rememberThumb(filePath: string, dataUrl: string) {
+  if (thumbCache.has(filePath)) thumbCache.delete(filePath);
+  thumbCache.set(filePath, dataUrl);
+  while (thumbCache.size > THUMB_CACHE_LIMIT) {
+    const firstKey = thumbCache.keys().next().value;
+    if (firstKey === undefined) break;
+    thumbCache.delete(firstKey);
+  }
+}
+
 /**
  * DicomThumbnail — loads a single DICOM image lazily using an offscreen canvas
  * to avoid blocking the main thread with cornerstone enable/disable per thumbnail.
@@ -15,7 +30,7 @@ const DicomThumbnail = memo(function DicomThumbnail({
   filePath: string; index: number; onClick: () => void; ready: boolean;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [loaded, setLoaded] = useState(false);
+  const [loaded, setLoaded] = useState(() => thumbCache.has(filePath));
   const [error, setError] = useState(false);
 
   useEffect(() => {
@@ -24,9 +39,27 @@ const DicomThumbnail = memo(function DicomThumbnail({
     if (!canvas) return;
 
     let cancelled = false;
+
+    // Cache hit \u2014 paint from data URL, skip cornerstone entirely.
+    const cached = thumbCache.get(filePath);
+    if (cached) {
+      const img = new Image();
+      img.onload = () => {
+        if (cancelled) return;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+        canvas.width = 128;
+        canvas.height = 112;
+        ctx.drawImage(img, 0, 0, 128, 112);
+        setLoaded(true);
+      };
+      img.src = cached;
+      return () => { cancelled = true; };
+    }
+
     const imageId = localFileToImageId(filePath);
 
-    // Load image via cornerstone but render to our own canvas — avoids enable/disable overhead
+    // Load image via cornerstone but render to our own canvas \u2014 avoids enable/disable overhead
     cornerstone.loadImage(imageId)
       .then((image: any) => {
         if (cancelled) return;
@@ -39,6 +72,7 @@ const DicomThumbnail = memo(function DicomThumbnail({
           canvas.width = 128;
           canvas.height = 112;
           ctx.drawImage(renderCanvas, 0, 0, 128, 112);
+          try { rememberThumb(filePath, canvas.toDataURL('image/jpeg', 0.7)); } catch {}
           setLoaded(true);
           return;
         }
@@ -71,6 +105,7 @@ const DicomThumbnail = memo(function DicomThumbnail({
         }
         tmpCtx.putImageData(imgData, 0, 0);
         ctx.drawImage(tmpCanvas, 0, 0, 128, 112);
+        try { rememberThumb(filePath, canvas.toDataURL('image/jpeg', 0.7)); } catch {}
         setLoaded(true);
       })
       .catch(() => {

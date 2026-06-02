@@ -19,11 +19,26 @@ import { ChevronLeft, X, PanelRightClose, PanelRightOpen } from 'lucide-react';
 import { useThemeStore } from '@/stores/themeStore';
 import { Sun, Moon } from 'lucide-react';
 
+// Studies that have already had autoExtract run in this session. Keyed by
+// patientId + file count + first path, so reopening the same study skips the
+// expensive OCR pipeline entirely. Cleared only when the renderer is
+// destroyed (i.e. the popup window is fully closed).
+const extractedStudyKeys = new Set<string>();
+function studyKey(patientId: string, filePaths: string[]): string {
+  return `${patientId}|${filePaths.length}|${filePaths[0] || ''}`;
+}
+
 /** Auto-extract measurements + metadata in background when images are loaded */
 async function autoExtract(filePaths: string[], patientId: string) {
+  if (filePaths.length === 0) return;
+  const key = studyKey(patientId, filePaths);
+  if (extractedStudyKeys.has(key)) return;
   const store = useReportStore.getState();
-  // Skip if already running or done for this session
+  // Skip if another extraction is in flight — main.js will abort it for us
+  // when the next batch request arrives, so we don't need to start a fresh
+  // run here.
   if (store.extractionStatus === 'running') return;
+  extractedStudyKeys.add(key);
 
   const api = (window as any).electronAPI;
 
@@ -66,14 +81,15 @@ export function CRViewerPage() {
   const [showThumbnails, setShowThumbnails] = useState(false);
   const launchChecked = useRef(false);
 
-  // Check for launch data in localStorage (when opened as popup window)
+  // Check for launch data in localStorage (when opened as popup window).
+  // Also re-runs when the host process tells us a new study has been queued
+  // — main.js sends 'cr-viewer:reload-launch' when it reuses an existing
+  // window instead of recreating it (keeps the cornerstone cache warm).
   useEffect(() => {
-    if (launchChecked.current) return;
-    launchChecked.current = true;
-
-    try {
-      const launchData = localStorage.getItem('cr-viewer-launch');
-      if (launchData) {
+    const consumeLaunch = () => {
+      try {
+        const launchData = localStorage.getItem('cr-viewer-launch');
+        if (!launchData) return;
         const data = JSON.parse(launchData);
         // Only use if fresh (within 10 seconds)
         if (Date.now() - data.timestamp < 10000) {
@@ -85,12 +101,22 @@ export function CRViewerPage() {
             modality: data.modality,
             studyDescription: data.studyDescription,
           });
-          // Auto-extract measurements in background (no user action needed)
-          autoExtract(data.filePaths, data.patientId);
+          // Reset extraction status so the useEffect-driven autoExtract
+          // can run for the new study (it gates on status === 'idle').
+          useReportStore.getState().setExtractionStatus('idle');
         }
         localStorage.removeItem('cr-viewer-launch');
-      }
-    } catch { /* ignore parse errors */ }
+      } catch { /* ignore parse errors */ }
+    };
+
+    if (!launchChecked.current) {
+      launchChecked.current = true;
+      consumeLaunch();
+    }
+
+    const api = (window as any).electronAPI;
+    const unsub = api?.on?.('cr-viewer:reload-launch', () => consumeLaunch());
+    return () => { if (typeof unsub === 'function') unsub(); };
   }, [loadStudy]);
 
   // Auto-run OCR / DICOM extraction the moment a study finishes loading

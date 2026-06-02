@@ -7,13 +7,23 @@ import { useNavigate } from 'react-router-dom';
 import { useDualViewerStore } from '@/stores/dualViewerStore';
 import { useReportStore } from '@/stores/reportStore';
 
+// Per-renderer dedupe of studies that already ran autoExtract.
+const extractedStudyKeys = new Set<string>();
+function studyKey(patientId: string, filePaths: string[]): string {
+  return `${patientId}|${filePaths.length}|${filePaths[0] || ''}`;
+}
+
 /** Auto-run OCR / DICOM extraction for the Dual viewer's active panel.
  *  Same idea as CRViewerPage's autoExtract — fires once per study load
  *  (gated by extractionStatus === 'idle') so the operator doesn't have to
  *  click Scan manually. */
 async function dualAutoExtract(filePaths: string[], patientId: string) {
+  if (filePaths.length === 0) return;
+  const key = studyKey(patientId, filePaths);
+  if (extractedStudyKeys.has(key)) return;
   const store = useReportStore.getState();
   if (store.extractionStatus === 'running') return;
+  extractedStudyKeys.add(key);
   const api = (window as any).electronAPI;
   if (api?.invoke && filePaths.length > 0) {
     try {

@@ -102,6 +102,45 @@ interface PatientState {
   clearAllNewHighlights: () => void;
 }
 
+/**
+ * Merge a freshly-scanned set of patients into the existing list without
+ * losing studies that were already loaded from elsewhere (API, network DICOM
+ * receiver, an earlier folder scan). A scanned patient replaces an existing
+ * one when their studyInstanceUID matches, otherwise when patientId+studyDate
+ * match. Anything not matched is appended. Existing entries that the scan
+ * didn't see are preserved as-is.
+ */
+function mergeScannedPatients(existing: Patient[], scanned: Patient[]): Patient[] {
+  if (existing.length === 0) return scanned;
+
+  const byUid = new Map<string, Patient>();
+  const byKey = new Map<string, Patient>();
+  existing.forEach((p) => {
+    if (p.studyInstanceUID) byUid.set(p.studyInstanceUID, p);
+    const k = `${p.patientId || ''}|${p.studyDate || ''}`;
+    byKey.set(k, p);
+  });
+
+  const replaced = new Set<string>();
+  const additions: Patient[] = [];
+
+  for (const sp of scanned) {
+    const matchByUid = sp.studyInstanceUID ? byUid.get(sp.studyInstanceUID) : undefined;
+    const matchByKey = matchByUid || byKey.get(`${sp.patientId || ''}|${sp.studyDate || ''}`);
+    if (matchByKey) {
+      replaced.add(matchByKey.id);
+      // Preserve printed status when refreshing
+      additions.push({ ...matchByKey, ...sp, printed: matchByKey.printed || sp.printed });
+    } else {
+      additions.push(sp);
+    }
+  }
+
+  const kept = existing.filter((p) => !replaced.has(p.id));
+  // Scanned/refreshed entries go first so the newest sync surface bubbles up.
+  return [...additions, ...kept];
+}
+
 const defaultFilters: PatientFilters = {
   patientId: '',
   patientName: '',
@@ -586,11 +625,15 @@ export const usePatientStore = create<PatientState>()(
                   filePaths: p.filePaths,
                 }));
 
-                const { filters } = get();
+                // Merge with existing patients instead of replacing wholesale
+                // — a folder scan should add/refresh studies, never wipe ones
+                // that came from API / network / earlier scans (#6).
+                const { filters, patients: existing } = get();
+                const merged = mergeScannedPatients(existing, scannedPatients);
                 set({
-                  patients: scannedPatients,
-                  filteredPatients: scannedPatients.filter((p) => matchesFilter(p, filters)),
-                  totalRecords: scannedPatients.length,
+                  patients: merged,
+                  filteredPatients: merged.filter((p) => matchesFilter(p, filters)),
+                  totalRecords: merged.length,
                   syncing: false,
                   syncProgress: null,
                   selectedPatient: null,
@@ -625,11 +668,12 @@ export const usePatientStore = create<PatientState>()(
           filePaths: p.filePaths,
         }));
 
-        const { filters } = get();
+        const { filters, patients: existing } = get();
+        const merged = mergeScannedPatients(existing, scannedPatients);
         set({
-          patients: scannedPatients,
-          filteredPatients: scannedPatients.filter((p) => matchesFilter(p, filters)),
-          totalRecords: scannedPatients.length,
+          patients: merged,
+          filteredPatients: merged.filter((p) => matchesFilter(p, filters)),
+          totalRecords: merged.length,
           syncing: false,
           syncProgress: null,
           selectedPatient: null,

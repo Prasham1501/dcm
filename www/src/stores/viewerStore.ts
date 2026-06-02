@@ -9,8 +9,10 @@ import {
   filesToImageIds,
   scanLocalDirectory,
   prefetchImages,
+  purgeCache,
 } from '@/lib/dicomLoader';
 import { useUndoStore } from '@/stores/undoStore';
+import { useReportStore } from '@/stores/reportStore';
 
 const USE_API = import.meta.env.VITE_USE_API === 'true';
 
@@ -1060,6 +1062,21 @@ export const useViewerStore = create<ViewerState>((set, get) => ({
   },
 
   loadStudyFiles: (params) => {
+    // When the user opens a different patient in the same reused viewer
+    // window, drop the previous study's images from cornerstone's cache
+    // first. Otherwise RAM grows every open and (eventually) decode workers
+    // start failing — the "white screen then slow load" symptom.
+    const prev = get();
+    if (prev.patientId && prev.patientId !== params.patientId) {
+      purgeCache();
+    }
+
+    // Release the shared extraction gate so the next study can OCR fresh.
+    try {
+      useReportStore.getState().setExtractionStatus('idle');
+      useReportStore.getState().setActiveReadingSet(null);
+    } catch { /* ignore */ }
+
     const imageIds = params.filePaths.map((fp) => localFileToImageId(fp));
 
     const dicomImages: DicomImage[] = imageIds.map((imageId, i) => ({

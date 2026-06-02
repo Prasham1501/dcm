@@ -29,16 +29,15 @@ export function ViewerPage() {
   const [showThumbnails, setShowThumbnails] = useState(false);
   const launchChecked = useRef(false);
 
-  // Check for launch data in localStorage (when opened as popup window)
+  // Check for launch data in localStorage (when opened as popup window).
+  // Also re-runs when main.js re-uses the existing window for a new study
+  // (sends 'viewer:reload-launch' so we don't pay the cornerstone re-init cost).
   useEffect(() => {
-    if (launchChecked.current) return;
-    launchChecked.current = true;
-
-    try {
-      const launchData = localStorage.getItem('viewer-launch');
-      if (launchData) {
+    const consumeLaunch = () => {
+      try {
+        const launchData = localStorage.getItem('viewer-launch');
+        if (!launchData) return;
         const data = JSON.parse(launchData);
-        // Only use if fresh (within 10 seconds)
         if (Date.now() - data.timestamp < 10000) {
           loadStudyFiles({
             patientName: data.patientName,
@@ -50,8 +49,17 @@ export function ViewerPage() {
           });
         }
         localStorage.removeItem('viewer-launch');
-      }
-    } catch { /* ignore parse errors */ }
+      } catch { /* ignore parse errors */ }
+    };
+
+    if (!launchChecked.current) {
+      launchChecked.current = true;
+      consumeLaunch();
+    }
+
+    const api = (window as any).electronAPI;
+    const unsub = api?.on?.('viewer:reload-launch', () => consumeLaunch());
+    return () => { if (typeof unsub === 'function') unsub(); };
   }, [loadStudyFiles]);
 
   // Global Ctrl+Z undo and Ctrl+A select-all listener
