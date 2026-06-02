@@ -4282,171 +4282,368 @@ ipcMain.handle('ocr-dicom-file', async (event, { filePath }) => {
     }
 });
 
-// ── Batch OCR: single Tesseract worker shared across ALL files ──
-// ~3-4× faster than per-file worker creation.  Uses 2 passes instead of 4.
+// ── Batch OCR: parallel Tesseract worker pool with persistent disk cache ──
+//
+// Speed: 3-4 workers in parallel + per-file disk cache keyed by
+// (path|size|mtime). Re-opening a study is INSTANT (cache hit).
 //
 // SERIALIZED: only one batch runs at a time. If a new request arrives while
-// one is running, the in-flight batch is aborted (its worker is terminated
-// and the loop exits at its next iteration). This prevents stacked OCR jobs
-// from monopolising the Node event loop when the user reopens studies fast.
+// one is running, the in-flight batch is aborted (workers terminated, queue
+// drained) so the user can flip studies without stacking OCR jobs.
+const OCR_WORKER_COUNT = Math.max(1, Math.min(4, (require('os').cpus()?.length || 4) - 1));
+const OCR_CACHE_PATH = path.join(app.getPath('userData'), 'ocr-cache.json');
+const OCR_CACHE_MAX = 5000;
+let ocrCache = null; // lazy-loaded { [key: string]: string }
+let ocrCacheDirty = false;
+let ocrCacheSaveTimer = null;
+
+function loadOcrCache() {
+    if (ocrCache !== null) return ocrCache;
+    try {
+        ocrCache = JSON.parse(fs.readFileSync(OCR_CACHE_PATH, 'utf8'));
+        if (!ocrCache || typeof ocrCache !== 'object') ocrCache = {};
+    } catch { ocrCache = {}; }
+    return ocrCache;
+}
+function ocrCacheKey(filePath) {
+    try {
+        const st = fs.statSync(filePath);
+        // v4: bumped when pipeline changed (JPEG Baseline decompression support).
+        return `v4:${st.size}:${Math.floor(st.mtimeMs)}:${filePath}`;
+    } catch { return null; }
+}
+function scheduleOcrCacheSave() {
+    if (!ocrCacheDirty || ocrCacheSaveTimer) return;
+    ocrCacheSaveTimer = setTimeout(() => {
+        ocrCacheSaveTimer = null;
+        if (!ocrCacheDirty) return;
+        try {
+            // Trim oldest entries if over cap (insertion order preserved by V8 maps)
+            const keys = Object.keys(ocrCache);
+            if (keys.length > OCR_CACHE_MAX) {
+                const trimmed = {};
+                for (const k of keys.slice(keys.length - OCR_CACHE_MAX)) trimmed[k] = ocrCache[k];
+                ocrCache = trimmed;
+            }
+            fs.writeFileSync(OCR_CACHE_PATH, JSON.stringify(ocrCache), 'utf8');
+            ocrCacheDirty = false;
+        } catch (err) { console.warn('[OCR-cache] write failed:', err.message); }
+    }, 1500);
+}
+
 let currentOcrGeneration = 0;
-let currentOcrWorker = null;
+let currentOcrWorkers = []; // pool of active workers — terminated on next batch
 ipcMain.handle('ocr-dicom-batch', async (event, { filePaths }) => {
     const myGen = ++currentOcrGeneration;
-    // Abort any in-flight batch — next iteration sees the gen mismatch.
-    if (currentOcrWorker) {
-        try { await currentOcrWorker.terminate(); } catch {}
-        currentOcrWorker = null;
+    // Abort any in-flight batch by terminating its workers; the queue loop
+    // exits on the gen-mismatch check at the start of each file.
+    if (currentOcrWorkers.length) {
+        const old = currentOcrWorkers.slice();
+        currentOcrWorkers = [];
+        for (const w of old) { try { await w.terminate(); } catch {} }
     }
     try {
         const os = require('os');
         const dicomParserLib = require('dicom-parser');
         const { createWorker } = require('tesseract.js');
 
-        const results = [];
         const batchStart = Date.now();
+        const cache = loadOcrCache();
 
-        // Create ONE worker for the entire batch
-        const worker = await createWorker('eng', 1, { logger: () => { } });
-        currentOcrWorker = worker;
+        // ── Phase 0: cache lookup ──
+        // Pre-compute cache key and prepared result slot per file. Indices
+        // missing from the cache go onto the work queue.
+        const results = new Array(filePaths.length);
+        const queue = []; // indices needing OCR
+        const keys = new Array(filePaths.length);
+        for (let i = 0; i < filePaths.length; i++) {
+            const k = ocrCacheKey(filePaths[i]);
+            keys[i] = k;
+            if (k && Object.prototype.hasOwnProperty.call(cache, k)) {
+                results[i] = { text: cache[k], success: true, cached: true };
+            } else {
+                queue.push(i);
+            }
+        }
+
+        if (queue.length === 0) {
+            console.log(`[OCR-batch] Cache hit: ${filePaths.length}/${filePaths.length} files (${Date.now() - batchStart}ms)`);
+            return results;
+        }
+        console.log(`[OCR-batch] Cache: ${filePaths.length - queue.length}/${filePaths.length} hit, ${queue.length} to OCR`);
+
+        // ── Phase 1: spin up worker pool ──
+        const poolSize = Math.min(OCR_WORKER_COUNT, queue.length);
+        const workerStart = Date.now();
+        const workers = await Promise.all(
+            Array.from({ length: poolSize }, () => createWorker('eng', 1, { logger: () => { } }))
+        );
+        currentOcrWorkers = workers;
         if (myGen !== currentOcrGeneration) {
-            try { await worker.terminate(); } catch {}
+            for (const w of workers) { try { await w.terminate(); } catch {} }
             return [];
         }
-        console.log(`[OCR-batch] Worker created in ${Date.now() - batchStart}ms, processing ${filePaths.length} files`);
+        console.log(`[OCR-batch] ${poolSize} worker(s) ready in ${Date.now() - workerStart}ms`);
 
-        for (let fi = 0; fi < filePaths.length; fi++) {
-            if (myGen !== currentOcrGeneration) {
-                console.log(`[OCR-batch] gen ${myGen} aborted at file ${fi} (current gen ${currentOcrGeneration})`);
-                break;
+        // ── Phase 2: consume queue with shared cursor ──
+        let cursor = 0;
+        const processOne = async (worker) => {
+            while (true) {
+                if (myGen !== currentOcrGeneration) return;
+                const fi = cursor++;
+                if (fi >= queue.length) return;
+                const fileIndex = queue[fi];
+                const filePath = filePaths[fileIndex];
+                const fileStart = Date.now();
+                try {
+                    const r = await ocrOneDicom(worker, filePath, dicomParserLib, fi);
+                    results[fileIndex] = { text: r.text, success: true };
+                    if (keys[fileIndex]) {
+                        cache[keys[fileIndex]] = r.text;
+                        ocrCacheDirty = true;
+                    }
+                    console.log(`[OCR-batch] File ${fi + 1}/${queue.length} (${Date.now() - fileStart}ms): ${r.text.length} chars`);
+                } catch (err) {
+                    console.warn(`[OCR-batch] File ${fi + 1} failed:`, err.message);
+                    results[fileIndex] = { text: '', success: false, error: err.message };
+                }
             }
-            const filePath = filePaths[fi];
-            const fileStart = Date.now();
-            try {
-                const buffer = fs.readFileSync(filePath);
-                const byteArray = new Uint8Array(buffer);
-                const dataset = dicomParserLib.parseDicom(byteArray);
+        };
+        await Promise.all(workers.map(processOne));
 
-                const rows = dataset.uint16('x00280010');
-                const cols = dataset.uint16('x00280011');
-                const bitsAllocated = dataset.uint16('x00280100') || 8;
-                const bitsStored = dataset.uint16('x00280101') || bitsAllocated;
-                const samplesPerPixel = dataset.uint16('x00280002') || 1;
-                const photometric = (dataset.string('x00280004') || '').trim();
-                const pixelRepresentation = dataset.uint16('x00280103') || 0;
-                const windowCenter = parseFloat(dataset.string('x00281050') || '127');
-                const windowWidth = parseFloat(dataset.string('x00281051') || '255');
-
-                if (!rows || !cols) { results.push({ text: '', success: false }); continue; }
-                const pixelDataElement = dataset.elements['x7fe00010'];
-                if (!pixelDataElement) { results.push({ text: '', success: false }); continue; }
-
-                const pixelData = new Uint8Array(buffer.buffer, pixelDataElement.dataOffset, pixelDataElement.length);
-
-                // Convert to grayscale
-                const grayBuf = new Uint8Array(rows * cols);
-                if (samplesPerPixel === 3) {
-                    const isYBR = photometric.startsWith('YBR');
-                    for (let i = 0; i < rows * cols; i++) {
-                        let r = pixelData[i * 3], g = pixelData[i * 3 + 1], b = pixelData[i * 3 + 2];
-                        if (bitsAllocated === 16) {
-                            r = (pixelData[i*6] | (pixelData[i*6+1]<<8)) >> (bitsStored-8);
-                            g = (pixelData[i*6+2] | (pixelData[i*6+3]<<8)) >> (bitsStored-8);
-                            b = (pixelData[i*6+4] | (pixelData[i*6+5]<<8)) >> (bitsStored-8);
-                        }
-                        if (isYBR) {
-                            const y = r, cb = g, cr = b;
-                            r = Math.max(0, Math.min(255, Math.round(y + 1.402 * (cr - 128))));
-                            g = Math.max(0, Math.min(255, Math.round(y - 0.344136 * (cb - 128) - 0.714136 * (cr - 128))));
-                            b = Math.max(0, Math.min(255, Math.round(y + 1.772 * (cb - 128))));
-                        }
-                        grayBuf[i] = Math.round(0.299 * r + 0.587 * g + 0.114 * b);
-                    }
-                } else {
-                    const isInverted = photometric === 'MONOCHROME1';
-                    const wLow = windowCenter - windowWidth / 2;
-                    const wHigh = windowCenter + windowWidth / 2;
-                    for (let i = 0; i < rows * cols; i++) {
-                        let raw;
-                        if (bitsAllocated === 16) {
-                            raw = pixelData[i*2] | (pixelData[i*2+1]<<8);
-                            if (pixelRepresentation === 1 && raw > 32767) raw -= 65536;
-                        } else { raw = pixelData[i]; }
-                        let gray;
-                        if (raw <= wLow) gray = 0;
-                        else if (raw >= wHigh) gray = 255;
-                        else gray = Math.round(((raw - wLow) / windowWidth) * 255);
-                        if (isInverted) gray = 255 - gray;
-                        grayBuf[i] = gray;
-                    }
-                }
-
-                // Adaptive threshold — isolates bright text from dark US background
-                const histogram = new Uint32Array(256);
-                for (let i = 0; i < rows * cols; i++) histogram[grayBuf[i]]++;
-                let cumul = 0, threshVal = 160;
-                for (let i = 255; i >= 0; i--) {
-                    cumul += histogram[i];
-                    if (cumul / (rows * cols) > 0.15) { threshVal = Math.max(i, 120); break; }
-                }
-
-                // Pass 1: Thresholded full image (PSM 11 sparse text)
-                const threshRgb = new Uint8Array(rows * cols * 3);
-                for (let i = 0; i < rows * cols; i++) {
-                    const v = grayBuf[i] >= threshVal ? 255 : 0;
-                    threshRgb[i*3] = v; threshRgb[i*3+1] = v; threshRgb[i*3+2] = v;
-                }
-
-                // Pass 2: Right 45% crop thresholded (PSM 6 block — measurement panels)
-                const cropX = Math.floor(cols * 0.55);
-                const cropW = cols - cropX;
-                const cropRgb = new Uint8Array(rows * cropW * 3);
-                for (let y = 0; y < rows; y++) {
-                    for (let x = 0; x < cropW; x++) {
-                        const v = grayBuf[y * cols + cropX + x] >= threshVal ? 255 : 0;
-                        const di = (y * cropW + x) * 3;
-                        cropRgb[di] = v; cropRgb[di+1] = v; cropRgb[di+2] = v;
-                    }
-                }
-
-                const ts = Date.now();
-                const threshFile = path.join(os.tmpdir(), `dcm-batch-thresh-${ts}-${fi}.bmp`);
-                const cropFile = path.join(os.tmpdir(), `dcm-batch-crop-${ts}-${fi}.bmp`);
-                fs.writeFileSync(threshFile, makeBmp24(threshRgb, cols, rows));
-                fs.writeFileSync(cropFile, makeBmp24(cropRgb, cropW, rows));
-
-                // 2 passes instead of 4
-                await worker.setParameters({ tessedit_pageseg_mode: '11' });
-                const { data: d1 } = await worker.recognize(threshFile);
-
-                await worker.setParameters({ tessedit_pageseg_mode: '6' });
-                const { data: d2 } = await worker.recognize(cropFile);
-
-                for (const f of [threshFile, cropFile]) { try { fs.unlinkSync(f); } catch {} }
-
-                const ocrText = [d1.text, d2.text].filter(t => t?.trim()).join('\n');
-                const elapsed = Date.now() - fileStart;
-                console.log(`[OCR-batch] File ${fi+1}/${filePaths.length} (${elapsed}ms): ${ocrText.length} chars`);
-                results.push({ text: ocrText, success: true });
-            } catch (err) {
-                console.warn(`[OCR-batch] File ${fi+1} failed:`, err.message);
-                results.push({ text: '', success: false, error: err.message });
-            }
-        }
-
-        try { await worker.terminate(); } catch {}
-        if (currentOcrWorker === worker) currentOcrWorker = null;
-        console.log(`[OCR-batch] Total: ${Date.now() - batchStart}ms for ${filePaths.length} files`);
+        // ── Phase 3: cleanup ──
+        for (const w of workers) { try { await w.terminate(); } catch {} }
+        if (currentOcrWorkers === workers) currentOcrWorkers = [];
+        scheduleOcrCacheSave();
+        console.log(`[OCR-batch] Total: ${Date.now() - batchStart}ms for ${filePaths.length} files (${queue.length} fresh, ${filePaths.length - queue.length} cached)`);
         return results;
     } catch (err) {
-        if (currentOcrWorker) {
-            try { await currentOcrWorker.terminate(); } catch {}
-            currentOcrWorker = null;
+        if (currentOcrWorkers.length) {
+            const old = currentOcrWorkers.slice();
+            currentOcrWorkers = [];
+            for (const w of old) { try { await w.terminate(); } catch {} }
         }
         console.warn('[OCR-batch] Failed:', err.message);
         return [];
     }
 });
+
+/**
+ * Run the existing 2-pass OCR pipeline on a single DICOM file using the
+ * given Tesseract worker. Returns { text }. Throws on hard failures.
+ */
+async function ocrOneDicom(worker, filePath, dicomParserLib, slotIdx) {
+    const os = require('os');
+    const buffer = fs.readFileSync(filePath);
+    const byteArray = new Uint8Array(buffer);
+    const dataset = dicomParserLib.parseDicom(byteArray);
+
+    const rows = dataset.uint16('x00280010');
+    const cols = dataset.uint16('x00280011');
+    const bitsAllocated = dataset.uint16('x00280100') || 8;
+    const bitsStored = dataset.uint16('x00280101') || bitsAllocated;
+    let samplesPerPixel = dataset.uint16('x00280002') || 1;
+    let photometric = (dataset.string('x00280004') || '').trim();
+    const pixelRepresentation = dataset.uint16('x00280103') || 0;
+    const windowCenter = parseFloat(dataset.string('x00281050') || '127');
+    const windowWidth = parseFloat(dataset.string('x00281051') || '255');
+    const transferSyntax = (dataset.string('x00020010') || '1.2.840.10008.1.2').trim();
+
+    if (!rows || !cols) return { text: '' };
+    const pixelDataElement = dataset.elements['x7fe00010'];
+    if (!pixelDataElement) return { text: '' };
+
+    // ── Decode pixel data ──
+    // Uncompressed transfer syntaxes give us raw bytes at dataOffset.
+    // Encapsulated (JPEG/RLE) syntaxes wrap fragments in (FFFE,E000) item
+    // delimiters — we need to extract + decompress.
+    const UNCOMPRESSED_TS = new Set([
+        '1.2.840.10008.1.2',     // Implicit VR LE
+        '1.2.840.10008.1.2.1',   // Explicit VR LE
+        '1.2.840.10008.1.2.2',   // Explicit VR BE
+    ]);
+    const JPEG_BASELINE_TS = new Set([
+        '1.2.840.10008.1.2.4.50', // JPEG Baseline (Process 1)
+        '1.2.840.10008.1.2.4.51', // JPEG Extended (Process 2 & 4)
+    ]);
+
+    let pixelData;
+    if (UNCOMPRESSED_TS.has(transferSyntax)) {
+        pixelData = new Uint8Array(buffer.buffer, pixelDataElement.dataOffset, pixelDataElement.length);
+    } else if (JPEG_BASELINE_TS.has(transferSyntax) && pixelDataElement.fragments?.length) {
+        // Encapsulated — use dicom-parser helper to assemble frame 0 from
+        // ALL its fragments (Philips often splits a single frame across
+        // multiple fragments; taking only fragments[0] truncates the JPEG).
+        try {
+            const jpegJs = require('jpeg-js');
+            let jpegBytes;
+            try {
+                // Preferred: helper concats fragments per BOT/frame
+                const bot = pixelDataElement.basicOffsetTable || [];
+                jpegBytes = dicomParserLib.readEncapsulatedImageFrame(dataset, pixelDataElement, 0, bot);
+            } catch {
+                // Fallback: concat every fragment as one blob (single-frame studies)
+                const total = pixelDataElement.fragments.reduce((s, f) => s + f.length, 0);
+                jpegBytes = new Uint8Array(total);
+                let off = 0;
+                for (const f of pixelDataElement.fragments) {
+                    jpegBytes.set(new Uint8Array(buffer.buffer, f.position, f.length), off);
+                    off += f.length;
+                }
+            }
+            const decoded = jpegJs.decode(jpegBytes, { useTArray: true, formatAsRGBA: false });
+            pixelData = decoded.data; // RGB triplets, 8-bit
+            samplesPerPixel = 3;
+            // After JPEG decode the photometric is RGB regardless of stored value
+            photometric = 'RGB';
+            console.log(`[OCR] JPEG decoded ${decoded.width}x${decoded.height} for ${path.basename(filePath)}`);
+        } catch (jerr) {
+            console.warn(`[OCR] JPEG decode failed for ${path.basename(filePath)} (TS=${transferSyntax}):`, jerr.message);
+            return { text: '' };
+        }
+    } else {
+        // Other compressed syntaxes (JPEG-LS, JPEG 2000, RLE) — would need
+        // heavier decoders. For now skip OCR and let parser handle DICOM tags.
+        console.warn(`[OCR] Unsupported transfer syntax for OCR: ${transferSyntax} (${path.basename(filePath)})`);
+        return { text: '' };
+    }
+
+    // Convert to grayscale
+    const grayBuf = new Uint8Array(rows * cols);
+    if (samplesPerPixel === 3) {
+        const isYBR = photometric.startsWith('YBR');
+        for (let i = 0; i < rows * cols; i++) {
+            let r = pixelData[i * 3], g = pixelData[i * 3 + 1], b = pixelData[i * 3 + 2];
+            if (bitsAllocated === 16) {
+                r = (pixelData[i * 6] | (pixelData[i * 6 + 1] << 8)) >> (bitsStored - 8);
+                g = (pixelData[i * 6 + 2] | (pixelData[i * 6 + 3] << 8)) >> (bitsStored - 8);
+                b = (pixelData[i * 6 + 4] | (pixelData[i * 6 + 5] << 8)) >> (bitsStored - 8);
+            }
+            if (isYBR) {
+                const y = r, cb = g, cr = b;
+                r = Math.max(0, Math.min(255, Math.round(y + 1.402 * (cr - 128))));
+                g = Math.max(0, Math.min(255, Math.round(y - 0.344136 * (cb - 128) - 0.714136 * (cr - 128))));
+                b = Math.max(0, Math.min(255, Math.round(y + 1.772 * (cb - 128))));
+            }
+            grayBuf[i] = Math.round(0.299 * r + 0.587 * g + 0.114 * b);
+        }
+    } else {
+        const isInverted = photometric === 'MONOCHROME1';
+        const wLow = windowCenter - windowWidth / 2;
+        const wHigh = windowCenter + windowWidth / 2;
+        for (let i = 0; i < rows * cols; i++) {
+            let raw;
+            if (bitsAllocated === 16) {
+                raw = pixelData[i * 2] | (pixelData[i * 2 + 1] << 8);
+                if (pixelRepresentation === 1 && raw > 32767) raw -= 65536;
+            } else { raw = pixelData[i]; }
+            let gray;
+            if (raw <= wLow) gray = 0;
+            else if (raw >= wHigh) gray = 255;
+            else gray = Math.round(((raw - wLow) / windowWidth) * 255);
+            if (isInverted) gray = 255 - gray;
+            grayBuf[i] = gray;
+        }
+    }
+
+    // Adaptive thresholds — TWO levels (HIGH + MID) to catch both bright Mindray-style
+    // text and softer GE/Voluson colored text. Plus a raw grayscale pass for Philips/Samsung
+    // anti-aliased text. The MID + raw passes only fire when HIGH+crop yielded no labels,
+    // so Mindray/SonoScape stay at 2 passes per file.
+    const histogram = new Uint32Array(256);
+    for (let i = 0; i < rows * cols; i++) histogram[grayBuf[i]]++;
+    const total = rows * cols;
+    // HIGH: top 15% (Mindray, SonoScape, Siemens — pure white text)
+    let cumul = 0, threshHigh = 160;
+    for (let i = 255; i >= 0; i--) {
+        cumul += histogram[i];
+        if (cumul / total > 0.15) { threshHigh = Math.max(i, 120); break; }
+    }
+    // MID: top 30% (GE Voluson colored text → gray ~100-140, Canon Aplio)
+    cumul = 0;
+    let threshMid = 90;
+    for (let i = 255; i >= 0; i--) {
+        cumul += histogram[i];
+        if (cumul / total > 0.30) { threshMid = Math.max(i, 80); break; }
+    }
+    // If MID and HIGH are too close, MID won't help — skip it
+    const useMid = (threshHigh - threshMid) >= 25;
+
+    // Pass 1: Thresholded full image (PSM 11 sparse text) — HIGH threshold
+    const threshRgb = new Uint8Array(rows * cols * 3);
+    for (let i = 0; i < rows * cols; i++) {
+        const v = grayBuf[i] >= threshHigh ? 255 : 0;
+        threshRgb[i * 3] = v; threshRgb[i * 3 + 1] = v; threshRgb[i * 3 + 2] = v;
+    }
+
+    // Pass 2: Right 45% crop thresholded (PSM 6 block — measurement panels)
+    const cropX = Math.floor(cols * 0.55);
+    const cropW = cols - cropX;
+    const cropRgb = new Uint8Array(rows * cropW * 3);
+    for (let y = 0; y < rows; y++) {
+        for (let x = 0; x < cropW; x++) {
+            const v = grayBuf[y * cols + cropX + x] >= threshHigh ? 255 : 0;
+            const di = (y * cropW + x) * 3;
+            cropRgb[di] = v; cropRgb[di + 1] = v; cropRgb[di + 2] = v;
+        }
+    }
+
+    // Use per-worker tmp file names so parallel workers don't collide
+    const tag = `${process.pid}-${Date.now()}-${slotIdx}-${Math.floor(Math.random() * 1e6)}`;
+    const threshFile = path.join(os.tmpdir(), `dcm-batch-thresh-${tag}.bmp`);
+    const cropFile = path.join(os.tmpdir(), `dcm-batch-crop-${tag}.bmp`);
+    const rawFile = path.join(os.tmpdir(), `dcm-batch-raw-${tag}.bmp`);
+    const midFile = useMid ? path.join(os.tmpdir(), `dcm-batch-mid-${tag}.bmp`) : null;
+    fs.writeFileSync(threshFile, makeBmp24(threshRgb, cols, rows));
+    fs.writeFileSync(cropFile, makeBmp24(cropRgb, cropW, rows));
+
+    const LABEL_HIT = /\b(BPD|HC|AC|FL|CRL|EFW|GA|FHR|AFI|HL|EDD|RI|PI|PSV|EDV|Vel|HR)\b|\d+\s*(cm\/s|cm|mm|ml)\b/i;
+    const collected = [];
+    try {
+        await worker.setParameters({ tessedit_pageseg_mode: '11' });
+        const { data: d1 } = await worker.recognize(threshFile);
+        collected.push(d1.text || '');
+
+        await worker.setParameters({ tessedit_pageseg_mode: '6' });
+        const { data: d2 } = await worker.recognize(cropFile);
+        collected.push(d2.text || '');
+
+        // Rescue passes only if HIGH-threshold passes found no labels/units.
+        // Costs ~1-3s extra but unlocks Philips/GE/Samsung — and is cached afterwards.
+        const needsRescue = !LABEL_HIT.test(collected.join('\n'));
+
+        if (needsRescue && useMid) {
+            const midRgb = new Uint8Array(rows * cols * 3);
+            for (let i = 0; i < rows * cols; i++) {
+                const v = grayBuf[i] >= threshMid ? 255 : 0;
+                midRgb[i * 3] = v; midRgb[i * 3 + 1] = v; midRgb[i * 3 + 2] = v;
+            }
+            fs.writeFileSync(midFile, makeBmp24(midRgb, cols, rows));
+            const { data: dm } = await worker.recognize(midFile);
+            collected.push(dm.text || '');
+        }
+
+        if (needsRescue && !LABEL_HIT.test(collected.join('\n'))) {
+            // Raw grayscale rescue (Philips HD15, Samsung Hera, Voluson)
+            const rawRgb = new Uint8Array(rows * cols * 3);
+            for (let i = 0; i < rows * cols; i++) {
+                const v = grayBuf[i];
+                rawRgb[i * 3] = v; rawRgb[i * 3 + 1] = v; rawRgb[i * 3 + 2] = v;
+            }
+            fs.writeFileSync(rawFile, makeBmp24(rawRgb, cols, rows));
+            const { data: d3 } = await worker.recognize(rawFile);
+            collected.push(d3.text || '');
+        }
+
+        const text = collected.filter(t => t && t.trim()).join('\n');
+        return { text };
+    } finally {
+        const tmps = [threshFile, cropFile];
+        if (fs.existsSync(rawFile)) tmps.push(rawFile);
+        if (midFile && fs.existsSync(midFile)) tmps.push(midFile);
+        for (const f of tmps) { try { fs.unlinkSync(f); } catch {} }
+    }
+}
 
 // Start network receiver on app startup
 // NOTE: Port 3458 is now owned by Orthanc (DICOM SCP with AE=ONECLICKZ).
