@@ -65,8 +65,10 @@ export async function fromNodeOcr(filePaths?: string[]): Promise<{ readings: Rea
     }
   }
 
-  // ── Approach 2: Canvas-based OCR (fallback) ──
-  console.log('[fromNodeOcr] Falling back to canvas-based OCR');
+  // ── Approach 2: Off-screen cornerstone render at FULL resolution (fallback) ──
+  // This covers any DICOM that main.js couldn't decompress (JPEG 2000 / JPEG-LS / RLE).
+  // We don't depend on on-screen viewports — those may be tiny grid thumbnails.
+  console.log('[fromNodeOcr] Falling back to off-screen full-resolution cornerstone render');
 
   const cornerstone = (window as any).__cornerstone ?? (window as any).cornerstone;
   if (!cornerstone) {
@@ -74,20 +76,49 @@ export async function fromNodeOcr(filePaths?: string[]): Promise<{ readings: Rea
     return { readings: [], warnings };
   }
 
-  // Collect canvas crops from all rendered viewports
   const base64Images: string[] = [];
-  const elements = document.querySelectorAll('[data-viewport-index], [data-cr-viewport-index]');
-  console.log(`[fromNodeOcr] Found ${elements.length} viewport elements`);
 
-  for (const el of Array.from(elements)) {
-    try {
-      const enabled = cornerstone.getEnabledElement(el as HTMLElement);
-      if (!enabled?.canvas) { console.log('[fromNodeOcr] Viewport has no canvas'); continue; }
-      console.log(`[fromNodeOcr] Canvas: ${enabled.canvas.width}x${enabled.canvas.height}`);
-      const crops = cropAndProcess(enabled.canvas);
-      base64Images.push(...crops);
-    } catch {
-      // skip unready element
+  // Prefer rendering each file path full-size (universal, format-agnostic).
+  // file:// is blocked by Electron CSP — fetch bytes via IPC, wrap in a
+  // blob: URL, and feed that to the wadouri loader (works for any TS the
+  // cornerstone codecs can handle: JPEG 2000, JPEG-LS, RLE, etc.).
+  if (filePaths && filePaths.length > 0) {
+    for (const fp of filePaths.slice(0, 30)) {
+      let blobUrl: string | null = null;
+      try {
+        const buf: ArrayBuffer = await api.invoke('read-file-buffer', fp);
+        if (!buf || (buf as any).byteLength === 0) continue;
+        const blob = new Blob([buf], { type: 'application/dicom' });
+        blobUrl = URL.createObjectURL(blob);
+        const wadouri = `wadouri:${blobUrl}`;
+        const image = await cornerstone.loadAndCacheImage(wadouri);
+        if (!image?.width || !image?.height) continue;
+        const canvas = document.createElement('canvas');
+        canvas.width = image.width;
+        canvas.height = image.height;
+        cornerstone.renderToCanvas(canvas, image);
+        console.log(`[fromNodeOcr] Off-screen render ${canvas.width}x${canvas.height} for ${fp.split(/[\\/]/).pop()}`);
+        const crops = cropAndProcess(canvas);
+        base64Images.push(...crops);
+      } catch (err: any) {
+        console.warn('[fromNodeOcr] off-screen render failed:', err?.message || err);
+      } finally {
+        if (blobUrl) URL.revokeObjectURL(blobUrl);
+      }
+    }
+  }
+
+  // Last-resort: still try on-screen viewports if off-screen produced nothing
+  if (base64Images.length === 0) {
+    const elements = document.querySelectorAll('[data-viewport-index], [data-cr-viewport-index]');
+    console.log(`[fromNodeOcr] Off-screen yielded nothing; trying ${elements.length} on-screen viewport elements`);
+    for (const el of Array.from(elements)) {
+      try {
+        const enabled = cornerstone.getEnabledElement(el as HTMLElement);
+        if (!enabled?.canvas) continue;
+        const crops = cropAndProcess(enabled.canvas);
+        base64Images.push(...crops);
+      } catch { /* skip */ }
     }
   }
 

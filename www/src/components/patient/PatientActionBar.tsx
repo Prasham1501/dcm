@@ -3,6 +3,7 @@ import JSZip from 'jszip';
 import { usePatientStore } from '@/stores/patientStore';
 import { openCRViewerPopup } from '@/stores/crViewerStore';
 import { localFileToImageId } from '@/lib/dicomLoader';
+import { convertImagesToDicom, pickImageFiles } from '@/lib/imageToDicom';
 import { EditPatientModal } from './EditPatientModal';
 import { CreatePatientModal } from './CreatePatientModal';
 import { ConfirmDialog } from '../shared/ConfirmDialog';
@@ -52,6 +53,7 @@ export function PatientActionBar() {
     selectedPatient,
     editPatient,
     createPatient,
+    appendFilesToPatient,
     deleteSelected,
     importFolder,
     syncing,
@@ -64,6 +66,7 @@ export function PatientActionBar() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [importingNonDicom, setImportingNonDicom] = useState(false);
 
   const handleImportDicom = async () => {
     const api = (window as any).electronAPI;
@@ -89,6 +92,47 @@ export function PatientActionBar() {
       alert('Import failed: ' + (err.message || 'Unknown error'));
     }
     setImporting(false);
+  };
+
+  /**
+   * #4.3 — append JPG/JPEG/PNG/BMP files to the selected patient. The PHP
+   * converter receives the patient's existing metadata so the produced
+   * .dcm files belong to the same study and pass tag validation.
+   */
+  const handleImportNonDicom = async () => {
+    if (!selectedPatient) { alert('Select a patient first'); return; }
+    setImportingNonDicom(true);
+    try {
+      const files = await pickImageFiles();
+      if (!files || files.length === 0) return; // user cancelled or no images selected
+      const meta = {
+        patient_name:         selectedPatient.patientName || '',
+        patient_id:           selectedPatient.patientId   || '',
+        age:                  selectedPatient.age         || '',
+        sex:                  String(selectedPatient.sex  || ''),
+        modality:             selectedPatient.modality    || 'OT',
+        study_description:    selectedPatient.studyDescription   || '',
+        referring_physician:  selectedPatient.referringPhysician || '',
+        accession_number:     selectedPatient.accessionNumber    || '',
+      };
+      const result = await convertImagesToDicom(files, meta);
+      if (result.files.length === 0) {
+        alert('No images were converted.' + (result.errors[0] ? `\n\n${result.errors[0]}` : ''));
+        return;
+      }
+      appendFilesToPatient(selectedPatient.id, result.files);
+      const note = result.errors.length ? `\n\n${result.errors.length} file(s) failed.` : '';
+      alert(`Imported ${result.files.length} image(s) into ${selectedPatient.patientName}.${note}`);
+    } catch (err: any) {
+      const raw = String(err?.message || 'Unknown error');
+      const isApacheDown = err?.code === 'APACHE_DOWN' || /proxy error|ECONNREFUSED|Failed to fetch|NetworkError/i.test(raw);
+      const hint = isApacheDown
+        ? '\n\nThe conversion service is not reachable. Please make sure XAMPP (Apache + PHP) is running and try again.'
+        : '';
+      alert('Import failed: ' + raw + hint);
+    } finally {
+      setImportingNonDicom(false);
+    }
   };
 
 
@@ -180,6 +224,11 @@ export function PatientActionBar() {
         />
         <ActionButton label="Create new" onClick={() => setShowCreateModal(true)} />
         <ActionButton label={importing || syncing ? `Importing${syncProgress ? ` (${syncProgress.processed}/${syncProgress.total})` : '...'}` : 'Import dicom'} onClick={handleImportDicom} />
+        <ActionButton
+          label={importingNonDicom ? 'Importing images…' : 'Import Non-DICOM Files'}
+          onClick={handleImportNonDicom}
+          disabled={!selectedPatient || importingNonDicom}
+        />
         <ActionButton label="Select all" onClick={selectAll} />
         <ActionButton
           label="Delete selected"
@@ -259,15 +308,18 @@ function ActionButton({
   label,
   onClick,
   variant = 'default',
+  disabled = false,
 }: {
   label: string;
   onClick?: () => void;
   variant?: 'default' | 'danger';
+  disabled?: boolean;
 }) {
   return (
     <button
       onClick={onClick}
-      className={`px-3 2xl:px-4 py-1 2xl:py-1.5 text-xs 2xl:text-sm font-semibold border-2 rounded transition-colors ${
+      disabled={disabled}
+      className={`px-3 2xl:px-4 py-1 2xl:py-1.5 text-xs 2xl:text-sm font-semibold border-2 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
         variant === 'danger'
           ? 'border-red-500 text-red-500 bg-app-bg hover:bg-red-500 hover:text-white'
           : 'border-app-accent text-app-accent bg-app-bg hover:bg-app-accent hover:text-white'

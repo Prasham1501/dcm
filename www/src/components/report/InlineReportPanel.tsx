@@ -553,9 +553,25 @@ export function InlineReportPanel() {
                 ({isHighConfidence ? 'DICOM' : readingSet?.source === 'vision-llm' ? 'AI' : 'OCR'})
               </span>
             </>
-          ) : (
-            <span className="text-app-text-secondary text-[10px]">{extractStatus === 'failed' ? 'Scan failed' : 'No measurements'}</span>
-          )}
+          ) : (() => {
+            // Non-USG modalities (CR/DX/CT/MR/MG/XA…) don't burn measurements into
+            // pixels, so "No measurements" is misleading — surface the modality instead.
+            const modality = (dicomMeta?.modality || '').toUpperCase();
+            const isUsg = modality === 'US' || modality === 'USG';
+            if (extractStatus === 'failed') {
+              return <span className="text-app-text-secondary text-[10px]">Scan failed</span>;
+            }
+            if (modality && !isUsg) {
+              const bodyPart = dicomMeta?.bodyPart || dicomMeta?.studyDescription || '';
+              return (
+                <span className="text-app-text-secondary text-[10px]">
+                  Modality: <span className="text-app-text font-medium">{modality}</span>
+                  {bodyPart && <> · {bodyPart}</>} · use editor for findings
+                </span>
+              );
+            }
+            return <span className="text-app-text-secondary text-[10px]">No measurements</span>;
+          })()}
         </div>
         <div className="flex items-center gap-1">
           {extractStatus !== 'running' && (
@@ -970,6 +986,28 @@ export function InlineReportPanel() {
               <Sparkles className="w-3.5 h-3.5 text-app-accent" />
               <span className="text-xs font-bold text-app-text">Extracted Measurements</span>
               <span className="text-[10px] text-app-text-secondary">({readingSet!.readings.length})</span>
+              {(() => {
+                const src = readingSet!.source;
+                const isTag = src === 'dicom-sr';
+                const label = isTag ? 'Machine tags' : src === 'pixel-ocr' ? 'OCR' : src === 'vision-llm' ? 'AI Vision' : src;
+                const tooltip = isTag
+                  ? 'Read directly from DICOM tags — most accurate'
+                  : src === 'pixel-ocr'
+                    ? 'Extracted by OCR from burnt-in pixel text — verify values'
+                    : 'Extracted by AI vision model — verify values';
+                return (
+                  <span
+                    title={tooltip}
+                    className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${
+                      isTag
+                        ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30'
+                        : 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30'
+                    }`}
+                  >
+                    {isTag ? '✓ ' : ''}{label}
+                  </span>
+                );
+              })()}
             </div>
             <button
               onClick={() => setShowReadings(false)}

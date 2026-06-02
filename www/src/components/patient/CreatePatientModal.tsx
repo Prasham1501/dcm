@@ -1,8 +1,7 @@
 import { useState, useRef, useMemo } from 'react';
 import type { Patient } from '@/types/patient';
 import { listReferringPhysicians, rememberReferringPhysician } from '@/lib/referringPhysicians';
-
-const IMAGE_EXTS = /\.(png|jpe?g|bmp)$/i;
+import { convertImagesToDicom, IMAGE_EXTS } from '@/lib/imageToDicom';
 
 /** Standard DICOM modality codes for the New Patient dropdown.
  *  (DICOM PS3.3 C.7.3.1.1.1 — the common imaging set.) */
@@ -30,46 +29,6 @@ function bmpAwareMime(name: string): string {
 
 function loadReferringPhysicians(): string[] {
   return listReferringPhysicians();
-}
-
-/** Upload image files to the PHP converter, returns .dcm file paths.
- *  Retries once on a 502 (proxy / Apache hiccup) so a transient XAMPP
- *  blip during a multi-file upload doesn't kill the whole submission. */
-async function convertImagesToDicom(
-  imageFiles: File[],
-  meta: { patient_name: string; patient_id: string; age: string; sex: string; modality: string; study_description: string; referring_physician: string; accession_number: string },
-): Promise<{ files: string[]; errors: string[] }> {
-  const buildForm = () => {
-    const fd = new FormData();
-    for (const f of imageFiles) fd.append('images[]', f);
-    for (const [k, v] of Object.entries(meta)) fd.append(k, v);
-    return fd;
-  };
-
-  let lastErr: any = null;
-  for (let attempt = 0; attempt < 2; attempt++) {
-    try {
-      const resp = await fetch('/api/dicom/convert-image.php', { method: 'POST', body: buildForm() });
-      let data: any = null;
-      try { data = await resp.json(); } catch { /* server didn't return JSON */ }
-      if (resp.ok && data?.ok) return { files: data.files ?? [], errors: data.errors ?? [] };
-      // Server replied with an error
-      const msg = data?.error || `HTTP ${resp.status}`;
-      const code = data?.code || (resp.status === 502 ? 'APACHE_DOWN' : 'PROXY_ERROR');
-      lastErr = Object.assign(new Error(msg), { code });
-      // Retry only on transient proxy/Apache problems
-      if (resp.status === 502 && attempt === 0) { await new Promise((r) => setTimeout(r, 800)); continue; }
-      throw lastErr;
-    } catch (e: any) {
-      lastErr = e;
-      if (attempt === 0 && /Failed to fetch|NetworkError|ECONNREFUSED/i.test(String(e?.message || ''))) {
-        await new Promise((r) => setTimeout(r, 800));
-        continue;
-      }
-      throw e;
-    }
-  }
-  throw lastErr ?? new Error('Image conversion failed');
 }
 
 interface CreatePatientModalProps {
@@ -216,6 +175,7 @@ export function CreatePatientModal({ onSave, onClose }: CreatePatientModalProps)
     // Convert PNG/JPEG files to DICOM first
     if (imageFiles.length > 0) {
       setConverting(true);
+      let conversionFailed = false;
       try {
         const result = await convertImagesToDicom(imageFiles, {
           patient_name: form.patientName,
@@ -232,16 +192,20 @@ export function CreatePatientModal({ onSave, onClose }: CreatePatientModalProps)
           console.warn('[CreatePatient] Conversion warnings:', result.errors);
         }
       } catch (err: any) {
+        conversionFailed = true;
         const raw = String(err?.message || 'Unknown error');
         const isApacheDown = err?.code === 'APACHE_DOWN' || /proxy error|ECONNREFUSED|Failed to fetch|NetworkError/i.test(raw);
         const hint = isApacheDown
           ? '\n\nThe conversion service is not reachable. Please make sure XAMPP (Apache + PHP) is running on this machine, then try again.'
-          : '';
+          : '\n\nThe form has been kept open — adjust the file selection and try again.';
         alert('Image conversion failed: ' + raw + hint);
+      } finally {
+        // Always re-enable the form, even if the failure path threw inside
+        // the catch (e.g. alert blocked by another modal). Without this the
+        // submit button stays disabled and the user can't retry.
         setConverting(false);
-        return;
       }
-      setConverting(false);
+      if (conversionFailed) return;
     }
 
     const today = new Date();

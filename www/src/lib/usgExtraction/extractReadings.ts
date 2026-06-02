@@ -210,7 +210,10 @@ function deduplicateReadings(readings: Reading[]): Reading[] {
   const GENERIC_VESSELS = ['Lower Ext. Artery', 'Upper Ext. Artery'];
 
   // Measurement suffixes used in vessel-prefixed keys
-  const MEASUREMENT_SUFFIXES = ['_Vel', '_angle', '_PSV', '_EDV', '_RI', '_PI', '_TAMV', '_SD', '_IMT'];
+  const MEASUREMENT_SUFFIXES = ['_Vel', '_angle', '_PSV', '_EDV', '_RI', '_PI', '_TAMV', '_SD', '_IMT', '_length', '_width', '_depth', '_height'];
+  // Bare organ-dimension keys (no prefix) — considered "generic" and dropped
+  // when an organ-prefixed equivalent with the same value already exists.
+  const BARE_DIM_KEYS = new Set(['length', 'width', 'depth', 'height']);
 
   const seen = new Set<string>();
   const baseKeyCounts = new Map<string, number>();
@@ -256,6 +259,15 @@ function deduplicateReadings(readings: Reading[]): Reading[] {
 
   const filtered = kept.filter(r => {
     const baseKey = r.key.replace(/_\d+$/, '');
+    // Drop bare 'length'/'width'/'depth' when a Vessel_length / Organ_length
+    // with the same value also exists.
+    if (BARE_DIM_KEYS.has(baseKey)) {
+      const normValue = String(r.value).trim().toLowerCase();
+      if (specificValues.has(`_${baseKey}::${normValue}`)) {
+        console.log(`[dedup] Dropping bare dim: ${r.key}=${r.value} (organ-prefixed exists)`);
+        return false;
+      }
+    }
     const isGeneric = GENERIC_VESSELS.some(gv => baseKey.startsWith(gv + '_'));
     if (!isGeneric) return true;
 

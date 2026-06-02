@@ -93,6 +93,7 @@ interface PatientState {
   deleteOldStudies: (months: number) => Promise<void>;
   editPatient: (id: string, updates: Partial<Patient>) => void;
   createPatient: (patient: Patient) => void;
+  appendFilesToPatient: (id: string, newFiles: string[]) => void;
   deleteSelected: () => void;
   importPatients: (newPatients: Patient[]) => void;
   exportSelected: () => Patient[];
@@ -765,6 +766,34 @@ export const usePatientStore = create<PatientState>()(
         filteredPatients: patients.filter((p) => matchesFilter(p, state.filters)),
         newStudyIds,
         totalRecords: patients.length,
+      };
+    });
+  },
+
+  /**
+   * Append additional file paths (typically freshly-converted .dcm paths from
+   * the JPG/PNG converter) to an existing patient row. Used by the
+   * "Import Non-DICOM Files" action when adding images to a study that was
+   * created earlier with no files.
+   */
+  appendFilesToPatient: (id: string, newFiles: string[]) => {
+    if (!newFiles || newFiles.length === 0) return;
+    set((state) => {
+      const patients = state.patients.map((p) => {
+        if (p.id !== id) return p;
+        const existing = p.filePaths || [];
+        // Dedupe by absolute path so re-importing the same image is a no-op
+        const seen = new Set(existing);
+        const merged = [...existing];
+        for (const fp of newFiles) if (!seen.has(fp)) { merged.push(fp); seen.add(fp); }
+        return { ...p, filePaths: merged, images: merged.length };
+      });
+      return {
+        patients,
+        filteredPatients: patients.filter((p) => matchesFilter(p, state.filters)),
+        selectedPatient: state.selectedPatient?.id === id
+          ? patients.find((p) => p.id === id) || state.selectedPatient
+          : state.selectedPatient,
       };
     });
   },

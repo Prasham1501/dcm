@@ -7,18 +7,27 @@ const ALIASES: Array<{
   label: string;
   category: TemplateKey;
 }> = [
-  // Obstetric
-  { patterns: [/\bBPD\b/i], key: 'BPD', label: 'Biparietal Diameter', category: 'obstetric' },
-  { patterns: [/\bHC\b/i, /head\s*circ/i], key: 'HC', label: 'Head Circumference', category: 'obstetric' },
-  { patterns: [/\bAC\b/i, /abd\s*circ/i, /abdominal\s*circ/i], key: 'AC', label: 'Abdominal Circumference', category: 'obstetric' },
-  { patterns: [/\bFL\b/i, /femur\s*len/i], key: 'FL', label: 'Femur Length', category: 'obstetric' },
-  { patterns: [/\bCRL\b/i, /crown[\s-]*rump/i], key: 'CRL', label: 'Crown Rump Length', category: 'obstetric' },
-  { patterns: [/\bEFW\b/i, /est\.?\s*fetal\s*wt/i, /estimated\s*fetal\s*weight/i], key: 'EFW', label: 'Estimated Fetal Weight', category: 'obstetric' },
-  { patterns: [/\bGA\b/i, /gest\.?\s*age/i, /gestational\s*age/i], key: 'GA', label: 'Gestational Age', category: 'obstetric' },
-  { patterns: [/\bFHR\b/i, /fetal\s*heart\s*rate/i], key: 'FHR', label: 'Fetal Heart Rate', category: 'obstetric' },
-  { patterns: [/\bAFI\b/i, /amniotic\s*fluid/i], key: 'AFI', label: 'Amniotic Fluid Index', category: 'obstetric' },
-  { patterns: [/\bHL\b/i, /humerus\s*len/i], key: 'HL', label: 'Humerus Length', category: 'obstetric' },
-  { patterns: [/\bEDD\b/i, /est\.?\s*due\s*date/i, /estimated\s*delivery/i], key: 'EDD', label: 'Estimated Due Date', category: 'obstetric' },
+  // Obstetric — patterns cover Mindray, GE Voluson/Logiq, Philips HD15/iU22/EPIQ,
+  // Samsung Hera, Canon Aplio (Toshiba), Siemens Acuson, Hitachi/Aloka.
+  // Hitachi appends sequence numbers like "BPD(1)"; Voluson appends formula like "EFW(Hadlock)".
+  { patterns: [/\bBPD\b/i, /\bB\.P\.D\b/i, /\bBPD\(\d+\)/i], key: 'BPD', label: 'Biparietal Diameter', category: 'obstetric' },
+  { patterns: [/\bHC\b/i, /head\s*circ/i, /\bH\.C\b/i, /\bHC\(\d+\)/i, /\bHC\(HAD\)/i], key: 'HC', label: 'Head Circumference', category: 'obstetric' },
+  { patterns: [/\bAC\b/i, /abd\s*circ/i, /abdominal\s*circ/i, /\bA\.C\b/i, /\bAC\(\d+\)/i, /\bAC\(HAD\)/i], key: 'AC', label: 'Abdominal Circumference', category: 'obstetric' },
+  { patterns: [/\bFL\b/i, /femur\s*len/i, /\bfemur\b/i, /\bF\.L\b/i, /\bFL\(\d+\)/i], key: 'FL', label: 'Femur Length', category: 'obstetric' },
+  { patterns: [/\bCRL\b/i, /crown[\s-]*rump/i, /\bC\.R\.L\b/i, /\bCRL\(\d+\)/i], key: 'CRL', label: 'Crown Rump Length', category: 'obstetric' },
+  { patterns: [/\bEFW\b/i, /est\.?\s*fetal\s*wt/i, /estimated\s*fetal\s*weight/i, /\bEFW\([A-Za-z]+\)/i, /Hadlock\s*EFW/i], key: 'EFW', label: 'Estimated Fetal Weight', category: 'obstetric' },
+  { patterns: [/\bGA\b/i, /gest\.?\s*age/i, /gestational\s*age/i, /\bGA\([A-Za-z]+\)/i, /\bAUA\b/i, /\bLMP\b/i], key: 'GA', label: 'Gestational Age', category: 'obstetric' },
+  { patterns: [/\bFHR\b/i, /fetal\s*heart\s*rate/i, /fetal\s*HR\b/i, /\bFetal\b.*\bHR\b/i], key: 'FHR', label: 'Fetal Heart Rate', category: 'obstetric' },
+  { patterns: [/\bAFI\b/i, /amniotic\s*fluid/i, /\bMVP\b/i, /max\s*vert\s*pocket/i], key: 'AFI', label: 'Amniotic Fluid Index', category: 'obstetric' },
+  { patterns: [/\bHL\b/i, /humerus\s*len/i, /\bhumerus\b/i], key: 'HL', label: 'Humerus Length', category: 'obstetric' },
+  { patterns: [/\bEDD\b/i, /est\.?\s*due\s*date/i, /estimated\s*delivery/i, /\bEDC\b/i, /estimated\s*due\s*conception/i], key: 'EDD', label: 'Estimated Due Date', category: 'obstetric' },
+  { patterns: [/\bNT\b/i, /nuchal\s*translucency/i], key: 'NT', label: 'Nuchal Translucency', category: 'obstetric' },
+  { patterns: [/\bNB\b/i, /nasal\s*bone/i], key: 'NB', label: 'Nasal Bone', category: 'obstetric' },
+  { patterns: [/\bAPTD\b/i, /\bA\.P\.T\.D\b/i], key: 'APTD', label: 'Antero-Posterior Trunk Diameter', category: 'obstetric' },
+  { patterns: [/\bTTD\b/i, /\bT\.T\.D\b/i], key: 'TTD', label: 'Transverse Trunk Diameter', category: 'obstetric' },
+  // Cisterna Magna — must NOT be preceded by a digit (otherwise we'd match the 'cm' unit)
+  { patterns: [/(?<![\d.])\bCM\b\s*[:=]?\s*(?=\d)/i, /cisterna\s*magna/i], key: 'CM', label: 'Cisterna Magna', category: 'obstetric' },
+  { patterns: [/\bOFD\b/i, /occipito[\s-]*frontal/i], key: 'OFD', label: 'Occipito-Frontal Diameter', category: 'obstetric' },
 
   // Abdominal
   { patterns: [/liver\s*len/i, /liver\s*size/i], key: 'liver_length', label: 'Liver Length', category: 'abdominal' },
@@ -130,11 +139,23 @@ export function parseLine(line: string, labelHint?: { key: string; label: string
     // Numbered Doppler readings: "1 Vel 63.61 cm/s" → "Vel 63.61 cm/s"
     .replace(/^\d+\s+(Vel|PSV|EDV|RI|PI|TAMV|Angle)\b/i, '$1')
     // Insert space between label and number when concatenated: "AC31.04" → "AC 31.04"
-    .replace(/(AC|HC|FL|BPD|CRL|EFW|AFI|HL|PSV|EDV|Vel|TAMV|IMT)(\d)/gi, '$1 $2')
+    .replace(/(AC|HC|FL|BPD|CRL|EFW|AFI|HL|PSV|EDV|Vel|TAMV|IMT|HR|FHR|NT|NB|OFD|APTD|TTD)(\d)/gi, '$1 $2')
     // "31.04m75%" → "31.04cm 75%" (garbled 'c' before 'm')
     .replace(/(\d+\.\d+)m(\d+%)/g, '$1cm $2')
     // GA OCR: "35wo0d" → "35w0d" (OCR misread '0' as 'o' before digit+d)
-    .replace(/(\d+)w[oO](\d+d)/gi, '$1w$2');
+    .replace(/(\d+)w[oO](\d+d)/gi, '$1w$2')
+    // Philips/GE "=" separator: "BPD=5.2cm" → "BPD 5.2cm"; "GA=23w4d" → "GA 23w4d"
+    .replace(/([A-Za-z\)])\s*=\s*(\d)/g, '$1 $2')
+    // Canon Aplio dot leaders: "BPD ........ 5.2 cm" → "BPD 5.2 cm"
+    .replace(/\s*\.{2,}\s*/g, ' ')
+    // Voluson/GE percentile suffix: "5.2cm(70%)" or "5.2 cm (70%)" → "5.2cm" (drop percentile)
+    .replace(/(\d+(?:\.\d+)?\s*(?:cm|mm|g|kg|ml))\s*\(\s*\d+\s*%\s*\)/gi, '$1')
+    // Hitachi/Aloka sequence parens: "BPD(1) 5.2cm" → "BPD 5.2cm"
+    .replace(/\b(BPD|HC|AC|FL|CRL|EFW|HL|GA|NT|FHR)\(\d+\)\b/gi, '$1')
+    // Voluson formula tag: "EFW(Hadlock) 2719g" → "EFW 2719g"; "GA(AUA) 23w4d" → "GA 23w4d"
+    .replace(/\b(EFW|GA|HC|AC|BPD|FL)\([A-Za-z]+\)/gi, '$1')
+    // Standalone confidence interval: "5.2 cm ± 0.3" → "5.2 cm" (drop ± part)
+    .replace(/\s*[±+\-]\s*\d+(?:\.\d+)?\s*(?:cm|mm)?\b/gi, '');
 
   // Dimension format: "5.2 x 3.1 x 2.8 cm" or "5.2×3.1 cm"
   const dimMatch = cleaned.match(
@@ -195,6 +216,27 @@ export function parseLine(line: string, labelHint?: { key: string; label: string
   const sdMatch = cleaned.match(/\bS\s*\/?\s*D\s*[=:]?\s*(\d+\.\d+)/i);
   if (sdMatch) {
     return { key: 'SD', label: 'S/D Ratio', value: parseFloat(sdMatch[1]), unit: '', confidence: 0.85, category: 'vascular', rawText: line };
+  }
+
+  // ── Organ-context dimension labels (Length / Width / Depth) ──
+  // Philips/GE renal/abdo studies show "Length 9.74 cm" or "X Length 3.78 cm".
+  // We treat these as generic length/width/depth — the parseTextBlock loop will
+  // attach the active organ context (RT Kidney, Liver, etc.) afterwards.
+  const dimLabelMatch = cleaned.match(/(?:\bX\s+)?\b(Length|Width|Depth|Height)\b\s*[:=]?\s*(-?\d+\.?\d*)\s*(cm|mm)\b/i);
+  if (dimLabelMatch) {
+    const isCross = /\bX\s+(?:Length|Width|Depth)/i.test(cleaned);
+    const labelWord = dimLabelMatch[1].toLowerCase();
+    // "X Length" on a kidney/organ usually means the cross-axis (width)
+    const key = isCross && labelWord === 'length' ? 'width' : labelWord;
+    const label = key.charAt(0).toUpperCase() + key.slice(1);
+    return {
+      key, label,
+      value: parseFloat(dimLabelMatch[2]),
+      unit: normalizeUnit(dimLabelMatch[3]),
+      confidence: 0.78,
+      category: 'abdominal',
+      rawText: line,
+    };
   }
 
   // ── Generic measurement: "BPD 5.2 cm" / "Vel 63.61 cm/s" ──
@@ -263,6 +305,18 @@ const VESSEL_PATTERNS: Array<{ pattern: RegExp; name: string }> = [
   // Renal
   { pattern: /renal\s*artery/i, name: 'Renal A.' },
   { pattern: /\bMRA\b/, name: 'Main Renal A.' },
+  // Organ context for abdominal scans — used to label generic Length/Width measurements
+  { pattern: /rt\.?\s*kidn(?:ey)?|right\s*kidn(?:ey)?|\bRT\s*KIDN\b/i, name: 'RT Kidney' },
+  { pattern: /lt\.?\s*kidn(?:ey)?|left\s*kidn(?:ey)?|\bLT\s*KIDN\b/i, name: 'LT Kidney' },
+  { pattern: /\bliver\b/i, name: 'Liver' },
+  { pattern: /\bspleen\b/i, name: 'Spleen' },
+  { pattern: /\bpancreas\b/i, name: 'Pancreas' },
+  { pattern: /gallbladder|\bGB\b/i, name: 'Gallbladder' },
+  { pattern: /\bprostate\b/i, name: 'Prostate' },
+  { pattern: /\buterus\b/i, name: 'Uterus' },
+  { pattern: /\bovary\b/i, name: 'Ovary' },
+  { pattern: /\bbladder\b/i, name: 'Bladder' },
+  { pattern: /\bthyroid\b/i, name: 'Thyroid' },
   // Aorta
   { pattern: /\baorta\b/i, name: 'Aorta' },
   // Generic (catch-all for unrecognized arteries/veins)
@@ -289,6 +343,9 @@ function detectVesselName(line: string): string | null {
 
 /** Parse a block of text (e.g. OCR output) into Readings */
 export function parseTextBlock(text: string): { readings: Reading[]; warnings: string[] } {
+  // Normalize Philips/GE cross-axis notation: "X Length" / "X Width" is the
+  // perpendicular measurement on an organ — treat as Width regardless of label.
+  text = text.replace(/\bX\s+Length\b/gi, 'Width').replace(/\bXlength\b/gi, 'Width');
   const warnings: string[] = [];
   const seen = new Map<string, Reading>();
   const keyCount = new Map<string, number>();
@@ -300,7 +357,7 @@ export function parseTextBlock(text: string): { readings: Reading[]; warnings: s
   const rawLines = text.split(/[\n\r,;]+/);
   // Then further split lines that have multiple measurements concatenated (e.g. "BPD 92mm HC 328mm AC 310mm")
   const lines: string[] = [];
-  const MEAS_LABELS = /(?=\b(?:BPD|HC|AC|FL|CRL|EFW|FHR|AFI|HL|NT|NB|IT|GA|EDD|PSV|EDV|RI|PI|TAMV|IMT|Vel)\b)/i;
+  const MEAS_LABELS = /(?=\b(?:BPD|HC|AC|FL|CRL|EFW|FHR|AFI|HL|NT|NB|IT|GA|EDD|EDC|PSV|EDV|RI|PI|TAMV|IMT|Vel|OFD|APTD|TTD|AUA|LMP|X\s+Length|Length|Width|Depth|Height)\b)/i;
   for (const raw of rawLines) {
     const parts = raw.split(MEAS_LABELS).map(s => s.trim()).filter(s => s.length > 0);
     if (parts.length > 1) {
@@ -323,7 +380,7 @@ export function parseTextBlock(text: string): { readings: Reading[]; warnings: s
     if (r) {
       pendingLabel = null; // consumed
       // Apply vessel context: prefix label with vessel name for generic measurement types
-      if (currentVessel && (r.key === 'Vel' || r.key === 'angle' || r.key === 'PSV' || r.key === 'EDV' || r.key === 'RI' || r.key === 'PI' || r.key === 'TAMV' || r.key === 'SD' || r.key === 'IMT')) {
+      if (currentVessel && (r.key === 'Vel' || r.key === 'angle' || r.key === 'PSV' || r.key === 'EDV' || r.key === 'RI' || r.key === 'PI' || r.key === 'TAMV' || r.key === 'SD' || r.key === 'IMT' || r.key === 'length' || r.key === 'width' || r.key === 'depth')) {
         r.label = `${currentVessel} — ${r.label}`;
         r.key = `${currentVessel}_${r.key}`;
       }

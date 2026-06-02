@@ -6,6 +6,7 @@ import { openCRViewerPopup } from '@/stores/crViewerStore';
 import { openDualViewerPopup } from '@/stores/dualViewerStore';
 import { usePatientStore } from '@/stores/patientStore';
 import { localFileToImageId } from '@/lib/dicomLoader';
+import { convertImagesToDicom, pickImageFiles } from '@/lib/imageToDicom';
 import { useSendToStore, type SendDestination } from '@/stores/sendToStore';
 import { useReportStore } from '@/stores/reportStore';
 import { useReportRouter } from '@/features/report-router/useReportRouter';
@@ -174,6 +175,39 @@ export function PatientContextMenu({ x, y, patient, onClose, onMerge, canMerge =
       case 'merge':
         if (onMerge) onMerge();
         break;
+      case 'import-non-dicom': {
+        (async () => {
+          try {
+            const files = await pickImageFiles();
+            if (!files || files.length === 0) return;
+            const result = await convertImagesToDicom(files, {
+              patient_name:        patient.patientName || '',
+              patient_id:          patient.patientId   || '',
+              age:                 patient.age         || '',
+              sex:                 String(patient.sex  || ''),
+              modality:            patient.modality    || 'OT',
+              study_description:   patient.studyDescription   || '',
+              referring_physician: patient.referringPhysician || '',
+              accession_number:    patient.accessionNumber    || '',
+            });
+            if (result.files.length === 0) {
+              alert('No images were converted.' + (result.errors[0] ? `\n\n${result.errors[0]}` : ''));
+              return;
+            }
+            usePatientStore.getState().appendFilesToPatient(patient.id, result.files);
+            const note = result.errors.length ? `\n\n${result.errors.length} file(s) failed.` : '';
+            alert(`Imported ${result.files.length} image(s) into ${patient.patientName}.${note}`);
+          } catch (err: any) {
+            const raw = String(err?.message || 'Unknown error');
+            const isApacheDown = err?.code === 'APACHE_DOWN' || /proxy error|ECONNREFUSED|Failed to fetch|NetworkError/i.test(raw);
+            const hint = isApacheDown
+              ? '\n\nThe conversion service is not reachable. Please make sure XAMPP (Apache + PHP) is running and try again.'
+              : '';
+            alert('Import failed: ' + raw + hint);
+          }
+        })();
+        break;
+      }
       case 'export': {
         const safeName = (s: string) =>
           s.replace(/[^a-z0-9]/gi, '_').replace(/_+/g, '_').replace(/^_|_$/g, '');
@@ -293,6 +327,7 @@ export function PatientContextMenu({ x, y, patient, onClose, onMerge, canMerge =
     { label: 'Create Report', action: 'create-report' },
     { label: 'Open Report', action: 'open-report', disabled: !hasReport },
     { divider: true },
+    { label: 'Import Non-DICOM Files', action: 'import-non-dicom' },
     { label: 'Send To', action: 'send-to', hasSubmenu: true },
     { label: 'Export', action: 'export' },
   ];
