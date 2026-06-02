@@ -141,6 +141,17 @@ function mergeScannedPatients(existing: Patient[], scanned: Patient[]): Patient[
   return [...additions, ...kept];
 }
 
+/** Format a free-form age string into the DICOM AS value representation
+ *  ("045Y", "012M", "030W", "007D"). Returns "" for empty input. */
+function formatAgeForDicom(age: string): string {
+  const a = (age ?? '').trim();
+  if (!a) return '';
+  if (/^\d{3}[YMWD]$/.test(a)) return a;
+  const num = parseInt(a.replace(/\D/g, ''), 10);
+  if (!Number.isFinite(num)) return '';
+  return String(num).padStart(3, '0') + 'Y';
+}
+
 const defaultFilters: PatientFilters = {
   patientId: '',
   patientName: '',
@@ -685,10 +696,31 @@ export const usePatientStore = create<PatientState>()(
   },
 
   editPatient: (id: string, updates: Partial<Patient>) => {
+    let filesToPatch: string[] | null = null;
+    let patchPayload: Record<string, string> | null = null;
     set((state) => {
+      const original = state.patients.find((p) => p.id === id) || null;
       const patients = state.patients.map((p) =>
         p.id === id ? { ...p, ...updates } : p
       );
+      // Collect data needed for the DICOM-tag write-back below
+      if (original && original.filePaths && original.filePaths.length > 0) {
+        const merged = { ...original, ...updates };
+        const payload: Record<string, string> = {};
+        // Only send fields that actually changed
+        if (updates.patientName  !== undefined && updates.patientName  !== original.patientName)  payload.patient_name        = merged.patientName  ?? '';
+        if (updates.patientId    !== undefined && updates.patientId    !== original.patientId)    payload.patient_id          = merged.patientId    ?? '';
+        if (updates.age          !== undefined && updates.age          !== original.age)          payload.patient_age         = formatAgeForDicom(merged.age ?? '');
+        if (updates.sex          !== undefined && updates.sex          !== original.sex)          payload.patient_sex         = String(merged.sex ?? '');
+        if (updates.studyDescription   !== undefined && updates.studyDescription   !== original.studyDescription)   payload.study_description    = merged.studyDescription   ?? '';
+        if (updates.referringPhysician !== undefined && updates.referringPhysician !== original.referringPhysician) payload.referring_physician  = merged.referringPhysician ?? '';
+        if (updates.accessionNumber    !== undefined && updates.accessionNumber    !== original.accessionNumber)    payload.accession_number     = merged.accessionNumber    ?? '';
+        if (updates.modality           !== undefined && updates.modality           !== original.modality)           payload.modality             = merged.modality           ?? '';
+        if (Object.keys(payload).length > 0) {
+          filesToPatch = original.filePaths;
+          patchPayload = payload;
+        }
+      }
       return {
         patients,
         filteredPatients: patients.filter((p) => matchesFilter(p, state.filters)),
@@ -697,6 +729,30 @@ export const usePatientStore = create<PatientState>()(
           : state.selectedPatient,
       };
     });
+
+    // Fire-and-forget DICOM write-back. The UI already reflects the changes;
+    // a failure here only means the on-disk .dcm files keep their old tag
+    // values — surfaced as a non-blocking toast.
+    if (filesToPatch && patchPayload) {
+      const isElectron = !!(window as any).electronAPI?.isElectron;
+      const base = isElectron ? 'http://localhost:3457' : '';
+      fetch(`${base}/api/dicom/patch-tags.php`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ files: filesToPatch, tags: patchPayload }),
+      })
+        .then((r) => r.json())
+        .then((data) => {
+          if (!data?.ok) {
+            console.warn('[editPatient] DICOM patch failed:', data?.error);
+          } else if (data.failed?.length) {
+            console.warn('[editPatient] Some DICOM files failed to patch:', data.failed);
+          } else {
+            console.log('[editPatient] Patched', data.patched, 'DICOM file(s)');
+          }
+        })
+        .catch((err) => console.warn('[editPatient] DICOM patch request error:', err?.message || err));
+    }
   },
 
   createPatient: (patient: Patient) => {

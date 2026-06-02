@@ -207,26 +207,45 @@ function buildDicomFile(array $p): string {
 
     // ── Patient module (0010) ─────────────────────────────────
     $body  = '';
+    // Specific Character Set — required so non-ASCII names round-trip correctly
+    $body .= dicomTag(0x0008, 0x0005, 'CS', 'ISO_IR 100');
+    // Image Type (Type 1 for SC IOD): DERIVED \ SECONDARY \ OTHER
+    $body .= dicomTag(0x0008, 0x0008, 'CS', 'DERIVED\\SECONDARY\\OTHER');
+    $body .= dicomTag(0x0008, 0x0012, 'DA', $p['dateStr']);                // InstanceCreationDate
+    $body .= dicomTag(0x0008, 0x0013, 'TM', $p['timeStr']);                // InstanceCreationTime
     $body .= dicomTag(0x0008, 0x0016, 'UI', $sopClass);                   // SOPClassUID
     $body .= dicomTag(0x0008, 0x0018, 'UI', $p['instanceUID']);            // SOPInstanceUID
     $body .= dicomTag(0x0008, 0x0020, 'DA', $p['dateStr']);                // StudyDate
+    $body .= dicomTag(0x0008, 0x0021, 'DA', $p['dateStr']);                // SeriesDate
+    $body .= dicomTag(0x0008, 0x0023, 'DA', $p['dateStr']);                // ContentDate (Type 1 for SC)
     $body .= dicomTag(0x0008, 0x0030, 'TM', $p['timeStr']);                // StudyTime
+    $body .= dicomTag(0x0008, 0x0031, 'TM', $p['timeStr']);                // SeriesTime
+    $body .= dicomTag(0x0008, 0x0033, 'TM', $p['timeStr']);                // ContentTime (Type 1 for SC)
     $body .= dicomTag(0x0008, 0x0050, 'SH', $p['accession']);              // AccessionNumber
     $body .= dicomTag(0x0008, 0x0060, 'CS', $p['modality']);               // Modality
+    // Conversion Type (Type 1 for SC IOD): WSD = Workstation
+    $body .= dicomTag(0x0008, 0x0064, 'CS', 'WSD');
     $body .= dicomTag(0x0008, 0x0070, 'LO', 'OneClickz MediView');        // Manufacturer
     $body .= dicomTag(0x0008, 0x0090, 'PN', $p['refPhysician']);           // ReferringPhysicianName
     $body .= dicomTag(0x0008, 0x1030, 'LO', $p['studyDesc']);             // StudyDescription
+    $body .= dicomTag(0x0008, 0x103E, 'LO', $p['studyDesc']);             // SeriesDescription
+    $body .= dicomTag(0x0008, 0x1090, 'LO', 'MediView SC Converter');     // ManufacturerModelName
 
     $body .= dicomTag(0x0010, 0x0010, 'PN', $p['patientName']);            // PatientName
     $body .= dicomTag(0x0010, 0x0020, 'LO', $p['patientId']);             // PatientID
+    $body .= dicomTag(0x0010, 0x0030, 'DA', '');                          // PatientBirthDate (Type 2 — empty allowed)
     $body .= dicomTag(0x0010, 0x0040, 'CS', $p['sex']);                    // PatientSex
     $body .= dicomTag(0x0010, 0x1010, 'AS', padAge($p['age']));           // PatientAge
+
+    // General Equipment / Software
+    $body .= dicomTag(0x0018, 0x1020, 'LO', 'OneClickz MediView 1.0');     // SoftwareVersions
 
     $body .= dicomTag(0x0020, 0x000D, 'UI', $p['studyUID']);              // StudyInstanceUID
     $body .= dicomTag(0x0020, 0x000E, 'UI', $p['seriesUID']);             // SeriesInstanceUID
     $body .= dicomTag(0x0020, 0x0010, 'SH', '1');                         // StudyID
     $body .= dicomTag(0x0020, 0x0011, 'IS', '1');                         // SeriesNumber
     $body .= dicomTag(0x0020, 0x0013, 'IS', (string)$p['instanceNum']);   // InstanceNumber
+    $body .= dicomTag(0x0020, 0x0020, 'CS', '');                          // PatientOrientation (Type 2C — empty for SC)
 
     // ── Image Pixel module ────────────────────────────────────
     $body .= dicomTag(0x0028, 0x0002, 'US', pack('v', 3));                 // SamplesPerPixel = 3 (RGB)
@@ -238,6 +257,9 @@ function buildDicomFile(array $p): string {
     $body .= dicomTag(0x0028, 0x0101, 'US', pack('v', 8));                 // BitsStored
     $body .= dicomTag(0x0028, 0x0102, 'US', pack('v', 7));                 // HighBit
     $body .= dicomTag(0x0028, 0x0103, 'US', pack('v', 0));                 // PixelRepresentation (unsigned)
+    // ── SC Image / Lossy module (must remain in ascending tag order) ──
+    $body .= dicomTag(0x0028, 0x0301, 'CS', 'NO');                         // BurnedInAnnotation (Type 1 for SC)
+    $body .= dicomTag(0x0028, 0x2110, 'CS', '00');                         // LossyImageCompression = none
 
     // ── Pixel Data ────────────────────────────────────────────
     $pixLen = strlen($p['pixelData']);

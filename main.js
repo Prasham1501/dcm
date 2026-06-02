@@ -805,10 +805,23 @@ function startStaticServer() {
                     res.writeHead(proxyRes.statusCode, proxyRes.headers);
                     proxyRes.pipe(res, { end: true });
                 });
+                // 5 min timeout — image conversion / multi-file uploads can be slow
+                proxyReq.setTimeout(300000, () => {
+                    proxyReq.destroy(new Error('Apache request timed out'));
+                });
                 proxyReq.on('error', (err) => {
-                    console.error('[StaticServer] Proxy error:', err.message);
-                    res.writeHead(502);
-                    res.end(JSON.stringify({ success: false, error: 'API proxy error: ' + err.message }));
+                    const isDown = err.code === 'ECONNREFUSED' || err.code === 'ECONNRESET';
+                    console.error('[StaticServer] Proxy error:', err.code || err.message);
+                    if (res.headersSent) { try { res.end(); } catch {} return; }
+                    res.writeHead(502, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({
+                        success: false,
+                        ok: false,
+                        code: isDown ? 'APACHE_DOWN' : 'PROXY_ERROR',
+                        error: isDown
+                            ? 'Cannot reach the local PHP server. Please start XAMPP (Apache) and try again.'
+                            : 'API proxy error: ' + err.message,
+                    }));
                 });
                 req.pipe(proxyReq, { end: true });
                 return;

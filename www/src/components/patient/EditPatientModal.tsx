@@ -1,9 +1,9 @@
 import { useState, useMemo } from 'react';
 import type { Patient } from '@/types/patient';
+import { listReferringPhysicians } from '@/lib/referringPhysicians';
 
-const REFERRING_KEY = 'clinical-referring-physicians';
 function loadReferringPhysicians(): string[] {
-  try { return JSON.parse(localStorage.getItem(REFERRING_KEY) || '[]'); } catch { return []; }
+  return listReferringPhysicians();
 }
 
 interface EditPatientModalProps {

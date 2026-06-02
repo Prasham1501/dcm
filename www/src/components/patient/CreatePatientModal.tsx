@@ -1,8 +1,8 @@
 import { useState, useRef, useMemo } from 'react';
 import type { Patient } from '@/types/patient';
+import { listReferringPhysicians, rememberReferringPhysician } from '@/lib/referringPhysicians';
 
 const IMAGE_EXTS = /\.(png|jpe?g|bmp)$/i;
-const REFERRING_KEY = 'clinical-referring-physicians';
 
 /** Standard DICOM modality codes for the New Patient dropdown.
  *  (DICOM PS3.3 C.7.3.1.1.1 — the common imaging set.) */
@@ -29,22 +29,47 @@ function bmpAwareMime(name: string): string {
 }
 
 function loadReferringPhysicians(): string[] {
-  try { return JSON.parse(localStorage.getItem(REFERRING_KEY) || '[]'); } catch { return []; }
+  return listReferringPhysicians();
 }
 
-/** Upload image files to the PHP converter, returns .dcm file paths. */
+/** Upload image files to the PHP converter, returns .dcm file paths.
+ *  Retries once on a 502 (proxy / Apache hiccup) so a transient XAMPP
+ *  blip during a multi-file upload doesn't kill the whole submission. */
 async function convertImagesToDicom(
   imageFiles: File[],
   meta: { patient_name: string; patient_id: string; age: string; sex: string; modality: string; study_description: string; referring_physician: string; accession_number: string },
 ): Promise<{ files: string[]; errors: string[] }> {
-  const fd = new FormData();
-  for (const f of imageFiles) fd.append('images[]', f);
-  for (const [k, v] of Object.entries(meta)) fd.append(k, v);
+  const buildForm = () => {
+    const fd = new FormData();
+    for (const f of imageFiles) fd.append('images[]', f);
+    for (const [k, v] of Object.entries(meta)) fd.append(k, v);
+    return fd;
+  };
 
-  const resp = await fetch('/api/dicom/convert-image.php', { method: 'POST', body: fd });
-  const data = await resp.json();
-  if (!resp.ok || !data.ok) throw new Error(data.error || `HTTP ${resp.status}`);
-  return { files: data.files ?? [], errors: data.errors ?? [] };
+  let lastErr: any = null;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const resp = await fetch('/api/dicom/convert-image.php', { method: 'POST', body: buildForm() });
+      let data: any = null;
+      try { data = await resp.json(); } catch { /* server didn't return JSON */ }
+      if (resp.ok && data?.ok) return { files: data.files ?? [], errors: data.errors ?? [] };
+      // Server replied with an error
+      const msg = data?.error || `HTTP ${resp.status}`;
+      const code = data?.code || (resp.status === 502 ? 'APACHE_DOWN' : 'PROXY_ERROR');
+      lastErr = Object.assign(new Error(msg), { code });
+      // Retry only on transient proxy/Apache problems
+      if (resp.status === 502 && attempt === 0) { await new Promise((r) => setTimeout(r, 800)); continue; }
+      throw lastErr;
+    } catch (e: any) {
+      lastErr = e;
+      if (attempt === 0 && /Failed to fetch|NetworkError|ECONNREFUSED/i.test(String(e?.message || ''))) {
+        await new Promise((r) => setTimeout(r, 800));
+        continue;
+      }
+      throw e;
+    }
+  }
+  throw lastErr ?? new Error('Image conversion failed');
 }
 
 interface CreatePatientModalProps {
@@ -208,10 +233,9 @@ export function CreatePatientModal({ onSave, onClose }: CreatePatientModalProps)
         }
       } catch (err: any) {
         const raw = String(err?.message || 'Unknown error');
-        // The "API proxy error" string is emitted by main.js when the static
-        // server cannot reach Apache (XAMPP) on port 80. Surface a clearer hint.
-        const hint = /proxy error|ECONNREFUSED|Failed to fetch|NetworkError/i.test(raw)
-          ? '\n\nThe conversion service could not be reached. Please make sure XAMPP (Apache + PHP) is running on this machine, then try again.'
+        const isApacheDown = err?.code === 'APACHE_DOWN' || /proxy error|ECONNREFUSED|Failed to fetch|NetworkError/i.test(raw);
+        const hint = isApacheDown
+          ? '\n\nThe conversion service is not reachable. Please make sure XAMPP (Apache + PHP) is running on this machine, then try again.'
           : '';
         alert('Image conversion failed: ' + raw + hint);
         setConverting(false);
@@ -237,6 +261,9 @@ export function CreatePatientModal({ onSave, onClose }: CreatePatientModalProps)
       printed: false,
       filePaths: allPaths.length ? allPaths : undefined,
     };
+    // Persist a freshly typed referring physician so it shows up in the
+    // dropdown next time, even if no DICOM tag carries it.
+    rememberReferringPhysician(form.referringPhysician);
     onSave(patient);
     onClose();
   };

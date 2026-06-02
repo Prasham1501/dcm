@@ -35,7 +35,13 @@ export function ReportEditor() {
 
   useEffect(() => {
     try { setPerformingPhysicians(JSON.parse(localStorage.getItem('clinical-performing-physicians') || '[]')); } catch { /* ignore */ }
-    try { setReferringPhysicians(JSON.parse(localStorage.getItem('clinical-referring-physicians') || '[]')); } catch { /* ignore */ }
+    // Pull referring physicians from both the curated Settings list and
+    // names embedded on already-loaded patients (folder sync, etc.).
+    import('@/lib/referringPhysicians')
+      .then((m) => setReferringPhysicians(m.listReferringPhysicians()))
+      .catch(() => {
+        try { setReferringPhysicians(JSON.parse(localStorage.getItem('clinical-referring-physicians') || '[]')); } catch { /* ignore */ }
+      });
   }, [showReportEditor]);
 
   // Load existing report when opening

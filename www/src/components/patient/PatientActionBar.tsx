@@ -6,6 +6,7 @@ import { localFileToImageId } from '@/lib/dicomLoader';
 import { EditPatientModal } from './EditPatientModal';
 import { CreatePatientModal } from './CreatePatientModal';
 import { ConfirmDialog } from '../shared/ConfirmDialog';
+import { BackupActionButtons } from './BackupActionButtons';
 
 /** Render a DICOM imageId to a JPEG Blob using the Cornerstone canvas. */
 async function dicomToJpeg(imageId: string): Promise<Blob | null> {
@@ -210,6 +211,8 @@ export function PatientActionBar() {
         </div>
 
         <ActionButton label="Export selected" onClick={handleExportSelected} />
+
+        <BackupActionButtons />
 
         <ActionButton
           label="Exit"

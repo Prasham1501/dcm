@@ -19,65 +19,10 @@ import {
   CheckCircle2, AlertCircle, Loader2, FolderTree, RefreshCw,
 } from 'lucide-react';
 import { useCloudStore, type CloudProvider, type SyncInterval } from '@/stores/cloudStore';
-import { useReportStore } from '@/stores/reportStore';
-import { usePatientStore } from '@/stores/patientStore';
-import { useViewerStore } from '@/stores/viewerStore';
-import { useCRViewerStore } from '@/stores/crViewerStore';
-import { useDualViewerStore } from '@/stores/dualViewerStore';
 import { useUIStore } from '@/stores/uiStore';
-import { listLoadedStudies, clearLoadedStudiesRegistry } from '@/lib/loadedStudiesRegistry';
+import { clearLoadedStudiesRegistry } from '@/lib/loadedStudiesRegistry';
+import { runBackup, listBackups, downloadBackup, type CloudBundleEntry } from '@/lib/cloudBackup';
 
-/** Collect DICOM file paths for cloud backup.
- *  Sources (deduplicated, no recursive folder scanning):
- *    1. patientStore — every patient visible in the patients tab that has filePaths
- *    2. Viewer stores — currently-open studies (Orthanc-backed patients get files here)
- *    3. Cross-window registry — studies opened in other Electron windows */
-function collectStudyPaths(): Array<{ patient_name: string; patient_id: string; files: string[] }> {
-  const out: Array<{ patient_name: string; patient_id: string; files: string[] }> = [];
-
-  // 1) Patient store — locally-created / folder-scanned patients
-  const patients = usePatientStore.getState().patients;
-  for (const p of patients) {
-    if (p.filePaths && p.filePaths.length > 0) {
-      out.push({ patient_name: p.patientName || 'Unknown', patient_id: p.patientId || p.id, files: p.filePaths });
-    }
-  }
-
-  // 2) Currently-open viewer stores (covers Orthanc patients open in viewer)
-  const v = useViewerStore.getState();
-  const vFiles = (v.images ?? [])
-    .map((img: any) => {
-      const m = String(img.imageUrl ?? '').match(/[?&]path=([^&]+)/);
-      return m ? decodeURIComponent(m[1]) : '';
-    })
-    .filter(Boolean);
-  if (vFiles.length) out.push({ patient_name: v.patientName || 'viewer', patient_id: v.patientId || '', files: vFiles });
-
-  const c = useCRViewerStore.getState();
-  const cFiles = (c.images ?? []).map((img: any) => img.filePath).filter(Boolean);
-  if (cFiles.length) out.push({ patient_name: c.patientName || 'cr', patient_id: c.patientId || '', files: cFiles });
-
-  const d = useDualViewerStore.getState();
-  for (const panelId of ['left', 'right'] as const) {
-    const p = d.panels[panelId];
-    const files = (p?.images ?? []).map((img: any) => img.filePath).filter(Boolean);
-    if (files.length) out.push({ patient_name: p.patientName || `dual-${panelId}`, patient_id: p.patientId || '', files });
-  }
-
-  // 3) Cross-window registry (studies opened in other Electron BrowserWindows)
-  for (const s of listLoadedStudies()) out.push(s);
-
-  // Dedupe by patient_id so the zip doesn't contain copies
-  const seen = new Set<string>();
-  return out.filter((s) => {
-    const key = `${s.patient_id}|${s.files[0] || ''}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-}
-
-// Expose a quick way to clear the cross-window registry from the UI.
 export { clearLoadedStudiesRegistry };
 
 const PROVIDER_OPTIONS: { id: CloudProvider; label: string; help: string }[] = [
@@ -97,7 +42,7 @@ export function CloudTab() {
   const cfg = useCloudStore();
   const addToast = useUIStore((s) => s.addToast);
   const [busy, setBusy] = useState(false);
-  const [cloudList, setCloudList] = useState<Array<{ name: string; size: number; modified: string; path: string }> | null>(null);
+  const [cloudList, setCloudList] = useState<CloudBundleEntry[] | null>(null);
   const [listingBusy, setListingBusy] = useState(false);
 
   const canSync = cfg.provider !== 'none' && cfg.accessToken.trim().length > 0;
@@ -108,39 +53,8 @@ export function CloudTab() {
       return;
     }
     setBusy(true);
-    cfg.setRunStatus('running');
-    // Templates live in the browser's localStorage; the server can't see
-    // them directly, so we ship them along in the request body.
-
-    const templates    = useReportStore.getState().templates;
-    const studyPaths   = collectStudyPaths();
-    // All patient IDs visible in the patients tab — server uses these to
-    // filter Orthanc-backed DICOM files (which have no client-side paths).
-    const patientIds = usePatientStore.getState().patients.map((p) => p.patientId || p.id);
-    // Incremental: send paths already backed up so the server skips them.
-    const alreadySynced = Object.keys(cfg.syncedFiles);
     try {
-      const resp = await fetch('/api/cloud/backup.php', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          provider:     cfg.provider,
-          access_token: cfg.accessToken,
-          remote_folder: cfg.remoteFolder || '/dcm-backups',
-          scopes:       cfg.scopes,
-          templates,
-          study_paths:   studyPaths,
-          patient_ids:   patientIds,
-          already_synced: alreadySynced,
-        }),
-      });
-      const data = await resp.json();
-      if (!resp.ok || !data.ok) throw new Error(data.error || `HTTP ${resp.status}`);
-      cfg.markSynced();
-      // Track newly synced files so future runs skip them.
-      if (Array.isArray(data.synced_files) && data.synced_files.length > 0) {
-        cfg.recordSyncedFiles(data.synced_files);
-      }
+      const data = await runBackup();
       const c = data.counts || {};
       const total = (c.reports ?? 0) + (c.dicom ?? 0) + (c.studies ?? 0) + (c.templates ?? 0) + (c.branding ?? 0);
       const bytes = data.bytes ?? 0;
@@ -155,13 +69,9 @@ export function CloudTab() {
         'success', 6000,
       );
       if (total === 0) {
-        addToast(
-          'Bundle was empty — open a study in the viewer first, or enable more scopes.',
-          'error', 6000,
-        );
+        addToast('Bundle was empty — open a study in the viewer first, or enable more scopes.', 'error', 6000);
       }
     } catch (e: any) {
-      cfg.setRunStatus('failed', e?.message || 'Unknown error');
       addToast(`Backup failed: ${e?.message || 'Unknown error'}`, 'error', 5000);
     } finally {
       setBusy(false);
@@ -172,18 +82,7 @@ export function CloudTab() {
     if (!canSync) return;
     setListingBusy(true);
     try {
-      const resp = await fetch('/api/cloud/list.php', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          provider:     cfg.provider,
-          access_token: cfg.accessToken,
-          remote_folder: cfg.remoteFolder || '/dcm-backups',
-        }),
-      });
-      const data = await resp.json();
-      if (!resp.ok || !data.ok) throw new Error(data.error || `HTTP ${resp.status}`);
-      setCloudList(data.entries || []);
+      setCloudList(await listBackups());
     } catch (e: any) {
       addToast(`Could not list cloud files: ${e?.message || 'Unknown error'}`, 'error', 4000);
     } finally {
@@ -193,26 +92,7 @@ export function CloudTab() {
 
   const downloadFromCloud = async (path: string, name: string) => {
     try {
-      const resp = await fetch('/api/cloud/download.php', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          provider:     cfg.provider,
-          access_token: cfg.accessToken,
-          path,
-        }),
-      });
-      if (!resp.ok) {
-        const err = await resp.json().catch(() => ({}));
-        throw new Error(err.error || `HTTP ${resp.status}`);
-      }
-      const blob = await resp.blob();
-      // Trigger browser download
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url; a.download = name;
-      document.body.appendChild(a); a.click(); a.remove();
-      URL.revokeObjectURL(url);
+      await downloadBackup(path, name);
     } catch (e: any) {
       addToast(`Download failed: ${e?.message || 'Unknown error'}`, 'error', 4000);
     }
