@@ -2360,9 +2360,15 @@ ipcMain.handle('open-cr-viewer', (event, { isPortrait, imageCount, cols, rows })
     const gridW = cellW * (cols || 1);
     const winW = Math.round(Math.min(Math.max(gridW + sidebarPx, 500), screenW * 0.95));
 
-    // Close existing CR viewer window if open
+    // Reuse the existing CR viewer window if it's already open — this keeps
+    // the cornerstone image cache warm, so reopening the same (or a related)
+    // study is essentially instant. Just resize/focus and notify the renderer
+    // to pick up the new launch payload from localStorage.
     if (crViewerWindow && !crViewerWindow.isDestroyed()) {
-        crViewerWindow.close();
+        try { crViewerWindow.setSize(winW, winH); crViewerWindow.center(); } catch {}
+        try { crViewerWindow.show(); crViewerWindow.focus(); } catch {}
+        try { crViewerWindow.webContents.send('cr-viewer:reload-launch'); } catch {}
+        return { success: true, width: winW, height: winH, reused: true };
     }
 
     crViewerWindow = new BrowserWindow({
@@ -2435,9 +2441,14 @@ ipcMain.handle('open-viewer', (event, { isPortrait, imageCount, cols, rows }) =>
     const gridW = cellW * (cols || 1);
     const winW = Math.round(Math.min(Math.max(gridW + sidebarPx, 600), screenW * 0.95));
 
-    // Close existing viewer window if open
+    // Reuse the existing viewer window if it's already open (see CR viewer
+    // handler above for the rationale). Avoids destroying the cornerstone
+    // image cache between opens.
     if (viewerWindow && !viewerWindow.isDestroyed()) {
-        viewerWindow.close();
+        try { viewerWindow.setSize(winW, winH); viewerWindow.center(); } catch {}
+        try { viewerWindow.show(); viewerWindow.focus(); } catch {}
+        try { viewerWindow.webContents.send('viewer:reload-launch'); } catch {}
+        return { success: true, width: winW, height: winH, reused: true };
     }
 
     viewerWindow = new BrowserWindow({
@@ -4260,7 +4271,20 @@ ipcMain.handle('ocr-dicom-file', async (event, { filePath }) => {
 
 // ── Batch OCR: single Tesseract worker shared across ALL files ──
 // ~3-4× faster than per-file worker creation.  Uses 2 passes instead of 4.
+//
+// SERIALIZED: only one batch runs at a time. If a new request arrives while
+// one is running, the in-flight batch is aborted (its worker is terminated
+// and the loop exits at its next iteration). This prevents stacked OCR jobs
+// from monopolising the Node event loop when the user reopens studies fast.
+let currentOcrGeneration = 0;
+let currentOcrWorker = null;
 ipcMain.handle('ocr-dicom-batch', async (event, { filePaths }) => {
+    const myGen = ++currentOcrGeneration;
+    // Abort any in-flight batch — next iteration sees the gen mismatch.
+    if (currentOcrWorker) {
+        try { await currentOcrWorker.terminate(); } catch {}
+        currentOcrWorker = null;
+    }
     try {
         const os = require('os');
         const dicomParserLib = require('dicom-parser');
@@ -4271,9 +4295,18 @@ ipcMain.handle('ocr-dicom-batch', async (event, { filePaths }) => {
 
         // Create ONE worker for the entire batch
         const worker = await createWorker('eng', 1, { logger: () => { } });
+        currentOcrWorker = worker;
+        if (myGen !== currentOcrGeneration) {
+            try { await worker.terminate(); } catch {}
+            return [];
+        }
         console.log(`[OCR-batch] Worker created in ${Date.now() - batchStart}ms, processing ${filePaths.length} files`);
 
         for (let fi = 0; fi < filePaths.length; fi++) {
+            if (myGen !== currentOcrGeneration) {
+                console.log(`[OCR-batch] gen ${myGen} aborted at file ${fi} (current gen ${currentOcrGeneration})`);
+                break;
+            }
             const filePath = filePaths[fi];
             const fileStart = Date.now();
             try {
@@ -4388,10 +4421,15 @@ ipcMain.handle('ocr-dicom-batch', async (event, { filePaths }) => {
             }
         }
 
-        await worker.terminate();
+        try { await worker.terminate(); } catch {}
+        if (currentOcrWorker === worker) currentOcrWorker = null;
         console.log(`[OCR-batch] Total: ${Date.now() - batchStart}ms for ${filePaths.length} files`);
         return results;
     } catch (err) {
+        if (currentOcrWorker) {
+            try { await currentOcrWorker.terminate(); } catch {}
+            currentOcrWorker = null;
+        }
         console.warn('[OCR-batch] Failed:', err.message);
         return [];
     }
