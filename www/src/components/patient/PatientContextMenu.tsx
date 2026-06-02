@@ -107,9 +107,12 @@ export function PatientContextMenu({ x, y, patient, onClose, onMerge, canMerge =
 
   const handleAction = async (action: string) => {
     switch (action) {
-      case 'open':
-        openInCRViewer();
+      case 'open': {
+        // USG → Viewer (/cr-viewer, has draw tools); everything else → CR Viewer (/viewer)
+        const isUsg = (patient.modality || '').toUpperCase() === 'US';
+        if (isUsg) openInCRViewer(); else openInViewer();
         break;
+      }
       case 'open-dual': {
         const patientStore = usePatientStore.getState();
         const selectedIds = Array.from(patientStore.selectedPatients);
@@ -284,7 +287,7 @@ export function PatientContextMenu({ x, y, patient, onClose, onMerge, canMerge =
   const items: Array<{ label?: string; action?: string; hasSubmenu?: boolean; disabled?: boolean; divider?: boolean }> = [
     { label: 'Open', action: 'open' },
     { label: 'Open in dual format', action: 'open-dual' },
-    { label: 'Open in CR format', action: 'open-cr' },
+    { label: 'Open in CR Mode', action: 'open-cr' },
     ...(canMerge ? [{ divider: true } as const, { label: 'Merge', action: 'merge' } as const] : []),
     { divider: true },
     { label: 'Create Report', action: 'create-report' },

@@ -2,6 +2,7 @@ import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { usePatientStore } from '@/stores/patientStore';
 import { openCRViewerPopup } from '@/stores/crViewerStore';
+import { openViewerPopup } from '@/stores/viewerStore';
 import { useReportStore } from '@/stores/reportStore';
 import type { Patient } from '@/types/patient';
 import { PatientContextMenu } from './PatientContextMenu';
@@ -133,12 +134,23 @@ export function PatientTable() {
       usePatientStore.getState().clearNewHighlight(patient.id);
     }
     if (patient.filePaths && patient.filePaths.length > 0) {
-      openCRViewerPopup({
+      // Open behaviour by modality (per client spec):
+      //   • Ultrasound (US) → USG mode (Viewer, /cr-viewer — has draw tools).
+      //   • Everything else (CR/DX/CT/MR/…) → CR mode (/viewer, no draw tools).
+      const isUsg = (patient.modality || '').toUpperCase() === 'US';
+      const launch = {
         patientName: patient.patientName,
         patientId: patient.patientId,
         studyDate: patient.studyDate,
         filePaths: patient.filePaths,
-      }, navigate);
+        modality: patient.modality,
+        studyDescription: patient.studyDescription,
+      };
+      if (isUsg) {
+        openCRViewerPopup(launch, navigate);
+      } else {
+        openViewerPopup(launch, navigate);
+      }
     }
   }, [navigate, newStudyIds]);
 

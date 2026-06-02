@@ -156,6 +156,8 @@ export function PatientSearchBar() {
   const patientIds = [...new Set(patients.map((p) => p.patientId).filter(Boolean))].sort();
   const patientNames = [...new Set(patients.map((p) => p.patientName).filter(Boolean))].sort();
   const accessionNumbers = [...new Set(patients.map((p) => p.accessionNumber).filter(Boolean))].sort();
+  const modalities = [...new Set(patients.map((p) => p.modality).filter(Boolean))].sort();
+  const studyDescriptions = [...new Set(patients.map((p) => p.studyDescription).filter(Boolean))].sort();
 
   // Load referring physicians from clinical config (localStorage) + patient data
   const configPhysicians: string[] = (() => {
@@ -236,9 +238,9 @@ export function PatientSearchBar() {
           className="w-24 2xl:w-32 h-7 2xl:h-9 px-1 text-xs 2xl:text-sm border border-app-border bg-app-bg text-app-text rounded-sm focus:outline-none focus:border-app-accent"
         >
           <option value="">All</option>
-          <option value="OB">OB</option>
-          <option value="ABD">ABD</option>
-          <option value="VAS">VAS</option>
+          {studyDescriptions.map((s) => (
+            <option key={s} value={s}>{s}</option>
+          ))}
         </select>
         <span className="text-app-accent mx-0.5 text-xs font-bold">+</span>
       </div>
@@ -269,9 +271,9 @@ export function PatientSearchBar() {
           className="w-16 2xl:w-20 h-7 2xl:h-9 px-1 text-xs 2xl:text-sm border border-app-border bg-app-bg text-app-text rounded-sm focus:outline-none focus:border-app-accent"
         >
           <option value="">All</option>
-          <option value="US">US</option>
-          <option value="CT">CT</option>
-          <option value="MR">MR</option>
+          {modalities.map((m) => (
+            <option key={m} value={m}>{m}</option>
+          ))}
         </select>
       </div>
 

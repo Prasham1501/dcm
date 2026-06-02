@@ -384,8 +384,6 @@ function createMainWindow() {
             submenu: [
                 { label: 'Patients', click: () => mainWindow.loadURL(`${APP_URL}`) },
                 { type: 'separator' },
-                { label: 'Settings', click: () => mainWindow.loadURL(`${APP_URL}/admin/settings`) },
-                { type: 'separator' },
                 { role: 'quit', label: 'Exit' }
             ]
         },

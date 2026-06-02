@@ -1,12 +1,29 @@
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { usePatientStore } from '@/stores/patientStore';
 import { usePrintStore } from '@/stores/printStore';
 import { PrinterModal } from '@/components/print/PrinterModal';
+import { BackupBrowserModal } from '@/components/patient/BackupBrowserModal';
+import { backupService } from '@/services/backupService';
+import { useUIStore } from '@/stores/uiStore';
 
 export function PatientStatusBar() {
   const navigate = useNavigate();
   const { filteredPatients, patients } = usePatientStore();
   const { printCountRemaining, quotaEnabled, showPrinterModal, setShowPrinterModal } = usePrintStore();
+  const addToast = useUIStore((s) => s.addToast);
+  const [showBackupBrowser, setShowBackupBrowser] = useState(false);
+  const [backingUp, setBackingUp] = useState(false);
+
+  const handleBackupNow = async () => {
+    setBackingUp(true);
+    try {
+      await backupService.backupNow();
+      addToast('Backup created', 'success', 3000);
+    } catch (e: any) {
+      addToast(`Backup failed: ${e?.message || 'error'}`, 'error', 5000);
+    } finally { setBackingUp(false); }
+  };
 
   // Compute real stats from patient data
   const totalImages = patients.reduce((sum, p) => sum + (p.filePaths?.length ?? 0), 0);
@@ -43,6 +60,21 @@ export function PatientStatusBar() {
           >
             Default Printer
           </button>
+          <button
+            onClick={handleBackupNow}
+            disabled={backingUp}
+            className="px-2 2xl:px-3 py-0.5 2xl:py-1 text-xs 2xl:text-sm border border-app-border text-app-text-secondary bg-app-bg rounded hover:bg-app-hover disabled:opacity-50"
+            title="Create a backup of all studies now"
+          >
+            {backingUp ? 'Backing up…' : 'Backup'}
+          </button>
+          <button
+            onClick={() => setShowBackupBrowser(true)}
+            className="px-2 2xl:px-3 py-0.5 2xl:py-1 text-xs 2xl:text-sm border border-app-border text-app-text-secondary bg-app-bg rounded hover:bg-app-hover"
+            title="View, restore, or delete existing backups"
+          >
+            Browse Backup
+          </button>
         </div>
 
         <div className="flex items-center gap-2 2xl:gap-4 text-[10px] 2xl:text-sm text-app-text-secondary flex-wrap">
@@ -63,6 +95,7 @@ export function PatientStatusBar() {
       </div>
 
       {showPrinterModal && <PrinterModal />}
+      {showBackupBrowser && <BackupBrowserModal onClose={() => setShowBackupBrowser(false)} />}
     </>
   );
 }

@@ -176,12 +176,14 @@ function matchesFilter(patient: Patient, filters: PatientFilters): boolean {
           break;
         }
         case 'custom': {
-          if (filters.month && filters.year) {
+          // Month/year filters work independently or together.
+          if (filters.month) {
             if (studyDate.getMonth() + 1 !== parseInt(filters.month)) return false;
+          }
+          if (filters.year) {
             if (studyDate.getFullYear() !== parseInt(filters.year)) return false;
-          } else if (filters.year) {
-            if (studyDate.getFullYear() !== parseInt(filters.year)) return false;
-          } else {
+          }
+          if (!filters.month && !filters.year) {
             const parseDDMMYYYY = (d: string) => {
               if (/^\d{2}-\d{2}-\d{4}$/.test(d)) {
                 const parts = d.split('-');
