@@ -88,13 +88,13 @@ for ($i = 0; $i < $count; $i++) {
     $origName = $images['name'][$i];
     $mime = strtolower($images['type'][$i]);
 
-    // Validate image type
-    $allowed = ['image/png', 'image/jpeg', 'image/jpg'];
+    // Validate image type. Supported: PNG, JPEG, BMP.
+    $allowed = ['image/png', 'image/jpeg', 'image/jpg', 'image/bmp', 'image/x-ms-bmp'];
     if (!in_array($mime, $allowed)) {
         // Double-check with actual file
         $detected = @mime_content_type($tmpFile);
         if (!$detected || !in_array($detected, $allowed)) {
-            $errors[] = $origName . ': not a valid PNG/JPEG';
+            $errors[] = $origName . ': not a valid PNG/JPEG/BMP image';
             continue;
         }
     }
@@ -115,6 +115,9 @@ for ($i = 0; $i < $count; $i++) {
         $gd = @imagecreatefromjpeg($tmpFile);
     } elseif ($type === IMAGETYPE_PNG) {
         $gd = @imagecreatefrompng($tmpFile);
+    } elseif ($type === IMAGETYPE_BMP) {
+        // imagecreatefrombmp requires PHP 7.2+ (GD). Fall back gracefully.
+        $gd = function_exists('imagecreatefrombmp') ? @imagecreatefrombmp($tmpFile) : null;
     }
     if (!$gd) {
         $errors[] = $origName . ': failed to decode image';

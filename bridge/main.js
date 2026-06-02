@@ -386,8 +386,36 @@ function setupTray() {
   refreshTray();
 }
 
+// Loads the renderer content into the given window. Extracted so it can be
+// reused for the initial load AND for recovery reloads (white-screen fix).
+function loadConfigUI(win) {
+  const isDev = process.argv.includes('--dev');
+  if (isDev && process.env.BRIDGE_UI_URL) {
+    win.loadURL(process.env.BRIDGE_UI_URL);
+  } else if (isDev) {
+    win.loadURL('http://localhost:5174/');
+  } else {
+    win.loadFile(path.join(__dirname, 'ui', 'dist', 'index.html'));
+  }
+}
+
 function openConfigWindow() {
   if (configWindow && !configWindow.isDestroyed()) {
+    // Recover from a white screen: if the renderer crashed or never mounted
+    // React (#root empty), force a reload before showing. This is what made
+    // a stale/hung instance show blank when a 2nd launch signalled it.
+    configWindow.webContents.executeJavaScript(
+      "(() => { const r = document.getElementById('root'); return r ? r.children.length : -1; })()"
+    ).then((n) => {
+      if (!Number.isFinite(n) || n <= 0) {
+        logger.warn(`[UI] stale window had empty #root (n=${n}); reloading`);
+        loadConfigUI(configWindow);
+      }
+    }).catch(() => {
+      // executeJavaScript throwing means the renderer is gone — reload it.
+      logger.warn('[UI] window probe failed; reloading renderer');
+      try { loadConfigUI(configWindow); } catch {}
+    });
     configWindow.show();
     configWindow.focus();
     return;
@@ -409,17 +437,57 @@ function openConfigWindow() {
     },
   });
 
-  // In dev mode (vite dev server), load from localhost
-  const isDev = process.argv.includes('--dev');
-  if (isDev && process.env.BRIDGE_UI_URL) {
-    configWindow.loadURL(process.env.BRIDGE_UI_URL);
-  } else if (isDev) {
-    configWindow.loadURL('http://localhost:5174/');
-  } else {
-    configWindow.loadFile(path.join(__dirname, 'ui', 'dist', 'index.html'));
-  }
+  // Surface preload + console failures to the log so a blank window is
+  // never a mystery.
+  configWindow.webContents.on('preload-error', (_e, preloadPath, err) => {
+    logger.error(`[UI] preload-error path=${preloadPath} err=${err?.message || err}`);
+  });
+  configWindow.webContents.on('console-message', (_e, level, message, line, sourceId) => {
+    // level: 0=log 1=warn 2=error 3=info — only surface warn/error to the log.
+    if (level >= 1) {
+      logger.error(`[UI console] ${message} (${sourceId}:${line})`);
+    }
+  });
+
+  // ── White-screen self-recovery ──────────────────────────────
+  // If the renderer crashes or a load fails, reload once after a short
+  // delay rather than leaving a blank window the user has to kill/restart.
+  let reloadAttempts = 0;
+  configWindow.webContents.on('render-process-gone', (_e, details) => {
+    logger.error(`[UI] render-process-gone reason=${details.reason}; reloading`);
+    if (reloadAttempts++ < 3 && configWindow && !configWindow.isDestroyed()) {
+      setTimeout(() => { try { loadConfigUI(configWindow); } catch {} }, 400);
+    }
+  });
+  configWindow.webContents.on('did-fail-load', (_e, code, desc, url, isMainFrame) => {
+    logger.error(`[UI] did-fail-load code=${code} desc=${desc} url=${url}`);
+    // -3 = ERR_ABORTED (benign, e.g. a redirect); don't retry those.
+    if (isMainFrame && code !== -3 && reloadAttempts++ < 3 && configWindow && !configWindow.isDestroyed()) {
+      setTimeout(() => { try { loadConfigUI(configWindow); } catch {} }, 600);
+    }
+  });
+
+  loadConfigUI(configWindow);
 
   configWindow.once('ready-to-show', () => configWindow.show());
+  // Fallback: some renderer states never emit ready-to-show. Force-show
+  // after 4s so the window can't get stuck invisible.
+  setTimeout(() => {
+    if (configWindow && !configWindow.isDestroyed() && !configWindow.isVisible()) {
+      configWindow.show();
+    }
+  }, 4000);
+
+  // One-time mount probe (temporary diagnostic): log whether React actually
+  // rendered into #root so a "white screen" can be distinguished from a
+  // window that opened before the bundle finished.
+  configWindow.webContents.once('did-finish-load', () => {
+    configWindow.webContents.executeJavaScript(
+      "(() => { const r = document.getElementById('root'); return r ? r.children.length : -1; })()"
+    ).then((n) => {
+      logger.info(`[UI] mount probe: #root child count = ${n}`);
+    }).catch((e) => logger.error(`[UI] mount probe failed: ${e?.message || e}`));
+  });
 
   configWindow.on('close', (e) => {
     // Hide instead of close, keep tray running
@@ -864,6 +932,14 @@ app.whenReady().then(async () => {
         }).show();
       }
     }
+  });
+  slotManager.on('direct-print', ({ slot, job }) => {
+    notifySlotEvent('file', {
+      slotId: slot.id,
+      callingAE: job.callingAE || '',
+      sopInstanceUid: job.filmBoxUid || '',
+      mode: 'dicom-print',
+    });
   });
   slotManager.on('slot-error', ({ slot, error }) => {
     notifySlotEvent('slot-error', { slotId: slot.id, error });

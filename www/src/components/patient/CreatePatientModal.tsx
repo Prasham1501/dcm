@@ -1,8 +1,32 @@
 import { useState, useRef, useMemo } from 'react';
 import type { Patient } from '@/types/patient';
 
-const IMAGE_EXTS = /\.(png|jpe?g)$/i;
+const IMAGE_EXTS = /\.(png|jpe?g|bmp)$/i;
 const REFERRING_KEY = 'clinical-referring-physicians';
+
+/** Standard DICOM modality codes for the New Patient dropdown.
+ *  (DICOM PS3.3 C.7.3.1.1.1 — the common imaging set.) */
+const MODALITIES: { code: string; label: string }[] = [
+  { code: 'US', label: 'US — Ultrasound' },
+  { code: 'CR', label: 'CR — Computed Radiography' },
+  { code: 'DX', label: 'DX — Digital Radiography' },
+  { code: 'CT', label: 'CT — Computed Tomography' },
+  { code: 'MR', label: 'MR — Magnetic Resonance' },
+  { code: 'MG', label: 'MG — Mammography' },
+  { code: 'XA', label: 'XA — X-Ray Angiography' },
+  { code: 'RF', label: 'RF — Radio Fluoroscopy' },
+  { code: 'NM', label: 'NM — Nuclear Medicine' },
+  { code: 'PT', label: 'PT — PET' },
+  { code: 'ES', label: 'ES — Endoscopy' },
+  { code: 'OT', label: 'OT — Other' },
+];
+
+function bmpAwareMime(name: string): string {
+  const ext = name.split('.').pop()?.toLowerCase();
+  if (ext === 'png') return 'image/png';
+  if (ext === 'bmp') return 'image/bmp';
+  return 'image/jpeg';
+}
 
 function loadReferringPhysicians(): string[] {
   try { return JSON.parse(localStorage.getItem(REFERRING_KEY) || '[]'); } catch { return []; }
@@ -53,7 +77,7 @@ export function CreatePatientModal({ onSave, onClose }: CreatePatientModalProps)
         const result = await api.invoke('show-open-dialog', {
           properties: ['openFile', 'multiSelections'],
           filters: [
-            { name: 'DICOM & Images', extensions: ['dcm', 'DCM', 'png', 'jpg', 'jpeg'] },
+            { name: 'DICOM & Images', extensions: ['dcm', 'DCM', 'png', 'jpg', 'jpeg', 'bmp'] },
             { name: 'All Files', extensions: ['*'] },
           ],
           title: 'Select DICOM or Image Files',
@@ -73,9 +97,7 @@ export function CreatePatientModal({ onSave, onClose }: CreatePatientModalProps)
               try {
                 const buf: ArrayBuffer = await api.invoke('read-file-buffer', fp);
                 const name = fp.split(/[\\/]/).pop() || 'image.png';
-                const ext = name.split('.').pop()?.toLowerCase();
-                const mime = ext === 'png' ? 'image/png' : 'image/jpeg';
-                files.push(new File([buf], name, { type: mime }));
+                files.push(new File([buf], name, { type: bmpAwareMime(name) }));
               } catch { /* skip unreadable */ }
             }
             setImageFiles(files);
@@ -121,9 +143,7 @@ export function CreatePatientModal({ onSave, onClose }: CreatePatientModalProps)
               try {
                 const buf: ArrayBuffer = await api.invoke('read-file-buffer', fp);
                 const name = fp.split(/[\\/]/).pop() || 'image.png';
-                const ext = name.split('.').pop()?.toLowerCase();
-                const mime = ext === 'png' ? 'image/png' : 'image/jpeg';
-                files.push(new File([buf], name, { type: mime }));
+                files.push(new File([buf], name, { type: bmpAwareMime(name) }));
               } catch { /* skip unreadable */ }
             }
             setImageFiles(files);
@@ -221,7 +241,7 @@ export function CreatePatientModal({ onSave, onClose }: CreatePatientModalProps)
       <input
         ref={fileInputRef}
         type="file"
-        accept=".dcm,.DCM,.png,.jpg,.jpeg"
+        accept=".dcm,.DCM,.png,.jpg,.jpeg,.bmp"
         multiple
         style={{ display: 'none' }}
         onChange={handleFileInputChange}
@@ -310,12 +330,15 @@ export function CreatePatientModal({ onSave, onClose }: CreatePatientModalProps)
           <div className="flex gap-3">
             <div className="flex-1">
               <label className="block text-xs text-app-text-secondary mb-1">Modality</label>
-              <input
-                type="text"
+              <select
                 value={form.modality}
                 onChange={(e) => setForm({ ...form, modality: e.target.value })}
                 className="w-full px-3 py-2 text-sm border border-app-border rounded bg-app-bg text-app-text"
-              />
+              >
+                {MODALITIES.map((m) => (
+                  <option key={m.code} value={m.code}>{m.label}</option>
+                ))}
+              </select>
             </div>
             <div className="flex-1">
               <label className="block text-xs text-app-text-secondary mb-1">Accession Number</label>
@@ -329,7 +352,7 @@ export function CreatePatientModal({ onSave, onClose }: CreatePatientModalProps)
           </div>
           {/* DCM File / Folder Path */}
           <div>
-            <label className="block text-xs text-app-text-secondary mb-1">DICOM / Image Files (optional)</label>
+            <label className="block text-xs text-app-text-secondary mb-1">DICOM / Non-DICOM Image Files (optional) — DCM, JPG, JPEG, PNG, BMP</label>
             <div className="flex gap-2">
               <div className="flex-1 px-3 py-2 text-xs border border-app-border rounded bg-app-bg text-app-text truncate">
                 {filePaths.length === 0 && imageFiles.length === 0

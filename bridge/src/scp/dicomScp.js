@@ -10,6 +10,7 @@ const net = require('net');
 const fs = require('fs');
 const path = require('path');
 const { EventEmitter } = require('events');
+const { PrintScpHandler } = require('./printScpHandler');
 
 const {
   buildAssociateAC,
@@ -85,6 +86,18 @@ class DicomScp extends EventEmitter {
       fileCount: 0,
       socketAlive: true,
     };
+    const printHandler = new PrintScpHandler({
+      aeTitle: this.aeTitle,
+      storageDir: this.storageDir,
+      logger: this.logger,
+    });
+    printHandler.on('print', (job) => {
+      this.emit('direct-print', {
+        ...job,
+        aeTitle: this.aeTitle,
+        port: this.port,
+      });
+    });
 
     const safeWrite = (data) => {
       if (ctx.socketAlive && !socket.destroyed) {
@@ -103,6 +116,10 @@ class DicomScp extends EventEmitter {
       const messageId = cmd['0000,0110'] || 1;
       const sopClassUid = cmd['0000,0002'] || '';
       const sopInstanceUid = cmd['0000,1000'] || `1.2.${Date.now()}.${ctx.fileCount}`;
+      const datasetData = Buffer.concat(ctx.currentCommand.dataFragments || []);
+      const pc = ctx.associationInfo?.items?.find((i) => i.pcId === pcId);
+      const transferSyntax = pc?.acceptedTransferSyntax || '1.2.840.10008.1.2';
+      const abstractSyntax = pc?.abstractSyntax || sopClassUid;
 
       if (commandField === 0x0030) {
         this.logger.info(`[SCP ${this.aeTitle}] C-ECHO`);
@@ -118,16 +135,19 @@ class DicomScp extends EventEmitter {
           remotePort:    socket.remotePort,
           receivedAt: new Date().toISOString(),
         });
+      } else if (PrintScpHandler.isPrintCommand(commandField)) {
+        const response = printHandler.handleCommand({
+          pcId,
+          cmd,
+          datasetData,
+          transferSyntax,
+          abstractSyntax,
+          associationInfo: ctx.associationInfo,
+          remoteAddress: socket.remoteAddress || '',
+        });
+        if (response) safeWrite(response);
       } else if (commandField === 0x0001) {
-        const datasetData = Buffer.concat(ctx.currentCommand.dataFragments || []);
-
         if (datasetData.length > 0) {
-          let transferSyntax = '1.2.840.10008.1.2';
-          if (ctx.associationInfo) {
-            const pc = ctx.associationInfo.items.find((i) => i.pcId === pcId);
-            if (pc && pc.acceptedTransferSyntax) transferSyntax = pc.acceptedTransferSyntax;
-          }
-
           const fileHeader = buildFileMetaHeader(sopClassUid, sopInstanceUid, transferSyntax);
           const fullFile = Buffer.concat([fileHeader, datasetData]);
 

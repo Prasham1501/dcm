@@ -12,6 +12,14 @@ const PAPER_DIMS_MM = {
   A5: { w: 148, h: 210 },
   Letter: { w: 215.9, h: 279.4 },
   Legal: { w: 215.9, h: 355.6 },
+  '8INX10IN': { w: 203.2, h: 254 },
+  '10INX12IN': { w: 254, h: 304.8 },
+  '10INX14IN': { w: 254, h: 355.6 },
+  '11INX14IN': { w: 279.4, h: 355.6 },
+  '14INX14IN': { w: 355.6, h: 355.6 },
+  '14INX17IN': { w: 355.6, h: 431.8 },
+  '24CMX24CM': { w: 240, h: 240 },
+  '24CMX30CM': { w: 240, h: 300 },
 };
 
 const PAGE_MARGIN_MM = 3;
@@ -136,14 +144,35 @@ function buildPatientMetadataBar(metadata, branding) {
   return items.join('<span style="margin:0 6px;opacity:0.4">|</span>');
 }
 
-function buildPrintHtml({ slot, images, metadata, branding }) {
-  const { layout, orientation } = resolveLayoutForJob(slot.layoutId, images.length);
+function buildPrintHtml({
+  slot,
+  images,
+  metadata,
+  branding,
+  layoutOverride,
+  orientationOverride,
+  fillEmptySlots = true,
+  pageSizeOverride,
+  footerLayoutLabel,
+}) {
+  const resolved = layoutOverride
+    ? { layout: layoutOverride, orientation: orientationOverride || (layoutOverride.cols > layoutOverride.rows ? 'landscape' : 'portrait') }
+    : resolveLayoutForJob(slot.layoutId, images.length);
+  const { layout, orientation } = resolved;
   const grid = getLayoutGridTemplate(layout);
   const slotRects = getSlotRects(layout, grid);
   const pages = chunkPages(images, layout.spots);
-  const dims = PAPER_DIMS_MM[slot.paperSize] || PAPER_DIMS_MM.A4;
+  const pageSize = pageSizeOverride || slot.paperSize;
+  const dims = PAPER_DIMS_MM[pageSize] || PAPER_DIMS_MM.A4;
   const w = orientation === 'landscape' ? dims.h : dims.w;
   const h = orientation === 'landscape' ? dims.w : dims.h;
+  // For standard paper sizes, use named size + orientation keyword so the
+  // browser and printer driver agree.  For custom DICOM film sizes (e.g.
+  // 14INX17IN) fall back to explicit mm dimensions.
+  const NAMED_SIZES = new Set(['A4', 'A3', 'A5', 'Letter', 'Legal']);
+  const pageCssSize = NAMED_SIZES.has(pageSize)
+    ? `${pageSize} ${orientation}`
+    : `${w}mm ${h}mm`;
 
   const hasBranding = branding && branding.hospitalName;
   const blackBg = hasBranding ? true : false;
@@ -180,7 +209,7 @@ function buildPrintHtml({ slot, images, metadata, branding }) {
   const footerTop = h - marginMm - (hasFooter ? brandedFooterH : FOOTER_HEIGHT_MM);
 
   // Fill empty trailing slots with the last available image
-  const lastImage = images.length > 0 ? images[images.length - 1] : null;
+  const lastImage = fillEmptySlots && images.length > 0 ? images.filter(Boolean).slice(-1)[0] : null;
 
   const pageHtml = pages.map((page, pageIdx) => {
     const slotsHtml = Array.from({ length: layout.spots }, (_, idx) => {
@@ -218,7 +247,7 @@ function buildPrintHtml({ slot, images, metadata, branding }) {
     if (hasFooter) {
       footerSection = `<div class="brand-ftr">${brandedFooterHtml}</div>`;
     } else if (!hasBranding) {
-      footerSection = `<footer class="ftr">One Clickz Bridge - Slot: ${escapeHtml(slot.name)} - ${escapeHtml(slot.aeTitle)} - Layout: ${escapeHtml(layout.id)} - Page ${pageIdx + 1} / ${pages.length}</footer>`;
+      footerSection = `<footer class="ftr">One Clickz Bridge - Slot: ${escapeHtml(slot.name)} - ${escapeHtml(slot.aeTitle)} - Layout: ${escapeHtml(footerLayoutLabel || layout.id)} - Page ${pageIdx + 1} / ${pages.length}</footer>`;
     }
 
     return `
@@ -237,7 +266,7 @@ function buildPrintHtml({ slot, images, metadata, branding }) {
   <title>print-${slot.name}</title>
   <style>
     @page {
-      size: ${slot.paperSize} ${orientation};
+      size: ${pageCssSize};
       margin: 0;
     }
     * { box-sizing: border-box; }

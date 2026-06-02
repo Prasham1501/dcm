@@ -65,6 +65,11 @@ class SlotManager extends EventEmitter {
       }
     });
 
+    scp.on('direct-print', (job) => {
+      this.jobQueue.enqueueDirectJob(slot, job);
+      this.emit('direct-print', { slot, job });
+    });
+
     scp.on('error', (err) => {
       this.emit('slot-error', { slot, error: err.message });
     });

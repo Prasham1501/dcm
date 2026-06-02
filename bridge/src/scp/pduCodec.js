@@ -187,6 +187,43 @@ function wrapCmdInPDataTF(pcId, fullCmd) {
   return pdata;
 }
 
+function wrapDimseInPDataTF(pcId, fullCmd, dataset) {
+  if (!dataset || dataset.length === 0) return wrapCmdInPDataTF(pcId, fullCmd);
+
+  const commandPdvLen = 2 + fullCmd.length;
+  const commandPdv = Buffer.alloc(4 + commandPdvLen);
+  commandPdv.writeUInt32BE(commandPdvLen, 0);
+  commandPdv[4] = pcId;
+  commandPdv[5] = 0x03; // command + last command fragment
+  fullCmd.copy(commandPdv, 6);
+
+  const dataPdvLen = 2 + dataset.length;
+  const dataPdv = Buffer.alloc(4 + dataPdvLen);
+  dataPdv.writeUInt32BE(dataPdvLen, 0);
+  dataPdv[4] = pcId;
+  dataPdv[5] = 0x02; // dataset + last fragment
+  dataset.copy(dataPdv, 6);
+
+  const payload = Buffer.concat([commandPdv, dataPdv]);
+  const pdata = Buffer.alloc(6 + payload.length);
+  pdata[0] = 0x04; pdata[1] = 0x00;
+  pdata.writeUInt32BE(payload.length, 2);
+  payload.copy(pdata, 6);
+  return pdata;
+}
+
+function buildCommandPayload(elements) {
+  const cmdData = Buffer.concat(elements);
+
+  const grpLenElem = Buffer.alloc(12);
+  grpLenElem.writeUInt16LE(0x0000, 0);
+  grpLenElem.writeUInt16LE(0x0000, 2);
+  grpLenElem.writeUInt32LE(4, 4);
+  grpLenElem.writeUInt32LE(cmdData.length, 8);
+
+  return Buffer.concat([grpLenElem, cmdData]);
+}
+
 function buildCStoreRSP(pcId, messageId, sopClassUid, sopInstanceUid) {
   const elements = [
     addCmdStringElem(0x0000, 0x0002, sopClassUid),
@@ -196,15 +233,7 @@ function buildCStoreRSP(pcId, messageId, sopClassUid, sopInstanceUid) {
     addCmdUint16Elem(0x0000, 0x0900, 0x0000),
     addCmdStringElem(0x0000, 0x1000, sopInstanceUid),
   ];
-  const cmdData = Buffer.concat(elements);
-
-  const grpLenElem = Buffer.alloc(12);
-  grpLenElem.writeUInt16LE(0x0000, 0);
-  grpLenElem.writeUInt16LE(0x0000, 2);
-  grpLenElem.writeUInt32LE(4, 4);
-  grpLenElem.writeUInt32LE(cmdData.length, 8);
-
-  return wrapCmdInPDataTF(pcId, Buffer.concat([grpLenElem, cmdData]));
+  return wrapCmdInPDataTF(pcId, buildCommandPayload(elements));
 }
 
 function buildCEchoRSP(pcId, messageId) {
@@ -215,15 +244,47 @@ function buildCEchoRSP(pcId, messageId) {
     addCmdUint16Elem(0x0000, 0x0800, 0x0101),
     addCmdUint16Elem(0x0000, 0x0900, 0x0000),
   ];
-  const cmdData = Buffer.concat(elements);
+  return wrapCmdInPDataTF(pcId, buildCommandPayload(elements));
+}
 
-  const grpLenElem = Buffer.alloc(12);
-  grpLenElem.writeUInt16LE(0x0000, 0);
-  grpLenElem.writeUInt16LE(0x0000, 2);
-  grpLenElem.writeUInt32LE(4, 4);
-  grpLenElem.writeUInt32LE(cmdData.length, 8);
+function buildDimseNRSP(pcId, opts) {
+  const dataset = opts.dataset && opts.dataset.length > 0 ? opts.dataset : null;
+  const elements = [];
+  if (opts.affectedSopClassUid) {
+    elements.push(addCmdStringElem(0x0000, 0x0002, opts.affectedSopClassUid));
+  }
+  elements.push(addCmdUint16Elem(0x0000, 0x0100, opts.commandField));
+  elements.push(addCmdUint16Elem(0x0000, 0x0120, opts.messageId || 1));
+  elements.push(addCmdUint16Elem(0x0000, 0x0800, dataset ? 0x0000 : 0x0101));
+  elements.push(addCmdUint16Elem(0x0000, 0x0900, opts.status || 0x0000));
+  if (opts.affectedSopInstanceUid) {
+    elements.push(addCmdStringElem(0x0000, 0x1000, opts.affectedSopInstanceUid));
+  }
+  if (Number.isFinite(opts.actionTypeId)) {
+    elements.push(addCmdUint16Elem(0x0000, 0x1008, opts.actionTypeId));
+  }
 
-  return wrapCmdInPDataTF(pcId, Buffer.concat([grpLenElem, cmdData]));
+  return wrapDimseInPDataTF(pcId, buildCommandPayload(elements), dataset);
+}
+
+function buildNGetRSP(pcId, opts) {
+  return buildDimseNRSP(pcId, { ...opts, commandField: 0x8110 });
+}
+
+function buildNSetRSP(pcId, opts) {
+  return buildDimseNRSP(pcId, { ...opts, commandField: 0x8120 });
+}
+
+function buildNActionRSP(pcId, opts) {
+  return buildDimseNRSP(pcId, { ...opts, commandField: 0x8130 });
+}
+
+function buildNCreateRSP(pcId, opts) {
+  return buildDimseNRSP(pcId, { ...opts, commandField: 0x8140 });
+}
+
+function buildNDeleteRSP(pcId, opts) {
+  return buildDimseNRSP(pcId, { ...opts, commandField: 0x8150 });
 }
 
 function parseCommandSet(cmdBuffer) {
@@ -305,6 +366,12 @@ module.exports = {
   buildAbortRJ,
   buildCStoreRSP,
   buildCEchoRSP,
+  buildNGetRSP,
+  buildNSetRSP,
+  buildNActionRSP,
+  buildNCreateRSP,
+  buildNDeleteRSP,
+  buildDimseNRSP,
   parseCommandSet,
   buildFileMetaHeader,
 };

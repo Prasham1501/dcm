@@ -61,6 +61,20 @@ class JobQueue extends EventEmitter {
     entry.timer = setTimeout(() => this._finalizeStudy(slot, studyUid), slot.studyDebounceSeconds * 1000);
   }
 
+  enqueueDirectJob(slot, job) {
+    const files = Array.isArray(job.files) ? job.files : [];
+    const studyUid = job.studyUid || job.filmBoxUid || `dicom-print-${Date.now()}`;
+    this.logger.info(`[Queue] direct print slot=${slot.name} study=${studyUid} files=${files.length}`);
+    this.queue.push({
+      ...job,
+      kind: 'dicom-print',
+      slot,
+      studyUid,
+      files,
+    });
+    this._tick();
+  }
+
   _finalizeStudy(slot, studyUid) {
     const slotStudies = this.studies.get(slot.id);
     if (!slotStudies) return;
@@ -105,8 +119,11 @@ class JobQueue extends EventEmitter {
             this.logger.warn(`[Queue] preflight check errored, continuing: ${e?.message || e}`);
           }
         }
-        this.logger.info(`[Queue] printing slot=${fresh.name} study=${job.studyUid} files=${job.files.length}`);
-        const result = await this.printWorker.print({ ...job, slot: fresh });
+        const mode = job.kind === 'dicom-print' ? 'direct-print' : 'c-store';
+        this.logger.info(`[Queue] printing mode=${mode} slot=${fresh.name} study=${job.studyUid} files=${job.files.length}`);
+        const result = job.kind === 'dicom-print'
+          ? await this.printWorker.printDirect({ ...job, slot: fresh })
+          : await this.printWorker.print({ ...job, slot: fresh });
         this.logger.info(`[Queue] printed slot=${fresh.name} pages=${result.pages}`);
         this._move(job.files, this.printedRoot);
         this.emit('printed', { ...job, slot: fresh, result });
