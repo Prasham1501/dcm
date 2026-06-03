@@ -62,6 +62,7 @@ export function DualSidebar() {
   const [newStampText, setNewStampText] = useState('');
   const [newStampColor, setNewStampColor] = useState('#ffff00');
   const [newStampFontSize, setNewStampFontSize] = useState(16);
+  const [newStampCategory, setNewStampCategory] = useState('');
 
   const { stamps, activeStampId, setActiveStamp, isStampMode, setStampMode, stampPlacements, clearStampPlacements } = useDualViewerStore();
 
@@ -174,12 +175,18 @@ export function DualSidebar() {
                     setStampMode(true);
                     setShowStampDropdown(false);
                   }}
-                  className={`w-full text-left px-3 py-1.5 text-xs hover:bg-app-hover flex items-center gap-2 ${
-                    activeStampId === stamp.id ? 'bg-app-accent/20 text-app-accent' : 'text-app-text'
+                  className={`w-full text-left px-3 py-1.5 text-xs hover:bg-app-hover flex items-center gap-2 text-app-text ${
+                    activeStampId === stamp.id ? 'bg-app-accent/20 ring-1 ring-app-accent/60 font-bold' : ''
                   }`}
                 >
                   <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: stamp.color }} />
-                  <span className="truncate font-bold">{stamp.name}</span>
+                  <span className="font-bold flex-1 truncate uppercase">{stamp.text}</span>
+                  {stamp.category && (
+                    <span className="text-[9px] text-app-text-muted px-1 rounded bg-app-bg border border-app-border">{stamp.category}</span>
+                  )}
+                  {stamp.name && stamp.name !== stamp.text && (
+                    <span className="text-[9px] text-app-text-muted truncate">{stamp.name}</span>
+                  )}
                 </button>
               ))}
               <div className="border-t border-app-border mt-1 pt-1">
@@ -193,11 +200,24 @@ export function DualSidebar() {
                 ) : (
                   <div className="px-3 py-2 space-y-1.5">
                     <div className="text-[10px] text-app-accent font-bold uppercase">Create Stamp</div>
-                    <input type="text" value={newStampName} onChange={(e) => setNewStampName(e.target.value)}
-                      placeholder="Name" autoFocus
-                      className="w-full px-2 py-1 text-[10px] bg-app-bg text-app-text border border-app-border rounded focus:border-app-accent focus:outline-none" />
                     <input type="text" value={newStampText} onChange={(e) => setNewStampText(e.target.value)}
-                      placeholder="Stamp text"
+                      placeholder="Stamp text (e.g. APPROVED, R, L)" autoFocus
+                      className="w-full px-2 py-1 text-[10px] bg-app-bg text-app-text border border-app-border rounded focus:border-app-accent focus:outline-none" />
+                    <input
+                      list="dual-stamp-categories"
+                      type="text"
+                      value={newStampCategory}
+                      onChange={(e) => setNewStampCategory(e.target.value)}
+                      placeholder="Category (e.g. Marker, Label, Technique)"
+                      className="w-full px-2 py-1 text-[10px] bg-app-bg text-app-text border border-app-border rounded focus:border-app-accent focus:outline-none"
+                    />
+                    <datalist id="dual-stamp-categories">
+                      {Array.from(new Set(stamps.map(s => (s.category || '').trim()).filter(Boolean))).map(c => (
+                        <option key={c} value={c} />
+                      ))}
+                    </datalist>
+                    <input type="text" value={newStampName} onChange={(e) => setNewStampName(e.target.value)}
+                      placeholder="Display name (optional)"
                       className="w-full px-2 py-1 text-[10px] bg-app-bg text-app-text border border-app-border rounded focus:border-app-accent focus:outline-none" />
                     <div className="flex items-center gap-2">
                       <span className="text-[9px] text-app-text-muted">Color</span>
@@ -208,15 +228,29 @@ export function DualSidebar() {
                             style={{ backgroundColor: c }} />
                         ))}
                       </div>
+                      <input
+                        type="color"
+                        value={newStampColor}
+                        onChange={(e) => setNewStampColor(e.target.value)}
+                        className="w-5 h-5 rounded border border-app-border bg-transparent cursor-pointer p-0"
+                        title="Pick any color"
+                      />
                     </div>
                     <div className="flex gap-1">
                       <button onClick={() => {
-                        if (newStampName.trim() && newStampText.trim()) {
-                          store.getState().addStamp({ name: newStampName.trim(), text: newStampText.trim(), color: newStampColor, fontSize: newStampFontSize });
-                          setNewStampName(''); setNewStampText(''); setShowStampCreate(false);
-                        }
-                      }} disabled={!newStampName.trim() || !newStampText.trim()}
-                        className="flex-1 px-2 py-1 text-[10px] bg-green-600 text-white rounded font-bold hover:bg-green-500 disabled:opacity-40">
+                        const text = newStampText.trim();
+                        if (!text) return;
+                        store.getState().addStamp({
+                          name: (newStampName.trim() || text),
+                          text,
+                          color: newStampColor,
+                          fontSize: newStampFontSize,
+                          category: newStampCategory.trim() || undefined,
+                        });
+                        setNewStampName(''); setNewStampText(''); setNewStampCategory(''); setShowStampCreate(false);
+                      }} disabled={!newStampText.trim()}
+                        title={!newStampText.trim() ? 'Enter stamp text first' : 'Save stamp'}
+                        className="flex-1 px-2 py-1 text-[10px] bg-green-600 text-white rounded font-bold hover:bg-green-500 disabled:opacity-40 disabled:cursor-not-allowed">
                         Save
                       </button>
                       <button onClick={() => setShowStampCreate(false)}

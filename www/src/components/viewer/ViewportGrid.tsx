@@ -1,4 +1,4 @@
-import { useCallback, useRef, useEffect } from 'react';
+import { useCallback, useRef, useEffect, useMemo } from 'react';
 import { useViewerStore } from '@/stores/viewerStore';
 import { DicomViewport } from './DicomViewport';
 import { useAnnotationPersistence, restoreAnnotations } from '@/hooks/useAnnotationPersistence';
@@ -86,10 +86,15 @@ export function ViewportGrid() {
   // Get grid area names for asymmetric layouts
   const areaNames = currentLayout.areas ? getAreaLetters(currentLayout.areas) : [];
 
-  // Build the image stack (all imageIds) for scroll support
-  const imageStack = hasRealImages
-    ? images.map((img) => img.imageUrl || '')
-    : [];
+  // Build the image stack (all imageIds) for scroll support.
+  // Memoized so the array reference is stable across unrelated re-renders
+  // (W/L, zoom, progress, selection). Otherwise a fresh array every render
+  // breaks DicomViewport's React.memo and re-renders every viewport during
+  // the decode storm of a large study.
+  const imageStack = useMemo(
+    () => (hasRealImages ? images.map((img) => img.imageUrl || '') : []),
+    [hasRealImages, images]
+  );
 
   // Handle viewport click with multi-select (Ctrl+click adds to selection) and Shift+click swap
   const handleViewportClick = useCallback((index: number, e: React.MouseEvent) => {

@@ -166,10 +166,10 @@ export function CRViewportGrid() {
           }
 
           return (
-            // Key includes imageId so the CRViewport remounts (and cornerstone
-            // re-displays from scratch) whenever the slot's image changes —
-            // page-nav and active-viewport image rotation both rely on this.
-            <div key={`cr-vp-${i}-${imageId ?? 'empty'}`} className={`relative overflow-hidden min-h-0 ${isArrangeMode ? 'cursor-pointer' : ''}`} style={areaStyle} onMouseDown={(e) => handleViewportMouseDown(i, e)} onDoubleClick={() => handleViewportDoubleClick(i)}
+            // Stable key by slot only — CRViewport's imageId effect re-displays
+            // the image without remounting cornerstone, matching the main viewer.
+            // This keeps zoom-out from a 1x1 double-click fast on large studies.
+            <div key={`cr-vp-${i}`} className={`relative overflow-hidden min-h-0 ${isArrangeMode ? 'cursor-pointer' : ''}`} style={areaStyle} onMouseDown={(e) => handleViewportMouseDown(i, e)} onDoubleClick={() => handleViewportDoubleClick(i)}
               onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; }}
               onDrop={(e) => {
                 e.preventDefault();

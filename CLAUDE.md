@@ -277,7 +277,7 @@ npm run build:win  # produces installer-output/One Clickz Bridge Setup *.exe (NS
 7. **Electron BrowserWindow state isolation** — Zustand stores don't share across windows. Use `lib/loadedStudiesRegistry.ts` (localStorage-backed) when you need cross-window visibility.
 8. **Trial license = 100 prints by default** — `AdminController::issueLicense` + `issue_test_key.php` seed it; `LicenseController::quota` lazy-seeds old trial rows.
 9. **Image stack scroll** uses `viewportImageOverrides` (CR — clean) vs `panelSwapImages` (Dual — swaps in-place). Other Dual viewports may shuffle as a side-effect; live with it until Dual gets its own override system.
-10. **Cornerstone re-display on page nav** depends on viewport key including `imageId` — don't simplify the key in `CRViewportGrid` back to just slot index.
+10. **Cornerstone re-display on page nav** is handled by `CRViewport`'s `useEffect([imageId])` calling `cornerstone.displayImage` + `cornerstone.resize(el, true)`. The grid key is slot-only (`cr-vp-${i}`) so viewports persist across layout changes — keeps zoom-out from a 1x1 double-click fast on large studies (matches main viewer).
 
 # User context
 - **Email**: `prasham1501@gmail.com`

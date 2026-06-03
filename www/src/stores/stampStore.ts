@@ -12,27 +12,39 @@ export interface StampDefinition {
   text: string;
   color: string;
   fontSize: number;
+  category?: string;
   createdAt: number;
 }
 
 const STORAGE_KEY = 'dicom-viewer-stamps';
 
-// Default stamps that ship with the app
+// Built-in stamps shipped with the app. Keep this list minimal — radiologists
+// requested L/R marker stamps for laterality only. Everything else is user-created.
 const DEFAULT_STAMPS: StampDefinition[] = [
-  { id: 'default-verified', name: 'Verified', text: 'VERIFIED', color: '#00ff00', fontSize: 16, createdAt: 0 },
-  { id: 'default-approved', name: 'Approved', text: 'APPROVED', color: '#00ff00', fontSize: 16, createdAt: 0 },
-  { id: 'default-reviewed', name: 'Reviewed', text: 'REVIEWED', color: '#ffff00', fontSize: 16, createdAt: 0 },
-  { id: 'default-reject', name: 'Reject', text: 'REJECT', color: '#ff0000', fontSize: 16, createdAt: 0 },
-  { id: 'default-pending', name: 'Pending', text: 'PENDING', color: '#ff6600', fontSize: 16, createdAt: 0 },
-  { id: 'default-urgent', name: 'Urgent', text: 'URGENT', color: '#ff0000', fontSize: 18, createdAt: 0 },
+  { id: 'default-l', name: 'L', text: 'L', color: '#ffff00', fontSize: 28, category: 'Marker', createdAt: 0 },
+  { id: 'default-r', name: 'R', text: 'R', color: '#ffff00', fontSize: 28, category: 'Marker', createdAt: 0 },
 ];
+
+// IDs of stamps previously shipped that should be pruned on next load.
+const LEGACY_DEFAULT_IDS = new Set([
+  'default-verified', 'default-approved', 'default-reviewed',
+  'default-reject', 'default-pending', 'default-urgent',
+]);
 
 function loadStamps(): StampDefinition[] {
   try {
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved) {
       const parsed = JSON.parse(saved) as StampDefinition[];
-      return parsed.length > 0 ? parsed : DEFAULT_STAMPS;
+      const pruned = parsed.filter(s => !LEGACY_DEFAULT_IDS.has(s.id));
+      // Ensure L/R defaults exist (so users always have at least a laterality marker).
+      const ids = new Set(pruned.map(s => s.id));
+      const merged = [
+        ...DEFAULT_STAMPS.filter(d => !ids.has(d.id)),
+        ...pruned,
+      ];
+      if (merged.length !== parsed.length) persistStamps(merged);
+      return merged.length > 0 ? merged : DEFAULT_STAMPS;
     }
     return DEFAULT_STAMPS;
   } catch {
@@ -53,6 +65,7 @@ interface StampStoreState {
   addStamp: (stamp: Omit<StampDefinition, 'id' | 'createdAt'>) => void;
   removeStamp: (id: string) => void;
   updateStamp: (id: string, updates: Partial<Omit<StampDefinition, 'id' | 'createdAt'>>) => void;
+  getCategories: () => string[];
   selectStamp: (id: string | null) => void;
   getSelectedStamp: () => StampDefinition | null;
 }
@@ -86,6 +99,15 @@ export const useStampStore = create<StampStoreState>((set, get) => ({
   },
 
   selectStamp: (id) => set({ selectedStampId: id }),
+
+  getCategories: () => {
+    const set = new Set<string>();
+    for (const s of get().stamps) {
+      const c = (s.category || '').trim();
+      if (c) set.add(c);
+    }
+    return Array.from(set).sort();
+  },
 
   getSelectedStamp: () => {
     const { stamps, selectedStampId } = get();

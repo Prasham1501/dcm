@@ -412,7 +412,9 @@ function DualViewportInner({
           onDoubleClick={(e) => {
             e.stopPropagation();
             markDblClickHandled();
-            setEditingStamp({ id: sp.id, color: sp.color, fontSize: sp.fontSize, text: sp.text, type: sp.type || 'stamp' });
+            const ch = containerRef.current?.getBoundingClientRect().height || 500;
+            const displayPx = sp.fontSizePercent ? Math.max(8, Math.round((sp.fontSizePercent / 100) * ch)) : sp.fontSize;
+            setEditingStamp({ id: sp.id, color: sp.color, fontSize: displayPx, text: sp.text, type: sp.type || 'stamp' });
           }}
         >
           {sp.text}
@@ -420,14 +422,14 @@ function DualViewportInner({
         );
       })}
 
-      {/* Edit stamp/text panel (double-click) — fixed to top-right corner */}
+      {/* Edit stamp/text panel (double-click) — portal to body, fixed top-center */}
       {editingStamp && (() => {
         const sp = viewportStamps.find(s => s.id === editingStamp.id);
         if (!sp) return null;
         const isText = editingStamp.type === 'text';
-        return (
+        return createPortal(
           <div
-            className="absolute z-40 top-2 right-2"
+            className="fixed z-[100] top-4 right-[7.5rem] 2xl:right-[9.5rem]"
             data-stamp-edit="true"
             onClick={(e) => e.stopPropagation()}
             onDoubleClick={(e) => e.stopPropagation()}
@@ -462,6 +464,13 @@ function DualViewportInner({
                       style={{ backgroundColor: c }}
                     />
                   ))}
+                  <input
+                    type="color"
+                    value={editingStamp.color}
+                    onChange={(e) => setEditingStamp({ ...editingStamp, color: e.target.value })}
+                    className="w-6 h-6 rounded border border-gray-600 bg-transparent cursor-pointer p-0"
+                    title="Pick any color"
+                  />
                 </div>
               </div>
               <div className="mb-2">
@@ -513,21 +522,22 @@ function DualViewportInner({
                 <Check className="w-3 h-3" /> Save
               </button>
             </div>
-          </div>
+          </div>,
+          document.body
         );
       })()}
 
-      {/* Pending text input — fixed to top-right */}
-      {pendingText && (
+      {/* Pending text input — portal to body, top of empty space next to sidebar */}
+      {pendingText && createPortal(
         <div
-          className="absolute z-40 top-2 right-2"
+          className="fixed z-[100] top-4 right-[7.5rem] 2xl:right-[9.5rem]"
           data-pending-input="true"
           onClick={(e) => e.stopPropagation()}
           onMouseDown={(e) => e.stopPropagation()}
         >
-          <div className="bg-gray-800 border border-blue-500 rounded-lg p-2 shadow-xl min-w-[180px]">
+          <div className="bg-gray-800 border border-blue-500 rounded-lg p-2 shadow-xl min-w-[240px]">
             <div className="text-[9px] text-blue-400 font-bold mb-1.5 uppercase">Add Text</div>
-            <div className="space-y-2">
+            <div className="space-y-1.5">
               <input
                 type="text"
                 value={textInput}
@@ -540,27 +550,40 @@ function DualViewportInner({
                   }
                   if (e.key === 'Escape') setPendingText(null);
                 }}
-                placeholder="Type text..."
-                className="w-full px-2 py-1 text-xs bg-gray-900 text-white border border-gray-600 rounded focus:border-blue-500 focus:outline-none"
+                placeholder="Type text (e.g. Note, AP, PA)"
+                className="w-full px-2 py-1 text-[11px] bg-gray-900 text-white border border-gray-600 rounded focus:border-blue-500 focus:outline-none"
                 autoFocus
               />
-              <div className="flex items-center justify-between">
-                <span className="text-[8px] text-gray-400 uppercase">Size</span>
-                <input type="range" min="8" max="30" value={textFontSize}
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[9px] text-gray-400 uppercase">Size</span>
+                <input type="range" min="10" max="40" value={textFontSize}
                   onChange={(e) => setTextFontSize(parseInt(e.target.value))}
-                  className="flex-1 mx-2 h-1.5 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-blue-500"
+                  className="w-20 h-1.5 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-blue-500"
                 />
-                <span className="text-[8px] text-white">{textFontSize}px</span>
+                <span className="text-[9px] text-white w-8 text-right">{textFontSize}px</span>
               </div>
               <div className="flex items-center gap-2">
-                <span className="text-[8px] text-gray-400 uppercase">Color</span>
-                <div className="flex gap-1.5">
-                  {['#ffff00', '#00ff00', '#ffffff', '#ff0000', '#00ffff'].map(c => (
+                <span className="text-[9px] text-gray-400 uppercase">Color</span>
+                <div className="flex gap-1">
+                  {['#ff0000', '#ffff00', '#00ff00', '#00ffff', '#ff00ff', '#ffffff'].map(c => (
                     <button key={c} onClick={() => setTextColor(c)}
-                      className={`w-4 h-4 rounded-full border ${textColor === c ? 'border-white' : 'border-transparent'}`}
+                      className={`w-4 h-4 rounded-full border-2 ${textColor === c ? 'border-white scale-110' : 'border-transparent'}`}
                       style={{ backgroundColor: c }} />
                   ))}
                 </div>
+                <input
+                  type="color"
+                  value={textColor}
+                  onChange={(e) => setTextColor(e.target.value)}
+                  className="w-5 h-5 rounded border border-gray-600 bg-transparent cursor-pointer p-0"
+                  title="Pick any color"
+                />
+              </div>
+              <div className="p-1.5 bg-black/60 rounded border border-gray-700 text-center">
+                <span className="inline-block px-1.5 py-0.5 font-bold"
+                  style={{ color: textColor, fontSize: `${Math.min(textFontSize, 20)}px`, textShadow: '1px 1px 2px rgba(0,0,0,0.8)' }}>
+                  {textInput || 'PREVIEW'}
+                </span>
               </div>
               <div className="flex gap-1">
                 <button
@@ -571,20 +594,23 @@ function DualViewportInner({
                       setPendingText(null);
                     }
                   }}
-                  className="flex-1 px-2 py-1 text-[10px] font-bold bg-blue-600 text-white rounded hover:bg-blue-500 transition-colors"
+                  disabled={!textInput.trim()}
+                  title={!textInput.trim() ? 'Type text first' : 'Add text'}
+                  className="flex-1 px-2 py-1 text-[10px] font-bold bg-green-600 text-white rounded hover:bg-green-500 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                 >
                   Add Text
                 </button>
                 <button
                   onClick={() => setPendingText(null)}
-                  className="px-2 py-1 text-[10px] font-bold bg-gray-600 text-white rounded hover:bg-gray-500 transition-colors"
+                  className="px-2 py-1 text-[10px] font-bold bg-gray-700 text-gray-300 rounded hover:bg-gray-600 transition-colors"
                 >
                   Cancel
                 </button>
               </div>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Annotation edit overlay (double-click on shape) */}

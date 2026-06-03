@@ -946,9 +946,10 @@ export const useViewerStore = create<ViewerState>((set, get) => ({
         loadProgress: 100,
       });
 
-      // Prefetch first page
-      const firstPageIds = allImages.slice(0, layout.spots).map(img => img.imageUrl);
-      prefetchImages(firstPageIds, 4).catch(() => {});
+      // Prefetch the whole study up-front with high concurrency (matches the
+      // CR viewer) so later pages and double-click zoom never hit a cold image.
+      const allIds = allImages.map(img => img.imageUrl);
+      prefetchImages(allIds, 16).catch(() => {});
 
       studyService.markRead(params.studyUID).catch(() => {});
     } catch (err: any) {
@@ -1033,9 +1034,10 @@ export const useViewerStore = create<ViewerState>((set, get) => ({
         loadProgress: 100,
       });
 
-      // Prefetch first page
-      const firstPageIds = dicomImages.slice(0, layout.spots).map(img => img.imageUrl);
-      prefetchImages(firstPageIds, 4, (loaded, total) => {
+      // Prefetch the whole study with high concurrency (matches the CR viewer)
+      // so later pages and double-click zoom never hit a cold image.
+      const allIds = dicomImages.map(img => img.imageUrl);
+      prefetchImages(allIds, 16, (loaded, total) => {
         set({ loadProgress: Math.round((loaded / total) * 100) });
       }).catch(() => {});
 
@@ -1108,8 +1110,9 @@ export const useViewerStore = create<ViewerState>((set, get) => ({
       loadProgress: 100,
     });
 
-    // Prefetch first page
-    const firstPageIds = dicomImages.slice(0, layout.spots).map(img => img.imageUrl);
-    prefetchImages(firstPageIds, 4).catch(() => {});
+    // Prefetch the whole study with high concurrency (matches the CR viewer)
+    // so later pages and double-click zoom never hit a cold image.
+    const allIds = dicomImages.map(img => img.imageUrl);
+    prefetchImages(allIds, 16).catch(() => {});
   },
 }));

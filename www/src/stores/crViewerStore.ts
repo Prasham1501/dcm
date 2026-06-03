@@ -352,9 +352,11 @@ export const useCRViewerStore = create<CRViewerState>((set, get) => ({
       stampPlacements: [],
     });
 
-    // Prefetch first page
-    const firstPageIds = crImages.slice(0, layout.spots).map(img => img.imageUrl);
-    prefetchImages(firstPageIds, 4).catch(() => {});
+    // Prefetch the entire study up-front with high concurrency so the visible
+    // page (which can be 9-18 spots) fills in fast and double-click zoom never
+    // hits a cold image.
+    const allIds = crImages.map(img => img.imageUrl);
+    prefetchImages(allIds, 16).catch(() => {});
 
     // Record this study in the cross-window registry so the Cloud-backup
     // tab (which lives in a separate Electron window) can find it.
@@ -589,6 +591,7 @@ export const useCRViewerStore = create<CRViewerState>((set, get) => ({
   },
 
   // Double-click toggle: zoom into 1x1 showing clicked image, or restore previous layout
+  // Mirrors viewerStore.toggleSingleViewport so behaviour matches the main viewer.
   toggleSingleViewport: (viewportIndex) => {
     const { preDoubleClickLayout, currentLayout, currentPage, images } = get();
     const singleLayout = CR_LAYOUTS[0]; // 1 Spot

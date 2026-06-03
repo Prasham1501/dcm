@@ -520,28 +520,28 @@ function CRViewportInner({
           onClick={(e) => e.stopPropagation()} // prevent re-placing stamp on click
           onDoubleClick={(e) => {
             e.stopPropagation();
-            setEditingStamp({ id: sp.id, color: sp.color, fontSize: sp.fontSize, text: sp.text, type: sp.type });
+            const ch = containerRef.current?.getBoundingClientRect().height || 500;
+            const displayPx = sp.fontSizePercent ? Math.max(8, Math.round((sp.fontSizePercent / 100) * ch)) : sp.fontSize;
+            setEditingStamp({ id: sp.id, color: sp.color, fontSize: displayPx, text: sp.text, type: sp.type });
           }}
         >
           <span className={`inline-block px-1.5 py-0.5 rounded font-bold whitespace-nowrap ${
-            sp.type === 'text' ? '' : 'border-2 border-current uppercase tracking-wider'
-          }`}
-            style={{ backgroundColor: 'rgba(0,0,0,0.6)' }}
-          >
+            sp.type === 'text' ? '' : 'uppercase tracking-wider'
+          }`}>
             {sp.text}
           </span>
         </div>
         );
       })}
 
-      {/* Edit stamp/text panel (double-click) — fixed to top-right corner */}
+      {/* Edit stamp/text panel (double-click) — portal to body, fixed top-center */}
       {editingStamp && (() => {
         const sp = viewportStamps.find(s => s.id === editingStamp.id);
         if (!sp) return null;
         const isText = editingStamp.type === 'text';
-        return (
+        return createPortal(
           <div
-            className="absolute z-40 top-2 right-2"
+            className="fixed z-[100] top-4 right-[7.5rem] 2xl:right-[9.5rem]"
             data-stamp-edit="true"
             onClick={(e) => e.stopPropagation()}
             onDoubleClick={(e) => e.stopPropagation()}
@@ -569,7 +569,7 @@ function CRViewportInner({
               {/* Color */}
               <div className="mb-2">
                 <span className="text-[9px] text-gray-400 uppercase font-semibold block mb-1">Color</span>
-                <div className="flex gap-1.5 flex-wrap">
+                <div className="flex gap-1.5 flex-wrap items-center">
                   {['#ff0000', '#ffff00', '#00ff00', '#00ffff', '#ff00ff', '#ffffff', '#ff8800', '#8800ff'].map(c => (
                     <button
                       key={c}
@@ -578,6 +578,13 @@ function CRViewportInner({
                       style={{ backgroundColor: c }}
                     />
                   ))}
+                  <input
+                    type="color"
+                    value={editingStamp.color}
+                    onChange={(e) => setEditingStamp({ ...editingStamp, color: e.target.value })}
+                    className="w-6 h-6 rounded border border-gray-600 bg-transparent cursor-pointer p-0"
+                    title="Pick any color"
+                  />
                 </div>
               </div>
               {/* Size */}
@@ -637,14 +644,15 @@ function CRViewportInner({
                 <Check className="w-3 h-3" /> Save
               </button>
             </div>
-          </div>
+          </div>,
+          document.body
         );
       })()}
 
-      {/* Pending stamp picker (click-to-place) — fixed to top-right corner */}
-      {pendingStamp && (
+      {/* Pending stamp picker (click-to-place) — portal to body, top of empty space next to sidebar */}
+      {pendingStamp && createPortal(
         <div
-          className="absolute z-40 top-2 right-2"
+          className="fixed z-[100] top-4 right-[7.5rem] 2xl:right-[9.5rem]"
           data-pending-input="true"
           onClick={(e) => e.stopPropagation()}
           onMouseDown={(e) => e.stopPropagation()}
@@ -660,20 +668,21 @@ function CRViewportInner({
               onCancel={() => setPendingStamp(null)}
             />
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
-      {/* Pending text input (click-to-place text) — fixed to top-right corner */}
-      {pendingText && (
+      {/* Pending text input (click-to-place text) — portal to body, top of empty space next to sidebar */}
+      {pendingText && createPortal(
         <div
-          className="absolute z-40 top-2 right-2"
+          className="fixed z-[100] top-4 right-[7.5rem] 2xl:right-[9.5rem]"
           data-pending-input="true"
           onClick={(e) => e.stopPropagation()}
           onMouseDown={(e) => e.stopPropagation()}
         >
-          <div className="bg-gray-800 border border-blue-500 rounded-lg p-2 shadow-xl min-w-[180px] 2xl:min-w-[220px]">
+          <div className="bg-gray-800 border border-blue-500 rounded-lg p-2 shadow-xl min-w-[240px] 2xl:min-w-[260px]">
             <div className="text-[9px] 2xl:text-[10px] text-blue-400 font-bold mb-1.5 uppercase">Add Text</div>
-            <div className="space-y-2">
+            <div className="space-y-1.5">
               <input
                 type="text"
                 value={textInput}
@@ -686,27 +695,40 @@ function CRViewportInner({
                   }
                   if (e.key === 'Escape') setPendingText(null);
                 }}
-                placeholder="Type text..."
-                className="w-full px-2 py-1 text-xs bg-gray-900 text-white border border-gray-600 rounded focus:border-blue-500 focus:outline-none"
+                placeholder="Type text (e.g. Note, AP, PA)"
+                className="w-full px-2 py-1 text-[11px] bg-gray-900 text-white border border-gray-600 rounded focus:border-blue-500 focus:outline-none"
                 autoFocus
               />
-              <div className="flex items-center justify-between">
-                <span className="text-[8px] text-gray-400 uppercase">Size</span>
-                <input type="range" min="8" max="30" value={textFontSize}
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[9px] text-gray-400 uppercase">Size</span>
+                <input type="range" min="10" max="40" value={textFontSize}
                   onChange={(e) => setTextFontSize(parseInt(e.target.value))}
-                  className="flex-1 mx-2 h-1.5 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-blue-500"
+                  className="w-20 h-1.5 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-blue-500"
                 />
-                <span className="text-[8px] text-white">{textFontSize}px</span>
+                <span className="text-[9px] text-white w-8 text-right">{textFontSize}px</span>
               </div>
               <div className="flex items-center gap-2">
-                <span className="text-[8px] text-gray-400 uppercase">Color</span>
-                <div className="flex gap-1.5">
-                  {['#ffff00', '#00ff00', '#ffffff', '#ff0000', '#00ffff'].map(c => (
+                <span className="text-[9px] text-gray-400 uppercase">Color</span>
+                <div className="flex gap-1">
+                  {['#ff0000', '#ffff00', '#00ff00', '#00ffff', '#ff00ff', '#ffffff'].map(c => (
                     <button key={c} onClick={() => setTextColor(c)}
-                      className={`w-4 h-4 rounded-full border ${textColor === c ? 'border-white' : 'border-transparent'}`}
+                      className={`w-4 h-4 rounded-full border-2 ${textColor === c ? 'border-white scale-110' : 'border-transparent'}`}
                       style={{ backgroundColor: c }} />
                   ))}
                 </div>
+                <input
+                  type="color"
+                  value={textColor}
+                  onChange={(e) => setTextColor(e.target.value)}
+                  className="w-5 h-5 rounded border border-gray-600 bg-transparent cursor-pointer p-0"
+                  title="Pick any color"
+                />
+              </div>
+              <div className="p-1.5 bg-black/60 rounded border border-gray-700 text-center">
+                <span className="inline-block px-1.5 py-0.5 font-bold"
+                  style={{ color: textColor, fontSize: `${Math.min(textFontSize, 20)}px`, textShadow: '1px 1px 2px rgba(0,0,0,0.8)' }}>
+                  {textInput || 'PREVIEW'}
+                </span>
               </div>
               <div className="flex gap-1">
                 <button
@@ -717,20 +739,23 @@ function CRViewportInner({
                       setPendingText(null);
                     }
                   }}
-                  className="flex-1 px-2 py-1 text-[10px] font-bold bg-blue-600 text-white rounded hover:bg-blue-500 transition-colors"
+                  disabled={!textInput.trim()}
+                  title={!textInput.trim() ? 'Type text first' : 'Add text'}
+                  className="flex-1 px-2 py-1 text-[10px] font-bold bg-green-600 text-white rounded hover:bg-green-500 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                 >
                   Add Text
                 </button>
                 <button
                   onClick={() => setPendingText(null)}
-                  className="px-2 py-1 text-[10px] font-bold bg-gray-600 text-white rounded hover:bg-gray-500 transition-colors"
+                  className="px-2 py-1 text-[10px] font-bold bg-gray-700 text-gray-300 rounded hover:bg-gray-600 transition-colors"
                 >
                   Cancel
                 </button>
               </div>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Annotation edit overlay (double-click on shape) */}
@@ -817,6 +842,7 @@ function CRStampPickerPanel({ onSelect, onCancel }: {
   const [newText, setNewText] = useState('');
   const [newColor, setNewColor] = useState('#ffff00');
   const [newFontSize, setNewFontSize] = useState(16);
+  const [newCategory, setNewCategory] = useState('');
 
   return (
     <div className="space-y-2">
@@ -830,6 +856,9 @@ function CRStampPickerPanel({ onSelect, onCancel }: {
             >
               <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: stamp.color }} />
               <span className="text-[10px] font-bold text-white flex-1 truncate uppercase">{stamp.text}</span>
+              {stamp.category && (
+                <span className="text-[9px] text-gray-300 px-1 rounded bg-gray-700 border border-gray-600">{stamp.category}</span>
+              )}
               <span className="text-[9px] text-gray-500">{stamp.fontSize}px</span>
             </button>
           ))}
@@ -843,11 +872,24 @@ function CRStampPickerPanel({ onSelect, onCancel }: {
       {showCreate ? (
         <div className="border-t border-gray-600 pt-2 space-y-1.5">
           <div className="text-[9px] text-blue-400 font-bold uppercase">Create Stamp</div>
-          <input type="text" value={newName} onChange={(e) => setNewName(e.target.value)}
-            placeholder="Name (e.g. Hospital)" autoFocus
-            className="w-full px-2 py-1 text-[10px] bg-gray-900 text-white border border-gray-600 rounded focus:border-blue-500 focus:outline-none" />
           <input type="text" value={newText} onChange={(e) => setNewText(e.target.value)}
-            placeholder="Stamp text (e.g. APPROVED)"
+            placeholder="Stamp text (e.g. APPROVED, R, L)" autoFocus
+            className="w-full px-2 py-1 text-[10px] bg-gray-900 text-white border border-gray-600 rounded focus:border-blue-500 focus:outline-none" />
+          <input
+            list="crviewport-stamp-categories"
+            type="text"
+            value={newCategory}
+            onChange={(e) => setNewCategory(e.target.value)}
+            placeholder="Category (e.g. Marker, Label, Technique)"
+            className="w-full px-2 py-1 text-[10px] bg-gray-900 text-white border border-gray-600 rounded focus:border-blue-500 focus:outline-none"
+          />
+          <datalist id="crviewport-stamp-categories">
+            {Array.from(new Set(stamps.map(s => (s.category || '').trim()).filter(Boolean))).map(c => (
+              <option key={c} value={c} />
+            ))}
+          </datalist>
+          <input type="text" value={newName} onChange={(e) => setNewName(e.target.value)}
+            placeholder="Display name (optional)"
             className="w-full px-2 py-1 text-[10px] bg-gray-900 text-white border border-gray-600 rounded focus:border-blue-500 focus:outline-none" />
           <div className="flex items-center justify-between">
             <span className="text-[9px] text-gray-400 uppercase">Size</span>
@@ -865,21 +907,35 @@ function CRStampPickerPanel({ onSelect, onCancel }: {
                   style={{ backgroundColor: c }} />
               ))}
             </div>
+            <input
+              type="color"
+              value={newColor}
+              onChange={(e) => setNewColor(e.target.value)}
+              className="w-5 h-5 rounded border border-gray-600 bg-transparent cursor-pointer p-0"
+              title="Pick any color"
+            />
           </div>
           <div className="p-1.5 bg-black/60 rounded border border-gray-700 text-center">
-            <span className="inline-block px-1.5 py-0.5 rounded font-bold border-2 border-current uppercase tracking-wider"
+            <span className="inline-block px-1.5 py-0.5 rounded font-bold uppercase tracking-wider"
               style={{ color: newColor, fontSize: `${Math.min(newFontSize, 18)}px`, textShadow: '1px 1px 2px rgba(0,0,0,0.8)' }}>
               {newText || 'PREVIEW'}
             </span>
           </div>
           <div className="flex gap-1">
             <button onClick={() => {
-              if (newName.trim() && newText.trim()) {
-                addStamp({ name: newName.trim(), text: newText.trim(), color: newColor, fontSize: newFontSize });
-                setNewName(''); setNewText(''); setShowCreate(false);
-              }
-            }} disabled={!newName.trim() || !newText.trim()}
-              className="flex-1 px-2 py-1 text-[10px] bg-green-600 text-white rounded font-bold hover:bg-green-500 disabled:opacity-40">
+              const text = newText.trim();
+              if (!text) return;
+              addStamp({
+                name: (newName.trim() || text),
+                text,
+                color: newColor,
+                fontSize: newFontSize,
+                category: newCategory.trim() || undefined,
+              });
+              setNewName(''); setNewText(''); setNewCategory(''); setShowCreate(false);
+            }} disabled={!newText.trim()}
+              title={!newText.trim() ? 'Enter stamp text first' : 'Save stamp'}
+              className="flex-1 px-2 py-1 text-[10px] bg-green-600 text-white rounded font-bold hover:bg-green-500 disabled:opacity-40 disabled:cursor-not-allowed">
               Save Stamp
             </button>
             <button onClick={() => setShowCreate(false)}

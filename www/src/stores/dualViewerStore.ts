@@ -46,8 +46,19 @@ export interface DualStamp {
   text: string;
   color: string;
   fontSize: number;
+  category?: string;
   createdAt: number;
 }
+
+const DUAL_DEFAULT_STAMPS: DualStamp[] = [
+  { id: 'default-l', name: 'L', text: 'L', color: '#ffff00', fontSize: 28, category: 'Marker', createdAt: 0 },
+  { id: 'default-r', name: 'R', text: 'R', color: '#ffff00', fontSize: 28, category: 'Marker', createdAt: 0 },
+];
+
+const DUAL_LEGACY_DEFAULT_IDS = new Set([
+  'default-verified', 'default-approved', 'default-reviewed',
+  'default-reject', 'default-pending', 'default-urgent',
+]);
 
 export interface DualStampPlacement {
   id: string;
@@ -231,8 +242,16 @@ function autoSelectLayout(imageCount: number): DualLayout {
 function loadSavedStamps(): DualStamp[] {
   try {
     const saved = localStorage.getItem('dual-viewer-stamps');
-    return saved ? JSON.parse(saved) : [];
-  } catch { return []; }
+    const parsed: DualStamp[] = saved ? JSON.parse(saved) : [];
+    const pruned = parsed.filter(s => !DUAL_LEGACY_DEFAULT_IDS.has(s.id));
+    const ids = new Set(pruned.map(s => s.id));
+    const merged = [
+      ...DUAL_DEFAULT_STAMPS.filter(d => !ids.has(d.id)),
+      ...pruned,
+    ];
+    if (merged.length !== parsed.length) saveStamps(merged);
+    return merged.length > 0 ? merged : DUAL_DEFAULT_STAMPS;
+  } catch { return DUAL_DEFAULT_STAMPS; }
 }
 
 function saveStamps(stamps: DualStamp[]) {
