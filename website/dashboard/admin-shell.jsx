@@ -951,11 +951,11 @@ const IssueLicenseModal = ({ onClose }) => {
           </div>
           <div>
             <label className="block text-xs text-slate-400 mb-1.5">Product</label>
-            <div className="grid grid-cols-2 gap-2">
-              {['viewer','bridge'].map(p => (
+            <div className="grid grid-cols-3 gap-2">
+              {['viewer','bridge','ris'].map(p => (
                 <button key={p} type="button" onClick={() => setProduct(p)}
                   className={`px-3 py-2 rounded-lg text-sm font-semibold border ${product === p ? 'bg-rose-500/20 text-rose-300 border-rose-500/40' : 'bg-white/[0.04] text-slate-300 border-white/[0.08]'}`}>
-                  {p === 'viewer' ? 'Viewer (DICOM viewer)' : 'Bridge (auto-print tray)'}
+                  {p === 'viewer' ? 'Viewer (DICOM viewer)' : p === 'bridge' ? 'Bridge (auto-print tray)' : 'RIS (reception)'}
                 </button>
               ))}
             </div>
@@ -1405,7 +1405,18 @@ const AdminSettings = () => {
             </div>
           )}
 
-          {activeSection === 'pricing' && <div className="grid grid-cols-2 gap-3"><F label="Monthly (₹)" k="pricing.monthly_inr" placeholder="8000" /><F label="Annual (₹)" k="pricing.annual_inr" placeholder="100000" /><F label="Trial Days" k="pricing.trial_days" placeholder="30" /><F label="Trial Seats" k="pricing.trial_seats" placeholder="1" /></div>}
+          {activeSection === 'pricing' && (
+            <div className="grid grid-cols-2 gap-3">
+              <F label="Viewer Monthly (INR)" k="pricing.monthly_inr" placeholder="8000" />
+              <F label="Viewer Annual (INR)" k="pricing.annual_inr" placeholder="100000" />
+              <F label="Bridge Monthly (INR)" k="pricing.bridge_monthly_inr" placeholder="3000" />
+              <F label="Bridge Annual (INR)" k="pricing.bridge_annual_inr" placeholder="30000" />
+              <F label="RIS Monthly (INR)" k="pricing.ris_monthly_inr" placeholder="3000" />
+              <F label="RIS Annual (INR)" k="pricing.ris_annual_inr" placeholder="30000" />
+              <F label="Trial Days" k="pricing.trial_days" placeholder="30" />
+              <F label="Trial Seats" k="pricing.trial_seats" placeholder="1" />
+            </div>
+          )}
 
           {activeSection === 'business' && <div className="grid grid-cols-2 gap-3"><F label="UPI ID" k="business.upi_id" placeholder="you@upi" /><F label="Bank Name" k="business.bank_name" /><F label="Account No." k="business.bank_account" /><F label="IFSC" k="business.bank_ifsc" /></div>}
 
@@ -1586,7 +1597,7 @@ const AdminReleases = () => {
     catch (e) { showToast(e.message, 'error'); }
   };
 
-  const grouped = { viewer: [], bridge: [] };
+  const grouped = { viewer: [], bridge: [], ris: [] };
   (data?.data || []).forEach(r => { if (grouped[r.app]) grouped[r.app].push(r); });
 
   return (
@@ -1595,10 +1606,10 @@ const AdminReleases = () => {
 
       {loading ? <div className="text-slate-500 py-8">Loading…</div> : (
         <div className="space-y-8">
-          {['viewer','bridge'].map(app => (
+          {['viewer','bridge','ris'].map(app => (
             <div key={app}>
               <div className="flex items-center justify-between mb-3">
-                <h3 className="text-sm font-semibold text-white uppercase tracking-wider">{app === 'viewer' ? 'One Clickz Viewer (desktop)' : 'One Clickz Bridge (tray)'}</h3>
+                <h3 className="text-sm font-semibold text-white uppercase tracking-wider">{app === 'viewer' ? 'One Clickz Viewer (desktop)' : app === 'bridge' ? 'One Clickz Bridge (tray)' : 'One Clickz RIS (reception)'}</h3>
                 <span className="text-[11px] text-slate-500">Newest at top — desktops always pull the top row.</span>
               </div>
               {grouped[app].length === 0 ? (
@@ -1675,10 +1686,10 @@ const UploadReleaseModal = ({ onClose }) => {
         <div>
           <label className="block text-[11px] uppercase tracking-widest text-slate-500 font-medium mb-1.5">App</label>
           <div className="flex gap-2">
-            {['viewer','bridge'].map(a => (
+            {['viewer','bridge','ris'].map(a => (
               <button key={a} onClick={() => setApp(a)}
                 className={`flex-1 px-3 py-2 rounded-lg text-sm font-semibold border ${app === a ? 'bg-rose-500/20 text-rose-300 border-rose-500/40' : 'bg-white/[0.04] text-slate-300 border-white/[0.08]'}`}>
-                {a === 'viewer' ? 'Viewer (desktop)' : 'Bridge (tray)'}
+                {a === 'viewer' ? 'Viewer (desktop)' : a === 'bridge' ? 'Bridge (tray)' : 'RIS (reception)'}
               </button>
             ))}
           </div>

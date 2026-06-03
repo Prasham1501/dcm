@@ -456,7 +456,7 @@ class AdminController {
         $changes = (string)($_POST['changelog'] ?? '');
         $force   = !empty($_POST['force_update']) ? 1 : 0;
 
-        if (!in_array($app, ['viewer','bridge'], true)) Response::error('app must be viewer or bridge', 400);
+        if (!in_array($app, ['viewer','bridge','ris'], true)) Response::error('app must be viewer, bridge, or ris', 400);
         if (!preg_match('/^\d+\.\d+\.\d+(-[0-9A-Za-z\.\-]+)?$/', $version)) Response::error('version must be semver (e.g. 1.2.3)', 400);
         if (empty($_FILES['file']) || $_FILES['file']['error'] !== UPLOAD_ERR_OK) Response::error('installer file required', 400);
 
@@ -496,7 +496,7 @@ class AdminController {
         $app     = (string)$req->query('app', 'viewer');
         $current = (string)$req->query('current', '0.0.0');
 
-        if (!in_array($app, ['viewer','bridge'], true)) Response::error('Invalid app', 400);
+        if (!in_array($app, ['viewer','bridge','ris'], true)) Response::error('Invalid app', 400);
 
         $stmt = db()->prepare("SELECT * FROM releases WHERE app=? ORDER BY created_at DESC LIMIT 1");
         $stmt->execute([$app]);
@@ -641,7 +641,7 @@ class AdminController {
         $plan    = $body['plan'] ?? 'trial';
         $seats   = max(1, (int)($body['seats'] ?? 1));
         $days    = max(1, (int)($body['days']  ?? 30));
-        $product = in_array(($body['product'] ?? 'viewer'), ['viewer', 'bridge'], true) ? $body['product'] : 'viewer';
+        $product = in_array(($body['product'] ?? 'viewer'), ['viewer', 'bridge', 'ris'], true) ? $body['product'] : 'viewer';
         // Manual revenue capture — let the operator log the actual amount
         // collected (cash, UPI, bank transfer, cheque, etc.) so it flows
         // into the dashboard alongside Razorpay-captured payments.
@@ -967,7 +967,8 @@ class AdminController {
             'razorpay.key_id','razorpay.key_secret','razorpay.webhook_secret','razorpay.mode',
             'google.client_id',
             'gemini.api_key','gemini.model','gemini.system_prompt',
-            'pricing.monthly_inr','pricing.annual_inr','pricing.trial_days','pricing.trial_seats',
+            'pricing.monthly_inr','pricing.annual_inr','pricing.bridge_monthly_inr','pricing.bridge_annual_inr',
+            'pricing.ris_monthly_inr','pricing.ris_annual_inr','pricing.trial_days','pricing.trial_seats',
             'business.upi_id','business.bank_name','business.bank_account','business.bank_ifsc',
             'app.exe_url','app.exe_version','app.exe_changelog',
             'feature.chat_enabled','feature.referrals_enabled','feature.ai_wallet_enabled',

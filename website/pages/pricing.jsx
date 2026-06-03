@@ -39,6 +39,36 @@ const PricingPage = () => (
         </div>
       </FadeUp>
     </Section>
+    <Section className="bg-white dark:bg-mid2">
+      <SectionHead eyebrow="RIS - separate product" title={<>Run reception billing and worklists for <span className="italic text-grad-rose">Rs 3,000/month</span>.</>} align="center"
+        sub="RIS has its own installer, its own license key, and its own reception workflow. Use it independently or inside the One Clickz ecosystem."/>
+      <Stagger className="mt-12 grid md:grid-cols-2 gap-5 max-w-3xl mx-auto">
+        {[
+          { name: 'RIS Monthly', price: 'Rs 3,000', period: 'per reception machine / month', cta: 'Buy RIS Monthly', href: 'dashboard.html#/dashboard/licenses?product=ris' },
+          { name: 'RIS Annual',  price: 'Rs 30,000', period: 'per reception machine / year', cta: 'Buy RIS Annual', href: 'dashboard.html#/dashboard/licenses?product=ris', popular: true },
+        ].map((c, i) => (
+          <Item key={i}>
+            <div className={`rounded-2xl border p-7 h-full flex flex-col ${c.popular ? 'border-rose bg-gradient-to-br from-rose/10 to-white dark:from-rose/15 dark:to-white/[0.03] shadow-[0_30px_70px_-30px_rgba(244,63,94,0.45)]' : 'border-[var(--line)] bg-white dark:bg-white/[0.03]'}`}>
+              {c.popular && <div className="self-start mb-3 px-2.5 py-1 rounded-full bg-rose text-white text-[10px] font-bold uppercase tracking-[0.16em]">Annual</div>}
+              <div className="text-[11px] uppercase tracking-[0.16em] font-bold text-[var(--muted)]">{c.name}</div>
+              <div className="mt-3 font-display text-4xl font-bold">{c.price}</div>
+              <div className="text-xs text-[var(--muted)] mt-1">{c.period}</div>
+              <ul className="mt-5 space-y-2 border-t border-[var(--line)] pt-5 flex-1">
+                {['Reception-only console','Patient registration and worklists','Billing and Excel export','DICOM send to viewer and consoles'].map(f => (
+                  <li key={f} className="flex items-start gap-2 text-[13px]"><I.Check size={14} className="mt-0.5 text-rose shrink-0"/><span>{f}</span></li>
+                ))}
+              </ul>
+              <Btn href={c.href} variant={c.popular ? 'primary' : 'ghost'} size="md" className="mt-6 w-full">{c.cta}</Btn>
+            </div>
+          </Item>
+        ))}
+      </Stagger>
+      <FadeUp delay={0.15}>
+        <div className="mt-8 text-center text-xs text-[var(--muted)] max-w-2xl mx-auto">
+          A RIS key only activates One Clickz RIS. Viewer and Bridge continue to use their own keys.
+        </div>
+      </FadeUp>
+    </Section>
     <PrintWallet />
     <FAQ />
     <FinalCTA />

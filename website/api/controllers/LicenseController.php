@@ -28,12 +28,23 @@ class LicenseController {
     }
 
     /** Price matrix per product+plan. Bridge is ₹3k/mo, ₹30k/yr. */
+    private function validProducts(): array {
+        return ['viewer','bridge','ris'];
+    }
+
     private function priceFor(string $product, string $plan, array $body = []): int {
-        $product = in_array($product, ['viewer','bridge'], true) ? $product : 'viewer';
+        $product = in_array($product, $this->validProducts(), true) ? $product : 'viewer';
         if ($product === 'bridge') {
             return [
                 'monthly'    => (int)Settings::get('pricing.bridge_monthly_inr', '3000'),
                 'annual'     => (int)Settings::get('pricing.bridge_annual_inr',  '30000'),
+                'enterprise' => (int)($body['custom_amount'] ?? 0),
+            ][$plan] ?? 0;
+        }
+        if ($product === 'ris') {
+            return [
+                'monthly'    => (int)Settings::get('pricing.ris_monthly_inr', '3000'),
+                'annual'     => (int)Settings::get('pricing.ris_annual_inr',  '30000'),
                 'enterprise' => (int)($body['custom_amount'] ?? 0),
             ][$plan] ?? 0;
         }
@@ -50,7 +61,7 @@ class LicenseController {
         $plan    = $body['plan']    ?? '';
         $product = (string)($body['product'] ?? 'viewer');
         if (!in_array($plan, ['monthly','annual','enterprise'], true))  Response::error('Invalid plan', 400);
-        if (!in_array($product, ['viewer','bridge'], true))             Response::error('Invalid product', 400);
+        if (!in_array($product, $this->validProducts(), true))          Response::error('Invalid product', 400);
         $seats     = max(1, (int)($body['seats'] ?? 1));
         $amountInr = $this->priceFor($product, $plan, $body);
         if ($amountInr < 1) Response::error('Invalid amount', 400);
@@ -146,14 +157,18 @@ class LicenseController {
     }
 
     public function verify(Request $req): void {
+        $this->ensureProductColumn();
         $body      = $req->body();
         $orderId   = $body['order_id']   ?? '';
         $paymentId = $body['payment_id'] ?? '';
         $signature = $body['signature']  ?? '';
         $plan      = $body['plan']       ?? '';
+        $product   = (string)($body['product'] ?? 'viewer');
         $seats     = max(1, (int)($body['seats'] ?? 1));
 
         if (!$orderId || !$paymentId || !$signature) Response::error('Payment details required', 400);
+        if (!in_array($plan, ['monthly','annual','enterprise'], true)) Response::error('Invalid plan', 400);
+        if (!in_array($product, $this->validProducts(), true)) Response::error('Invalid product', 400);
 
         $rzp = new RazorpayClient();
         if (!$rzp->verifySignature($orderId, $paymentId, $signature)) {
@@ -173,11 +188,7 @@ class LicenseController {
 
         $pdo->beginTransaction();
         try {
-            $prices = [
-                'monthly' => (int)Settings::get('pricing.monthly_inr', '8000'),
-                'annual'  => (int)Settings::get('pricing.annual_inr', '100000'),
-            ];
-            $amountInr = $prices[$plan] ?? 0;
+            $amountInr = $this->priceFor($product, $plan, $body);
             $now       = nowDb();
             $expires   = match($plan) {
                 'monthly'    => gmdate('Y-m-d H:i:s', time() + 30 * 86400),
@@ -187,17 +198,17 @@ class LicenseController {
             };
 
             $keyCode = LicenseKey::generate();
-            $hmac    = LicenseKey::sign($keyCode, ['plan' => $plan, 'seats' => $seats, 'account' => $req->user['account_id']]);
+            $hmac    = LicenseKey::sign($keyCode, ['plan' => $plan, 'product' => $product, 'seats' => $seats, 'account' => $req->user['account_id']]);
             $licId   = generateId();
             $invId   = generateId();
 
             $pdo->prepare(
-                "INSERT INTO licenses (id, account_id, key_code, plan, seats, status, starts_at, expires_at, hmac_signature, invoice_id, created_at)
-                 VALUES (?,?,?,?,?,?,?,?,?,?,?)"
-            )->execute([$licId, $req->user['account_id'], $keyCode, $plan, $seats, 'active', $now, $expires, $hmac, $invId, $now]);
+                "INSERT INTO licenses (id, account_id, key_code, product, plan, seats, status, starts_at, expires_at, hmac_signature, invoice_id, created_at)
+                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?)"
+            )->execute([$licId, $req->user['account_id'], $keyCode, $product, $plan, $seats, 'active', $now, $expires, $hmac, $invId, $now]);
 
             $invNumber = $this->nextInvoiceNumber($pdo);
-            $items     = [['name' => "Mediview $plan license", 'qty' => 1, 'rate' => $amountInr, 'amount' => $amountInr]];
+            $items     = [['name' => "Mediview $product $plan license", 'qty' => 1, 'rate' => $amountInr, 'amount' => $amountInr]];
 
             $pdo->prepare(
                 "INSERT INTO invoices (id, account_id, number, payment_id, subtotal_inr, gst_inr, total_inr, items_json, status, created_at)
@@ -215,7 +226,7 @@ class LicenseController {
             Response::error('Failed to process license. Contact support.', 500);
         }
 
-        AuditLog::fromRequest($req, 'license.purchase', "$plan / $seats seats");
+        AuditLog::fromRequest($req, 'license.purchase', "$product / $plan / $seats seats");
 
         // Email license key
         $uStmt = db()->prepare("SELECT email, name FROM users WHERE id = ?");
@@ -252,7 +263,7 @@ class LicenseController {
         // Which product is asking — Viewer & Bridge are separate SKUs and
         // a key issued for one must not activate the other.
         $app  = (string)($body['app']         ?? 'viewer');
-        if (!in_array($app, ['viewer','bridge'], true)) Response::error('Invalid app', 400);
+        if (!in_array($app, $this->validProducts(), true)) Response::error('Invalid app', 400);
 
         if (!$key || !$fp) Response::error('license_key and fingerprint required', 400);
         if (!LicenseKey::isValidFormat($key)) Response::error('Invalid license key format', 400);
@@ -313,7 +324,7 @@ class LicenseController {
         $fp   = trim($body['fingerprint']  ?? '');
         $app  = (string)($body['app'] ?? 'viewer');
         if (!$key || !$fp) Response::error('license_key and fingerprint required', 400);
-        if (!in_array($app, ['viewer','bridge'], true)) Response::error('Invalid app', 400);
+        if (!in_array($app, $this->validProducts(), true)) Response::error('Invalid app', 400);
 
         $stmt = db()->prepare(
             "SELECT l.*, d.id as device_id, d.status as device_status

@@ -1517,11 +1517,12 @@ const PageLicenses = () => {
   const [licenses,  setLicenses]  = React.useState([]);
   const [loading,   setLoading]   = React.useState(true);
   const [showOrder, setShowOrder] = React.useState(false);
-  // Product is selected first, then plan. Bridge & Viewer are billed
+  // Product is selected first, then plan. RIS, Bridge, and Viewer are billed
   // separately and a key for one does NOT activate the other. The deep
-  // link `#/dashboard/licenses?product=bridge` opens the modal pre-selected.
+  // link `#/dashboard/licenses?product=ris` opens the modal pre-selected.
   const initialProduct = (() => {
     const h = (typeof window !== 'undefined' && window.location.hash) || '';
+    if (/[?&]product=ris/.test(h)) return 'ris';
     return /[?&]product=bridge/.test(h) ? 'bridge' : 'viewer';
   })();
   const [selectedProduct, setSelectedProduct] = React.useState(initialProduct);
@@ -1529,9 +1530,9 @@ const PageLicenses = () => {
   const [ordering,  setOrdering]  = React.useState(false);
   const [orderError, setOrderError] = React.useState('');
 
-  // If we landed via the marketing site's "Buy Bridge" CTA, pop the modal open.
+  // If we landed via the marketing site's product CTA, pop the modal open.
   React.useEffect(() => {
-    if (/[?&]product=bridge/.test(window.location.hash)) setShowOrder(true);
+    if (/[?&]product=(bridge|ris)/.test(window.location.hash)) setShowOrder(true);
   }, []);
   const { addToast } = typeof useToast !== 'undefined' ? useToast() : { addToast: () => {} };
 
@@ -1595,8 +1596,8 @@ const PageLicenses = () => {
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div>
                   <div className="flex items-center gap-2 flex-wrap mb-2">
-                    <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${(lic.product || 'viewer') === 'bridge' ? 'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-400' : 'bg-teal-soft text-teal dark:bg-teal/15 dark:text-teal'}`}>
-                      {((lic.product || 'viewer') === 'bridge') ? 'BRIDGE' : 'VIEWER'}
+                    <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${(lic.product || 'viewer') === 'bridge' ? 'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-400' : (lic.product || 'viewer') === 'ris' ? 'bg-rose/10 text-rose dark:bg-rose/15 dark:text-rose' : 'bg-teal-soft text-teal dark:bg-teal/15 dark:text-teal'}`}>
+                      {((lic.product || 'viewer') === 'bridge') ? 'BRIDGE' : ((lic.product || 'viewer') === 'ris') ? 'RIS' : 'VIEWER'}
                     </span>
                     <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${PLAN_COLORS[lic.plan] || PLAN_COLORS.monthly}`}>{PLAN_LABELS[lic.plan] || lic.plan}</span>
                     <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${STATUS_COLORS[lic.status] || ''}`}>{lic.status}</span>
@@ -1619,13 +1620,14 @@ const PageLicenses = () => {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
           <div className="w-full max-w-md rounded-2xl bg-white dark:bg-mid2 shadow-2xl p-6">
             <h2 className="font-display text-xl font-bold mb-1">Order a License</h2>
-            <p className="text-sm text-[var(--muted)] mb-5">Pick a product, then a plan. Viewer and Bridge are billed separately and use different keys.</p>
+            <p className="text-sm text-[var(--muted)] mb-5">Pick a product, then a plan. Viewer, Bridge, and RIS are billed separately and use different keys.</p>
 
             <div className="text-[10px] uppercase tracking-[0.16em] text-[var(--muted)] font-bold mb-2">Product</div>
-            <div className="grid grid-cols-2 gap-3 mb-5">
+            <div className="grid grid-cols-3 gap-3 mb-5">
               {[
                 { id: 'viewer', label: 'Viewer',  sub: 'DICOM workstation' },
                 { id: 'bridge', label: 'Bridge',  sub: 'Auto-print tray app' },
+                { id: 'ris',    label: 'RIS',     sub: 'Reception workflow' },
               ].map(p => (
                 <button key={p.id} type="button" onClick={() => setSelectedProduct(p.id)}
                   className={`text-left p-3 rounded-xl border-2 transition ${selectedProduct === p.id ? 'border-rose bg-rose/5' : 'border-[var(--line)] hover:border-rose/40'}`}>
@@ -1637,7 +1639,7 @@ const PageLicenses = () => {
 
             <div className="text-[10px] uppercase tracking-[0.16em] text-[var(--muted)] font-bold mb-2">Plan</div>
             <div className="space-y-3 mb-6">
-              {(selectedProduct === 'bridge'
+              {(selectedProduct === 'bridge' || selectedProduct === 'ris'
                 ? [
                     { id: 'monthly', label: 'Monthly', price: '₹3,000/month',  desc: '1 seat · 30 days' },
                     { id: 'annual',  label: 'Annual',  price: '₹30,000/year',  desc: '1 seat · 365 days · Save ₹6,000' },

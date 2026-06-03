@@ -6,7 +6,7 @@ function db(): PDO {
     if ($pdo !== null) return $pdo;
 
     $host = getenv('DB_HOST') ?: 'localhost';
-    $name = getenv('DB_NAME') ?: 'oneclickz';
+    $name = getenv('DB_NAME') ?: 'mediview';
     $user = getenv('DB_USER') ?: 'aaiacc_admin';
     $pass = getenv('DB_PASS') ?: 'Prasham123$';
 

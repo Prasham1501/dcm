@@ -1,5 +1,5 @@
 -- One Clickz SaaS — Seed Data
--- Run AFTER 001_schema.sql:  mysql -u user -p oneclickz < 002_seed.sql
+-- Run AFTER 001_schema.sql:  mysql -u user -p mediview < 002_seed.sql
 -- Edit SUPER_ADMIN_EMAIL below before running!
 
 SET NAMES utf8mb4;
@@ -43,6 +43,10 @@ INSERT IGNORE INTO settings (`key`, `value`) VALUES
 -- Pricing (INR)
 ('pricing.monthly_inr',  '8000'),
 ('pricing.annual_inr',   '100000'),
+('pricing.bridge_monthly_inr', '3000'),
+('pricing.bridge_annual_inr',  '30000'),
+('pricing.ris_monthly_inr',    '3000'),
+('pricing.ris_annual_inr',     '30000'),
 ('pricing.trial_days',   '30'),
 ('pricing.trial_seats',  '1'),
 
