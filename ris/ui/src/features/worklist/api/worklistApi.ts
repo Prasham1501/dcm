@@ -2,7 +2,9 @@
 
 export interface WorklistOrder {
   id: number;
+  visit_id: number;
   accession_number: string;
+  token_no?: string | null;
   modality: string | null;
   status: string;
   patient_name: string | null;
@@ -14,6 +16,11 @@ export interface WorklistOrder {
   study_instance_uid: string | null;
   report_id: number | null;
   scheduled_datetime: string | null;
+  room_title?: string | null;
+  visit_net_amount?: string | null;
+  visit_paid_amount?: string | null;
+  visit_balance?: string | null;
+  visit_status?: string | null;
 }
 
 export type WorklistAction = 'claim' | 'report' | 'deliver';

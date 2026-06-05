@@ -118,8 +118,13 @@ function ris_render_receipt_html(mysqli $db, int $receiptId): void
         'email' => ris_setting($db, 'brand_email', ''),
         'address' => ris_setting($db, 'brand_address', ''),
         'website' => ris_setting($db, 'brand_website', ''),
+        'logo' => ris_setting($db, 'brand_logo_image', ''),
         'header' => ris_setting($db, 'receipt_header', ''),
         'footer' => ris_setting($db, 'receipt_footer', 'Thank you. Get well soon.'),
+        'paper_size' => strtoupper(ris_setting($db, 'receipt_paper_size', 'A5')),
+        'signature_label' => ris_setting($db, 'receipt_signature_label', 'Authorized sign / stamp'),
+        'signature_image' => ris_setting($db, 'receipt_signature_image', ''),
+        'stamp_image' => ris_setting($db, 'receipt_stamp_image', ''),
     ];
 
     header('Content-Type: text/html; charset=utf-8');
@@ -138,18 +143,29 @@ function ris_render_receipt_html(mysqli $db, int $receiptId): void
     if ($paymentRows === '') {
         $paymentRows = '<tr><td colspan="4" class="muted">No payment rows found</td></tr>';
     }
+    $paperWidth = $brand['paper_size'] === 'A4' ? '780px' : '560px';
+    $signature = '';
+    if ($brand['signature_image'] !== '' || $brand['stamp_image'] !== '') {
+        $signature = '<div class="signbox">'
+            . ($brand['stamp_image'] !== '' ? '<img src="' . ris_h($brand['stamp_image']) . '" alt="Stamp">' : '')
+            . ($brand['signature_image'] !== '' ? '<img src="' . ris_h($brand['signature_image']) . '" alt="Signature">' : '')
+            . '<div>' . ris_h($brand['signature_label']) . '</div></div>';
+    }
+
+    $logoHtml = $brand['logo'] !== '' ? '<img class="logo" src="' . ris_h($brand['logo']) . '" alt="Logo">' : '';
 
     echo '<!doctype html><html><head><meta charset="utf-8"><title>Receipt ' . ris_h($receipt['receipt_no']) . '</title>
 <style>
-body{font-family:Arial,sans-serif;margin:0;background:#f5f5f5;color:#171717}.page{width:780px;margin:24px auto;background:white;border:1px solid #ddd;padding:28px}.top{border-bottom:4px solid #dc2626;padding-bottom:14px;display:flex;justify-content:space-between;gap:20px}.brand{font-size:26px;font-weight:800;color:#dc2626}.tag{font-size:12px;color:#666;margin-top:3px}.meta{text-align:right;font-size:12px;line-height:1.7}.note{margin:16px 0;padding:10px 12px;background:#fff5f5;border:1px solid #fecaca;color:#7f1d1d}.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:18px 0}.box{border:1px solid #e5e5e5;padding:12px}.label{font-size:11px;text-transform:uppercase;color:#777;font-weight:700}.value{font-size:14px;font-weight:700;margin-top:4px}table{width:100%;border-collapse:collapse;margin-top:14px}th{background:#fafafa;text-align:left;font-size:11px;text-transform:uppercase;color:#555}td,th{border:1px solid #e5e5e5;padding:9px}.num{text-align:right}.totals{margin-left:auto;width:320px}.muted{color:#777}.footer{margin-top:24px;border-top:1px solid #e5e5e5;padding-top:12px;text-align:center;color:#555;font-size:12px}@media print{body{background:white}.page{margin:0 auto;border:0;width:auto}.noprint{display:none}}
+body{font-family:Arial,sans-serif;margin:0;background:#f5f5f5;color:#171717}.page{width:' . $paperWidth . ';margin:24px auto;background:white;border:1px solid #ddd;padding:24px}.top{border-bottom:4px solid #dc2626;padding-bottom:14px;display:flex;justify-content:space-between;gap:20px}.brand-wrap{display:flex;gap:12px;align-items:flex-start}.logo{max-height:58px;max-width:90px;object-fit:contain}.brand{font-size:24px;font-weight:800;color:#dc2626}.tag{font-size:12px;color:#666;margin-top:3px}.meta{text-align:right;font-size:12px;line-height:1.7}.note{margin:14px 0;padding:9px 11px;background:#fff5f5;border:1px solid #fecaca;color:#7f1d1d}.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:16px 0}.box{border:1px solid #e5e5e5;padding:10px}.label{font-size:10px;text-transform:uppercase;color:#777;font-weight:700}.value{font-size:13px;font-weight:700;margin-top:4px}h3{font-size:14px;margin:14px 0 6px}table{width:100%;border-collapse:collapse;margin-top:10px}th{background:#fafafa;text-align:left;font-size:10px;text-transform:uppercase;color:#555}td,th{border:1px solid #e5e5e5;padding:7px}.num{text-align:right}.totals{margin-left:auto;width:300px}.muted{color:#777}.signbox{align-items:center;display:flex;flex-direction:column;gap:4px;margin-left:auto;margin-top:18px;text-align:center;width:180px;color:#555;font-size:11px}.signbox img{max-height:58px;max-width:150px;object-fit:contain}.footer{margin-top:18px;border-top:1px solid #e5e5e5;padding-top:10px;text-align:center;color:#555;font-size:12px}@media print{body{background:white}.page{margin:0 auto;border:0;width:auto}.noprint{display:none}}
 </style></head><body><div class="page">
-<div class="top"><div><div class="brand">' . ris_h($brand['name']) . '</div><div class="tag">' . ris_h($brand['tagline']) . '</div><div class="tag">' . nl2br(ris_h($brand['address'])) . '</div></div><div class="meta"><b>Receipt</b><br>' . ris_h($receipt['receipt_no']) . '<br>' . ris_h((string)$receipt['created_at']) . '<br>' . ris_h($brand['phone']) . '<br>' . ris_h($brand['email']) . '</div></div>
+<div class="top"><div class="brand-wrap">' . $logoHtml . '<div><div class="brand">' . ris_h($brand['name']) . '</div><div class="tag">' . ris_h($brand['tagline']) . '</div><div class="tag">' . nl2br(ris_h($brand['address'])) . '</div></div></div><div class="meta"><b>Receipt</b><br>' . ris_h($receipt['receipt_no']) . '<br>' . ris_h((string)$receipt['created_at']) . '<br>' . ris_h($brand['phone']) . '<br>' . ris_h($brand['email']) . '</div></div>
 ' . ($brand['header'] !== '' ? '<div class="note">' . nl2br(ris_h($brand['header'])) . '</div>' : '') . '
 <div class="grid"><div class="box"><div class="label">Patient</div><div class="value">' . ris_h($receipt['full_name']) . '</div><div class="muted">MRN ' . ris_h($receipt['mrn']) . ' | ' . ris_h($receipt['sex'] ?: '-') . ' ' . ris_h((string)($receipt['age_years'] ?? '')) . '</div><div class="muted">' . ris_h($receipt['phone'] ?: '-') . '</div></div><div class="box"><div class="label">Visit</div><div class="value">' . ris_h($receipt['visit_no']) . '</div><div class="muted">' . ris_h($receipt['visit_datetime']) . '</div><div class="muted">Status: ' . ris_h($receipt['visit_status']) . '</div></div></div>
 <h3>Services</h3><table><thead><tr><th>Service</th><th>Modality</th><th>Accession</th><th class="num">Amount</th></tr></thead><tbody>' . $orderRows . '</tbody></table>
 <h3>Payments</h3><table><thead><tr><th>Mode</th><th>Reference</th><th>Received</th><th class="num">Amount</th></tr></thead><tbody>' . $paymentRows . '</tbody></table>
 <table class="totals"><tr><td>Subtotal</td><td class="num">Rs ' . number_format((float)$receipt['subtotal'], 2) . '</td></tr><tr><td>Discount</td><td class="num">Rs ' . number_format((float)$receipt['discount'], 2) . '</td></tr><tr><td>Tax</td><td class="num">Rs ' . number_format((float)$receipt['tax_amount'], 2) . '</td></tr><tr><th>Total</th><th class="num">Rs ' . number_format((float)$receipt['total'], 2) . '</th></tr><tr><td>Paid</td><td class="num">Rs ' . number_format((float)$receipt['paid_amount'], 2) . '</td></tr><tr><td>Balance</td><td class="num">Rs ' . number_format((float)$receipt['balance'], 2) . '</td></tr></table>
 ' . ($receipt['gst_number'] ? '<div class="muted">GST: ' . ris_h($receipt['gst_number']) . '</div>' : '') . '
+' . $signature . '
 <div class="footer">' . nl2br(ris_h($brand['footer'])) . ($brand['website'] ? '<br>' . ris_h($brand['website']) : '') . '</div>
 <p class="noprint" style="text-align:center"><button onclick="window.print()">Print receipt</button></p>
 </div></body></html>';

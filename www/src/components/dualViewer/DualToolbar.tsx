@@ -13,6 +13,7 @@ import {
 import { DualPrintPreview } from './DualPrintPreview';
 import { undoLastAnnotationOnElement, deleteActiveAnnotationOnElement } from '@/lib/annotationUtils';
 import { FormFButton } from '@/features/pcpndt/FormFButton';
+import { Volume3DButton } from '@/features/volume3d/Volume3DButton';
 
 export function DualToolbar() {
   const {
@@ -170,6 +171,17 @@ export function DualToolbar() {
 
         {/* PCPNDT Form F (active panel's patient) */}
         <FormFButton patientId={activeP.patientId} patientName={activeP.patientName} compact />
+
+        {/* 3D Volume — active panel's CT/MR series. */}
+        <Volume3DButton
+          patientName={activeP.patientName}
+          patientId={activeP.patientId}
+          studyDate={activeP.studyDate}
+          studyDescription={activeP.studyDescription}
+          modality={activeP.modality}
+          filePaths={activeP.images.map((img: any) => img.filePath).filter(Boolean)}
+          compact
+        />
 
         {/* Report — toggles the inline report panel; passes filePaths from
             the active panel so the Electron dual-window flow can kick in. */}

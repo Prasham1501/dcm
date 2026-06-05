@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, lazy, Suspense } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { useThemeStore } from '@/stores/themeStore';
 import { usePrintStore } from '@/stores/printStore';
@@ -23,6 +23,11 @@ import { useViewerStore } from '@/stores/viewerStore';
 import { useCRViewerStore } from '@/stores/crViewerStore';
 import { useDualViewerStore } from '@/stores/dualViewerStore';
 import { listLoadedStudies } from '@/lib/loadedStudiesRegistry';
+
+// Cornerstone3D + vtk.js are heavy and only needed on /volume-3d — lazy-load
+// them so the 2D viewer windows never pay the bundle cost.
+const Volume3DPage = lazy(() => import('@/features/volume3d/routes/Volume3DPage'));
+import { Volume3DErrorBoundary } from '@/features/volume3d/components/Volume3DErrorBoundary';
 
 /** Collect DICOM file paths for cloud backup.
  *  Combines patientStore (local patients) + viewer stores (open studies)
@@ -196,6 +201,13 @@ export default function App() {
       <Route path="/print" element={<PrintManagementPage />} />
       <Route path="/report-editor" element={<ReportEditorPage />} />
       <Route path="/fetal/patient/:patientId" element={<FetalExaminationWorkspace />} />
+      <Route path="/volume-3d" element={
+        <Volume3DErrorBoundary>
+          <Suspense fallback={<div className="flex items-center justify-center h-screen bg-app-bg text-app-text-secondary text-sm">Loading 3D engine…</div>}>
+            <Volume3DPage />
+          </Suspense>
+        </Volume3DErrorBoundary>
+      } />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
     </LicenseGate>

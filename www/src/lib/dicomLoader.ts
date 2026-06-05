@@ -15,6 +15,12 @@ if (isElectron) {
 
 const API_BASE = '/api';
 
+/** Shared base URL for the local DICOM file server. Reused by the cs3d
+ *  loader so the 3D viewer hits the same `serve-file.php` endpoint. */
+export function dicomBaseUrl(): string {
+  return DICOM_API_BASE;
+}
+
 export interface DicomFileInfo {
   path: string;
   filename: string;

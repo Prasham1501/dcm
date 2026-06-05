@@ -265,9 +265,9 @@ export function Banner({ kind = 'info', children }: { kind?: 'info' | 'success' 
   return <div className={`banner banner-${kind}`}><Icon aria-hidden />{children}</div>;
 }
 
-export function ExportLink({ href, children }: { href: string; children: ReactNode }) {
+export function ExportLink({ href, children, size }: { href: string; children: ReactNode; size?: 'sm' }) {
   return (
-    <a className="btn btn-secondary" href={href}>
+    <a className={`btn btn-secondary ${size === 'sm' ? 'btn-sm' : ''}`} href={href}>
       <FileSpreadsheet aria-hidden />
       {children}
     </a>

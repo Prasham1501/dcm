@@ -27,10 +27,13 @@ class RisOrderWorkflow
             $where[] = "o.modality = '" . $this->db->real_escape_string($filters['modality']) . "'";
         }
         $sql = "SELECT o.*, p.full_name AS patient_name, p.mrn, p.sex, p.age_years,
-                       s.name AS service_name
+                       s.name AS service_name, v.net_amount AS visit_net_amount,
+                       v.paid_amount AS visit_paid_amount, v.balance AS visit_balance,
+                       v.status AS visit_status
                 FROM ris_orders o
                 LEFT JOIN ris_patients p ON o.patient_id = p.id
-                LEFT JOIN ris_services s ON o.service_id = s.id"
+                LEFT JOIN ris_services s ON o.service_id = s.id
+                LEFT JOIN ris_visits v ON o.visit_id = v.id"
             . ($where ? ' WHERE ' . implode(' AND ', $where) : '')
             . ' ORDER BY o.created_at DESC LIMIT 300';
         $res = $this->db->query($sql);
@@ -66,6 +69,16 @@ class RisOrderWorkflow
     {
         if (!in_array($this->currentStatus($orderId), ['acquired', 'reported', 'delivered'], true)) {
             return false;
+        }
+        $stmt = $this->db->prepare(
+            "SELECT v.balance FROM ris_orders o JOIN ris_visits v ON v.id = o.visit_id WHERE o.id = ?"
+        );
+        $stmt->bind_param('i', $orderId);
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        if ($row && (float)$row['balance'] > 0.0) {
+            throw new RuntimeException('Balance due before delivery: Rs ' . number_format((float)$row['balance'], 2));
         }
         $stmt = $this->db->prepare(
             "UPDATE ris_orders SET status = 'delivered', delivered_at = NOW(), delivered_by = ? WHERE id = ?"

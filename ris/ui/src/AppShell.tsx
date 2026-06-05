@@ -1,7 +1,7 @@
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, ClipboardList, ListChecks, Receipt, Moon, Sun, Network,
-  MonitorUp, Settings,
+  MonitorUp, Settings, FileText,
 } from 'lucide-react';
 import { useAuthStore } from '@/stores/authStore';
 import { useThemeStore } from '@/stores/themeStore';
@@ -14,6 +14,7 @@ const NAV = [
   { to: '/console',    label: 'Console Simulator', Icon: MonitorUp },
   { to: '/network',    label: 'Network & DICOM', Icon: Network },
   { to: '/billing',    label: 'Day Book',   Icon: Receipt        },
+  { to: '/pcpndt',     label: 'PCPNDT', Icon: FileText },
   { to: '/settings',   label: 'Settings', Icon: Settings },
 ];
 
@@ -25,6 +26,7 @@ const ROUTE_META: Record<string, { title: string; crumb: string }> = {
   '/network': { title: 'Network & DICOM', crumb: 'Machine, worklist, and DICOM transfer setup' },
   '/billing': { title: 'Day Book', crumb: 'Collections and Excel CSV exports' },
   '/commission': { title: 'Commission', crumb: 'Referring-doctor payouts' },
+  '/pcpndt': { title: 'PCPNDT', crumb: 'Form F prefill, print, and submission tracking' },
   '/settings': { title: 'Settings', crumb: 'License, branding, receipts, and database reset' },
 };
 
@@ -37,6 +39,7 @@ function canSee(path: string, role = '') {
   if (path === '/settings') return true;
   if (path === '/network') return true;
   if (path === '/billing') return BILLING_ROLES.has(role);
+  if (path === '/pcpndt') return WORKLIST_ROLES.has(role) || role === 'admin' || role === 'super_admin';
   if (path === '/worklist') return WORKLIST_ROLES.has(role);
   if (path === '/console') return WORKLIST_ROLES.has(role);
   return true;

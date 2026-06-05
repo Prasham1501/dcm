@@ -150,18 +150,11 @@ function dicomServerPlugin() {
                   }
                 }
               }
-              if (results.length === 0 && dirRecSeq.items.length > 0) {
-                for (const item of dirRecSeq.items) {
-                  const ds = item.dataSet;
-                  if (!ds) continue;
-                  const recType = (ds.string('x00041430') || '').trim().toUpperCase();
-                  if (recType === 'PATIENT') {
-                    const rawName = (ds.string('x00100010') || '').replace(/\^/g, ' ').trim();
-                    results.push({ studyUID: `dicomdir-${path.basename(filePath)}-0`, patientName: rawName || path.basename(filePath), patientId: (ds.string('x00100020') || '').trim() || 'N/A', age: '', sex: (ds.string('x00100040') || '').trim(), studyDate: new Date().toLocaleDateString(), studyDescription: '', modality: 'OT', accessionNumber: '', referringPhysician: '', referencedFiles: [filePath] });
-                    break;
-                  }
-                }
-              }
+              // If the DICOMDIR has no usable referenced files, drop it
+              // entirely. The previous fallback synthesised a phantom
+              // "OT" / "Unknown" study using the DICOMDIR file itself,
+              // which polluted the patient list whenever a folder contained
+              // a DICOMDIR alongside loose DICOM files.
             } catch { /* skip */ }
             return results;
           }
@@ -266,6 +259,10 @@ function dicomServerPlugin() {
                 const fullBuf = fs.readFileSync(filePath);
                 const entries = parseDicomDir(filePath, fullBuf);
                 for (const entry of entries) {
+                  // Skip DICOMDIR entries that pointed at files we couldn't
+                  // find on disk — they'd otherwise show up as ghost studies
+                  // with zero images.
+                  if (!entry.referencedFiles || entry.referencedFiles.length === 0) continue;
                   const suid = entry.studyUID;
                   if (!studies[suid]) {
                     studies[suid] = { patientName: entry.patientName, patientId: entry.patientId, age: entry.age, sex: entry.sex, studyDate: entry.studyDate, studyDescription: entry.studyDescription, modality: entry.modality, accessionNumber: entry.accessionNumber, referringPhysician: entry.referringPhysician, studyInstanceUID: suid, files: [] };
@@ -491,11 +488,83 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
+  // Cornerstone3D ships its codec WASM + web workers via dynamic imports.
+  // Vite's pre-bundler can't statically analyse those, so the cs3d packages
+  // are excluded.
+  // BUT: cs3d depends on `@kitware/vtk.js`, which does
+  //     `import globalThis from 'globalthis'`
+  // and `globalthis` is a CommonJS package with NO default export. When
+  // Vite dev-pre-bundles vtk.js without globalthis it produces the runtime
+  //     SyntaxError: ... globalthis ... does not provide an export named 'default'
+  // Force-include both so esbuild pre-bundles them together with the
+  // CJS→ESM interop applied across the whole graph.
+  // vtk.js (a transitive dep of @cornerstonejs/core) imports a chain of
+  // CommonJS packages — globalthis, fast-deep-equal, seedrandom, etc. — via
+  // `import x from 'pkg'`. Vite's dev pre-bundler MUST process the whole
+  // graph together so esbuild can rewrite those default imports against the
+  // CJS `module.exports`. If we exclude cs3d/vtk.js from optimizeDeps, the
+  // browser hits the raw CJS files and crashes with
+  //     "does not provide an export named 'default'"
+  //
+  // So we INCLUDE cs3d core + tools + vtk.js (and force-include the known
+  // problematic CJS deps), and only exclude `dicom-image-loader` because it
+  // dynamically constructs Workers from runtime URLs that the pre-bundler
+  // can't statically follow.
+  optimizeDeps: {
+    // INCLUDE the whole cs3d + vtk.js graph so esbuild pre-bundles it with
+    // proper CJS→ESM interop. Earlier we tried excluding cs3d (assuming the
+    // codec workers needed raw URLs) — but that exposed CJS-only modules
+    // (`globalthis`, `fast-deep-equal`, the Emscripten codec files) to
+    // Vite's import rewrite, which produced
+    //     "does not provide an export named 'default'"
+    // Pre-bundling all of them solves it in one shot.
+    //
+    // The ONLY thing we exclude is `dicom-image-loader`: it builds Worker
+    // URLs from runtime paths that the pre-bundler can't statically follow.
+    exclude: [
+      '@cornerstonejs/dicom-image-loader',
+    ],
+    include: [
+      '@cornerstonejs/core',
+      '@cornerstonejs/tools',
+      '@cornerstonejs/codec-libjpeg-turbo-8bit',
+      '@cornerstonejs/codec-charls',
+      '@cornerstonejs/codec-openjpeg',
+      '@cornerstonejs/codec-openjph',
+      '@kitware/vtk.js',
+      'globalthis',
+      'globalthis/polyfill.js',
+      'fast-deep-equal',
+      'gl-matrix',
+      'comlink',
+    ],
+    esbuildOptions: {
+      // Apply CJS→ESM interop everywhere in the prebundle graph.
+      mainFields: ['module', 'main'],
+    },
+  },
+  // The cs3d decode workers + their JPEG/JLS/RLE WASM blobs must be emitted
+  // to dist/assets so electron-builder's extraResources picks them up. The
+  // workers are ESM modules — keep this format so they run inside Electron.
+  worker: {
+    format: 'es',
+  },
+  assetsInclude: ['**/*.wasm'],
   build: {
     outDir: 'dist',
     emptyOutDir: true,
     sourcemap: false,
     chunkSizeWarningLimit: 3000,
+  },
+  // Vitest config for the pure-logic unit tests under src/features/.../__tests__.
+  // Uses happy-dom to keep the WebGL2 probe (and any other DOM helpers)
+  // resolvable without a real browser. cs3d itself is never imported by
+  // the tested modules, so no GPU is needed.
+  // @ts-expect-error — `test` is a Vitest field, not part of Vite's config types.
+  test: {
+    environment: 'happy-dom',
+    include: ['src/**/__tests__/**/*.test.{ts,tsx}'],
+    globals: false,
   },
   server: {
     port: 5173,

@@ -3,13 +3,20 @@
  * Mirrors server-side validation so the UI fails fast before calling the API.
  */
 export interface PatientForm {
+  name_prefix?: string;
   full_name?: string;
+  last_name?: string;
   phone?: string;
+  alt_phone?: string;
   sex?: string;
   dob?: string;
   age_years?: number | string;
   email?: string;
-  address?: string;
+  address_line1?: string;
+  address_line2?: string;
+  address_line3?: string;
+  city?: string;
+  state?: string;
   husband_or_father_name?: string;
   id_proof_type?: string;
   id_proof_number?: string;
@@ -18,8 +25,10 @@ export interface PatientForm {
 }
 
 const OPTIONAL_STRING_FIELDS: (keyof PatientForm)[] = [
-  'phone', 'sex', 'dob', 'email', 'address', 'husband_or_father_name',
-  'id_proof_type', 'id_proof_number', 'dicom_patient_id', 'mrn',
+  'name_prefix', 'last_name', 'phone', 'alt_phone', 'sex', 'dob', 'email',
+  'address_line1', 'address_line2', 'address_line3', 'city', 'state',
+  'husband_or_father_name', 'id_proof_type', 'id_proof_number',
+  'dicom_patient_id', 'mrn',
 ];
 
 /** Returns a list of human-readable validation errors ([] when valid). */
@@ -30,8 +39,31 @@ export function validatePatientForm(form: PatientForm): string[] {
   }
   if (form.phone && form.phone.trim() !== '') {
     const digits = form.phone.replace(/\D/g, '');
-    if (digits.length < 7 || digits.length > 15) {
-      errors.push('Phone number looks invalid');
+    if (!/^[6-9]\d{9}$/.test(digits)) {
+      errors.push('Mobile number must be a valid 10 digit Indian number');
+    }
+  }
+  if (form.alt_phone && form.alt_phone.trim() !== '') {
+    const digits = form.alt_phone.replace(/\D/g, '');
+    if (!/^[6-9]\d{9}$/.test(digits)) {
+      errors.push('Alternate phone must be a valid 10 digit Indian number');
+    }
+  }
+  const proof = (form.id_proof_type || '').toLowerCase();
+  const proofNo = (form.id_proof_number || '').trim().toUpperCase();
+  if (proof === 'aadhaar' && proofNo && !/^\d{12}$/.test(proofNo.replace(/\D/g, ''))) {
+    errors.push('Aadhaar proof number must be 12 digits');
+  }
+  if (proof === 'pan' && proofNo && !/^[A-Z]{5}\d{4}[A-Z]$/.test(proofNo)) {
+    errors.push('PAN number looks invalid');
+  }
+  if (form.email && form.email.trim() !== '' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) {
+    errors.push('Email address looks invalid');
+  }
+  if (form.dob && form.dob.trim() !== '') {
+    const dob = new Date(form.dob);
+    if (Number.isNaN(dob.getTime()) || dob > new Date()) {
+      errors.push('Birthdate must be a valid past date');
     }
   }
   return errors;

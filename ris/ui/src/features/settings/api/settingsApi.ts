@@ -24,10 +24,20 @@ export interface BrandingSettings {
   brand_email: string;
   brand_address: string;
   brand_website: string;
+  brand_logo_image: string;
   receipt_header: string;
   receipt_footer: string;
   gst_number: string;
   default_tax_percentage: string;
+  receipt_paper_size: string;
+  receipt_signature_label: string;
+  receipt_signature_image: string;
+  receipt_stamp_image: string;
+}
+
+export interface CounterSettings {
+  accession?: { prefix: string; current_value: number; next_number: number };
+  token?: { prefix: string; current_value: number; next_number: number };
 }
 
 async function readJson(res: Response): Promise<any> {
@@ -106,6 +116,24 @@ export async function apiSaveBranding(settings: BrandingSettings): Promise<Brand
   }));
 }
 
+export async function apiCounters(): Promise<CounterSettings> {
+  return await readJson(await fetch('/api/system/counters.php', { credentials: 'include' }));
+}
+
+export async function apiSaveCounters(payload: {
+  accession_prefix?: string;
+  accession_start?: number | string;
+  token_prefix?: string;
+  token_start?: number | string;
+}): Promise<CounterSettings> {
+  return await readJson(await fetch('/api/system/counters.php', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(payload),
+  }));
+}
+
 export async function apiResetRisData(confirm: string): Promise<{ cleared: string[]; counters_reset: string[]; worklist_files_removed?: number }> {
   return await readJson(await fetch('/api/system/reset-ris.php', {
     method: 'POST',
@@ -132,5 +160,16 @@ export async function apiDeleteService(id: number): Promise<{ deleted: number }>
   return await readJson(await fetch(`/api/reception/services.php?id=${id}`, {
     method: 'DELETE',
     credentials: 'include',
+  }));
+}
+
+export async function apiImportCsv(type: 'patients' | 'referring_doctors', file: File): Promise<{ created: number; skipped: number; errors: string[] }> {
+  const form = new FormData();
+  form.append('type', type);
+  form.append('file', file);
+  return await readJson(await fetch('/api/reception/import-csv.php', {
+    method: 'POST',
+    credentials: 'include',
+    body: form,
   }));
 }

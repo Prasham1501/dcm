@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { AlertTriangle, Key, Lock, Pencil, Plus, RefreshCw, Save, Server, Trash2 } from 'lucide-react';
-import { Banner, Button, EmptyState, ModalityTag, SectionHeader, StatusChip, TextareaInput, TextInput } from '@/components/RisUi';
-import { apiBranding, apiDeleteService, apiListAllServices, apiNetworkInfo, apiResetRisData, apiSaveBranding, apiSaveService, type BrandingSettings } from '../api/settingsApi';
+import { AlertTriangle, FileSpreadsheet, Hash, ImagePlus, Key, Lock, Pencil, Plus, RefreshCw, Save, Server, Trash2 } from 'lucide-react';
+import { Banner, Button, EmptyState, ModalityTag, SectionHeader, SelectInput, StatusChip, TextareaInput, TextInput } from '@/components/RisUi';
+import { apiBranding, apiCounters, apiDeleteService, apiImportCsv, apiListAllServices, apiNetworkInfo, apiResetRisData, apiSaveBranding, apiSaveCounters, apiSaveService, type BrandingSettings, type CounterSettings } from '../api/settingsApi';
 import type { NetworkInfo, Service } from '@/features/reception/api/receptionApi';
 
 const CONFIG_PASSWORD = 'Prasham123$';
@@ -12,10 +12,15 @@ const EMPTY_BRANDING: BrandingSettings = {
   brand_email: '',
   brand_address: '',
   brand_website: '',
+  brand_logo_image: '',
   receipt_header: '',
   receipt_footer: '',
   gst_number: '',
   default_tax_percentage: '0',
+  receipt_paper_size: 'A5',
+  receipt_signature_label: 'Authorized sign / stamp',
+  receipt_signature_image: '',
+  receipt_stamp_image: '',
 };
 const EMPTY_SERVICE: Partial<Service> = { code: '', name: '', modality: 'US', body_part: '', price: '0', default_duration_min: 20, is_active: 1 };
 
@@ -23,6 +28,8 @@ export function SettingsPage() {
   const [networkInfo, setNetworkInfo] = useState<NetworkInfo | null>(null);
   const [licenseStatus, setLicenseStatus] = useState<any>(null);
   const [branding, setBranding] = useState<BrandingSettings>(EMPTY_BRANDING);
+  const [counters, setCounters] = useState<CounterSettings>({});
+  const [counterForm, setCounterForm] = useState({ accession_prefix: 'OCZ', accession_start: '', token_prefix: 'T', token_start: '' });
   const [services, setServices] = useState<Service[]>([]);
   const [serviceForm, setServiceForm] = useState<Partial<Service>>(EMPTY_SERVICE);
   const [resetConfirm, setResetConfirm] = useState('');
@@ -35,10 +42,17 @@ export function SettingsPage() {
   const load = async () => {
     setError(null);
     try {
-      const [net, brand, serviceRows] = await Promise.all([apiNetworkInfo(), apiBranding(), apiListAllServices()]);
+      const [net, brand, serviceRows, counterRows] = await Promise.all([apiNetworkInfo(), apiBranding(), apiListAllServices(), apiCounters()]);
       setNetworkInfo(net);
       setBranding(brand);
       setServices(serviceRows);
+      setCounters(counterRows);
+      setCounterForm({
+        accession_prefix: counterRows.accession?.prefix || 'OCZ',
+        accession_start: String(counterRows.accession?.next_number || ''),
+        token_prefix: counterRows.token?.prefix || 'T',
+        token_start: String(counterRows.token?.next_number || ''),
+      });
       if (window.risAPI) setLicenseStatus(await window.risAPI.getLicenseStatus());
     } catch (err: any) {
       setError(err?.message || 'Failed to load settings');
@@ -122,6 +136,49 @@ export function SettingsPage() {
     }
   };
 
+  const saveCounters = async () => {
+    setBusy(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const saved = await apiSaveCounters(counterForm);
+      setCounters(saved);
+      setCounterForm({
+        accession_prefix: saved.accession?.prefix || counterForm.accession_prefix,
+        accession_start: String(saved.accession?.next_number || ''),
+        token_prefix: saved.token?.prefix || counterForm.token_prefix,
+        token_start: String(saved.token?.next_number || ''),
+      });
+      setMessage('Accession and token counters saved');
+    } catch (err: any) {
+      setError(err?.message || 'Failed to save counters');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const loadImageSetting = (key: 'brand_logo_image' | 'receipt_signature_image' | 'receipt_stamp_image', file?: File | null) => {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => setBranding((current) => ({ ...current, [key]: String(reader.result || '') }));
+    reader.readAsDataURL(file);
+  };
+
+  const importCsv = async (type: 'patients' | 'referring_doctors', file?: File | null) => {
+    if (!file) return;
+    setBusy(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const result = await apiImportCsv(type, file);
+      setMessage(`CSV import complete. Created ${result.created}, skipped ${result.skipped}${result.errors?.length ? `, errors ${result.errors.length}` : ''}.`);
+    } catch (err: any) {
+      setError(err?.message || 'CSV import failed');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const deleteService = async (service: Service) => {
     if (!window.confirm(`Delete ${service.name}? Existing old orders keep their service history, but this test will be removed from future registration.`)) {
       return;
@@ -191,6 +248,10 @@ export function SettingsPage() {
           <TextInput label="Website" value={branding.brand_website} onChange={(event) => setBranding({ ...branding, brand_website: event.target.value })} />
           <TextInput label="GST number" value={branding.gst_number} onChange={(event) => setBranding({ ...branding, gst_number: event.target.value })} />
           <TextInput label="Tax percentage" value={branding.default_tax_percentage} onChange={(event) => setBranding({ ...branding, default_tax_percentage: event.target.value })} />
+          <SelectInput label="Bill paper size" value={branding.receipt_paper_size} onChange={(event) => setBranding({ ...branding, receipt_paper_size: event.target.value })}>
+            <option value="A5">A5</option>
+            <option value="A4">A4</option>
+          </SelectInput>
         </div>
         <div className="mt-3">
           <TextareaInput label="Address" rows={2} value={branding.brand_address} onChange={(event) => setBranding({ ...branding, brand_address: event.target.value })} />
@@ -199,7 +260,60 @@ export function SettingsPage() {
           <TextareaInput label="Receipt header note" rows={2} value={branding.receipt_header} onChange={(event) => setBranding({ ...branding, receipt_header: event.target.value })} />
           <TextareaInput label="Receipt footer note" rows={2} value={branding.receipt_footer} onChange={(event) => setBranding({ ...branding, receipt_footer: event.target.value })} />
         </div>
+        <div className="grid-2 mt-3">
+          <TextInput label="Sign / stamp label" value={branding.receipt_signature_label} onChange={(event) => setBranding({ ...branding, receipt_signature_label: event.target.value })} />
+          <div className="actions">
+            <label className="btn btn-secondary">
+              <ImagePlus size={15} /> Upload hospital logo
+              <input type="file" accept="image/*" hidden onChange={(event) => loadImageSetting('brand_logo_image', event.target.files?.[0])} />
+            </label>
+            <label className="btn btn-secondary">
+              <ImagePlus size={15} /> Upload sign
+              <input type="file" accept="image/*" hidden onChange={(event) => loadImageSetting('receipt_signature_image', event.target.files?.[0])} />
+            </label>
+            <label className="btn btn-secondary">
+              <ImagePlus size={15} /> Upload stamp
+              <input type="file" accept="image/*" hidden onChange={(event) => loadImageSetting('receipt_stamp_image', event.target.files?.[0])} />
+            </label>
+          </div>
+        </div>
+        {(branding.brand_logo_image || branding.receipt_signature_image || branding.receipt_stamp_image) ? (
+          <div className="receipt-preview-strip mt-3">
+            {branding.brand_logo_image ? <img src={branding.brand_logo_image} alt="Hospital logo preview" /> : null}
+            {branding.receipt_signature_image ? <img src={branding.receipt_signature_image} alt="Signature preview" /> : null}
+            {branding.receipt_stamp_image ? <img src={branding.receipt_stamp_image} alt="Stamp preview" /> : null}
+          </div>
+        ) : null}
         <Button variant="primary" icon={Save} disabled={busy} onClick={saveBranding} className="mt-4">Save branding</Button>
+      </div>
+
+      <div className="card card-pad mt-5">
+        <SectionHeader icon={Hash} title="Accession and token numbering" sub="Set the next generated number before starting the day or migrating from old records" />
+        <div className="grid-2">
+          <TextInput label="Accession prefix" value={counterForm.accession_prefix} onChange={(event) => setCounterForm({ ...counterForm, accession_prefix: event.target.value })} />
+          <TextInput label="Next accession number" type="number" value={counterForm.accession_start} onChange={(event) => setCounterForm({ ...counterForm, accession_start: event.target.value })} hint={`Current next: ${counters.accession?.next_number ?? '-'}`} />
+          <TextInput label="Token prefix" value={counterForm.token_prefix} onChange={(event) => setCounterForm({ ...counterForm, token_prefix: event.target.value })} />
+          <TextInput label="Next token number" type="number" value={counterForm.token_start} onChange={(event) => setCounterForm({ ...counterForm, token_start: event.target.value })} hint={`Current next: ${counters.token?.next_number ?? '-'}`} />
+        </div>
+        <Button variant="primary" icon={Save} disabled={busy} onClick={saveCounters} className="mt-4">Save numbering</Button>
+      </div>
+
+      <div className="card card-pad mt-5">
+        <SectionHeader icon={FileSpreadsheet} title="Excel CSV import" sub="Save Excel as CSV, then import patient or referring doctor master data" />
+        <div className="actions">
+          <label className="btn btn-secondary">
+            <FileSpreadsheet size={15} /> Import patients CSV
+            <input type="file" accept=".csv,text/csv" hidden onChange={(event) => importCsv('patients', event.target.files?.[0])} />
+          </label>
+          <label className="btn btn-secondary">
+            <FileSpreadsheet size={15} /> Import referring doctors CSV
+            <input type="file" accept=".csv,text/csv" hidden onChange={(event) => importCsv('referring_doctors', event.target.files?.[0])} />
+          </label>
+        </div>
+        <div className="field-hint mt-3">
+          Patient columns: prefix, full_name/name, last_name, phone, alt_phone, birthdate/dob, email, address_1, address_2, address_3, city, state, id_proof_type, id_proof_number. Aadhaar can be imported as id_proof_number with id_proof_type aadhaar.
+          Doctor columns: name/doctor_name, phone, email, registration_no, clinic_name, address.
+        </div>
       </div>
 
       <div className="card card-pad mt-5">

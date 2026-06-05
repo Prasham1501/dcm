@@ -15,6 +15,7 @@ class RisRegistrationRepository
         $this->db = $db;
         $this->counters = $counters;
         $this->uidRoot = $uidRoot;
+        $this->ensureExtendedSchema();
     }
 
     /**
@@ -40,6 +41,7 @@ class RisRegistrationRepository
         $discount = (float) ($data['discount'] ?? 0);
         $tax = (float) ($data['tax'] ?? 0);
         $defaultAe = $data['scheduled_station_ae'] ?? null;
+        $defaultRoom = $data['room_title'] ?? null;
 
         $this->db->begin_transaction();
         try {
@@ -56,6 +58,7 @@ class RisRegistrationRepository
                     'price' => $price,
                     'modality' => $s['modality'] ?? ($svc['modality'] ?? null),
                     'scheduled_station_ae' => $s['scheduled_station_ae'] ?? $defaultAe,
+                    'room_title' => $s['room_title'] ?? $defaultRoom,
                     'scheduled_datetime' => $s['scheduled_datetime'] ?? null,
                     'clinical_notes' => $s['clinical_notes'] ?? null,
                 ];
@@ -76,25 +79,27 @@ class RisRegistrationRepository
             $orders = [];
             foreach ($resolved as $r) {
                 $accession = $this->counters->next('accession');
+                $tokenNo = $this->counters->next('token');
                 $seq = (int) preg_replace('/\D/', '', $accession);
                 $uid = RisUid::studyUid($this->uidRoot, $seq);
 
                 $serviceId = $r['service_id'];
                 $modality = $r['modality'];
                 $ae = $r['scheduled_station_ae'];
+                $room = $r['room_title'];
                 $sdt = $r['scheduled_datetime'];
                 $price = $r['price'];
                 $notes = $r['clinical_notes'];
 
                 $os = $this->db->prepare(
                     'INSERT INTO ris_orders (visit_id, patient_id, service_id, modality, accession_number,
-                     study_instance_uid, scheduled_station_ae, scheduled_datetime, price, clinical_notes, created_by)
-                     VALUES (?,?,?,?,?,?,?,?,?,?,?)'
+                     token_no, study_instance_uid, scheduled_station_ae, room_title, scheduled_datetime, price, clinical_notes, created_by)
+                     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)'
                 );
                 $os->bind_param(
-                    'iiisssssdsi',
+                    'iiisssssssdsi',
                     $visitId, $patientId, $serviceId, $modality, $accession,
-                    $uid, $ae, $sdt, $price, $notes, $createdBy
+                    $tokenNo, $uid, $ae, $room, $sdt, $price, $notes, $createdBy
                 );
                 $os->execute();
                 $orderId = $os->insert_id;
@@ -119,5 +124,21 @@ class RisRegistrationRepository
         $row = $stmt->get_result()->fetch_assoc();
         $stmt->close();
         return $row ?: null;
+    }
+
+    private function ensureExtendedSchema(): void
+    {
+        $this->db->query("INSERT INTO app_counters (name, current_value, prefix) VALUES ('token', 0, 'T') ON DUPLICATE KEY UPDATE name = name");
+        $columns = [
+            'token_no' => "ALTER TABLE ris_orders ADD COLUMN token_no VARCHAR(32) DEFAULT NULL AFTER accession_number",
+            'room_title' => "ALTER TABLE ris_orders ADD COLUMN room_title VARCHAR(120) DEFAULT NULL AFTER scheduled_station_ae",
+        ];
+        foreach ($columns as $column => $sql) {
+            $safe = $this->db->real_escape_string($column);
+            $res = $this->db->query("SHOW COLUMNS FROM ris_orders LIKE '{$safe}'");
+            if (!$res || $res->num_rows === 0) {
+                $this->db->query($sql);
+            }
+        }
     }
 }

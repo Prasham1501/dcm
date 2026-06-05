@@ -2510,6 +2510,91 @@ ipcMain.handle('open-viewer', (event, { isPortrait, imageCount, cols, rows }) =>
     return { success: true, width: winW, height: winH };
 });
 
+// =====================================================
+// 3D Volume Viewer Popup Window
+// =====================================================
+let volumeViewerWindow = null;
+
+ipcMain.handle('open-volume-viewer', (event, { imageCount } = {}) => {
+    const { screen } = require('electron');
+    const primaryDisplay = screen.getPrimaryDisplay();
+    const { width: screenW, height: screenH } = primaryDisplay.workAreaSize;
+
+    // The 3D viewer benefits from a roughly square area for the quad
+    // MPR + VR layout. Default to 80% of the working area so multi-monitor
+    // setups still leave the source viewer visible.
+    const winW = Math.round(screenW * 0.85);
+    const winH = Math.round(screenH * 0.92);
+
+    // Reuse the existing window if it's already open — destroying the
+    // BrowserWindow tears down the WebGL2 context, and rebuilding the
+    // cs3d engine is expensive (~hundreds of ms).
+    if (volumeViewerWindow && !volumeViewerWindow.isDestroyed()) {
+        try { volumeViewerWindow.setSize(winW, winH); volumeViewerWindow.center(); } catch {}
+        try { volumeViewerWindow.show(); volumeViewerWindow.focus(); } catch {}
+        try { volumeViewerWindow.webContents.send('volume-viewer:reload-launch'); } catch {}
+        return { success: true, width: winW, height: winH, reused: true };
+    }
+
+    volumeViewerWindow = new BrowserWindow({
+        width: winW,
+        height: winH,
+        minWidth: 800,
+        minHeight: 600,
+        title: `One Clickz - 3D Volume Viewer${imageCount ? ` (${imageCount} slices)` : ''}`,
+        icon: path.join(__dirname, 'icon.ico'),
+        webPreferences: {
+            nodeIntegration: false,
+            contextIsolation: true,
+            preload: path.join(__dirname, 'preload.js'),
+            // Cornerstone3D / vtk.js needs WebGL2 + hardware acceleration.
+            // These are on by default in Electron — listed here as a
+            // reminder, not as overrides.
+        }
+    });
+
+    volumeViewerWindow.center();
+    volumeViewerWindow.loadURL(`${APP_URL}/volume-3d`);
+
+    // Auto-open DevTools so a white-screen crash surfaces the actual
+    // console error instead of leaving the radiologist with a blank window.
+    try { volumeViewerWindow.webContents.openDevTools({ mode: 'detach' }); } catch {}
+
+    // Auto-open DevTools so a white-screen / GL failure is immediately
+    // visible to the user. We close it again automatically when the page
+    // first reports a successful volume load (see ipc 'volume-viewer:ready').
+    volumeViewerWindow.webContents.once('did-finish-load', () => {
+        try { volumeViewerWindow.webContents.openDevTools({ mode: 'detach' }); } catch {}
+    });
+
+    const volumeMenu = Menu.buildFromTemplate([
+        {
+            label: 'View',
+            submenu: [
+                { role: 'reload' },
+                { role: 'forceReload' },
+                { type: 'separator' },
+                { role: 'resetZoom' },
+                { role: 'zoomIn' },
+                { role: 'zoomOut' },
+                { type: 'separator' },
+                { role: 'togglefullscreen' }
+            ]
+        },
+        {
+            label: 'Tools',
+            submenu: [
+                { role: 'toggleDevTools', label: 'Developer Tools', accelerator: 'F12' }
+            ]
+        }
+    ]);
+    volumeViewerWindow.setMenu(volumeMenu);
+
+    volumeViewerWindow.on('closed', () => { volumeViewerWindow = null; });
+
+    return { success: true, width: winW, height: winH };
+});
+
 // Resize viewer windows when layout changes
 ipcMain.handle('resize-cr-viewer', (event, { cols, rows }) => {
     if (!crViewerWindow || crViewerWindow.isDestroyed()) return;

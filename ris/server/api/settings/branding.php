@@ -23,10 +23,15 @@ $defaults = [
     'brand_email' => '',
     'brand_address' => '',
     'brand_website' => '',
+    'brand_logo_image' => '',
     'receipt_header' => '',
     'receipt_footer' => 'Thank you. Get well soon.',
     'gst_number' => '',
     'default_tax_percentage' => '0',
+    'receipt_paper_size' => 'A5',
+    'receipt_signature_label' => 'Authorized sign / stamp',
+    'receipt_signature_image' => '',
+    'receipt_stamp_image' => '',
 ];
 
 function ris_branding_read(mysqli $db, array $defaults): array {
@@ -42,6 +47,7 @@ function ris_branding_read(mysqli $db, array $defaults): array {
 
 try {
     $db = getDbConnection();
+    $db->query("ALTER TABLE hospital_settings MODIFY setting_value MEDIUMTEXT DEFAULT NULL");
     if ($_SERVER['REQUEST_METHOD'] === 'GET') {
         sendSuccessResponse(ris_branding_read($db, $defaults));
     }

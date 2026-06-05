@@ -9,6 +9,7 @@ import { ConsoleSimulatorPage } from './features/console/routes/ConsoleSimulator
 import { NetworkPage } from './features/network/routes/NetworkPage';
 import { DayBookPage } from './features/billing/routes/DayBookPage';
 import { CommissionPage } from './features/commission/routes/CommissionPage';
+import { PcpndtPage } from './features/pcpndt/routes/PcpndtPage';
 import { SettingsPage } from './features/settings/routes/SettingsPage';
 import { LicenseGate } from './features/license/LicenseGate';
 
@@ -34,6 +35,7 @@ export function App() {
           <Route path="/network" element={<NetworkPage />} />
           <Route path="/billing" element={<DayBookPage />} />
           <Route path="/commission" element={<CommissionPage />} />
+          <Route path="/pcpndt" element={<PcpndtPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Route>

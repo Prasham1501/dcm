@@ -69,6 +69,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     // Main Viewer popup
     openViewer: (params) => ipcRenderer.invoke('open-viewer', params),
 
+    // 3D Volume Viewer popup
+    openVolumeViewer: (params) => ipcRenderer.invoke('open-volume-viewer', params),
+
     // Viewer + Report Editor side-by-side
     openViewerWithReport: (params) => ipcRenderer.invoke('open-viewer-with-report', params),
 

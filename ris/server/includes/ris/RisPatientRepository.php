@@ -11,8 +11,10 @@ class RisPatientRepository
 
     /** Columns a client may set on create. */
     private const FIELDS = [
-        'dicom_patient_id', 'full_name', 'dob', 'age_years', 'sex', 'phone', 'email',
-        'address', 'husband_or_father_name', 'id_proof_type', 'id_proof_number', 'created_by',
+        'dicom_patient_id', 'name_prefix', 'full_name', 'last_name', 'dob', 'age_years', 'sex',
+        'phone', 'alt_phone', 'email', 'address', 'address_line1', 'address_line2',
+        'address_line3', 'city', 'state', 'husband_or_father_name', 'id_proof_type',
+        'id_proof_number', 'aadhaar_number', 'created_by',
     ];
     /** Integer-typed columns (everything else binds as string). */
     private const INT_FIELDS = ['age_years', 'created_by'];
@@ -21,6 +23,7 @@ class RisPatientRepository
     {
         $this->db = $db;
         $this->counters = $counters;
+        $this->ensureExtendedSchema();
     }
 
     /** @throws InvalidArgumentException when full_name is missing. */
@@ -92,8 +95,10 @@ class RisPatientRepository
     public function update(int $id, array $data): array
     {
         $editable = [
-            'dicom_patient_id', 'full_name', 'dob', 'age_years', 'sex', 'phone', 'email',
-            'address', 'husband_or_father_name', 'id_proof_type', 'id_proof_number',
+            'dicom_patient_id', 'name_prefix', 'full_name', 'last_name', 'dob', 'age_years',
+            'sex', 'phone', 'alt_phone', 'email', 'address', 'address_line1', 'address_line2',
+            'address_line3', 'city', 'state', 'husband_or_father_name', 'id_proof_type',
+            'id_proof_number', 'aadhaar_number',
         ];
         $sets = [];
         $types = '';
@@ -121,6 +126,28 @@ class RisPatientRepository
     private static function nn($v)
     {
         return ($v === '' || $v === null) ? null : $v;
+    }
+
+    private function ensureExtendedSchema(): void
+    {
+        $columns = [
+            'name_prefix' => "ALTER TABLE ris_patients ADD COLUMN name_prefix VARCHAR(20) DEFAULT NULL AFTER dicom_patient_id",
+            'last_name' => "ALTER TABLE ris_patients ADD COLUMN last_name VARCHAR(120) DEFAULT NULL AFTER full_name",
+            'alt_phone' => "ALTER TABLE ris_patients ADD COLUMN alt_phone VARCHAR(20) DEFAULT NULL AFTER phone",
+            'address_line1' => "ALTER TABLE ris_patients ADD COLUMN address_line1 VARCHAR(255) DEFAULT NULL AFTER email",
+            'address_line2' => "ALTER TABLE ris_patients ADD COLUMN address_line2 VARCHAR(255) DEFAULT NULL AFTER address_line1",
+            'address_line3' => "ALTER TABLE ris_patients ADD COLUMN address_line3 VARCHAR(255) DEFAULT NULL AFTER address_line2",
+            'city' => "ALTER TABLE ris_patients ADD COLUMN city VARCHAR(100) DEFAULT NULL AFTER address_line3",
+            'state' => "ALTER TABLE ris_patients ADD COLUMN state VARCHAR(100) DEFAULT NULL AFTER city",
+            'aadhaar_number' => "ALTER TABLE ris_patients ADD COLUMN aadhaar_number VARCHAR(20) DEFAULT NULL AFTER id_proof_number",
+        ];
+        foreach ($columns as $column => $sql) {
+            $safe = $this->db->real_escape_string($column);
+            $res = $this->db->query("SHOW COLUMNS FROM ris_patients LIKE '{$safe}'");
+            if (!$res || $res->num_rows === 0) {
+                $this->db->query($sql);
+            }
+        }
     }
 
     /** mysqli bind_param needs references; turn a value array into a reference array. */

@@ -15,7 +15,9 @@ if (!hasRole(['admin', 'super_admin', 'receptionist', 'doctor'])) { sendErrorRes
 
 try {
     $date = preg_match('/^\d{4}-\d{2}-\d{2}$/', $_GET['date'] ?? '') ? $_GET['date'] : date('Y-m-d');
-    sendSuccessResponse((new RisDashboardRepository(getDbConnection()))->summary($date));
+    $from = preg_match('/^\d{4}-\d{2}-\d{2}$/', $_GET['from'] ?? '') ? $_GET['from'] : $date;
+    $to = preg_match('/^\d{4}-\d{2}-\d{2}$/', $_GET['to'] ?? '') ? $_GET['to'] : $date;
+    sendSuccessResponse((new RisDashboardRepository(getDbConnection()))->summary($date, $from, $to));
 } catch (Throwable $e) {
     logMessage('Dashboard summary error: ' . $e->getMessage(), 'error', 'ris.log');
     sendErrorResponse('Server error: ' . $e->getMessage(), 500);

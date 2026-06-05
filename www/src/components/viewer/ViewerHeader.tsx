@@ -9,6 +9,7 @@ import { useReportStore } from '@/stores/reportStore';
 import { useReportRouter } from '@/features/report-router/useReportRouter';
 import { resetViewport } from '@/lib/viewerTools';
 import { FormFButton } from '@/features/pcpndt/FormFButton';
+import { Volume3DButton } from '@/features/volume3d/Volume3DButton';
 import {
   Sun, Moon, ChevronLeft, ChevronRight, Printer, X, Copy, Check,
   PanelRightClose, PanelRightOpen, Undo2, RotateCcw, CheckSquare, Trash2, ImagePlus, FileText,
@@ -196,6 +197,24 @@ export function ViewerHeader({ showThumbnails = true, onToggleThumbnails }: { sh
         {/* PCPNDT Form F */}
         <FormFButton patientId={patientId} patientName={patientName}
           className="px-2 py-1 text-[10px] 2xl:text-sm font-semibold border-2 border-app-accent text-app-accent bg-app-bg rounded hover:bg-app-accent hover:text-white transition-colors flex items-center gap-1" />
+
+        {/* 3D Volume — CT/MR gated. The main viewer keeps the
+            original local DICOM path on each image's wadouri URL
+            (?path=…), so we extract it back out to hand to cs3d. */}
+        <Volume3DButton
+          patientName={patientName}
+          patientId={patientId}
+          studyDate={studyDate}
+          studyDescription={studyDescription}
+          modality={modality}
+          filePaths={images
+            .map((img: any) => {
+              const m = String(img.imageUrl ?? '').match(/[?&]path=([^&]+)/);
+              return m ? decodeURIComponent(m[1]) : '';
+            })
+            .filter(Boolean)}
+          className="px-2 py-1 text-[10px] 2xl:text-sm font-semibold border-2 border-app-accent text-app-accent bg-app-bg rounded hover:bg-app-accent hover:text-white transition-colors flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
+        />
 
         {/* Report - highlighted */}
         <button

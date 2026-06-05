@@ -19,6 +19,7 @@ try {
     $db = getDbConnection();
     $res = $db->query(
         "SELECT o.id, o.accession_number, o.study_instance_uid, o.modality, o.status,
+                o.token_no, o.room_title, o.scheduled_station_ae, o.mwl_written_at,
                 p.mrn, p.dicom_patient_id, p.full_name AS patient_name, p.age_years, p.sex,
                 s.name AS service_name
          FROM ris_orders o
@@ -26,7 +27,7 @@ try {
          LEFT JOIN ris_services s ON s.id = o.service_id
          WHERE o.status IN ('scheduled','arrived','in_progress')
            AND o.linked_study_uid IS NULL
-         ORDER BY o.created_at DESC
+         ORDER BY o.mwl_written_at DESC, o.created_at DESC
          LIMIT 100"
     );
     $rows = [];

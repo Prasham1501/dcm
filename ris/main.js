@@ -253,6 +253,14 @@ function probeHttp(url, timeout = 1500) {
     });
 }
 
+async function waitForHttp(url, maxAttempts = 30, delayMs = 500) {
+    for (let i = 0; i < maxAttempts; i++) {
+        if (await probeHttp(url)) return true;
+        await new Promise(r => setTimeout(r, delayMs));
+    }
+    return false;
+}
+
 // ------------------------------------------------------------------
 // MariaDB
 // ------------------------------------------------------------------
@@ -474,9 +482,12 @@ function startStaticServer() {
 async function bootServices() {
     ensureDirs();
 
-    // MySQL — in dev we use XAMPP MySQL on 3306, no need to spawn bundled MariaDB.
-    if (isDev) {
-        console.log('[RIS] Dev mode: using XAMPP MySQL on 3306 — skipping bundled MariaDB.');
+    // MySQL — in dev, reuse whichever local DB is already running; otherwise
+    // start the bundled MariaDB so RIS APIs are not blank on machines without XAMPP MySQL.
+    if (isDev && await probePort(3306)) {
+        console.log('[RIS] Dev mode: using XAMPP MySQL on 3306.');
+    } else if (isDev && await probePort(MYSQL_PORT)) {
+        console.log('[RIS] Dev mode: bundled MariaDB already running on', MYSQL_PORT, '— reusing.');
     } else if (await probePort(MYSQL_PORT)) {
         console.log('[RIS] MySQL already running on', MYSQL_PORT, '— reusing.');
     } else {
@@ -522,7 +533,7 @@ function shutdownOwned() {
 // ------------------------------------------------------------------
 // Window
 // ------------------------------------------------------------------
-function createWindow() {
+async function createWindow() {
     mainWindow = new BrowserWindow({
         width: 1400, height: 900,
         minWidth: 1100, minHeight: 700,
@@ -538,22 +549,42 @@ function createWindow() {
     });
     Menu.setApplicationMenu(null);
 
-    const target = isDev ? 'http://localhost:5174' : `http://localhost:${UI_PORT}`;
+    const target = isDev ? 'http://localhost:5174' : `http://127.0.0.1:${UI_PORT}`;
     console.log('[RIS] Loading', target);
-    mainWindow.loadURL(target);
+    const retryLoad = () => {
+        setTimeout(() => {
+            mainWindow?.loadURL(target).catch((e) => {
+                console.error('[RIS] retry load failed:', e.message);
+                retryLoad();
+            });
+        }, 1000);
+    };
 
     mainWindow.webContents.on('did-fail-load', (_e, code, desc) => {
-        if (code === -102 || code === -106) {
-            // ERR_CONNECTION_REFUSED — UI server not ready yet, retry
-            setTimeout(() => mainWindow?.loadURL(target), 1000);
-        } else {
-            console.error('[RIS] load failed:', code, desc);
-        }
+        console.error('[RIS] load failed:', code, desc);
+        retryLoad();
+    });
+    mainWindow.webContents.on('render-process-gone', (_event, details) => {
+        console.error('[RIS] renderer process gone:', details.reason, details.exitCode);
+    });
+    mainWindow.webContents.on('console-message', (_event, level, message) => {
+        if (level >= 2) console.error('[RIS][Renderer]', message);
     });
 
     // DevTools available via F12 / Ctrl+Shift+I — do not auto-open.
     mainWindow.webContents.setWindowOpenHandler(({ url }) => {
         shell.openExternal(url); return { action: 'deny' };
+    });
+
+    if (isDev) {
+        const ready = await waitForHttp(target, 60, 500);
+        if (!ready) {
+            console.error('[RIS] Vite dev server did not become ready at', target);
+        }
+    }
+    mainWindow.loadURL(target).catch((e) => {
+        console.error('[RIS] initial load failed:', e.message);
+        retryLoad();
     });
 }
 
@@ -596,7 +627,7 @@ app.whenReady().then(async () => {
     if (validation.valid) {
         startLicenseHeartbeat();
     }
-    createWindow();
+    await createWindow();
 
     app.on('activate', () => {
         if (BrowserWindow.getAllWindows().length === 0) createWindow();

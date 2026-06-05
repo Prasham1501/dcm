@@ -9,13 +9,19 @@ class RisDashboardRepository
         $this->db = $db;
     }
 
-    public function summary(string $date): array
+    public function summary(string $date, ?string $from = null, ?string $to = null): array
     {
-        $ym = substr($date, 0, 7);
+        $from = $from ?: $date;
+        $to = $to ?: $date;
         return [
             'date' => $date,
+            'from' => $from,
+            'to' => $to,
             'registrations_today' => (int) $this->scalar(
                 "SELECT COUNT(*) FROM ris_visits WHERE DATE(visit_datetime) = ?", 's', $date
+            ),
+            'registrations_range' => (int) $this->scalar(
+                "SELECT COUNT(*) FROM ris_visits WHERE visit_datetime >= ? AND visit_datetime < DATE_ADD(?, INTERVAL 1 DAY)", 'ss', $from, $to
             ),
             'pending_worklist' => (int) $this->scalar(
                 "SELECT COUNT(*) FROM ris_orders WHERE status IN ('acquired','in_progress')"
@@ -27,8 +33,15 @@ class RisDashboardRepository
                 "SELECT COALESCE(SUM(CASE WHEN is_refund=0 THEN amount ELSE -amount END),0)
                  FROM ris_payments WHERE DATE(received_at) = ?", 's', $date
             ),
-            'mtd_commission' => (float) $this->scalar(
-                "SELECT COALESCE(SUM(commission_amount),0) FROM ris_commission_entries WHERE period_ym = ?", 's', $ym
+            'collections_range' => (float) $this->scalar(
+                "SELECT COALESCE(SUM(CASE WHEN is_refund=0 THEN amount ELSE -amount END),0)
+                 FROM ris_payments WHERE received_at >= ? AND received_at < DATE_ADD(?, INTERVAL 1 DAY)", 'ss', $from, $to
+            ),
+            'balance_due' => (float) $this->scalar(
+                "SELECT COALESCE(SUM(balance),0) FROM ris_visits WHERE status IN ('open','partly_paid')"
+            ),
+            'balance_due_count' => (int) $this->scalar(
+                "SELECT COUNT(*) FROM ris_visits WHERE status IN ('open','partly_paid') AND balance > 0"
             ),
         ];
     }

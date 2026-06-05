@@ -26,6 +26,8 @@ export interface DayBook {
   count: number;
   by_mode: Record<string, number>;
   refunds: number;
+  balance_due: number;
+  balance_due_count: number;
 }
 
 const TAKE = '/api/billing/take-payment.php';

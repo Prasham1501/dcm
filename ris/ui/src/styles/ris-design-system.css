@@ -85,7 +85,7 @@ body { background: var(--app-bg); color: var(--app-text); font-family: var(--fon
 .btn:disabled { cursor: not-allowed; opacity: .55; }
 .btn-primary { background: var(--app-accent); color: #fff; }
 .btn-primary:hover:not(:disabled) { background: var(--app-accent-hover); color: #fff; text-decoration: none; }
-.btn-secondary { background: #fff; border-color: var(--app-border); color: var(--app-text); }
+.btn-secondary { background: var(--app-bg); border-color: var(--app-border); color: var(--app-text); }
 .btn-secondary:hover:not(:disabled) { background: var(--app-hover); text-decoration: none; }
 .btn-ghost { background: transparent; color: var(--app-text-secondary); }
 .btn-ghost:hover:not(:disabled) { background: var(--app-hover); color: var(--app-text); }
@@ -96,7 +96,7 @@ body { background: var(--app-bg); color: var(--app-text); font-family: var(--fon
 .btn-block { width: 100%; }
 .iconbtn { align-items: center; background: transparent; border: 1px solid transparent; border-radius: var(--radius-sm); color: var(--app-text-secondary); cursor: pointer; display: inline-flex; height: var(--control-h); justify-content: center; width: var(--control-h); }
 .iconbtn:hover { background: var(--app-hover); color: var(--app-text); }
-.iconbtn.bordered { background: #fff; border-color: var(--app-border); }
+.iconbtn.bordered { background: var(--app-bg); border-color: var(--app-border); }
 .iconbtn-sm { height: 26px; width: 26px; }
 .iconbtn svg { height: 17px; width: 17px; }
 .iconbtn-sm svg { height: 14px; width: 14px; }
@@ -104,7 +104,7 @@ body { background: var(--app-bg); color: var(--app-text); font-family: var(--fon
 .field { display: flex; flex-direction: column; gap: 5px; }
 .field-label { color: var(--app-text-secondary); font-size: 12px; font-weight: 500; }
 .req, .accent { color: var(--app-accent); }
-.input, .select, .textarea { background: #fff; border: 1px solid var(--app-border); border-radius: var(--radius-xs); color: var(--app-text); font: inherit; font-size: 13px; height: var(--control-h); padding: 0 10px; width: 100%; }
+.input, .select, .textarea { background: var(--app-bg); border: 1px solid var(--app-border); border-radius: var(--radius-xs); color: var(--app-text); font: inherit; font-size: 13px; height: var(--control-h); padding: 0 10px; width: 100%; }
 .textarea { height: auto; line-height: 1.4; padding: 8px 10px; resize: vertical; }
 .input:focus, .select:focus, .textarea:focus { border-color: var(--app-accent); box-shadow: 0 0 0 2px rgba(178,34,34,.22); outline: none; }
 .select { appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23999' stroke-width='2.2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E"); background-position: right 9px center; background-repeat: no-repeat; padding-right: 28px; }
@@ -114,12 +114,12 @@ body { background: var(--app-bg); color: var(--app-text); font-family: var(--fon
 .input.error, .select.error { border-color: var(--danger); }
 .daterange { align-items: flex-end; display: flex; gap: 8px; }
 .daterange .dash { color: var(--app-text-muted); padding-bottom: 7px; }
-.checkrow { align-items: center; background: #fff; border: 1px solid var(--app-border-soft); border-radius: var(--radius-xs); cursor: pointer; display: flex; font-size: 13px; gap: 9px; padding: 7px 10px; }
+.checkrow { align-items: center; background: var(--app-bg); border: 1px solid var(--app-border-soft); border-radius: var(--radius-xs); cursor: pointer; display: flex; font-size: 13px; gap: 9px; padding: 7px 10px; }
 .checkrow:hover { background: var(--app-surface); }
 .checkrow.checked { background: var(--app-accent-light); border-color: var(--app-accent); }
 .checkrow input { accent-color: var(--app-accent); }
 
-.card { background: #fff; border: 1px solid var(--app-border); border-radius: var(--radius-md); }
+.card { background: var(--app-bg); border: 1px solid var(--app-border); border-radius: var(--radius-md); }
 .card-pad { padding: 16px; }
 .card-surface { background: var(--app-surface); }
 .card-head { align-items: center; border-bottom: 1px solid var(--app-border-soft); display: flex; gap: 10px; padding: 13px 16px; }
@@ -133,7 +133,7 @@ body { background: var(--app-bg); color: var(--app-text); font-family: var(--fon
 .section-header .sh-actions { align-items: center; display: flex; gap: 8px; margin-left: auto; }
 .divider { background: var(--app-border-soft); height: 1px; margin: 14px 0; }
 
-.stat { background: #fff; border: 1px solid var(--app-border); border-radius: var(--radius-md); display: flex; flex-direction: column; gap: 7px; min-width: 0; padding: 15px 16px; }
+.stat { background: var(--app-bg); border: 1px solid var(--app-border); border-radius: var(--radius-md); display: flex; flex-direction: column; gap: 7px; min-width: 0; padding: 15px 16px; }
 .stat-top { align-items: center; display: flex; gap: 8px; }
 .stat-ico { align-items: center; background: var(--app-accent-light); border-radius: 6px; color: var(--app-accent); display: flex; height: 28px; justify-content: center; width: 28px; }
 .stat-ico svg { height: 16px; width: 16px; }
@@ -152,7 +152,7 @@ body { background: var(--app-bg); color: var(--app-text); font-family: var(--fon
 .modality-tag { align-items: center; display: inline-flex; font-size: 12px; font-weight: 600; gap: 6px; }
 .mod-dot { border-radius: 999px; display: inline-block; height: 9px; width: 9px; }
 
-.table-wrap { background: #fff; border: 1px solid var(--app-border); border-radius: var(--radius-md); overflow: hidden; }
+.table-wrap { background: var(--app-bg); border: 1px solid var(--app-border); border-radius: var(--radius-md); overflow: hidden; }
 .dt { border-collapse: collapse; font-size: 13px; width: 100%; }
 .dt th { background: var(--app-header-bg); border-bottom: 1px solid var(--app-border); color: var(--app-text-secondary); font-size: 11px; font-weight: 600; padding: 9px 14px; text-align: left; white-space: nowrap; }
 .dt td { border-top: 1px solid var(--app-border-soft); padding: 9px 14px; vertical-align: middle; }
@@ -181,12 +181,21 @@ body { background: var(--app-bg); color: var(--app-text); font-family: var(--fon
 .grid-3 { display: grid; gap: 16px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .grid-5 { display: grid; gap: 12px; grid-template-columns: repeat(5, minmax(0, 1fr)); }
 .workflow-steps { display: grid; gap: 8px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
-.workflow-step { background: #fff; border: 1px solid var(--app-border); border-radius: var(--radius-sm); color: var(--app-text-muted); font-size: 12px; font-weight: 700; padding: 10px 12px; text-align: center; text-transform: uppercase; }
+.workflow-step { background: var(--app-bg); border: 1px solid var(--app-border); border-radius: var(--radius-sm); color: var(--app-text-muted); font-size: 12px; font-weight: 700; padding: 10px 12px; text-align: center; text-transform: uppercase; }
 .workflow-step.active { border-color: var(--app-accent); box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.08); color: var(--app-accent); }
 .workflow-step.done { background: var(--app-accent-light); border-color: var(--app-accent); color: var(--app-accent); }
 .accession-list { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
 .accession-code { background: #fff; border: 1px solid var(--app-accent); border-radius: var(--radius-xs); color: var(--app-accent); font-family: var(--font-mono); font-size: 18px; font-weight: 800; letter-spacing: 0.02em; padding: 8px 10px; }
 .history-detail { background: var(--app-surface); border-top: 1px solid var(--app-border); padding: 14px; }
+.worklist-column { padding: 12px; }
+.worklist-column .section-header { margin-bottom: 10px; }
+.worklist-order { padding: 10px; }
+.worklist-order .strong { font-size: 13px; }
+.worklist-order .field-hint { font-size: 10px; }
+.worklist-order .accession-code { font-size: 14px; padding: 5px 7px; }
+.balance-due { align-items: center; background: var(--danger-bg); border: 1px solid #efb7b0; border-radius: var(--radius-sm); color: var(--danger); display: inline-flex; font-size: 12px; font-weight: 700; gap: 8px; padding: 6px 8px; }
+.receipt-preview-strip { align-items: center; background: var(--app-surface); border: 1px dashed var(--app-border); border-radius: var(--radius-sm); display: flex; gap: 12px; padding: 10px; }
+.receipt-preview-strip img { background: #fff; border: 1px solid var(--app-border-soft); max-height: 64px; max-width: 160px; object-fit: contain; padding: 4px; }
 .between { align-items: center; display: flex; justify-content: space-between; }
 .actions { align-items: center; display: flex; flex-wrap: wrap; gap: 8px; }
 .mt-3 { margin-top: 12px; }

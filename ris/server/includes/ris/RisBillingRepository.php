@@ -90,7 +90,7 @@ class RisBillingRepository
         return $this->row('ris_receipts', (int) $id);
     }
 
-    /** @return array{total:float,count:int,by_mode:array<string,float>,refunds:float} */
+    /** @return array{total:float,count:int,by_mode:array<string,float>,refunds:float,balance_due:float,balance_due_count:int} */
     public function daybook(string $from, string $to): array
     {
         $stmt = $this->db->prepare(
@@ -119,7 +119,25 @@ class RisBillingRepository
         }
         $stmt->close();
 
-        return ['total' => $total, 'count' => $count, 'by_mode' => $byMode, 'refunds' => $refunds];
+        $stmt = $this->db->prepare(
+            "SELECT COALESCE(SUM(balance),0) AS balance_due, COUNT(*) AS n
+             FROM ris_visits
+             WHERE visit_datetime >= ? AND visit_datetime < DATE_ADD(?, INTERVAL 1 DAY)
+               AND status IN ('open','partly_paid') AND balance > 0"
+        );
+        $stmt->bind_param('ss', $from, $to);
+        $stmt->execute();
+        $balanceRow = $stmt->get_result()->fetch_assoc() ?: ['balance_due' => 0, 'n' => 0];
+        $stmt->close();
+
+        return [
+            'total' => $total,
+            'count' => $count,
+            'by_mode' => $byMode,
+            'refunds' => $refunds,
+            'balance_due' => (float) $balanceRow['balance_due'],
+            'balance_due_count' => (int) $balanceRow['n'],
+        ];
     }
 
     private function setting(string $key): ?string

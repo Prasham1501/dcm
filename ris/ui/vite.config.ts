@@ -13,6 +13,7 @@ export default defineConfig({
       { find: /^@\/components\/(.*)$/, replacement: path.resolve(__dirname, 'src/components/$1') },
       // RIS-local overrides (auth flow needs to handle flat PHP responses).
       { find: /^@\/stores\/authStore$/, replacement: path.resolve(__dirname, 'src/stores/authStore.ts') },
+      { find: /^@\/stores\/themeStore$/, replacement: path.resolve(__dirname, 'src/stores/themeStore.ts') },
       { find: '@', replacement: path.resolve(__dirname, '../../www/src') },
     ],
   },

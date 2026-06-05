@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ClipboardList, FileSpreadsheet, ListChecks, PackageCheck, Percent, Receipt } from 'lucide-react';
+import { AlertTriangle, ClipboardList, FileSpreadsheet, ListChecks, PackageCheck, Receipt } from 'lucide-react';
 import { useAuthStore } from '@/stores/authStore';
 import { DateRange, EmptyState, ExportLink, SectionHeader, StatTile } from '@/components/RisUi';
 import { apiDashboardSummary, misExportUrl, type DashboardSummary } from '../api/dashboardApi';
@@ -18,8 +18,8 @@ export function DashboardPage() {
 
   useEffect(() => {
     if (!ROLES.includes(role)) return;
-    apiDashboardSummary().then(setSummary).catch((err) => setError(err?.message || 'Failed to load'));
-  }, [role]);
+    apiDashboardSummary(from, to).then(setSummary).catch((err) => setError(err?.message || 'Failed to load'));
+  }, [role, from, to]);
 
   if (!ROLES.includes(role)) {
     return <EmptyState title="No dashboard access" sub="RIS is configured for reception access only." />;
@@ -31,25 +31,36 @@ export function DashboardPage() {
     <div className="content-narrow">
       {error && <div className="banner banner-warning">{error}</div>}
 
-      <div className="grid-5">
-        <StatTile icon={ClipboardList} label="Registrations today" value={summary?.registrations_today ?? '-'} />
+      <div className="card card-pad mt-4">
+        <SectionHeader icon={Receipt} title="Dashboard date range" sub="Updates registrations and collections shown below" />
+        <DateRange from={from} to={to} onFrom={setFrom} onTo={setTo} />
+      </div>
+
+      <div className="grid-5 mt-4">
+        <StatTile icon={ClipboardList} label="Registrations" value={summary?.registrations_range ?? '-'} />
         <StatTile icon={ListChecks} label="Pending worklist" value={summary?.pending_worklist ?? '-'} />
         <StatTile icon={PackageCheck} label="Ready to collect" value={summary?.ready_to_collect ?? '-'} />
-        <StatTile icon={Receipt} label="Collections today" value={summary ? `Rs ${Number(summary.collections_today).toFixed(0)}` : '-'} accent />
-        <StatTile icon={Percent} label="Commission MTD" value={summary ? `Rs ${Number(summary.mtd_commission).toFixed(0)}` : '-'} />
+        <StatTile icon={Receipt} label="Collections" value={summary ? `Rs ${Number(summary.collections_range).toFixed(0)}` : '-'} accent />
+        <StatTile
+          icon={AlertTriangle}
+          label="Balance due"
+          value={summary ? `Rs ${Number(summary.balance_due).toFixed(0)}` : '-'}
+          sub={summary ? `${summary.balance_due_count} pending bill(s)` : undefined}
+        />
       </div>
 
       {canExport && (
         <div className="card card-pad mt-5">
-          <SectionHeader icon={FileSpreadsheet} title="MIS exports" sub="CSV downloads open directly in Excel" />
-          <DateRange from={from} to={to} onFrom={setFrom} onTo={setTo} />
-          <div className="actions mt-4">
-            {(['visits', 'payments', 'commission'] as const).map((type) => (
-              <ExportLink key={type} href={misExportUrl(type, from, to)}>
-                {type} Excel CSV
-              </ExportLink>
-            ))}
-          </div>
+          <SectionHeader icon={FileSpreadsheet} title="MIS exports" sub="CSV downloads open directly in Excel">
+            <div className="actions">
+              {(['visits', 'payments'] as const).map((type) => (
+                <ExportLink key={type} href={misExportUrl(type, from, to)} size="sm">
+                  {type}
+                </ExportLink>
+              ))}
+            </div>
+          </SectionHeader>
+          <div className="field-hint">Use the buttons in the top-right of this panel.</div>
         </div>
       )}
     </div>

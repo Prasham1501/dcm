@@ -28,6 +28,7 @@ try {
     $tables = [
         'ris_commission_entries',
         'ris_commission_payouts',
+        'pcpndt_form_f',
         'ris_receipts',
         'ris_payments',
         'ris_orders',

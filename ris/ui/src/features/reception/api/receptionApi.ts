@@ -4,16 +4,25 @@ export interface Patient {
   id: number;
   mrn: string;
   dicom_patient_id: string | null;
+  name_prefix: string | null;
   full_name: string;
+  last_name: string | null;
   dob: string | null;
   age_years: number | null;
   sex: string | null;
   phone: string | null;
+  alt_phone: string | null;
   email: string | null;
   address: string | null;
+  address_line1: string | null;
+  address_line2: string | null;
+  address_line3: string | null;
+  city: string | null;
+  state: string | null;
   husband_or_father_name: string | null;
   id_proof_type: string | null;
   id_proof_number: string | null;
+  aadhaar_number: string | null;
   created_at?: string;
   updated_at?: string;
 }
@@ -54,7 +63,9 @@ export interface Order {
   service_id: number | null;
   modality: string | null;
   accession_number: string;
+  token_no?: string | null;
   study_instance_uid: string | null;
+  room_title?: string | null;
   status: string;
   price: string;
 }
@@ -95,6 +106,7 @@ const REFDOCS = '/api/reception/referring-doctors.php';
 const REGISTER = '/api/reception/register.php';
 const GENERATE_WORKLIST = '/api/worklist/generate.php';
 const UPDATE_ACCESSION = '/api/worklist/update-accession.php';
+const UPDATE_DESTINATION = '/api/worklist/update-destination.php';
 
 async function readJson(res: Response): Promise<any> {
   const json = await res.json();
@@ -157,8 +169,13 @@ export async function apiRegisterVisit(payload: object): Promise<RegisterResult>
   return (await readJson(res)) as RegisterResult;
 }
 
-export async function apiGenerateWorklist(): Promise<{ generated: number }> {
-  return (await readJson(await fetch(GENERATE_WORKLIST, { method: 'POST', credentials: 'include' }))) as { generated: number };
+export async function apiGenerateWorklist(orderId?: number): Promise<{ generated: number }> {
+  return (await readJson(await fetch(GENERATE_WORKLIST, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(orderId ? { order_id: orderId } : {}),
+  }))) as { generated: number };
 }
 
 export async function apiUpdateAccession(orderId: number, accessionNumber: string): Promise<Order> {
@@ -167,6 +184,16 @@ export async function apiUpdateAccession(orderId: number, accessionNumber: strin
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
     body: JSON.stringify({ order_id: orderId, accession_number: accessionNumber }),
+  });
+  return (await readJson(res)) as Order;
+}
+
+export async function apiUpdateOrderDestination(orderId: number, nodeId: number): Promise<Order> {
+  const res = await fetch(UPDATE_DESTINATION, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ order_id: orderId, node_id: nodeId }),
   });
   return (await readJson(res)) as Order;
 }

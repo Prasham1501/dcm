@@ -1,9 +1,10 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import { CheckCircle2, ClipboardList, History, MonitorUp, Plus, Printer, Receipt, Search, UserPlus } from 'lucide-react';
 import { useAuthStore } from '@/stores/authStore';
-import { Banner, Button, EmptyState, ModalityTag, SectionHeader, SelectInput, StatusChip, TextInput, TextareaInput } from '@/components/RisUi';
+import { Banner, Button, EmptyState, ModalityTag, SectionHeader, SelectInput, StatusChip, TextInput } from '@/components/RisUi';
 import { useReceptionStore } from '../stores/receptionStore';
-import { apiCreateReferringDoctor, apiGenerateWorklist, apiPatientHistory, apiUpdateAccession, type Order, type Patient, type PatientHistory } from '../api/receptionApi';
+import { apiCreateReferringDoctor, apiGenerateWorklist, apiPatientHistory, apiUpdateAccession, apiUpdateOrderDestination, type Order, type Patient, type PatientHistory } from '../api/receptionApi';
+import { apiDicomNodes, type DicomNode } from '@/features/settings/api/settingsApi';
 import type { PatientForm } from '../lib/patientForm';
 import type { VisitForm } from '../lib/visitForm';
 import { useBillingStore } from '@/features/billing/stores/billingStore';
@@ -12,12 +13,21 @@ import type { Receipt as ReceiptRow } from '@/features/billing/api/billingApi';
 const RECEPTION_ROLES = ['receptionist'];
 
 const EMPTY_PATIENT: PatientForm = {
+  name_prefix: '',
   full_name: '',
+  last_name: '',
   phone: '',
+  alt_phone: '',
   sex: '',
+  dob: '',
   age_years: '',
+  email: '',
   husband_or_father_name: '',
-  address: '',
+  address_line1: '',
+  address_line2: '',
+  address_line3: '',
+  city: '',
+  state: '',
   id_proof_type: '',
   id_proof_number: '',
 };
@@ -43,6 +53,7 @@ export function ReceptionPage() {
   const [payMode, setPayMode] = useState('cash');
   const [paymentRef, setPaymentRef] = useState('');
   const [newDoctorName, setNewDoctorName] = useState('');
+  const [nodes, setNodes] = useState<DicomNode[]>([]);
   const [message, setMessage] = useState<string | null>(null);
   const [completed, setCompleted] = useState<{
     visitNo: string;
@@ -56,6 +67,7 @@ export function ReceptionPage() {
     loadServices();
     loadReferringDoctors();
     search('');
+    apiDicomNodes().then(setNodes).catch(() => setNodes([]));
   }, [role, loadServices, loadReferringDoctors, search]);
 
   const selectedServices = services.filter((service) => serviceIds.includes(service.id));
@@ -71,7 +83,13 @@ export function ReceptionPage() {
   }
 
   const setPatientField = (key: keyof PatientForm, value: string) =>
-    setPatientForm((current) => ({ ...current, [key]: value }));
+    setPatientForm((current) => {
+      if (key === 'dob') {
+        const age = calculateAge(value);
+        return { ...current, dob: value, age_years: age === null ? current.age_years : age };
+      }
+      return { ...current, [key]: value };
+    });
 
   const choosePatient = async (patient: Patient) => {
     setSelectedPatient(patient);
@@ -164,16 +182,38 @@ export function ReceptionPage() {
     }
   };
 
-  const prepareConsoleWorklist = async () => {
+  const prepareConsoleWorklist = async (order?: Order, nodeId?: string) => {
     try {
-      const result = await apiGenerateWorklist();
-      const text = `Patient details sent to console worklist. ${result.generated} pending order(s) refreshed. On the machine console, open Worklist/Patient Query and select this accession.`;
+      const node = nodeId ? nodes.find((item) => String(item.id) === nodeId) : null;
+      if (order && node) {
+        await apiUpdateOrderDestination(order.id, node.id);
+      }
+      const result = await apiGenerateWorklist(order?.id);
+      const target = node ? ` for ${node.name} (${node.ae_title})` : '';
+      const text = `Patient details sent to console worklist${target}. ${result.generated} pending order(s) refreshed. On the machine console, open Worklist/Patient Query and select this accession.`;
       setMessage(text);
       window.alert(text);
     } catch (err: any) {
       const text = err?.message || 'Could not prepare console worklist';
       setMessage(text);
       window.alert(text);
+    }
+  };
+
+  const editAccession = async (order: Order) => {
+    const value = window.prompt('Enter accession number', order.accession_number);
+    const next = value?.trim();
+    if (!next || next === order.accession_number) return;
+    try {
+      await apiUpdateAccession(order.id, next);
+      setMessage(`Accession updated to ${next.toUpperCase()}`);
+      if (selectedPatient) setHistory(await apiPatientHistory(selectedPatient.id));
+      setCompleted((current) => current ? {
+        ...current,
+        orders: current.orders.map((item) => item.id === order.id ? { ...item, accession_number: next.toUpperCase() } : item),
+      } : current);
+    } catch (err: any) {
+      setMessage(err?.message || 'Could not update accession');
     }
   };
 
@@ -201,14 +241,21 @@ export function ReceptionPage() {
                   <div className="between">
                     <div>
                       <div className="strong">{order.service_name || 'Study'}</div>
-                      <div className="accession-list"><span className="accession-code">{order.accession_number}</span></div>
+                      <div className="accession-list">
+                        <span className="accession-code">{order.accession_number}</span>
+                        {order.token_no ? <span className="accession-code">{order.token_no}</span> : null}
+                      </div>
                     </div>
                     <ModalityTag modality={order.modality} />
                   </div>
                   <div className="actions mt-3">
-                    <Button size="sm" variant="secondary" icon={MonitorUp} onClick={prepareConsoleWorklist}>
-                      Send patient details to console
-                    </Button>
+                    <SendDetailsActions
+                      nodes={nodes}
+                      patient={selectedPatient}
+                      order={order}
+                      prepareConsoleWorklist={prepareConsoleWorklist}
+                      editAccession={editAccession}
+                    />
                   </div>
                   <div className="field-hint mt-3">The machine must query DICOM Modality Worklist from RIS, select this accession, scan, then send images back to ONECLICKZ:3458.</div>
                 </div>
@@ -266,20 +313,46 @@ export function ReceptionPage() {
         <form onSubmit={createPatient} className="card card-pad">
           <SectionHeader icon={UserPlus} title="New patient" sub="Create once, then continue to visit and receipt" />
           <div className="grid-2">
-            <TextInput label="Full name" required value={patientForm.full_name || ''} onChange={(event) => setPatientField('full_name', event.target.value)} />
-            <TextInput label="Phone" value={patientForm.phone || ''} onChange={(event) => setPatientField('phone', event.target.value)} />
+            <SelectInput label="Prefix" value={patientForm.name_prefix || ''} onChange={(event) => setPatientField('name_prefix', event.target.value)}>
+              <option value="">-</option>
+              <option value="Mr">Mr</option>
+              <option value="Mrs">Mrs</option>
+              <option value="Ms">Ms</option>
+              <option value="Dr">Dr</option>
+              <option value="Master">Master</option>
+              <option value="Baby">Baby</option>
+            </SelectInput>
+            <TextInput label="First / full name" required value={patientForm.full_name || ''} onChange={(event) => setPatientField('full_name', event.target.value)} />
+            <TextInput label="Last name" value={patientForm.last_name || ''} onChange={(event) => setPatientField('last_name', event.target.value)} />
+            <TextInput label="Mobile" value={patientForm.phone || ''} onChange={(event) => setPatientField('phone', event.target.value)} placeholder="10 digit mobile" />
+            <TextInput label="Alt phone" value={patientForm.alt_phone || ''} onChange={(event) => setPatientField('alt_phone', event.target.value)} placeholder="Optional" />
             <SelectInput label="Sex" value={patientForm.sex || ''} onChange={(event) => setPatientField('sex', event.target.value)}>
               <option value="">-</option>
               <option value="female">Female</option>
               <option value="male">Male</option>
               <option value="other">Other</option>
             </SelectInput>
+            <TextInput label="Birthdate" type="date" value={patientForm.dob || ''} onChange={(event) => setPatientField('dob', event.target.value)} />
             <TextInput label="Age (yrs)" value={String(patientForm.age_years ?? '')} onChange={(event) => setPatientField('age_years', event.target.value)} />
+            <TextInput label="Email" type="email" value={patientForm.email || ''} onChange={(event) => setPatientField('email', event.target.value)} />
             <TextInput label="Husband / Father name" value={patientForm.husband_or_father_name || ''} onChange={(event) => setPatientField('husband_or_father_name', event.target.value)} />
+            <SelectInput label="ID proof" value={patientForm.id_proof_type || ''} onChange={(event) => setPatientField('id_proof_type', event.target.value)}>
+              <option value="">-</option>
+              <option value="aadhaar">Aadhaar</option>
+              <option value="pan">PAN</option>
+              <option value="voter_id">Voter ID</option>
+              <option value="passport">Passport</option>
+              <option value="driving_license">Driving license</option>
+              <option value="other">Other</option>
+            </SelectInput>
             <TextInput label="ID proof number" value={patientForm.id_proof_number || ''} onChange={(event) => setPatientField('id_proof_number', event.target.value)} />
           </div>
-          <div className="mt-3">
-            <TextareaInput label="Address" value={patientForm.address || ''} onChange={(event) => setPatientField('address', event.target.value)} rows={2} />
+          <div className="grid-2 mt-3">
+            <TextInput label="Address 1" value={patientForm.address_line1 || ''} onChange={(event) => setPatientField('address_line1', event.target.value)} />
+            <TextInput label="Address 2" value={patientForm.address_line2 || ''} onChange={(event) => setPatientField('address_line2', event.target.value)} />
+            <TextInput label="Address 3" value={patientForm.address_line3 || ''} onChange={(event) => setPatientField('address_line3', event.target.value)} />
+            <TextInput label="City" value={patientForm.city || ''} onChange={(event) => setPatientField('city', event.target.value)} />
+            <TextInput label="State" value={patientForm.state || ''} onChange={(event) => setPatientField('state', event.target.value)} />
           </div>
           <Button type="submit" disabled={loading} variant="primary" icon={Plus} className="mt-4">
             {loading ? 'Saving...' : 'Create patient and continue'}
@@ -318,6 +391,7 @@ export function ReceptionPage() {
       {selectedPatient && (
         <HistoryPanel
           history={history}
+          nodes={nodes}
           loading={historyLoading}
           onMessage={setMessage}
           onRefresh={async () => {
@@ -331,6 +405,17 @@ export function ReceptionPage() {
 
 function Step({ label, active, done }: { label: string; active: boolean; done: boolean }) {
   return <div className={`workflow-step ${active ? 'active' : ''} ${done ? 'done' : ''}`}>{label}</div>;
+}
+
+function calculateAge(dobValue: string): number | null {
+  if (!dobValue) return null;
+  const dob = new Date(dobValue);
+  if (Number.isNaN(dob.getTime())) return null;
+  const today = new Date();
+  let age = today.getFullYear() - dob.getFullYear();
+  const monthDiff = today.getMonth() - dob.getMonth();
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < dob.getDate())) age -= 1;
+  return age >= 0 ? age : null;
 }
 
 function VisitPanel(props: {
@@ -423,21 +508,28 @@ function VisitPanel(props: {
 
 function HistoryPanel({
   history,
+  nodes,
   loading,
   onMessage,
   onRefresh,
 }: {
   history: PatientHistory | null;
+  nodes: DicomNode[];
   loading: boolean;
   onMessage: (message: string | null) => void;
   onRefresh: () => Promise<void>;
 }) {
   const visits = useMemo(() => history?.visits || [], [history]);
   const [openVisitId, setOpenVisitId] = useState<number | null>(null);
-  const prepareConsoleWorklist = async () => {
+  const prepareConsoleWorklist = async (order?: Order, nodeId?: string) => {
     try {
-      const result = await apiGenerateWorklist();
-      const text = `Patient details sent to console worklist. ${result.generated} pending order(s) refreshed. On the machine console, open Worklist/Patient Query and select this accession.`;
+      const node = nodeId ? nodes.find((item) => String(item.id) === nodeId) : null;
+      if (order && node) {
+        await apiUpdateOrderDestination(order.id, node.id);
+      }
+      const result = await apiGenerateWorklist(order?.id);
+      const target = node ? ` for ${node.name} (${node.ae_title})` : '';
+      const text = `Patient details sent to console worklist${target}. ${result.generated} pending order(s) refreshed. On the machine console, open Worklist/Patient Query and select this accession.`;
       onMessage(text);
       window.alert(text);
     } catch (err: any) {
@@ -479,7 +571,7 @@ function HistoryPanel({
                       {visit.orders.map((order) => (
                         <div key={order.id}>
                           <span className="strong">{order.service_name || 'Service'}</span>
-                          <span className="mono"> {order.accession_number}</span>
+                          <span className="mono"> {order.accession_number}{order.token_no ? ` | ${order.token_no}` : ''}</span>
                         </div>
                       ))}
                     </td>
@@ -488,6 +580,7 @@ function HistoryPanel({
                     <td onClick={(event) => event.stopPropagation()}>
                       {visit.orders[0] && history?.patient ? (
         <SendDetailsActions
+          nodes={nodes}
           patient={history.patient}
           order={visit.orders[0]}
           prepareConsoleWorklist={prepareConsoleWorklist}
@@ -523,11 +616,14 @@ function HistoryPanel({
                                   </div>
                                   <div className="accession-list">
                                     <span className="accession-code">{order.accession_number}</span>
+                                    {order.token_no ? <span className="accession-code">{order.token_no}</span> : null}
                                   </div>
+                                  {order.room_title ? <div className="field-hint mt-3">Room: {order.room_title}</div> : null}
                                   <div className="field-hint mt-3">Study UID: <span className="mono">{order.study_instance_uid || '-'}</span></div>
                                   {history?.patient && (
                                     <div className="actions mt-3">
                                       <SendDetailsActions
+                                        nodes={nodes}
                                         patient={history.patient}
                                         order={order}
                                         prepareConsoleWorklist={prepareConsoleWorklist}
@@ -570,20 +666,29 @@ function HistoryPanel({
 }
 
 function SendDetailsActions({
+  nodes,
   patient,
   order,
   prepareConsoleWorklist,
   editAccession,
 }: {
+  nodes: DicomNode[];
   patient: Patient;
   order: Order & { service_name?: string | null };
-  prepareConsoleWorklist: () => void;
+  prepareConsoleWorklist: (order?: Order, nodeId?: string) => void;
   editAccession: (order: Order) => void;
 }) {
   void patient;
+  const [nodeId, setNodeId] = useState('');
   return (
     <div className="actions">
-      <Button size="sm" variant="secondary" icon={MonitorUp} onClick={prepareConsoleWorklist}>
+      {nodes.length > 0 ? (
+        <SelectInput value={nodeId} onChange={(event) => setNodeId(event.target.value)} style={{ width: 190 }}>
+          <option value="">Select room</option>
+          {nodes.map((node) => <option key={node.id} value={node.id}>{node.name} ({node.ae_title})</option>)}
+        </SelectInput>
+      ) : null}
+      <Button size="sm" variant="secondary" icon={MonitorUp} onClick={() => prepareConsoleWorklist(order, nodeId)}>
         Send to console
       </Button>
       <Button size="sm" variant="ghost" onClick={() => editAccession(order)}>

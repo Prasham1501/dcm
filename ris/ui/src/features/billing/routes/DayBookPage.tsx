@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Banknote, FileSpreadsheet, Receipt } from 'lucide-react';
+import { AlertTriangle, Banknote, FileSpreadsheet, Receipt } from 'lucide-react';
 import { useAuthStore } from '@/stores/authStore';
 import { DateRange, EmptyState, ExportLink, SectionHeader, StatTile } from '@/components/RisUi';
 import { misExportUrl } from '@/features/dashboard/api/dashboardApi';
@@ -26,14 +26,17 @@ export function DayBookPage() {
   return (
     <div className="content-narrow">
       <div className="card card-pad">
-        <SectionHeader icon={Receipt} title="Day book collections" sub="Live payment aggregates from billing/daybook.php" />
+        <SectionHeader icon={Receipt} title="Day book collections" sub="Live payment aggregates from billing/daybook.php">
+          <div className="actions">
+            <ExportLink href={misExportUrl('payments', from, to)} size="sm">Payments</ExportLink>
+            <ExportLink href={misExportUrl('visits', from, to)} size="sm">Visits</ExportLink>
+          </div>
+        </SectionHeader>
         <div className="actions">
           <DateRange from={from} to={to} onFrom={setFrom} onTo={setTo} />
           <button onClick={() => loadDaybook(from, to)} className="btn btn-primary">
             {loading ? 'Loading...' : 'Show'}
           </button>
-          <ExportLink href={misExportUrl('payments', from, to)}>Payments Excel CSV</ExportLink>
-          <ExportLink href={misExportUrl('visits', from, to)}>Visits Excel CSV</ExportLink>
         </div>
       </div>
 
@@ -44,6 +47,9 @@ export function DayBookPage() {
           <div className="grid-3 mt-5">
             <StatTile icon={Banknote} label="Total collected" value={`Rs ${daybook.total.toFixed(2)}`} accent />
             <StatTile icon={Receipt} label="Payment count" value={daybook.count} />
+            <StatTile icon={AlertTriangle} label="Balance due" value={`Rs ${daybook.balance_due.toFixed(2)}`} sub={`${daybook.balance_due_count} bill(s)`} />
+          </div>
+          <div className="grid-3 mt-4">
             <StatTile icon={FileSpreadsheet} label="Refunds" value={`Rs ${daybook.refunds.toFixed(2)}`} />
           </div>
 

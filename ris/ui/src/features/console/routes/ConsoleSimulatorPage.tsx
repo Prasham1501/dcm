@@ -5,9 +5,13 @@ import { Banner, Button, EmptyState, ModalityTag, SectionHeader, SelectInput, St
 interface ConsoleOrder {
   id: number;
   accession_number: string;
+  token_no: string | null;
   study_instance_uid: string | null;
   modality: string | null;
   status: string;
+  room_title: string | null;
+  scheduled_station_ae: string | null;
+  mwl_written_at: string | null;
   mrn: string | null;
   dicom_patient_id: string | null;
   patient_name: string | null;
@@ -133,17 +137,22 @@ export function ConsoleSimulatorPage() {
           {orders.length === 0 ? <EmptyState title="No pending accessions" sub="Create a visit in Reception and click Send to console." /> : (
             <div className="table-wrap">
               <table className="dt">
-                <thead><tr><th>Accession</th><th>Patient</th><th>Study</th><th /></tr></thead>
+                <thead><tr><th>Accession / token</th><th>Patient</th><th>Study</th><th /></tr></thead>
                 <tbody>
                   {orders.map((order) => (
                     <tr key={order.id} className={selected?.id === order.id ? 'selected' : ''}>
-                      <td className="mono">{order.accession_number}</td>
+                      <td className="mono">
+                        <div>{order.accession_number}</div>
+                        {order.token_no ? <div className="field-hint">{order.token_no}</div> : null}
+                        {order.mwl_written_at ? <div className="field-hint">Sent {order.mwl_written_at}</div> : null}
+                      </td>
                       <td>
                         <div className="strong">{order.patient_name || '-'}</div>
                         <div className="field-hint">{order.dicom_patient_id || order.mrn || '-'}</div>
                       </td>
                       <td>
                         <div>{order.service_name || '-'}</div>
+                        {order.room_title ? <div className="field-hint">Room: {order.room_title}</div> : null}
                         <div className="actions mt-1"><ModalityTag modality={order.modality} /><StatusChip status={order.status} /></div>
                       </td>
                       <td><Button size="sm" variant={selected?.id === order.id ? 'primary' : 'secondary'} onClick={() => selectOrder(order)}>Select</Button></td>

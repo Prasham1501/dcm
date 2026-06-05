@@ -201,7 +201,7 @@ export function NetworkPage() {
         <div className="card card-pad">
           <SectionHeader icon={Plus} title="Add destination DICOM node" sub="Optional: use when RIS must send a study to another DICOM receiver" />
           <div className="grid-2">
-            <TextInput label="Node name" value={nodeForm.name || ''} onChange={(event) => setNodeForm({ ...nodeForm, name: event.target.value })} />
+            <TextInput label="Room / title" value={nodeForm.name || ''} onChange={(event) => setNodeForm({ ...nodeForm, name: event.target.value })} placeholder="USG Room 1, X-Ray Room, Doctor Viewer" />
             <TextInput label="AE title" value={nodeForm.ae_title || ''} onChange={(event) => setNodeForm({ ...nodeForm, ae_title: event.target.value })} />
             <TextInput label="Host / IP" value={nodeForm.host_name || ''} onChange={(event) => setNodeForm({ ...nodeForm, host_name: event.target.value })} />
             <TextInput label="Port" type="number" value={String(nodeForm.port || '')} onChange={(event) => setNodeForm({ ...nodeForm, port: Number(event.target.value) })} />
@@ -227,7 +227,7 @@ export function NetworkPage() {
         ) : (
           <div className="table-wrap" style={{ border: 0, borderRadius: 0 }}>
             <table className="dt">
-              <thead><tr><th>Name</th><th>AE Title</th><th>Host</th><th>Port</th><th>Status</th><th /></tr></thead>
+              <thead><tr><th>Room / title</th><th>AE Title</th><th>Host</th><th>Port</th><th>Status</th><th /></tr></thead>
               <tbody>
                 {nodes.map((node) => (
                   <tr key={node.id}>

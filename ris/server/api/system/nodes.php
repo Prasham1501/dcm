@@ -19,6 +19,7 @@ if (!hasRole(['admin', 'super_admin', 'receptionist'])) { sendErrorResponse('For
 
 try {
     $db = getDbConnection();
+    ris_ensure_dicom_nodes($db);
 
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $input = json_decode(file_get_contents('php://input'), true) ?: [];
@@ -76,4 +77,35 @@ try {
 } catch (Throwable $e) {
     logMessage('RIS nodes error: ' . $e->getMessage(), 'error', 'ris.log');
     sendErrorResponse('Server error: ' . $e->getMessage(), 500);
+}
+
+function ris_ensure_dicom_nodes(mysqli $db): void
+{
+    $db->query(
+        "CREATE TABLE IF NOT EXISTS dicom_nodes (
+            id INT(11) UNSIGNED NOT NULL AUTO_INCREMENT,
+            name VARCHAR(120) NOT NULL,
+            ae_title VARCHAR(64) NOT NULL,
+            host_name VARCHAR(255) NOT NULL,
+            port INT(11) NOT NULL DEFAULT 104,
+            is_default TINYINT(1) NOT NULL DEFAULT 0,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+    );
+    $columns = [
+        'name' => "ALTER TABLE dicom_nodes ADD COLUMN name VARCHAR(120) NOT NULL DEFAULT '' AFTER id",
+        'ae_title' => "ALTER TABLE dicom_nodes ADD COLUMN ae_title VARCHAR(64) NOT NULL DEFAULT '' AFTER name",
+        'host_name' => "ALTER TABLE dicom_nodes ADD COLUMN host_name VARCHAR(255) NOT NULL DEFAULT '' AFTER ae_title",
+        'port' => "ALTER TABLE dicom_nodes ADD COLUMN port INT(11) NOT NULL DEFAULT 104 AFTER host_name",
+        'is_default' => "ALTER TABLE dicom_nodes ADD COLUMN is_default TINYINT(1) NOT NULL DEFAULT 0 AFTER port",
+    ];
+    foreach ($columns as $column => $sql) {
+        $safe = $db->real_escape_string($column);
+        $res = $db->query("SHOW COLUMNS FROM dicom_nodes LIKE '{$safe}'");
+        if (!$res || $res->num_rows === 0) {
+            $db->query($sql);
+        }
+    }
 }

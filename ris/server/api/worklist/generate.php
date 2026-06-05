@@ -2,7 +2,7 @@
 /**
  * Worklist — (re)generate .wl files for all pending orders.
  * Useful after enabling worklists or recovering a cleared folder.
- * POST -> { generated: N }
+ * POST { order_id? } -> { generated: N }
  */
 if (!defined('DICOM_VIEWER')) {
     define('DICOM_VIEWER', true);
@@ -29,11 +29,17 @@ if (!hasRole(['admin', 'super_admin', 'receptionist'])) {
 
 try {
     $db = getDbConnection();
+    $input = json_decode(file_get_contents('php://input'), true) ?: [];
+    $orderId = (int)($input['order_id'] ?? 0);
     $wl = new RisWorklistService($db, ris_worklist_dir($db));
-    $res = $db->query("SELECT id FROM ris_orders WHERE linked_study_uid IS NULL AND status IN ('scheduled','arrived')");
     $n = 0;
-    while ($res && $row = $res->fetch_assoc()) {
-        if ($wl->writeForOrder((int) $row['id'])) { $n++; }
+    if ($orderId > 0) {
+        if ($wl->writeForOrder($orderId)) { $n = 1; }
+    } else {
+        $res = $db->query("SELECT id FROM ris_orders WHERE linked_study_uid IS NULL AND status IN ('scheduled','arrived')");
+        while ($res && $row = $res->fetch_assoc()) {
+            if ($wl->writeForOrder((int) $row['id'])) { $n++; }
+        }
     }
     sendSuccessResponse(['generated' => $n]);
 } catch (Throwable $e) {
