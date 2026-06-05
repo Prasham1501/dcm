@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { useThemeStore } from '@/stores/themeStore';
 import { usePrintStore } from '@/stores/printStore';
+import { useAuthStore } from '@/stores/authStore';
 import { PatientListPage } from '@/pages/PatientListPage';
 import { ViewerPage } from '@/pages/ViewerPage';
 import { CRViewerPage } from '@/pages/CRViewerPage';
@@ -75,6 +76,13 @@ export default function App() {
   const { mode } = useThemeStore();
   const { printCountRemaining, quotaEnabled: printQuotaEnabled, fetchPrintCount } = usePrintStore();
   const alertShown = useRef(false);
+
+  // Establish a PHP session on startup. The desktop viewer has no login screen,
+  // so checkSession() falls back to the opt-in desktop auto-login — this is what
+  // lets session-gated PHP endpoints (reports, PCPNDT Form F, etc.) work.
+  useEffect(() => {
+    useAuthStore.getState().checkSession();
+  }, []);
 
   // Apply theme class to html element
   useEffect(() => {

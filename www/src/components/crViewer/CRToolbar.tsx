@@ -10,6 +10,7 @@ import {
   ChevronLeft, ChevronRight, Printer, ListOrdered, FileText,
 } from 'lucide-react';
 import { CRPrintPreview } from './CRPrintPreview';
+import { FormFButton } from '@/features/pcpndt/FormFButton';
 
 export function CRToolbar() {
   const {
@@ -107,6 +108,9 @@ export function CRToolbar() {
           <Printer className="w-3.5 h-3.5 2xl:w-4.5 2xl:h-4.5" />
           Print
         </button>
+
+        {/* PCPNDT Form F */}
+        <FormFButton patientId={patientId} patientName={patientName} />
 
         {/* Report — toggles the inline report panel, mirrors the main
             Viewer header behaviour. Passes filePaths so the Electron

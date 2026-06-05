@@ -26,9 +26,12 @@ export const useAuthStore = create<AuthState>()((set) => ({
   login: async (username: string, password: string) => {
     set({ isLoading: true });
     try {
-      const response = await authService.login(username, password);
-      if (response.success && response.data) {
-        const { user, token } = response.data;
+      // login.php returns a FLAT shape ({ success, user, auto_login_token }),
+      // not { data: { user, token } }. Accept both to be safe.
+      const response = await authService.login(username, password) as any;
+      const user = response?.data?.user ?? response?.user;
+      const token = response?.data?.token ?? response?.auto_login_token ?? response?.token;
+      if (response?.success && user) {
         set({ user, isAuthenticated: true, isLoading: false });
 
         // Save credentials for auto-login in Electron
@@ -37,7 +40,7 @@ export const useAuthStore = create<AuthState>()((set) => ({
         }
       } else {
         set({ isLoading: false });
-        throw new Error(response.error || response.message || 'Login failed');
+        throw new Error(response?.error || response?.message || 'Login failed');
       }
     } catch (error) {
       set({ user: null, isAuthenticated: false, isLoading: false });
@@ -62,13 +65,23 @@ export const useAuthStore = create<AuthState>()((set) => ({
   checkSession: async () => {
     set({ isLoading: true });
     try {
-      const response = await authService.checkSession();
-      if (response.success && response.data) {
-        set({
-          user: response.data.user,
-          isAuthenticated: true,
-          isLoading: false,
-        });
+      // check-session.php returns { logged_in, user } (flat). Accept data-wrapped too.
+      const response = await authService.checkSession() as any;
+      let user = response?.data?.user ?? response?.user;
+      let ok = (response?.logged_in ?? response?.success) && !!user;
+
+      // The desktop viewer has no login screen — if there's no session, try the
+      // opt-in desktop auto-login (no-op/403 on the networked RIS).
+      if (!ok) {
+        try {
+          const dl = await authService.desktopLogin() as any;
+          const du = dl?.data?.user ?? dl?.user;
+          if (dl?.success && du) { user = du; ok = true; }
+        } catch { /* disabled — remain logged out */ }
+      }
+
+      if (ok) {
+        set({ user, isAuthenticated: true, isLoading: false });
       } else {
         set({ user: null, isAuthenticated: false, isLoading: false });
       }
@@ -91,13 +104,10 @@ export const useAuthStore = create<AuthState>()((set) => ({
         return;
       }
 
-      const response = await authService.autoLogin(credentials.token);
-      if (response.success && response.data) {
-        set({
-          user: response.data.user,
-          isAuthenticated: true,
-          isLoading: false,
-        });
+      const response = await authService.autoLogin(credentials.token) as any;
+      const user = response?.data?.user ?? response?.user;
+      if (response?.success && user) {
+        set({ user, isAuthenticated: true, isLoading: false });
       } else {
         // Invalid token - clear stored credentials
         await clearCredentials();

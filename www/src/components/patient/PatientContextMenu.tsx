@@ -58,6 +58,41 @@ async function dicomToJpeg(imageId: string): Promise<Blob | null> {
   }
 }
 
+function formatAgeForDicom(age: string): string {
+  const value = (age || '').trim();
+  if (!value) return '';
+  if (/^\d{3}[YMWD]$/.test(value)) return value;
+  const number = parseInt(value.replace(/\D/g, ''), 10);
+  return Number.isFinite(number) ? String(number).padStart(3, '0') + 'Y' : '';
+}
+
+async function patchPatientFilesBeforeSend(patient: Patient): Promise<void> {
+  if (!patient.filePaths || patient.filePaths.length === 0) return;
+  const api = (window as any).electronAPI;
+  const base = api?.isElectron ? 'http://localhost:3457' : '';
+  const response = await fetch(`${base}/api/dicom/patch-tags.php`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      files: patient.filePaths,
+      tags: {
+        patient_name: patient.patientName || '',
+        patient_id: patient.patientId || '',
+        patient_age: formatAgeForDicom(patient.age || ''),
+        patient_sex: patient.sex || '',
+        study_description: patient.studyDescription || '',
+        referring_physician: patient.referringPhysician || '',
+        accession_number: patient.accessionNumber || '',
+        modality: patient.modality || 'OT',
+      },
+    }),
+  });
+  const result = await response.json();
+  if (!result?.ok) {
+    throw new Error(result?.error || 'Could not patch DICOM tags before send');
+  }
+}
+
 export function PatientContextMenu({ x, y, patient, onClose, onMerge, canMerge = false }: Props) {
   const menuRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
@@ -271,6 +306,7 @@ export function PatientContextMenu({ x, y, patient, onClose, onMerge, canMerge =
     try {
       const api = (window as any).electronAPI;
       if (api?.dicomSendToDestination) {
+        await patchPatientFilesBeforeSend(patient);
         const result = await api.dicomSendToDestination({
           host: dest.host,
           port: dest.port,

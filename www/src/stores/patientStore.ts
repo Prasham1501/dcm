@@ -59,6 +59,7 @@ interface PatientState {
   selectedPatient: Patient | null;
   selectedPatients: Set<string>;
   newStudyIds: Set<string>;
+  deletedStudyKeys: string[];
   filters: PatientFilters;
   loading: boolean;
   error: string | null;
@@ -140,6 +141,35 @@ function mergeScannedPatients(existing: Patient[], scanned: Patient[]): Patient[
   const kept = existing.filter((p) => !replaced.has(p.id));
   // Scanned/refreshed entries go first so the newest sync surface bubbles up.
   return [...additions, ...kept];
+}
+
+function studyDeletionKeys(patient: Patient): string[] {
+  const keys = [
+    patient.studyInstanceUID ? `study:${patient.studyInstanceUID}` : '',
+    patient.orthancId ? `orthanc:${patient.orthancId}` : '',
+    patient.id ? `id:${patient.id}` : '',
+    patient.patientId && patient.studyDate
+      ? `visit:${patient.patientId}|${patient.studyDate}|${patient.studyDescription || ''}`
+      : '',
+  ];
+  return keys.filter(Boolean);
+}
+
+function isDeletedStudy(patient: Patient, deletedStudyKeys: Set<string>): boolean {
+  return studyDeletionKeys(patient).some((key) => deletedStudyKeys.has(key));
+}
+
+function filterDeletedStudies(patients: Patient[], deletedStudyKeys: Set<string>): Patient[] {
+  if (deletedStudyKeys.size === 0) return patients;
+  return patients.filter((patient) => !isDeletedStudy(patient, deletedStudyKeys));
+}
+
+function addDeletedStudyKeys(current: string[], patients: Patient[]): string[] {
+  const next = new Set(current);
+  patients.forEach((patient) => {
+    studyDeletionKeys(patient).forEach((key) => next.add(key));
+  });
+  return Array.from(next);
 }
 
 /** Format a free-form age string into the DICOM AS value representation
@@ -271,6 +301,7 @@ export const usePatientStore = create<PatientState>()(
   selectedPatient: null,
   selectedPatients: new Set(),
   newStudyIds: new Set(),
+  deletedStudyKeys: [],
   filters: { ...defaultFilters },
   loading: false,
   error: null,
@@ -291,20 +322,25 @@ export const usePatientStore = create<PatientState>()(
     // Remember existing IDs to detect new studies
     const previousIds = new Set(get().patients.map(p => p.id));
 
-    // Always scan the network DICOM folder for received files
-    const networkPatients = await scanNetworkDicomFolder();
+    const deletedStudyKeySet = new Set(get().deletedStudyKeys);
+
+    // Always scan the network DICOM folder for received files.
+    // Deleted received studies remain hidden even while the receiver folder
+    // still contains the original DICOM files.
+    const networkPatients = filterDeletedStudies(await scanNetworkDicomFolder(), deletedStudyKeySet);
 
     if (USE_API) {
       try {
-        const { patients: apiPatients, pagination } = await patientService.fetchPatients(
+        const { patients: rawApiPatients, pagination } = await patientService.fetchPatients(
           get().filters,
           1,
           get().perPage,
           get().sortBy
         );
+        const apiPatients = filterDeletedStudies(rawApiPatients, deletedStudyKeySet);
 
         // Preserve filePaths/studyInstanceUID from existing patients (e.g. from folder sync)
-        const existing = get().patients;
+        const existing = filterDeletedStudies(get().patients, deletedStudyKeySet);
         const existingMap = new Map<string, Patient>();
         existing.forEach((p) => {
           existingMap.set(p.patientId, p);
@@ -350,7 +386,8 @@ export const usePatientStore = create<PatientState>()(
         });
       } catch {
         // API unavailable — keep persisted patients + network patients
-        const { patients: existing, filters } = get();
+        const { patients: existingRaw, filters } = get();
+        const existing = filterDeletedStudies(existingRaw, deletedStudyKeySet);
         const existingUIDs = new Set(existing.map(p => p.studyInstanceUID));
         const uniqueNetwork = networkPatients.filter(np => !existingUIDs.has(np.studyInstanceUID));
         const patients = [...existing, ...uniqueNetwork];
@@ -364,7 +401,8 @@ export const usePatientStore = create<PatientState>()(
       }
     } else {
       // Local mode: merge network patients with persisted patients
-      const { patients: existing, filters } = get();
+      const { patients: existingRaw, filters } = get();
+      const existing = filterDeletedStudies(existingRaw, deletedStudyKeySet);
       const existingUIDs = new Set(existing.map(p => p.studyInstanceUID));
       const uniqueNetwork = networkPatients.filter(np => !existingUIDs.has(np.studyInstanceUID));
       const patients = uniqueNetwork.length > 0 ? [...existing, ...uniqueNetwork] : existing;
@@ -408,12 +446,13 @@ export const usePatientStore = create<PatientState>()(
 
     set({ loading: true });
     try {
-      const { patients, pagination } = await patientService.fetchPatients(
+      const { patients: rawPatients, pagination } = await patientService.fetchPatients(
         get().filters,
         page,
         get().perPage,
         get().sortBy
       );
+      const patients = filterDeletedStudies(rawPatients, new Set(get().deletedStudyKeys));
       set({
         patients,
         filteredPatients: patients,
@@ -494,14 +533,16 @@ export const usePatientStore = create<PatientState>()(
     if (USE_API) {
       set({ loading: true, currentPage: 1 });
       try {
-        const { patients: apiPatients, pagination } = await patientService.fetchPatients(
+      const { patients: rawApiPatients, pagination } = await patientService.fetchPatients(
           get().filters,
           1,
           get().perPage,
           get().sortBy
         );
+        const deletedStudyKeySet = new Set(get().deletedStudyKeys);
+        const apiPatients = filterDeletedStudies(rawApiPatients, deletedStudyKeySet);
         // Merge API results with any folder-synced patients that have local file paths
-        const existing = get().patients;
+        const existing = filterDeletedStudies(get().patients, deletedStudyKeySet);
         const apiIds = new Set(apiPatients.map((p) => p.patientId));
         const folderOnly = existing.filter(
           (p) => p.filePaths && p.filePaths.length > 0 && !apiIds.has(p.patientId)
@@ -537,6 +578,10 @@ export const usePatientStore = create<PatientState>()(
   },
 
   deletePatient: async (patientId: string) => {
+    const matching = get().patients.filter((p) => p.patientId === patientId || p.id === patientId || p.orthancId === patientId);
+    if (matching.length > 0) {
+      set((state) => ({ deletedStudyKeys: addDeletedStudyKeys(state.deletedStudyKeys, matching) }));
+    }
     if (USE_API) {
       await patientService.deletePatient(patientId);
       get().loadPatients();
@@ -800,6 +845,8 @@ export const usePatientStore = create<PatientState>()(
 
   deleteSelected: () => {
     set((state) => {
+      const deletedPatients = state.patients.filter((p) => state.selectedPatients.has(p.id));
+      const deletedStudyKeys = addDeletedStudyKeys(state.deletedStudyKeys, deletedPatients);
       const patients = state.patients.filter((p) => !state.selectedPatients.has(p.id));
       return {
         patients,
@@ -809,6 +856,7 @@ export const usePatientStore = create<PatientState>()(
           ? null
           : state.selectedPatient,
         totalRecords: patients.length,
+        deletedStudyKeys,
       };
     });
   },
@@ -1068,6 +1116,7 @@ export const usePatientStore = create<PatientState>()(
       partialize: (state) => ({
         patients: state.patients,
         folderPath: state.folderPath,
+        deletedStudyKeys: state.deletedStudyKeys,
       }),
       storage: {
         getItem: (name) => {

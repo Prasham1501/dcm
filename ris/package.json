@@ -1,0 +1,122 @@
+{
+  "name": "one-clickz-ris",
+  "version": "1.0.0",
+  "description": "One Clickz RIS — Reception, Worklist, Billing, Commission, Dashboard",
+  "main": "main.js",
+  "author": "One Clickz",
+  "license": "UNLICENSED",
+  "private": true,
+  "scripts": {
+    "setup": "npm install && cd ui && npm install",
+    "start": "concurrently \"cd ui && npm run dev\" \"electron . --dev\"",
+    "dev": "concurrently \"cd ui && npm run dev\" \"electron . --dev\"",
+    "dev:ui": "cd ui && npm run dev",
+    "dev:electron": "electron . --dev",
+    "build:ui": "cd ui && npm run build",
+    "build:win": "npm run build:ui && electron-builder --win"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "electron": "^28.3.3",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "com.oneclickz.ris",
+    "productName": "One Clickz RIS",
+    "directories": {
+      "output": "installer-output",
+      "app": "."
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "splash.html",
+      "icon.ico",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../php",
+        "to": "php",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "../mysql",
+        "to": "mysql",
+        "filter": [
+          "bin/mysqld.exe",
+          "bin/mysql.exe",
+          "bin/mysql_install_db.exe",
+          "bin/my_print_defaults.exe",
+          "bin/resolveip.exe",
+          "bin/mysqladmin.exe",
+          "bin/*.dll",
+          "share/**/*",
+          "lib/**/*"
+        ]
+      },
+      {
+        "from": "../orthanc",
+        "to": "orthanc",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "../orthanc-config",
+        "to": "orthanc-config",
+        "filter": [
+          "*.lua",
+          "*.json"
+        ]
+      },
+      {
+        "from": "ui/dist",
+        "to": "ui/dist",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "server",
+        "to": "ris-server",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "../www",
+        "to": "www",
+        "filter": [
+          "api/**/*.php",
+          "auth/**/*.php",
+          "includes/**/*",
+          "config/**/*",
+          "admin/**/*.php",
+          "database/migrations/*.sql"
+        ]
+      }
+    ],
+    "win": {
+      "icon": "icon.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": true,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "One Clickz RIS"
+    }
+  }
+}

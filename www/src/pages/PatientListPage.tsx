@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Outlet, useNavigate } from 'react-router-dom';
+import { Outlet, useNavigate, useSearchParams } from 'react-router-dom';
 import { usePatientStore } from '@/stores/patientStore';
 import { PatientSearchBar } from '@/components/patient/PatientSearchBar';
 import { PatientDateFilter } from '@/components/patient/PatientDateFilter';
@@ -39,6 +39,7 @@ function useReportStoreCrossWindowSync() {
 export function PatientListPage() {
   useReportStoreCrossWindowSync();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const loadPatients = usePatientStore((s) => s.loadPatients);
   const selectedPatient = usePatientStore((s) => s.selectedPatient);
   const filteredPatients = usePatientStore((s) => s.filteredPatients);
@@ -58,6 +59,37 @@ export function PatientListPage() {
   useEffect(() => {
     loadPatients();
   }, [loadPatients]);
+
+  useEffect(() => {
+    const accession = searchParams.get('risAccession') || '';
+    if (!accession) return;
+
+    const store = usePatientStore.getState();
+    const existing = store.patients.find((patient) => patient.accessionNumber === accession);
+    if (existing) {
+      store.selectPatient(existing);
+      return;
+    }
+
+    const today = new Date();
+    const studyDate = `${String(today.getDate()).padStart(2, '0')}-${String(today.getMonth() + 1).padStart(2, '0')}-${today.getFullYear()}`;
+    const patient = {
+      id: `ris-${accession}`,
+      patientId: searchParams.get('patientId') || accession,
+      patientName: searchParams.get('patientName') || 'RIS Patient',
+      age: searchParams.get('age') || '',
+      sex: normalizeRisSex(searchParams.get('sex')),
+      studyDate,
+      studyDescription: searchParams.get('studyDescription') || '',
+      images: 0,
+      modality: searchParams.get('modality') || 'US',
+      accessionNumber: accession,
+      referringPhysician: searchParams.get('referringPhysician') || '',
+      printed: false,
+    };
+    store.createPatient(patient);
+    store.selectPatient(patient);
+  }, [searchParams]);
 
   // Auto-refresh when DICOM files are received via network
   useEffect(() => {
@@ -170,4 +202,9 @@ export function PatientListPage() {
       <Outlet />
     </div>
   );
+}
+
+function normalizeRisSex(value: string | null): 'M' | 'F' | 'O' | '' {
+  if (value === 'M' || value === 'F' || value === 'O') return value;
+  return '';
 }

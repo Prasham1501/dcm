@@ -1,0 +1,146 @@
+/* ============================================================================
+   One Clickz RIS — Color & Type Foundations
+   Single source of truth for the RIS UI. Mirrors the One Clickz DICOM Viewer
+   theme (red / white medical software) so the product family looks uniform.
+   These CSS variables map 1:1 to the Tailwind theme (tailwind.config.js):
+     app-bg → var(--app-bg), app-accent → var(--app-accent), etc.
+   ========================================================================== */
+
+:root {
+  /* ---- Brand / accent (the One Clickz red) ---------------------------- */
+  --app-accent:        #B22222;   /* firebrick — primary action, active nav, logo */
+  --app-accent-hover:  #8B1A1A;   /* darker red — hover / pressed */
+  --app-accent-light:  #F7E9E9;   /* faint red wash — selected rows, focus tint */
+
+  /* ---- Light surfaces (primary identity) ------------------------------ */
+  --app-bg:            #ffffff;   /* page / canvas */
+  --app-surface:       #f5f5f5;   /* cards, sidebar, panels */
+  --app-header-bg:     #f8f8f8;   /* sticky headers, table headers, toolbars */
+  --app-hover:         #ececec;   /* row / control hover */
+  --app-border:        #c0c0c0;   /* thin gray hairline borders */
+  --app-border-soft:   #e2e2e2;   /* lighter internal dividers */
+
+  /* ---- Text ----------------------------------------------------------- */
+  --app-text:           #1a1a1a;  /* primary copy, headings */
+  --app-text-secondary: #555555;  /* labels, secondary copy */
+  --app-text-muted:     #999999;  /* hints, placeholders, meta */
+
+  /* ---- Semantic status (use ONLY for status, never as brand color) ---- */
+  --success:        #1F8A3B;   /* paid, reported, collected, online */
+  --success-bg:     #E8F5EC;
+  --warning:        #C77700;   /* in progress, pending action */
+  --warning-bg:     #FBF1E2;
+  --danger:         #C0392B;   /* refund, error, offline, missing field */
+  --danger-bg:      #FBEAE8;
+  --info:           #2A6FAE;   /* neutral informational (sparingly) */
+  --info-bg:        #E8F1F8;
+
+  /* ---- Modality accent dots (worklist / orders) ----------------------- */
+  --mod-us:  #7B4FB5;   /* Ultrasound */
+  --mod-ct:  #2A6FAE;   /* CT */
+  --mod-mr:  #1F8A3B;   /* MR */
+  --mod-xr:  #555555;   /* X-Ray / CR / DX */
+  --mod-mg:  #B5497B;   /* Mammography */
+
+  /* ---- Typography ----------------------------------------------------- */
+  /* Segoe UI is the native Windows/Electron face used by the viewer & RIS.
+     Inter is kept as the cross-platform web fallback to match the shipping
+     app's exact font stack (see tailwind.config.js). */
+  --font-sans: 'Segoe UI', Inter, -apple-system, BlinkMacSystemFont, Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-mono: 'Cascadia Code', 'Consolas', ui-monospace, 'SFMono-Regular', Menlo, monospace;
+
+  /* Type scale — dense desktop UI. px so it reads at clinic distances. */
+  --text-2xs: 11px;   /* table meta, accession sub-lines */
+  --text-xs:  12px;   /* field labels, chips, captions */
+  --text-sm:  13px;   /* table body, secondary controls */
+  --text-base:14px;   /* default body / inputs */
+  --text-md:  15px;   /* emphasized body */
+  --text-lg:  16px;   /* card titles, section headers */
+  --text-xl:  18px;   /* page titles */
+  --text-2xl: 22px;   /* stat tile values */
+  --text-3xl: 28px;   /* large stat / login wordmark */
+
+  --leading-tight:  1.2;
+  --leading-normal: 1.45;
+
+  --fw-regular:  400;
+  --fw-medium:   500;
+  --fw-semibold: 600;
+  --fw-bold:     700;
+
+  /* ---- Radii (low / squared, medical software — never over-rounded) --- */
+  --radius-xs: 3px;   /* chips, inputs */
+  --radius-sm: 4px;   /* buttons */
+  --radius-md: 6px;   /* cards, panels */
+  --radius-lg: 8px;   /* modals, login card */
+  --radius-pill: 999px;
+
+  /* ---- Spacing (4px base) --------------------------------------------- */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+
+  /* ---- Elevation (subtle; flat medical software, not material) -------- */
+  --shadow-sm: 0 1px 2px rgba(0,0,0,0.06);
+  --shadow-md: 0 2px 6px rgba(0,0,0,0.08);
+  --shadow-lg: 0 8px 24px rgba(0,0,0,0.14);   /* modals, popovers only */
+
+  /* ---- Control sizing (dense) ----------------------------------------- */
+  --control-h-sm: 28px;
+  --control-h:    32px;   /* default input / button height */
+  --control-h-lg: 40px;
+}
+
+/* ----------------------------------------------------------------------------
+   Optional dark mode (exists in viewer; NOT the primary identity).
+   Applied via the `.dark` class on <html> (Tailwind darkMode: 'class').
+   -------------------------------------------------------------------------- */
+.dark {
+  --app-bg:            #161616;
+  --app-surface:       #1f1f1f;
+  --app-header-bg:     #1a1a1a;
+  --app-hover:         #2a2a2a;
+  --app-border:        #383838;
+  --app-border-soft:   #2a2a2a;
+  --app-text:           #ededed;
+  --app-text-secondary: #b5b5b5;
+  --app-text-muted:     #7d7d7d;
+  --app-accent:        #D64545;  /* slightly brighter red for dark contrast */
+  --app-accent-hover:  #E25C5C;
+  --app-accent-light:  #2A1718;
+}
+
+/* ============================================================================
+   Semantic element styles — apply the scale above to real elements.
+   ========================================================================== */
+body {
+  font-family: var(--font-sans);
+  font-size: var(--text-base);
+  line-height: var(--leading-normal);
+  color: var(--app-text);
+  background: var(--app-bg);
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, .h1 { font-size: var(--text-xl);  font-weight: var(--fw-semibold); line-height: var(--leading-tight); color: var(--app-text); }
+h2, .h2 { font-size: var(--text-lg);  font-weight: var(--fw-semibold); line-height: var(--leading-tight); color: var(--app-text); }
+h3, .h3 { font-size: var(--text-base);font-weight: var(--fw-semibold); color: var(--app-text); }
+
+.text-secondary { color: var(--app-text-secondary); }
+.text-muted     { color: var(--app-text-muted); }
+
+.label {
+  font-size: var(--text-xs);
+  font-weight: var(--fw-medium);
+  color: var(--app-text-secondary);
+  letter-spacing: 0.01em;
+}
+.mono { font-family: var(--font-mono); }
+.accession { font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--app-text-secondary); }
+
+a { color: var(--app-accent); text-decoration: none; }
+a:hover { color: var(--app-accent-hover); text-decoration: underline; }

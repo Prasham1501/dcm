@@ -1,0 +1,89 @@
+
+Warning: session_name(): Session name cannot be changed after headers have already been sent in C:\xampp\htdocs\dcm\auth\session.php on line 20
+
+Warning: session_set_cookie_params(): Session cookie parameters cannot be changed after headers have already been sent in C:\xampp\htdocs\dcm\auth\session.php on line 22
+
+Warning: session_start(): Session cannot be started after headers have already been sent in C:\xampp\htdocs\dcm\auth\session.php on line 29
+
+Warning: Cannot modify header information - headers already sent by (output started at C:\xampp\htdocs\dcm\test_pcpndt_pipeline.php:19) in C:\xampp\htdocs\dcm\api\pcpndt\form-html.php on line 25
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Form F — Test Patient One</title>
+<style>
+  body { font-family: 'Times New Roman', serif; color:#111; margin:22px; font-size:12.5px; line-height:1.35; }
+  h1 { text-align:center; font-size:16px; margin:0 0 2px; }
+  .sub { text-align:center; font-size:11px; margin:0 0 12px; }
+  table { width:100%; border-collapse:collapse; margin-bottom:8px; }
+  td { border:1px solid #555; padding:4px 7px; vertical-align:top; }
+  td.lbl { width:40%; background:#f3f3f3; font-weight:bold; }
+  .sect { font-weight:bold; background:#e7e7e7; padding:4px 7px; border:1px solid #555; margin-top:8px; }
+  ul.opts { margin:4px 0; padding-left:4px; list-style:none; }
+  ul.opts li { margin:2px 0; }
+  .decl { font-size:11.5px; margin-top:10px; border:1px solid #999; padding:7px; }
+  .sign { margin-top:26px; display:flex; justify-content:space-between; }
+  .sign div { width:45%; border-top:1px solid #333; padding-top:4px; text-align:center; font-size:11.5px; }
+  .note { font-size:10px; color:#555; margin-top:16px; }
+  @media print { .noprint { display:none; } body { margin:0; } }
+</style></head>
+<body>
+  <button class="noprint" onclick="window.print()" style="float:right">Print</button>
+  <h1>FORM F</h1>
+  <div class="sub">[See proviso to Section 4(3), rule 9(4) and rule 10(1A)] — Record of Pre-Natal Diagnostic Procedures</div>
+
+  <table><tr><td class="lbl">Ref. No.</td><td class="val">ACC-PCPNDT-1</td></tr><tr><td class="lbl">Date</td><td class="val">2026-06-03</td></tr></table>
+
+  <div class="sect">1. Genetic Clinic / Ultrasound Clinic / Imaging Centre</div>
+  <table>
+    <tr><td class="lbl">Name</td><td class="val">Apex Diagnostics</td></tr>    <tr><td class="lbl">Registration No.</td><td class="val">MH/PCPNDT/12345</td></tr>    <tr><td class="lbl">Address</td><td class="val">12 MG Road, Pune</td></tr>  </table>
+
+  <div class="sect">2. Particulars of pregnant woman</div>
+  <table>
+    <tr><td class="lbl">Name</td><td class="val">Test Patient One</td></tr>    <tr><td class="lbl">Age (completed years)</td><td class="val">29</td></tr>    <tr><td class="lbl">Husband&#39;s / Father&#39;s name</td><td class="val">Ramesh Kumar</td></tr>    <tr><td class="lbl">Full postal address</td><td class="val">5 Park Lane, Pune</td></tr>    <tr><td class="lbl">Telephone / Mobile</td><td class="val">9999999999</td></tr>    <tr><td class="lbl">ID proof</td><td class="val">Aadhaar 1234 5678 9012</td></tr>    <tr><td class="lbl">No. of living children (with sex)</td><td class="val">1 1 female</td></tr>    <tr><td class="lbl">Last menstrual period (LMP)</td><td class="val">2026-02-15</td></tr>    <tr><td class="lbl">Weeks of pregnancy / Gestational age</td><td class="val">15 weeks</td></tr>    <tr><td class="lbl">Expected date of delivery (EDD)</td><td class="val">2026-11-22</td></tr>  </table>
+
+  <div class="sect">3. History of genetic / medical disease in the family</div>
+  <table>
+    <tr><td class="lbl">Details</td><td class="val">No known genetic disease</td></tr>    <tr><td class="lbl">Basis of diagnosis</td><td class="val">Radiological/Ultrasonography</td></tr>  </table>
+
+  <div class="sect">4. Indication(s) for pre-natal diagnostic procedure</div>
+  <ul class="opts">
+          <li>☑ Age of pregnant woman above 35 years</li>
+          <li>☐ Two or more spontaneous abortions or foetal loss in the past</li>
+          <li>☐ Exposure to potentially teratogenic agents such as drugs, radiation, infection or chemicals</li>
+          <li>☐ Family history of mental retardation or physical deformities such as spasticity or any other genetic disease</li>
+          <li>☐ Any other (specify)</li>
+      </ul>
+
+  <div class="sect">5. Procedure(s) carried out</div>
+  <table><tr><td class="lbl">Type</td><td class="val">Non-invasive</td></tr></table>
+  <ul class="opts">
+          <li>☑ Ultrasonography</li>
+          <li>☐ Amniocentesis</li>
+          <li>☐ Chorionic Villi Aspiration (CVS)</li>
+          <li>☐ Foetal biopsy</li>
+          <li>☐ Cordocentesis</li>
+          <li>☐ Any other (specify)</li>
+      </ul>
+  <table>
+    <tr><td class="lbl">Date(s) of procedure</td><td class="val">2026-06-03</td></tr>    <tr><td class="lbl">Any complication of procedure</td><td class="val">None</td></tr>    <tr><td class="lbl">Result of procedure</td><td class="val">Single live intrauterine pregnancy</td></tr>    <tr><td class="lbl">Result conveyed to pregnant woman</td><td class="val">Yes</td></tr>  </table>
+
+  <div class="sect">6. Referral & person conducting the procedure</div>
+  <table>
+    <tr><td class="lbl">Referred by (name)</td><td class="val">Dr. R Patel</td></tr>    <tr><td class="lbl">Referring doctor address</td><td class="val">Mumbai</td></tr>    <tr><td class="lbl">Referring doctor Reg. No.</td><td class="val">MMC/1111</td></tr>    <tr><td class="lbl">Procedure conducted by</td><td class="val">Dr. Admin Sample</td></tr>    <tr><td class="lbl">Qualification</td><td class="val">MD Radiology</td></tr>    <tr><td class="lbl">Registration No.</td><td class="val">MMC/2222</td></tr>  </table>
+
+  <div class="decl">
+    <strong>Declaration of pregnant woman</strong><br>
+    I, <strong>Test Patient One</strong>, declare that by undergoing ultrasonography / image scanning
+    etc., I do not want to know the sex of my foetus.
+  </div>
+  <div class="decl">
+    <strong>Declaration of person conducting ultrasonography / image scanning</strong><br>
+    I, <strong>Dr. Admin Sample</strong>, declare that while conducting ultrasonography /
+    image scanning on <strong>Test Patient One</strong>, I have neither detected nor disclosed
+    the sex of her foetus to anybody in any manner.
+  </div>
+
+  <div class="sign">
+    <div>Signature / thumb impression of pregnant woman</div>
+    <div>Name, signature &amp; seal of doctor</div>
+  </div>
+  <div class="note">This printed, signed copy is the record required under PC-PNDT Rule 9(7).</div>
+</body></html>

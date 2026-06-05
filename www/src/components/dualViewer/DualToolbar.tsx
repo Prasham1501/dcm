@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { DualPrintPreview } from './DualPrintPreview';
 import { undoLastAnnotationOnElement, deleteActiveAnnotationOnElement } from '@/lib/annotationUtils';
+import { FormFButton } from '@/features/pcpndt/FormFButton';
 
 export function DualToolbar() {
   const {
@@ -166,6 +167,9 @@ export function DualToolbar() {
           <Printer className="w-3.5 h-3.5" />
           Print
         </button>
+
+        {/* PCPNDT Form F (active panel's patient) */}
+        <FormFButton patientId={activeP.patientId} patientName={activeP.patientName} compact />
 
         {/* Report — toggles the inline report panel; passes filePaths from
             the active panel so the Electron dual-window flow can kick in. */}

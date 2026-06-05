@@ -1,0 +1,24 @@
+/* Reuse the viewer's full theme — single source of truth. */
+@import url('../../../www/src/styles/globals.css');
+@import url('./styles/ris-design-system.css');
+
+/* RIS-specific shell tweaks */
+.ris-sidebar-link {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.625rem 1rem;
+  border-radius: 0.5rem;
+  color: var(--app-text-secondary);
+  font-size: 0.875rem;
+  font-weight: 500;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+.ris-sidebar-link:hover {
+  background-color: var(--app-hover);
+  color: var(--app-text);
+}
+.ris-sidebar-link.active {
+  background-color: var(--app-accent);
+  color: #fff;
+}

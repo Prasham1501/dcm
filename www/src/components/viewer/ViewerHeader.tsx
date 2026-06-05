@@ -8,6 +8,7 @@ import { useUndoStore } from '@/stores/undoStore';
 import { useReportStore } from '@/stores/reportStore';
 import { useReportRouter } from '@/features/report-router/useReportRouter';
 import { resetViewport } from '@/lib/viewerTools';
+import { FormFButton } from '@/features/pcpndt/FormFButton';
 import {
   Sun, Moon, ChevronLeft, ChevronRight, Printer, X, Copy, Check,
   PanelRightClose, PanelRightOpen, Undo2, RotateCcw, CheckSquare, Trash2, ImagePlus, FileText,
@@ -191,6 +192,10 @@ export function ViewerHeader({ showThumbnails = true, onToggleThumbnails }: { sh
           <Printer className="w-3 h-3" />
           Print
         </button>
+
+        {/* PCPNDT Form F */}
+        <FormFButton patientId={patientId} patientName={patientName}
+          className="px-2 py-1 text-[10px] 2xl:text-sm font-semibold border-2 border-app-accent text-app-accent bg-app-bg rounded hover:bg-app-accent hover:text-white transition-colors flex items-center gap-1" />
 
         {/* Report - highlighted */}
         <button
