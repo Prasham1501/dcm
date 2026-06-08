@@ -4,7 +4,7 @@
  * reset, and capture/print button.
  */
 import { useState } from 'react';
-import { Camera, LayoutGrid, RotateCcw, Square, Play, Pause } from 'lucide-react';
+import { Camera, RotateCcw, Play, Pause } from 'lucide-react';
 import { useVolume3DStore } from '../stores/volume3DStore';
 import { VOLUME_3D_PRESETS } from '../lib/presets';
 
@@ -16,8 +16,6 @@ export interface Volume3DToolbarProps {
 export function Volume3DToolbar({ onReset, onCapture }: Volume3DToolbarProps) {
   const presetId = useVolume3DStore((s) => s.presetId);
   const setPreset = useVolume3DStore((s) => s.setPreset);
-  const layout = useVolume3DStore((s) => s.layout);
-  const setLayout = useVolume3DStore((s) => s.setLayout);
   const opacity = useVolume3DStore((s) => s.opacity);
   const setOpacity = useVolume3DStore((s) => s.setOpacity);
   const voi = useVolume3DStore((s) => s.voiOverride);
@@ -26,8 +24,9 @@ export function Volume3DToolbar({ onReset, onCapture }: Volume3DToolbarProps) {
   const setCineRotating = useVolume3DStore((s) => s.setCineRotating);
   const status = useVolume3DStore((s) => s.status);
 
-  const [windowCenter, setWindowCenter] = useState(voi?.center ?? 40);
-  const [windowWidth, setWindowWidth] = useState(voi?.width ?? 400);
+  // Display defaults match the default Bone preset (WC 400 / WW 2000).
+  const [windowCenter, setWindowCenter] = useState(voi?.center ?? 400);
+  const [windowWidth, setWindowWidth] = useState(voi?.width ?? 2000);
 
   const disabled = status !== 'loaded';
 
@@ -98,17 +97,6 @@ export function Volume3DToolbar({ onReset, onCapture }: Volume3DToolbarProps) {
       </div>
 
       <div className="flex-1" />
-
-      {/* Layout toggle */}
-      <button
-        type="button"
-        onClick={() => setLayout(layout === 'quad' ? 'vr-only' : 'quad')}
-        className="flex items-center gap-1 px-2 py-1 border border-app-border text-app-text-secondary rounded hover:bg-app-hover"
-        title={layout === 'quad' ? 'Show VR only' : 'Show quad layout (VR + MPR)'}
-      >
-        {layout === 'quad' ? <Square className="w-3 h-3" /> : <LayoutGrid className="w-3 h-3" />}
-        {layout === 'quad' ? 'VR Only' : 'Quad'}
-      </button>
 
       {/* Cine orbit toggle */}
       <button

@@ -27,7 +27,10 @@ describe('VOLUME_3D_PRESETS', () => {
     for (const p of VOLUME_3D_PRESETS) {
       if (p.id === 'mip') {
         expect(p.mip).toBe(true);
-        expect(p.cs3dPresetName).toBe('');
+        // MIP needs BOTH a transfer-function preset (CT-MIP) and the
+        // max-intensity blend mode — a VOLUME_3D viewport renders black
+        // without a transfer function.
+        expect(p.cs3dPresetName).toBe('CT-MIP');
       } else {
         expect(p.voi?.windowCenter).toBeTypeOf('number');
         expect(p.voi?.windowWidth).toBeGreaterThan(0);

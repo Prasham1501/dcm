@@ -65,7 +65,10 @@ export const VOLUME_3D_PRESETS: Volume3DPreset[] = [
     id: 'mip',
     label: 'MIP',
     description: 'Maximum-intensity projection — vessels, bone surveys.',
-    cs3dPresetName: '',
+    // cs3d ships a dedicated CT-MIP transfer function. MIP also needs the
+    // MAXIMUM_INTENSITY_BLEND blend mode (set via the `mip` flag) — without
+    // a transfer function the volume renders black.
+    cs3dPresetName: 'CT-MIP',
     mip: true,
   },
 ];

@@ -72,6 +72,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     // 3D Volume Viewer popup
     openVolumeViewer: (params) => ipcRenderer.invoke('open-volume-viewer', params),
 
+    // 3D Volume Viewer in the system default browser (renders identically to
+    // Electron but uses the OS browser's GPU pipeline). Works offline — the
+    // payload is handed off via a temp file served over localhost.
+    openVolumeInBrowser: (payload) => ipcRenderer.invoke('open-volume-in-browser', payload),
+
     // Viewer + Report Editor side-by-side
     openViewerWithReport: (params) => ipcRenderer.invoke('open-viewer-with-report', params),
 

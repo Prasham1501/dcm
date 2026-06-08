@@ -6,7 +6,7 @@
  *   2. Init cs3d (idempotent), build the volume via `buildVolume`.
  *   3. Set up one RenderingEngine with up to 4 viewports (VR + 3 MPR)
  *      and a shared ToolGroup carrying TrackballRotate / Pan / Zoom /
- *      Crosshairs / StackScroll / WindowLevel.
+ *      WindowLevel.
  *   4. Toolbar drives preset / W/L / opacity / layout / reset / capture.
  *
  * The page is React.lazy-loaded from App.tsx so the cs3d + vtk.js bundle
@@ -21,6 +21,7 @@ import { checkVolume3DEligibility, isWebGL2Supported, describeIneligibility } fr
 import { VolumeViewport3D } from '../components/VolumeViewport3D';
 import { MprViewports, MPR_VIEWPORT_IDS } from '../components/MprViewports';
 import { Volume3DToolbar } from '../components/Volume3DToolbar';
+import { dicomBaseUrl } from '@/lib/dicomLoader';
 
 const RENDERING_ENGINE_ID = 'cs3d-volume-engine';
 const VR_VIEWPORT_ID = 'cs3d-volume-vr';
@@ -36,10 +37,28 @@ export default function Volume3DPage() {
 
   // ── 1. Consume launch payload ─────────────────────────────
   useEffect(() => {
-    const consume = () => {
+    const consume = async () => {
       if (launchConsumed.current) return;
       launchConsumed.current = true;
-      const ok = useVolume3DStore.getState().loadFromLaunch();
+
+      // When opened in the system browser, the study payload is handed off
+      // via a temp JSON file referenced by ?launchFile=… (see
+      // openVolume3DInBrowser / main.js). Fetch it over localhost (offline-OK)
+      // through the same serve-file endpoint the DICOM images use.
+      let ok = false;
+      try {
+        const launchFile = new URLSearchParams(window.location.search).get('launchFile');
+        if (launchFile) {
+          const url = `${dicomBaseUrl()}/dicom/serve-file.php?path=${encodeURIComponent(launchFile)}`;
+          const resp = await fetch(url);
+          if (resp.ok) {
+            const data = JSON.parse(await resp.text());
+            ok = useVolume3DStore.getState().applyLaunchPayload(data);
+          }
+        }
+      } catch { /* fall through to localStorage */ }
+
+      if (!ok) ok = useVolume3DStore.getState().loadFromLaunch();
       if (!ok && useVolume3DStore.getState().filePaths.length === 0) {
         useVolume3DStore.getState().setStatus('idle');
       }
@@ -147,7 +166,10 @@ export default function Volume3DPage() {
         useVolume3DStore.getState().setFailedSlices(failedSlices);
         setVolumeId(id);
         volumeIdRef.current = id;
-        useVolume3DStore.getState().setStatus('loaded');
+        // Slices are decoded — now hand off to the GPU. The viewport flips
+        // this to 'loaded' once the first frame is actually drawn, so the
+        // progress UI stays up until the volume is truly ready to use.
+        useVolume3DStore.getState().setStatus('rendering');
       } catch (e: any) {
         if (!cancelled) {
           useVolume3DStore.getState().setStatus('error', e?.message || 'Failed to load volume');
@@ -321,10 +343,21 @@ export default function Volume3DPage() {
             className={
               layout === 'quad'
                 ? 'absolute inset-0 grid grid-cols-2 grid-rows-2 gap-px bg-app-border'
-                : 'absolute inset-0'
+                : 'absolute inset-0 flex items-center justify-center'
             }
           >
-            <div className="bg-black">
+            {/* VR viewport. In VR-only mode we center it in a width-capped
+                box (~3:2 of the available height) instead of letting it span
+                the full window. Two wins: the volume no longer looks
+                "spread out" across an ultra-wide window, AND we render far
+                fewer pixels — a big smoothness gain on integrated GPUs. */}
+            <div
+              className={
+                layout === 'quad'
+                  ? 'bg-black w-full h-full'
+                  : 'bg-black h-full max-w-full aspect-[3/2]'
+              }
+            >
               <VolumeViewport3D
                 renderingEngineId={RENDERING_ENGINE_ID}
                 viewportId={VR_VIEWPORT_ID}
@@ -352,10 +385,10 @@ export default function Volume3DPage() {
  *  Idempotent — safe to call after the engine is recreated. */
 function ensureToolGroup() {
   const tools = cornerstone3DTools as any;
-  const { ToolGroupManager, TrackballRotateTool, PanTool, ZoomTool, CrosshairsTool, StackScrollTool, WindowLevelTool, Enums } = tools;
+  const { ToolGroupManager, TrackballRotateTool, PanTool, ZoomTool, WindowLevelTool, Enums } = tools;
 
   // Register tools globally once.
-  for (const T of [TrackballRotateTool, PanTool, ZoomTool, CrosshairsTool, StackScrollTool, WindowLevelTool]) {
+  for (const T of [TrackballRotateTool, PanTool, ZoomTool, WindowLevelTool]) {
     if (!T) continue;
     try { tools.addTool(T); } catch { /* already added */ }
   }
@@ -367,24 +400,19 @@ function ensureToolGroup() {
   if (TrackballRotateTool) tg.addTool(TrackballRotateTool.toolName);
   if (PanTool)             tg.addTool(PanTool.toolName);
   if (ZoomTool)            tg.addTool(ZoomTool.toolName);
-  if (CrosshairsTool)      tg.addTool(CrosshairsTool.toolName);
-  if (StackScrollTool)     tg.addTool(StackScrollTool.toolName);
   if (WindowLevelTool)     tg.addTool(WindowLevelTool.toolName);
 
   const Primary = Enums?.MouseBindings?.Primary ?? 1;
   const Secondary = Enums?.MouseBindings?.Secondary ?? 2;
   const Auxiliary = Enums?.MouseBindings?.Auxiliary ?? 4;
-  const Wheel = Enums?.MouseBindings?.Wheel ?? 8;
 
-  // Defaults: left = rotate (VR), middle = pan, right = zoom,
-  // wheel = stack scroll. Crosshairs in MPR are activated via the
-  // same primary binding; the tool runtime decides which viewport gets
-  // the event based on its type.
+  // Bindings: left = rotate (VR), middle = pan, right = zoom (drag).
+  // The mouse WHEEL is handled directly in VolumeViewport3D as a camera
+  // dolly (scroll = zoom) — we deliberately do NOT bind StackScroll to the
+  // wheel here, so the wheel zooms the 3D volume instead of scrolling slices.
   try { tg.setToolActive(TrackballRotateTool.toolName, { bindings: [{ mouseButton: Primary }] }); } catch { /* ignore */ }
   try { tg.setToolActive(PanTool.toolName, { bindings: [{ mouseButton: Auxiliary }] }); } catch { /* ignore */ }
   try { tg.setToolActive(ZoomTool.toolName, { bindings: [{ mouseButton: Secondary }] }); } catch { /* ignore */ }
-  try { tg.setToolActive(StackScrollTool.toolName, { bindings: [{ mouseButton: Wheel }] }); } catch { /* ignore */ }
-  try { tg.setToolPassive(CrosshairsTool.toolName); } catch { /* ignore */ }
 }
 
 function StatusOverlay() {
@@ -413,12 +441,32 @@ function StatusOverlay() {
       </div>
     );
   }
-  if (status === 'loading') {
-    const pct = total ? Math.round((loaded / total) * 100) : 0;
+  if (status === 'loading' || status === 'rendering') {
+    // During 'loading' we show real slice progress; during 'rendering' the
+    // GPU is uploading + drawing the first frame (indeterminate), so we peg
+    // the bar near-full and switch the label. A full-screen scrim blocks
+    // interaction until the volume is genuinely ready.
+    const pct = status === 'rendering'
+      ? 100
+      : (total ? Math.round((loaded / total) * 100) : 0);
+    const label = status === 'rendering'
+      ? 'Building 3D model…'
+      : `Loading slices… ${pct}%`;
+    const sub = status === 'rendering'
+      ? 'Preparing GPU volume — almost ready'
+      : `${loaded} / ${total} images`;
     return (
-      <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-app-text text-sm pointer-events-none">
-        <div className="w-6 h-6 border-2 border-app-accent border-t-transparent rounded-full animate-spin" />
-        <div>Loading volume… {pct}% ({loaded} / {total} slices)</div>
+      <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-black/70 text-app-text text-sm cursor-wait">
+        <div className="w-8 h-8 border-2 border-app-accent border-t-transparent rounded-full animate-spin" />
+        <div className="font-semibold">{label}</div>
+        {/* Determinate progress bar */}
+        <div className="w-72 h-2 bg-app-border/60 rounded-full overflow-hidden">
+          <div
+            className={`h-full bg-app-accent transition-all duration-200 ${status === 'rendering' ? 'animate-pulse' : ''}`}
+            style={{ width: `${pct}%` }}
+          />
+        </div>
+        <div className="text-xs text-app-text-muted">{sub}</div>
       </div>
     );
   }

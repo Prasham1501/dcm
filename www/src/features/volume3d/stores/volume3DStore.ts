@@ -8,12 +8,12 @@
  */
 import { create } from 'zustand';
 import type { Volume3DPresetId } from '../lib/presets';
-import { DEFAULT_PRESET_ID } from '../lib/presets';
 
 export type Volume3DStatus =
   | 'idle'
-  | 'loading'
-  | 'loaded'
+  | 'loading'    // fetching + decoding DICOM slices
+  | 'rendering'  // slices loaded; GPU is uploading + drawing the first frame
+  | 'loaded'     // first frame drawn — viewer is interactive
   | 'error'
   | 'unsupported';
 
@@ -54,6 +54,9 @@ export interface Volume3DState {
   /** Load (or refresh) state from the `volume-3d-launch` localStorage
    *  payload. Returns true when a fresh payload was consumed. */
   loadFromLaunch: () => boolean;
+  /** Apply a launch payload object directly (e.g. fetched from a temp file
+   *  when the viewer is opened in the system browser). Returns true on success. */
+  applyLaunchPayload: (data: Volume3DLaunch | null | undefined) => boolean;
   setStatus: (s: Volume3DStatus, error?: string | null) => void;
   setProgress: (loaded: number, total: number) => void;
   setFailedSlices: (count: number) => void;
@@ -83,15 +86,35 @@ const initial = {
   loadedSlices: 0,
   totalSlices: 0,
   failedSlices: 0,
-  presetId: DEFAULT_PRESET_ID,
-  layout: 'quad' as Volume3DLayout,
+  // Default to the Bone VR preset on a single full-screen 3D viewport
+  // (no MPR panes) — that's the primary "turn the skull around" view.
+  presetId: 'ct-bone' as Volume3DPresetId,
+  layout: 'vr-only' as Volume3DLayout,
   opacity: 1.0,
   voiOverride: null as { center: number; width: number } | null,
   cineRotating: false,
 };
 
-export const useVolume3DStore = create<Volume3DState>((set) => ({
+export const useVolume3DStore = create<Volume3DState>((set, get) => ({
   ...initial,
+
+  applyLaunchPayload: (data) => {
+    if (!data || !Array.isArray(data.filePaths) || data.filePaths.length === 0) return false;
+    set({
+      patientName: data.patientName ?? '',
+      patientId: data.patientId ?? '',
+      studyDate: data.studyDate ?? '',
+      studyDescription: data.studyDescription ?? '',
+      modality: data.modality ?? '',
+      filePaths: data.filePaths,
+      totalSlices: data.filePaths.length,
+      loadedSlices: 0,
+      failedSlices: 0,
+      status: 'loading',
+      error: null,
+    });
+    return true;
+  },
 
   loadFromLaunch: () => {
     try {
@@ -105,23 +128,11 @@ export const useVolume3DStore = create<Volume3DState>((set) => ({
         localStorage.removeItem(LAUNCH_KEY);
         return false;
       }
-      set({
-        patientName: data.patientName ?? '',
-        patientId: data.patientId ?? '',
-        studyDate: data.studyDate ?? '',
-        studyDescription: data.studyDescription ?? '',
-        modality: data.modality ?? '',
-        filePaths: data.filePaths,
-        totalSlices: data.filePaths.length,
-        loadedSlices: 0,
-        failedSlices: 0,
-        status: 'loading',
-        error: null,
-        // Keep UI selections across reloads so the radiologist's preset/
-        // layout choice survives a quick re-open of the window.
-      });
-      localStorage.removeItem(LAUNCH_KEY);
-      return true;
+      // Keep UI selections across reloads so the radiologist's preset/layout
+      // choice survives a quick re-open of the window.
+      const ok = get().applyLaunchPayload(data);
+      if (ok) localStorage.removeItem(LAUNCH_KEY);
+      return ok;
     } catch {
       return false;
     }

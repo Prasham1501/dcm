@@ -23,10 +23,8 @@ export interface OpenVolume3DInput {
 
 const LAUNCH_KEY = 'volume-3d-launch';
 
-export async function openVolume3D(input: OpenVolume3DInput, navigate?: (path: string) => void): Promise<boolean> {
-  if (!input.filePaths || input.filePaths.length === 0) return false;
-
-  const payload: Volume3DLaunch = {
+function buildPayload(input: OpenVolume3DInput): Volume3DLaunch {
+  return {
     patientName: input.patientName ?? '',
     patientId: input.patientId ?? '',
     studyDate: input.studyDate ?? '',
@@ -35,6 +33,36 @@ export async function openVolume3D(input: OpenVolume3DInput, navigate?: (path: s
     filePaths: input.filePaths,
     timestamp: Date.now(),
   };
+}
+
+/** Open the 3D viewer in the system default browser (uses the OS browser's
+ *  GPU pipeline). Works offline: the payload is handed to the main process,
+ *  which writes a temp file and opens the browser at /volume-3d?launchFile=…
+ *  Falls back to a new browser tab when not running in Electron. */
+export async function openVolume3DInBrowser(input: OpenVolume3DInput): Promise<boolean> {
+  if (!input.filePaths || input.filePaths.length === 0) return false;
+  const payload = buildPayload(input);
+  const api = (window as any).electronAPI;
+  if (api?.openVolumeInBrowser) {
+    try {
+      const res = await api.openVolumeInBrowser(payload);
+      return !!res?.success;
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.error('[openVolume3DInBrowser] failed', e);
+    }
+  }
+  // Non-Electron fallback: stash in localStorage + open a new tab.
+  try { localStorage.setItem(LAUNCH_KEY, JSON.stringify(payload)); } catch { /* ignore */ }
+  window.open('/volume-3d', '_blank');
+  return true;
+}
+
+export async function openVolume3D(input: OpenVolume3DInput, navigate?: (path: string) => void): Promise<boolean> {
+  if (!input.filePaths || input.filePaths.length === 0) return false;
+
+  const payload = buildPayload(input);
+  const launchParams = { imageCount: input.filePaths.length, payload };
 
   try {
     localStorage.setItem(LAUNCH_KEY, JSON.stringify(payload));
@@ -45,7 +73,7 @@ export async function openVolume3D(input: OpenVolume3DInput, navigate?: (path: s
   const api = (window as any).electronAPI;
   if (api?.openVolumeViewer) {
     try {
-      await api.openVolumeViewer({ imageCount: input.filePaths.length });
+      await api.openVolumeViewer(launchParams);
       return true;
     } catch (e) {
       // eslint-disable-next-line no-console
@@ -53,7 +81,7 @@ export async function openVolume3D(input: OpenVolume3DInput, navigate?: (path: s
     }
   } else if (api?.invoke) {
     try {
-      await api.invoke('open-volume-viewer', { imageCount: input.filePaths.length });
+      await api.invoke('open-volume-viewer', launchParams);
       return true;
     } catch (e) {
       // eslint-disable-next-line no-console

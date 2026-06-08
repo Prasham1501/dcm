@@ -17,6 +17,26 @@ const http = require('http');
 const url = require('url');
 const fs = require('fs');
 
+// ---------------------------------------------------------------------------
+// GPU / WebGL acceleration (MUST run before app 'ready').
+//
+// Electron's bundled Chromium is far more conservative than desktop Chrome and
+// frequently BLOCKLISTS common integrated GPUs (e.g. Intel Iris Xe). When that
+// happens it silently falls back to software GL (SwiftShader), which makes the
+// 3D volume viewer slow and low-quality — even though the exact same page is
+// smooth in Chrome on the same machine. These switches force Electron to use
+// the hardware GPU like Chrome does.
+// ---------------------------------------------------------------------------
+app.commandLine.appendSwitch('ignore-gpu-blocklist');
+app.commandLine.appendSwitch('enable-gpu-rasterization');
+app.commandLine.appendSwitch('enable-zero-copy');
+app.commandLine.appendSwitch('enable-accelerated-2d-canvas');
+// Match Chrome's Windows default backend (the browser reports "ANGLE … D3D11"),
+// which is what renders the volume smoothly.
+app.commandLine.appendSwitch('use-angle', 'd3d11');
+// On dual-GPU laptops, prefer the high-performance GPU for our windows.
+app.commandLine.appendSwitch('force_high_performance_gpu');
+
 // Configuration
 const PHP_PORT = 8080;
 const VITE_PORT = 5173;
@@ -1817,6 +1837,18 @@ ipcMain.handle('download-and-install-update', async (_evt, { downloadUrl } = {})
 });
 
 app.whenReady().then(async () => {
+    // GPU diagnostic — confirms whether hardware WebGL is active (needed for
+    // smooth 3D volume rendering). Look for "gl: enabled" / "webgl2: enabled".
+    // If these say "disabled_software" the 3D viewer will be slow/low quality.
+    try {
+        const status = app.getGPUFeatureStatus();
+        console.log('[GPU] feature status:', JSON.stringify(status));
+        app.getGPUInfo('basic').then((info) => {
+            const g = (info && info.gpuDevice && info.gpuDevice[0]) || {};
+            console.log('[GPU] device:', JSON.stringify(info && info.auxAttributes ? info.auxAttributes.glRenderer || g : g));
+        }).catch(() => {});
+    } catch (e) { console.log('[GPU] status unavailable:', e.message); }
+
     const lic = getLicenseData();
     if (lic) {
         // Has license key — validate it
@@ -2515,10 +2547,16 @@ ipcMain.handle('open-viewer', (event, { isPortrait, imageCount, cols, rows }) =>
 // =====================================================
 let volumeViewerWindow = null;
 
-ipcMain.handle('open-volume-viewer', (event, { imageCount } = {}) => {
+ipcMain.handle('open-volume-viewer', (event, { imageCount, payload } = {}) => {
     const { screen } = require('electron');
     const primaryDisplay = screen.getPrimaryDisplay();
     const { width: screenW, height: screenH } = primaryDisplay.workAreaSize;
+    const launchFile = Array.isArray(payload?.filePaths) && payload.filePaths.length > 0
+        ? writeNormalizedVolumeLaunchFile(payload)
+        : null;
+    const volumeUrl = launchFile
+        ? `${APP_URL}/volume-3d?launchFile=${encodeURIComponent(launchFile)}`
+        : `${APP_URL}/volume-3d`;
 
     // The 3D viewer benefits from a roughly square area for the quad
     // MPR + VR layout. Default to 80% of the working area so multi-monitor
@@ -2532,7 +2570,10 @@ ipcMain.handle('open-volume-viewer', (event, { imageCount } = {}) => {
     if (volumeViewerWindow && !volumeViewerWindow.isDestroyed()) {
         try { volumeViewerWindow.setSize(winW, winH); volumeViewerWindow.center(); } catch {}
         try { volumeViewerWindow.show(); volumeViewerWindow.focus(); } catch {}
-        try { volumeViewerWindow.webContents.send('volume-viewer:reload-launch'); } catch {}
+        try {
+            if (launchFile) volumeViewerWindow.loadURL(volumeUrl);
+            else volumeViewerWindow.webContents.send('volume-viewer:reload-launch');
+        } catch {}
         return { success: true, width: winW, height: winH, reused: true };
     }
 
@@ -2554,18 +2595,10 @@ ipcMain.handle('open-volume-viewer', (event, { imageCount } = {}) => {
     });
 
     volumeViewerWindow.center();
-    volumeViewerWindow.loadURL(`${APP_URL}/volume-3d`);
+    volumeViewerWindow.loadURL(volumeUrl);
 
-    // Auto-open DevTools so a white-screen crash surfaces the actual
-    // console error instead of leaving the radiologist with a blank window.
-    try { volumeViewerWindow.webContents.openDevTools({ mode: 'detach' }); } catch {}
-
-    // Auto-open DevTools so a white-screen / GL failure is immediately
-    // visible to the user. We close it again automatically when the page
-    // first reports a successful volume load (see ipc 'volume-viewer:ready').
-    volumeViewerWindow.webContents.once('did-finish-load', () => {
-        try { volumeViewerWindow.webContents.openDevTools({ mode: 'detach' }); } catch {}
-    });
+    // NOTE: DevTools no longer auto-opens. It can still be opened manually
+    // via the Tools → Developer Tools menu (F12) below if needed.
 
     const volumeMenu = Menu.buildFromTemplate([
         {
@@ -2593,6 +2626,274 @@ ipcMain.handle('open-volume-viewer', (event, { imageCount } = {}) => {
     volumeViewerWindow.on('closed', () => { volumeViewerWindow = null; });
 
     return { success: true, width: winW, height: winH };
+});
+
+// Open the 3D volume viewer in the system default browser. The viewer page
+// reads its study payload from a temp JSON file (handed off via ?launchFile),
+// fetched over localhost — so this works fully offline. The browser uses its
+// own GPU pipeline, which on some machines renders the volume more cleanly
+// than the bundled Electron Chromium.
+function loadDicomParserForVolumeLaunch() {
+    try {
+        return require('dicom-parser');
+    } catch {
+        try {
+            return require(path.join(__dirname, 'www', 'node_modules', 'dicom-parser'));
+        } catch {
+            return null;
+        }
+    }
+}
+
+function normalizeVolumeLaunchPayloadForBrowser(payload = {}) {
+    const filePaths = dedupeVolumeFilePaths(payload.filePaths);
+    if (filePaths.length < 2) {
+        return { ...(payload || {}), filePaths };
+    }
+
+    const dicomParserLib = loadDicomParserForVolumeLaunch();
+    if (!dicomParserLib) {
+        return { ...(payload || {}), filePaths: sortVolumeFallback(filePaths) };
+    }
+
+    const records = filePaths.map((filePath, index) =>
+        readVolumeLaunchSliceRecord(filePath, index, dicomParserLib)
+    );
+    const recordsWithMetadata = records.filter((record) => record.hasDicomMetadata);
+    if (recordsWithMetadata.length < Math.min(5, filePaths.length)) {
+        return { ...(payload || {}), filePaths: sortVolumeRecords(records).map((record) => record.filePath) };
+    }
+
+    const selected = selectBestVolumeSeries(records, String(payload.modality || '').toUpperCase());
+    const sorted = sortVolumeRecords(selected);
+    return {
+        ...(payload || {}),
+        filePaths: sorted.map((record) => record.filePath),
+        normalizedForBrowser: true,
+        originalFileCount: filePaths.length,
+    };
+}
+
+function writeNormalizedVolumeLaunchFile(payload = {}) {
+    const tmpDir = app.getPath('temp');
+    const tmpPath = path.join(tmpDir, `oneclickz-volume-launch-${Date.now()}.json`);
+    const normalizedPayload = normalizeVolumeLaunchPayloadForBrowser(payload || {});
+    fs.writeFileSync(tmpPath, JSON.stringify(normalizedPayload), 'utf8');
+    return tmpPath;
+}
+
+function dedupeVolumeFilePaths(value) {
+    if (!Array.isArray(value)) return [];
+    const seen = new Set();
+    const out = [];
+    for (const raw of value) {
+        const filePath = typeof raw === 'string' ? raw.trim() : '';
+        const key = filePath.toLowerCase();
+        if (!filePath || seen.has(key)) continue;
+        seen.add(key);
+        out.push(filePath);
+    }
+    return out;
+}
+
+function readVolumeLaunchSliceRecord(filePath, index, dicomParserLib) {
+    const fallback = {
+        filePath,
+        index,
+        hasDicomMetadata: false,
+        studyUID: '',
+        seriesUID: '',
+        modality: '',
+        rows: null,
+        cols: null,
+        orientationKey: '',
+        position: null,
+        sliceLocation: null,
+        instanceNumber: null,
+        pathNumber: volumePathNumber(filePath),
+    };
+
+    try {
+        const dataSet = parseVolumeLaunchDicomHeader(filePath, dicomParserLib);
+        if (!dataSet) return fallback;
+
+        const orientation = readVolumeNumberList(dataSet, 'x00200037');
+        const positionVector = readVolumeNumberList(dataSet, 'x00200032');
+        const projectedPosition = projectVolumeSlicePosition(positionVector, orientation);
+        const rows = readVolumeNumber(dataSet, 'x00280010');
+        const cols = readVolumeNumber(dataSet, 'x00280011');
+
+        return {
+            ...fallback,
+            hasDicomMetadata: true,
+            studyUID: readVolumeDicomString(dataSet, 'x0020000d'),
+            seriesUID: readVolumeDicomString(dataSet, 'x0020000e'),
+            modality: readVolumeDicomString(dataSet, 'x00080060').toUpperCase(),
+            rows,
+            cols,
+            orientationKey: volumeOrientationKey(orientation),
+            position: projectedPosition,
+            sliceLocation: readVolumeNumber(dataSet, 'x00201041'),
+            instanceNumber: readVolumeNumber(dataSet, 'x00200013'),
+        };
+    } catch {
+        return fallback;
+    }
+}
+
+function parseVolumeLaunchDicomHeader(filePath, dicomParserLib) {
+    let fd = null;
+    try {
+        fd = fs.openSync(filePath, 'r');
+        const stat = fs.fstatSync(fd);
+        const size = Math.min(stat.size, 512 * 1024);
+        const buffer = Buffer.alloc(size);
+        fs.readSync(fd, buffer, 0, size, 0);
+        try {
+            return dicomParserLib.parseDicom(new Uint8Array(buffer), { untilTag: 'x7fe00010' });
+        } catch (e) {
+            return e?.dataSet || null;
+        }
+    } finally {
+        if (fd !== null) {
+            try { fs.closeSync(fd); } catch { /* ignore */ }
+        }
+    }
+}
+
+function readVolumeDicomString(dataSet, tag) {
+    try { return (dataSet.string(tag) || '').trim(); } catch { return ''; }
+}
+
+function readVolumeNumber(dataSet, tag) {
+    const n = Number(readVolumeDicomString(dataSet, tag));
+    return Number.isFinite(n) ? n : null;
+}
+
+function readVolumeNumberList(dataSet, tag) {
+    const raw = readVolumeDicomString(dataSet, tag);
+    if (!raw) return [];
+    return raw
+        .split('\\')
+        .map((part) => Number(part.trim()))
+        .filter((n) => Number.isFinite(n));
+}
+
+function projectVolumeSlicePosition(position, orientation) {
+    if (position.length < 3) return null;
+    if (orientation.length >= 6) {
+        const row = orientation.slice(0, 3);
+        const col = orientation.slice(3, 6);
+        const normal = [
+            row[1] * col[2] - row[2] * col[1],
+            row[2] * col[0] - row[0] * col[2],
+            row[0] * col[1] - row[1] * col[0],
+        ];
+        const projected = position[0] * normal[0] + position[1] * normal[1] + position[2] * normal[2];
+        if (Number.isFinite(projected)) return projected;
+    }
+    return Number.isFinite(position[2]) ? position[2] : null;
+}
+
+function volumeOrientationKey(orientation) {
+    if (orientation.length < 6) return '';
+    return orientation.slice(0, 6).map((n) => Math.round(n * 1000) / 1000).join('\\');
+}
+
+function volumePathNumber(filePath) {
+    const match = path.basename(filePath).match(/(\d+)(?!.*\d)/);
+    if (!match) return null;
+    const n = Number(match[1]);
+    return Number.isFinite(n) ? n : null;
+}
+
+function volumeGroupingKey(record) {
+    const uid = record.seriesUID || record.studyUID || '__unknown__';
+    const geometry = [
+        record.orientationKey || '__orientation_unknown__',
+        record.rows || '__rows_unknown__',
+        record.cols || '__cols_unknown__',
+    ].join('|');
+    return `${uid}|${geometry}`;
+}
+
+function selectBestVolumeSeries(records, requestedModality) {
+    const groups = new Map();
+    for (const record of records) {
+        const key = record.hasDicomMetadata ? volumeGroupingKey(record) : '__unparsed__';
+        if (!groups.has(key)) {
+            groups.set(key, { records: [], modalities: new Set(), positioned: 0 });
+        }
+        const group = groups.get(key);
+        group.records.push(record);
+        if (record.modality) group.modalities.add(record.modality);
+        if (Number.isFinite(record.position) || Number.isFinite(record.sliceLocation)) group.positioned += 1;
+    }
+
+    const ranked = Array.from(groups.values()).sort((a, b) => {
+        const aRequested = requestedModality && a.modalities.has(requestedModality) ? 1 : 0;
+        const bRequested = requestedModality && b.modalities.has(requestedModality) ? 1 : 0;
+        if (aRequested !== bRequested) return bRequested - aRequested;
+
+        const aVolumetric = (a.modalities.has('CT') || a.modalities.has('MR')) ? 1 : 0;
+        const bVolumetric = (b.modalities.has('CT') || b.modalities.has('MR')) ? 1 : 0;
+        if (aVolumetric !== bVolumetric) return bVolumetric - aVolumetric;
+
+        if (a.records.length !== b.records.length) return b.records.length - a.records.length;
+        return b.positioned - a.positioned;
+    });
+
+    const best = ranked[0]?.records || records;
+    return best.length >= Math.min(20, records.length) ? best : records;
+}
+
+function sortVolumeFallback(filePaths) {
+    return sortVolumeRecords(filePaths.map((filePath, index) => ({
+        filePath,
+        index,
+        position: null,
+        sliceLocation: null,
+        instanceNumber: null,
+        pathNumber: volumePathNumber(filePath),
+    }))).map((record) => record.filePath);
+}
+
+function sortVolumeRecords(records) {
+    return [...records].sort((a, b) => {
+        const byPosition = compareNullableNumber(a.position, b.position, 1e-4);
+        if (byPosition !== 0) return byPosition;
+        const bySliceLocation = compareNullableNumber(a.sliceLocation, b.sliceLocation, 1e-4);
+        if (bySliceLocation !== 0) return bySliceLocation;
+        const byInstance = compareNullableNumber(a.instanceNumber, b.instanceNumber, 0);
+        if (byInstance !== 0) return byInstance;
+        const byPathNumber = compareNullableNumber(a.pathNumber, b.pathNumber, 0);
+        if (byPathNumber !== 0) return byPathNumber;
+        return a.index - b.index;
+    });
+}
+
+function compareNullableNumber(a, b, epsilon) {
+    const aOk = Number.isFinite(a);
+    const bOk = Number.isFinite(b);
+    if (aOk && bOk) {
+        const diff = a - b;
+        return Math.abs(diff) > epsilon ? diff : 0;
+    }
+    if (aOk) return -1;
+    if (bOk) return 1;
+    return 0;
+}
+
+ipcMain.handle('open-volume-in-browser', (event, payload = {}) => {
+    try {
+        const tmpPath = writeNormalizedVolumeLaunchFile(payload || {});
+        const target = `${APP_URL}/volume-3d?launchFile=${encodeURIComponent(tmpPath)}`;
+        shell.openExternal(target);
+        return { success: true, target };
+    } catch (e) {
+        console.error('[open-volume-in-browser] failed:', e.message);
+        return { success: false, error: e.message };
+    }
 });
 
 // Resize viewer windows when layout changes

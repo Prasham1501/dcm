@@ -19,15 +19,47 @@ export { cornerstone3D, cornerstone3DTools, cornerstoneDICOMImageLoader };
 export async function initCornerstone3D(): Promise<void> {
   if (initialized) return initialized;
   initialized = (async () => {
+    // ── Cap the device-pixel-ratio cs3d uses to size its WebGL canvas ──
+    // On a Windows display set to 125%/150% scaling, window.devicePixelRatio
+    // is 1.25/1.5, so cs3d allocates a canvas 1.5x larger per axis = ~2.25x
+    // the pixels. The volume ray-caster then does 2.25x the work every frame,
+    // which is why the packaged app stutters on an integrated GPU while the
+    // exact same page is smooth in a DPR-1 browser. cs3d reads
+    // `window.devicePixelRatio` directly when sizing, so we clamp it here.
+    // The 3D viewer runs in its own dedicated Electron window, so this
+    // override is scoped to that window and doesn't affect the rest of the UI.
+    try {
+      const realDpr = window.devicePixelRatio || 1;
+      const cappedDpr = Math.min(realDpr, 1.0);
+      if (cappedDpr < realDpr) {
+        Object.defineProperty(window, 'devicePixelRatio', {
+          configurable: true,
+          get: () => cappedDpr,
+        });
+      }
+    } catch { /* getter already overridden / locked — ignore */ }
+
     // Core renders volumes via vtk.js + WebGL2.
     await cornerstone3D.init();
+
+    // Give the volume/image cache plenty of headroom (target ~16 GB RAM
+    // machines). The default cache is small and can evict slices mid-load
+    // on bigger series, forcing re-fetches and stutter. 2 GB is safe.
+    try {
+      (cornerstone3D as any).cache?.setMaxCacheSize?.(2 * 1024 * 1024 * 1024);
+    } catch { /* older API — ignore */ }
 
     // dicom-image-loader 4.x exposes an init() that wires up its codec
     // web-workers. The package is built as ESM so Vite emits the worker
     // chunks into dist/assets at build time — no manual worker path needed
     // in the Electron loopback origin.
+    //
+    // Decode throughput scales with worker count. The old cap of 2 left
+    // most CPU cores idle and made a 140-slice load feel slow. Use up to
+    // (cores − 1), capped at 8, leaving one core for the render/UI thread.
+    const cores = navigator.hardwareConcurrency || 4;
     await cornerstoneDICOMImageLoader.init({
-      maxWebWorkers: Math.min(2, Math.max(navigator.hardwareConcurrency ?? 2, 1)),
+      maxWebWorkers: Math.min(8, Math.max(cores - 1, 3)),
     });
 
     // Tools registry (CrosshairsTool, TrackballRotateTool, …).

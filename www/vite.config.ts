@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import { viteCommonjs } from '@originjs/vite-plugin-commonjs';
 import path from 'path';
 import fs from 'fs';
 import { createRequire } from 'module';
@@ -11,38 +12,45 @@ const _require = createRequire(import.meta.url);
  * and GET /api/dicom/scan-local.php?dir=<directory>&limit=<n>
  */
 function dicomServerPlugin() {
+  // Shared serve-file handler so both the dev server and `vite preview`
+  // (which serves the real production bundle) can stream local DICOM files.
+  const serveFile = (req: any, res: any) => {
+    const url = new URL(req.url || '', 'http://localhost');
+    const filePath = url.searchParams.get('path');
+    if (!filePath) {
+      res.statusCode = 400;
+      res.end(JSON.stringify({ error: 'Missing path parameter' }));
+      return;
+    }
+    try {
+      const resolved = path.resolve(filePath);
+      if (!fs.existsSync(resolved)) {
+        res.statusCode = 404;
+        res.end(JSON.stringify({ error: 'File not found' }));
+        return;
+      }
+      const stat = fs.statSync(resolved);
+      res.setHeader('Content-Type', 'application/dicom');
+      res.setHeader('Content-Length', stat.size);
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Cache-Control', 'public, max-age=86400');
+      res.statusCode = 200;
+      fs.createReadStream(resolved).pipe(res);
+    } catch (err: any) {
+      res.statusCode = 500;
+      res.end(JSON.stringify({ error: err.message }));
+    }
+  };
+
   return {
     name: 'dicom-server',
+    // Make serve-file available under `vite preview` too, so the production
+    // bundle can be exercised end-to-end with real DICOM data.
+    configurePreviewServer(server: any) {
+      server.middlewares.use('/api/dicom/serve-file.php', serveFile);
+    },
     configureServer(server: any) {
-      server.middlewares.use('/api/dicom/serve-file.php', (req: any, res: any) => {
-        const url = new URL(req.url || '', 'http://localhost');
-        const filePath = url.searchParams.get('path');
-        if (!filePath) {
-          res.statusCode = 400;
-          res.end(JSON.stringify({ error: 'Missing path parameter' }));
-          return;
-        }
-
-        try {
-          const resolved = path.resolve(filePath);
-          if (!fs.existsSync(resolved)) {
-            res.statusCode = 404;
-            res.end(JSON.stringify({ error: 'File not found' }));
-            return;
-          }
-
-          const stat = fs.statSync(resolved);
-          res.setHeader('Content-Type', 'application/dicom');
-          res.setHeader('Content-Length', stat.size);
-          res.setHeader('Access-Control-Allow-Origin', '*');
-          res.setHeader('Cache-Control', 'public, max-age=86400');
-          res.statusCode = 200;
-          fs.createReadStream(resolved).pipe(res);
-        } catch (err: any) {
-          res.statusCode = 500;
-          res.end(JSON.stringify({ error: err.message }));
-        }
-      });
+      server.middlewares.use('/api/dicom/serve-file.php', serveFile);
 
       // Scan a folder and extract patient/study metadata from DICOM headers
       server.middlewares.use('/api/dicom/scan-patients', (req: any, res: any) => {
@@ -482,7 +490,34 @@ function cornerstoneHideTextPatchPlugin() {
 }
 
 export default defineConfig({
-  plugins: [react(), dicomServerPlugin(), cornerstoneHideTextPatchPlugin()],
+  plugins: [
+    react(),
+    // REQUIRED for Cornerstone3D in Vite dev mode: vtk.js + the Emscripten
+    // codec files (libjpeg-turbo, charls, openjpeg, openjph) and globalthis
+    // are UMD/CommonJS modules. Without this plugin Vite's ESM rewrite serves
+    // them raw and the browser throws
+    //     "does not provide an export named 'default'"
+    // viteCommonjs transforms them into proper ESM with a default export.
+    //
+    // CRITICAL: scope it to ONLY the cs3d codec/vtk packages. Left unscoped,
+    // the plugin also rewrites the LEGACY cornerstone v2 CJS deps used by the
+    // 2D viewer (cornerstone-core / cornerstone-tools / wado-image-loader)
+    // and emits broken output (`import … from " + result.moduleId + "`),
+    // 500-ing the 2D stack. Those legacy deps are pre-bundled fine by Vite's
+    // default esbuild, so we must NOT touch them.
+    viteCommonjs({
+      include: [
+        '@cornerstonejs/codec-libjpeg-turbo-8bit',
+        '@cornerstonejs/codec-charls',
+        '@cornerstonejs/codec-openjpeg',
+        '@cornerstonejs/codec-openjph',
+        '@kitware/vtk.js',
+        'globalthis',
+      ],
+    }),
+    dicomServerPlugin(),
+    cornerstoneHideTextPatchPlugin(),
+  ],
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
@@ -510,38 +545,17 @@ export default defineConfig({
   // problematic CJS deps), and only exclude `dicom-image-loader` because it
   // dynamically constructs Workers from runtime URLs that the pre-bundler
   // can't statically follow.
+  // Official Cornerstone3D + Vite optimizeDeps shape. The dicom-image-loader
+  // loads its codec workers/WASM via runtime URLs, so it must stay OUT of the
+  // pre-bundle; dicom-parser is CJS so it must be pre-bundled. viteCommonjs
+  // (above) handles the vtk.js/globalthis/codec CJS-default interop in dev.
   optimizeDeps: {
-    // INCLUDE the whole cs3d + vtk.js graph so esbuild pre-bundles it with
-    // proper CJS→ESM interop. Earlier we tried excluding cs3d (assuming the
-    // codec workers needed raw URLs) — but that exposed CJS-only modules
-    // (`globalthis`, `fast-deep-equal`, the Emscripten codec files) to
-    // Vite's import rewrite, which produced
-    //     "does not provide an export named 'default'"
-    // Pre-bundling all of them solves it in one shot.
-    //
-    // The ONLY thing we exclude is `dicom-image-loader`: it builds Worker
-    // URLs from runtime paths that the pre-bundler can't statically follow.
     exclude: [
       '@cornerstonejs/dicom-image-loader',
     ],
     include: [
-      '@cornerstonejs/core',
-      '@cornerstonejs/tools',
-      '@cornerstonejs/codec-libjpeg-turbo-8bit',
-      '@cornerstonejs/codec-charls',
-      '@cornerstonejs/codec-openjpeg',
-      '@cornerstonejs/codec-openjph',
-      '@kitware/vtk.js',
-      'globalthis',
-      'globalthis/polyfill.js',
-      'fast-deep-equal',
-      'gl-matrix',
-      'comlink',
+      'dicom-parser',
     ],
-    esbuildOptions: {
-      // Apply CJS→ESM interop everywhere in the prebundle graph.
-      mainFields: ['module', 'main'],
-    },
   },
   // The cs3d decode workers + their JPEG/JLS/RLE WASM blobs must be emitted
   // to dist/assets so electron-builder's extraResources picks them up. The
