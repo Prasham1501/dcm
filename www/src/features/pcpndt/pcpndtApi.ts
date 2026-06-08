@@ -44,10 +44,16 @@ async function readJson(res: Response): Promise<any> {
         : `PCPNDT API returned a non-JSON response (HTTP ${res.status}).`
     );
   }
-  if (!json || json.success === false) {
+  if (!res.ok || !json || json.success === false || json.ok === false) {
     throw new Error((json && (json.error || json.message)) || `Request failed (HTTP ${res.status})`);
   }
-  return json.data;
+  // Most viewer endpoints return { success, message, data }, but older PHP
+  // copies of the PCPNDT endpoints returned the payload directly alongside
+  // success/message. Accept both so the config tab does not crash when the
+  // backend is one version ahead/behind the bundled UI.
+  if (Object.prototype.hasOwnProperty.call(json, 'data')) return json.data;
+  const { success: _success, message: _message, ...payload } = json;
+  return payload;
 }
 
 const opts = (extra: RequestInit = {}): RequestInit => ({
@@ -56,28 +62,52 @@ const opts = (extra: RequestInit = {}): RequestInit => ({
   ...extra,
 });
 
+async function ensureDesktopSession(): Promise<boolean> {
+  try {
+    const res = await fetch('/api/auth/desktop-login.php', opts({ method: 'POST' }));
+    const json = await res.json().catch(() => null);
+    return res.ok && !!json?.success;
+  } catch {
+    return false;
+  }
+}
+
+async function pcpndtFetch(url: string, options: RequestInit = {}): Promise<Response> {
+  const res = await fetch(url, opts(options));
+  if (res.status !== 401) return res;
+
+  // The desktop viewer starts with an app-level ADMIN state, while PHP still
+  // needs a session cookie before protected PCPNDT endpoints can save. Reuse
+  // the product-scoped desktop auto-login endpoint, then retry the original
+  // request once. Networked installs keep returning 401/403 as before.
+  if (await ensureDesktopSession()) {
+    return fetch(url, opts(options));
+  }
+  return res;
+}
+
 export async function pcpndtPrefill(params: { studyUid?: string; patientId?: string; patientName?: string }): Promise<PcpndtPrefill> {
   const q = new URLSearchParams();
   if (params.studyUid) q.set('study_uid', params.studyUid);
   if (params.patientId) q.set('patient_id', params.patientId);
   if (params.patientName) q.set('patient_name', params.patientName);
-  return (await readJson(await fetch(`/api/pcpndt/prefill.php?${q.toString()}`, opts()))) as PcpndtPrefill;
+  return (await readJson(await pcpndtFetch(`/api/pcpndt/prefill.php?${q.toString()}`))) as PcpndtPrefill;
 }
 
 export async function pcpndtSave(studyUid: string, fields: FormFFields): Promise<Record<string, any>> {
-  return await readJson(await fetch('/api/pcpndt/save.php', opts({ method: 'POST', body: JSON.stringify({ ...fields, study_uid: studyUid }) })));
+  return await readJson(await pcpndtFetch('/api/pcpndt/save.php', { method: 'POST', body: JSON.stringify({ ...fields, study_uid: studyUid }) }));
 }
 
 export async function pcpndtSetStatus(studyUid: string, status: string, portalAckNo?: string): Promise<Record<string, any>> {
-  return await readJson(await fetch('/api/pcpndt/submit-status.php', opts({ method: 'POST', body: JSON.stringify({ study_uid: studyUid, status, portal_ack_no: portalAckNo }) })));
+  return await readJson(await pcpndtFetch('/api/pcpndt/submit-status.php', { method: 'POST', body: JSON.stringify({ study_uid: studyUid, status, portal_ack_no: portalAckNo }) }));
 }
 
 export async function pcpndtGetPortalCreds(state = 'maharashtra'): Promise<PortalCreds> {
-  return (await readJson(await fetch(`/api/pcpndt/portal-credentials.php?state=${encodeURIComponent(state)}`, opts()))) as PortalCreds;
+  return (await readJson(await pcpndtFetch(`/api/pcpndt/portal-credentials.php?state=${encodeURIComponent(state)}`))) as PortalCreds;
 }
 
 export async function pcpndtSetPortalCreds(state: string, username: string, password: string): Promise<PortalCreds> {
-  return (await readJson(await fetch('/api/pcpndt/portal-credentials.php', opts({ method: 'POST', body: JSON.stringify({ state_code: state, username, password }) })))) as PortalCreds;
+  return (await readJson(await pcpndtFetch('/api/pcpndt/portal-credentials.php', { method: 'POST', body: JSON.stringify({ state_code: state, username, password }) }))) as PortalCreds;
 }
 
 export interface PcpndtConfig {
@@ -86,11 +116,11 @@ export interface PcpndtConfig {
 }
 
 export async function pcpndtGetConfig(): Promise<PcpndtConfig> {
-  return (await readJson(await fetch('/api/pcpndt/config.php', opts()))) as PcpndtConfig;
+  return (await readJson(await pcpndtFetch('/api/pcpndt/config.php'))) as PcpndtConfig;
 }
 
 export async function pcpndtSaveConfig(payload: Record<string, any>): Promise<PcpndtConfig> {
-  return (await readJson(await fetch('/api/pcpndt/config.php', opts({ method: 'POST', body: JSON.stringify(payload) })))) as PcpndtConfig;
+  return (await readJson(await pcpndtFetch('/api/pcpndt/config.php', { method: 'POST', body: JSON.stringify(payload) }))) as PcpndtConfig;
 }
 
 export function pcpndtFormHtmlUrl(studyUid: string): string {

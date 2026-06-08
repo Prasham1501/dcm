@@ -21,6 +21,11 @@ const FIELDS: { key: string; label: string; wide?: boolean }[] = [
   { key: 'pcpndt_default_referring_doctor', label: 'Default referring doctor (optional)' },
 ];
 
+const emptyConfig = () => ({
+  settings: {} as Record<string, string>,
+  portal: { state_code: 'maharashtra', username: '', has_password: false },
+});
+
 export function PcpndtConfigTab() {
   const [settings, setSettings] = useState<Record<string, string>>({});
   const [portalUser, setPortalUser] = useState('');
@@ -36,9 +41,10 @@ export function PcpndtConfigTab() {
     pcpndtGetConfig()
       .then((cfg) => {
         if (!alive) return;
-        setSettings(cfg.settings || {});
-        setPortalUser(cfg.portal?.username || '');
-        setPortalHasPass(!!cfg.portal?.has_password);
+        const safeCfg = cfg || emptyConfig();
+        setSettings(safeCfg.settings || {});
+        setPortalUser(safeCfg.portal?.username || '');
+        setPortalHasPass(!!safeCfg.portal?.has_password);
       })
       .catch((e) => alive && setErr(e?.message || 'Failed to load PCPNDT config'))
       .finally(() => alive && setLoading(false));
@@ -53,9 +59,10 @@ export function PcpndtConfigTab() {
       const payload: Record<string, any> = { ...settings, portal_username: portalUser };
       if (portalPass) payload.portal_password = portalPass; // only send when changed
       const cfg = await pcpndtSaveConfig(payload);
-      setSettings(cfg.settings || {});
-      setPortalUser(cfg.portal?.username || '');
-      setPortalHasPass(!!cfg.portal?.has_password);
+      const safeCfg = cfg || emptyConfig();
+      setSettings(safeCfg.settings || {});
+      setPortalUser(safeCfg.portal?.username || '');
+      setPortalHasPass(!!safeCfg.portal?.has_password);
       setPortalPass('');
       setMsg('Saved — these will auto-fill every Form F.');
       setTimeout(() => setMsg(null), 3000);
