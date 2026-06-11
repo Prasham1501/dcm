@@ -10,6 +10,7 @@ class RisOrderWorkflow
     public function __construct(mysqli $db)
     {
         $this->db = $db;
+        $this->ensureClinicWorkflowColumns();
     }
 
     /** @param array $filters status:string[]|string, modality:string */
@@ -29,13 +30,21 @@ class RisOrderWorkflow
         $sql = "SELECT o.*, p.full_name AS patient_name, p.mrn, p.sex, p.age_years,
                        s.name AS service_name, v.net_amount AS visit_net_amount,
                        v.paid_amount AS visit_paid_amount, v.balance AS visit_balance,
-                       v.status AS visit_status
+                       v.status AS visit_status, v.urgent_report, v.visit_comment,
+                       CASE
+                         WHEN v.urgent_report = 1 THEN 'Urgent report'
+                         WHEN v.visit_comment IS NOT NULL AND v.visit_comment <> '' THEN 'Comment added'
+                         WHEN o.report_emailed_at IS NOT NULL THEN 'Report emailed'
+                         WHEN o.report_printed_at IS NOT NULL THEN 'Report printed'
+                         WHEN o.report_id IS NULL THEN 'Report not ready'
+                         ELSE 'Report ready'
+                       END AS attention_label
                 FROM ris_orders o
                 LEFT JOIN ris_patients p ON o.patient_id = p.id
                 LEFT JOIN ris_services s ON o.service_id = s.id
                 LEFT JOIN ris_visits v ON o.visit_id = v.id"
             . ($where ? ' WHERE ' . implode(' AND ', $where) : '')
-            . ' ORDER BY o.created_at DESC LIMIT 300';
+            . ' ORDER BY v.urgent_report DESC, o.priority_rank DESC, o.created_at DESC LIMIT 300';
         $res = $this->db->query($sql);
         $out = [];
         while ($res && $row = $res->fetch_assoc()) { $out[] = $row; }
@@ -106,5 +115,28 @@ class RisOrderWorkflow
         }
         $this->db->query("UPDATE ris_orders SET $set WHERE id = " . (int) $orderId);
         return true;
+    }
+
+    private function ensureClinicWorkflowColumns(): void
+    {
+        $visitColumns = [
+            'urgent_report' => "ALTER TABLE ris_visits ADD COLUMN urgent_report TINYINT(1) NOT NULL DEFAULT 0",
+            'visit_comment' => "ALTER TABLE ris_visits ADD COLUMN visit_comment TEXT DEFAULT NULL",
+        ];
+        foreach ($visitColumns as $column => $sql) {
+            $safe = $this->db->real_escape_string($column);
+            $res = $this->db->query("SHOW COLUMNS FROM ris_visits LIKE '{$safe}'");
+            if (!$res || $res->num_rows === 0) { $this->db->query($sql); }
+        }
+        $orderColumns = [
+            'report_emailed_at' => "ALTER TABLE ris_orders ADD COLUMN report_emailed_at DATETIME DEFAULT NULL",
+            'report_printed_at' => "ALTER TABLE ris_orders ADD COLUMN report_printed_at DATETIME DEFAULT NULL",
+            'priority_rank' => "ALTER TABLE ris_orders ADD COLUMN priority_rank TINYINT(3) UNSIGNED NOT NULL DEFAULT 0",
+        ];
+        foreach ($orderColumns as $column => $sql) {
+            $safe = $this->db->real_escape_string($column);
+            $res = $this->db->query("SHOW COLUMNS FROM ris_orders LIKE '{$safe}'");
+            if (!$res || $res->num_rows === 0) { $this->db->query($sql); }
+        }
     }
 }

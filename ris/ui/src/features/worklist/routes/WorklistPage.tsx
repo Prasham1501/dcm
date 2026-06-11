@@ -1,10 +1,11 @@
 import { useEffect } from 'react';
-import { PackageCheck, RefreshCw, SearchCheck } from 'lucide-react';
+import { Flag, MessageSquare, PackageCheck, RefreshCw, SearchCheck } from 'lucide-react';
 import { useAuthStore } from '@/stores/authStore';
 import { Banner, Button, EmptyState, ModalityTag, SectionHeader, StatusChip } from '@/components/RisUi';
 import { useWorklistStore } from '../stores/worklistStore';
-import type { WorklistOrder } from '../api/worklistApi';
+import { apiFetchGraphAssets, type WorklistOrder } from '../api/worklistApi';
 import { useBillingStore } from '@/features/billing/stores/billingStore';
+import { apiUpdateDispatch } from '@/features/reception/api/receptionApi';
 
 const WORKLIST_ROLES = ['receptionist'];
 
@@ -29,6 +30,13 @@ export function WorklistPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [role]);
 
+  useEffect(() => {
+    const receivedOrders = orders.filter((order) => ['acquired', 'reported'].includes(order.status));
+    receivedOrders.forEach((order) => {
+      apiFetchGraphAssets(order.id, true).catch(() => undefined);
+    });
+  }, [orders]);
+
   if (!WORKLIST_ROLES.includes(role)) {
     return <EmptyState title="No worklist access" sub="RIS is configured for reception access only." />;
   }
@@ -45,7 +53,15 @@ export function WorklistPage() {
     if (value === null) return false;
     const amount = Number(value);
     if (!Number.isFinite(amount) || amount <= 0) return false;
-    const paid = await takePayment(order.visit_id, amount, 'cash');
+    const payerName = window.prompt('Who paid this amount? Leave blank if patient paid.', '') || '';
+    const payerRelation = payerName ? (window.prompt('Relation to patient, e.g. mother / son / self.', '') || '') : '';
+    const payerMobile = payerName ? (window.prompt('Payer mobile number, if different.', '') || '') : '';
+    const paid = await takePayment(order.visit_id, amount, 'cash', undefined, false, {
+      payer_name: payerName || undefined,
+      payer_relation: payerRelation || undefined,
+      payer_mobile: payerMobile || undefined,
+      notes: 'Collected from worklist balance prompt',
+    });
     if (!paid) return false;
     refresh(true);
     return Number(paid.balance || 0) <= 0;
@@ -91,9 +107,11 @@ export function WorklistPage() {
       <div className="grid-2 mt-4">
         <Column title="Received from Viewer" rows={received} render={(order) => (
           <OrderCard key={order.id} order={order}>
-            <span className="field-hint">{order.report_id ? 'Report available.' : 'Images received. Report not linked yet.'}</span>
+            <span className="field-hint">{order.report_id ? 'Report available.' : 'Images/print returned to reception.'}</span>
             {Number(order.visit_balance || 0) > 0 ? <BalanceDue order={order} collect={() => collectBalance(order)} /> : null}
-            <Button size="sm" variant="success" icon={PackageCheck} onClick={() => onDeliver(order)}>Delivered to patient</Button>
+            <Button size="sm" variant="secondary" onClick={async () => { await markReceptionStatus(order, 'report_received'); refresh(true); }}>Report received</Button>
+            <Button size="sm" variant="secondary" onClick={async () => { await markReceptionStatus(order, 'images_print_received'); refresh(true); }}>Images print received</Button>
+            <Button size="sm" variant="success" icon={PackageCheck} onClick={() => onDeliver(order)}>Delivered</Button>
           </OrderCard>
         )} />
 
@@ -105,10 +123,19 @@ export function WorklistPage() {
       </div>
 
       <div className="mt-4">
-        <Banner kind="info">Final route: Reception creates visit, console sends images to Viewer, Viewer sends completed study back to RIS, then reception marks it delivered to patient.</Banner>
+        <Banner kind="info">Final route: Reception creates visit, console sends images to Viewer, doctor prints/returns report or images, then reception marks received and delivered.</Banner>
       </div>
     </div>
   );
+}
+
+async function markReceptionStatus(order: WorklistOrder, mode: 'report_received' | 'images_print_received') {
+  await apiUpdateDispatch({
+    visit_id: order.visit_id,
+    dispatch_mode: mode,
+    delivery_destination: 'patient',
+    dispatch_note: mode === 'report_received' ? 'Report received by reception' : 'Images print received by reception',
+  });
 }
 
 function Column({ title, rows, render }: { title: string; rows: WorklistOrder[]; render: (order: WorklistOrder) => JSX.Element }) {
@@ -137,7 +164,26 @@ function OrderCard({ order, children }: { order: WorklistOrder; children: React.
         <ModalityTag modality={order.modality} />
         <span className="field-hint">{order.service_name || '-'}</span>
       </div>
+      <AttentionLine order={order} />
       <div className="actions mt-3">{children}</div>
+    </div>
+  );
+}
+
+function AttentionLine({ order }: { order: WorklistOrder }) {
+  const items = [];
+  if (Number(order.urgent_report || 0) === 1) items.push({ icon: Flag, label: 'Urgent report' });
+  if (order.visit_comment) items.push({ icon: MessageSquare, label: 'Comment added' });
+  if (order.attention_label && !items.some((item) => item.label === order.attention_label)) {
+    items.push({ icon: MessageSquare, label: order.attention_label });
+  }
+  if (items.length === 0) return null;
+  return (
+    <div className="actions mt-3">
+      {items.map((item) => {
+        const Icon = item.icon;
+        return <span key={item.label} className="status-chip"><Icon size={13} /> {item.label}</span>;
+      })}
     </div>
   );
 }

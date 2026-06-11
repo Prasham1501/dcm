@@ -58,11 +58,35 @@ try {
                 sendErrorResponse('Patient not found', 404);
             }
 
+            $patientIds = [$id];
+            $phone = trim((string)($patient['phone'] ?? ''));
+            if ($phone !== '') {
+                $likePhone = '%' . preg_replace('/\D+/', '', $phone) . '%';
+                $dup = $db->prepare(
+                    "SELECT id FROM ris_patients
+                     WHERE id <> ?
+                       AND REPLACE(REPLACE(REPLACE(REPLACE(COALESCE(phone,''), ' ', ''), '-', ''), '+91', ''), '+', '') LIKE ?"
+                );
+                $dup->bind_param('is', $id, $likePhone);
+                $dup->execute();
+                $dupRes = $dup->get_result();
+                while ($dupRow = $dupRes->fetch_assoc()) {
+                    $patientIds[] = (int)$dupRow['id'];
+                }
+                $dup->close();
+            }
+
             $visits = [];
+            $placeholders = implode(',', array_fill(0, count($patientIds), '?'));
+            $types = str_repeat('i', count($patientIds));
             $stmt = $db->prepare(
-                "SELECT * FROM ris_visits WHERE patient_id = ? ORDER BY visit_datetime DESC, id DESC LIMIT 50"
+                "SELECT * FROM ris_visits WHERE patient_id IN ($placeholders) ORDER BY urgent_report DESC, visit_datetime DESC, id DESC LIMIT 50"
             );
-            $stmt->bind_param('i', $id);
+            $bindArgs = [$types];
+            foreach ($patientIds as $key => $value) {
+                $bindArgs[] = &$patientIds[$key];
+            }
+            call_user_func_array([$stmt, 'bind_param'], $bindArgs);
             $stmt->execute();
             $res = $stmt->get_result();
             while ($visit = $res->fetch_assoc()) {
@@ -92,7 +116,13 @@ try {
                 $rs->close();
 
                 $payments = [];
-                $ps = $db->prepare("SELECT * FROM ris_payments WHERE visit_id = ? ORDER BY id DESC");
+                $ps = $db->prepare(
+                    "SELECT pay.*, COALESCE(u.full_name, u.username) AS received_by_name
+                     FROM ris_payments pay
+                     LEFT JOIN users u ON u.id = pay.received_by
+                     WHERE pay.visit_id = ?
+                     ORDER BY pay.id DESC"
+                );
                 $ps->bind_param('i', $visitId);
                 $ps->execute();
                 $pr = $ps->get_result();
@@ -105,7 +135,7 @@ try {
                 $visits[] = $visit;
             }
             $stmt->close();
-            sendSuccessResponse(['patient' => $patient, 'visits' => $visits]);
+            sendSuccessResponse(['patient' => $patient, 'visits' => $visits, 'duplicate_patient_ids' => array_values(array_unique($patientIds))]);
         }
         // default: search
         $q = trim((string) ($_GET['q'] ?? ''));
@@ -129,6 +159,24 @@ try {
 
     // create
     $input['created_by'] = $user['id'];
+    $phoneDigits = preg_replace('/\D+/', '', (string)($input['phone'] ?? ''));
+    if (strlen($phoneDigits) > 10 && substr($phoneDigits, 0, 2) === '91') {
+        $phoneDigits = substr($phoneDigits, -10);
+    }
+    if ($phoneDigits !== '') {
+        $stmt = $db->prepare(
+            "SELECT * FROM ris_patients
+             WHERE REPLACE(REPLACE(REPLACE(REPLACE(COALESCE(phone,''), ' ', ''), '-', ''), '+91', ''), '+', '') = ?
+             ORDER BY id ASC LIMIT 1"
+        );
+        $stmt->bind_param('s', $phoneDigits);
+        $stmt->execute();
+        $existing = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        if ($existing) {
+            sendSuccessResponse($existing, 'Existing patient selected');
+        }
+    }
     try {
         $patient = $repo->create($input);
     } catch (InvalidArgumentException $e) {

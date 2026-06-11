@@ -11,13 +11,13 @@ class RisPatientRepository
 
     /** Columns a client may set on create. */
     private const FIELDS = [
-        'dicom_patient_id', 'name_prefix', 'full_name', 'last_name', 'dob', 'age_years', 'sex',
-        'phone', 'alt_phone', 'email', 'address', 'address_line1', 'address_line2',
+        'dicom_patient_id', 'name_prefix', 'full_name', 'last_name', 'dob', 'age_years', 'age_months', 'age_days', 'sex',
+        'phone', 'alt_phone', 'patient_group', 'email', 'address', 'address_line1', 'address_line2',
         'address_line3', 'city', 'state', 'husband_or_father_name', 'id_proof_type',
         'id_proof_number', 'aadhaar_number', 'created_by',
     ];
     /** Integer-typed columns (everything else binds as string). */
-    private const INT_FIELDS = ['age_years', 'created_by'];
+    private const INT_FIELDS = ['age_years', 'age_months', 'age_days', 'created_by'];
 
     public function __construct(mysqli $db, RisCounters $counters)
     {
@@ -95,8 +95,8 @@ class RisPatientRepository
     public function update(int $id, array $data): array
     {
         $editable = [
-            'dicom_patient_id', 'name_prefix', 'full_name', 'last_name', 'dob', 'age_years',
-            'sex', 'phone', 'alt_phone', 'email', 'address', 'address_line1', 'address_line2',
+            'dicom_patient_id', 'name_prefix', 'full_name', 'last_name', 'dob', 'age_years', 'age_months', 'age_days',
+            'sex', 'phone', 'alt_phone', 'patient_group', 'email', 'address', 'address_line1', 'address_line2',
             'address_line3', 'city', 'state', 'husband_or_father_name', 'id_proof_type',
             'id_proof_number', 'aadhaar_number',
         ];
@@ -134,6 +134,7 @@ class RisPatientRepository
             'name_prefix' => "ALTER TABLE ris_patients ADD COLUMN name_prefix VARCHAR(20) DEFAULT NULL AFTER dicom_patient_id",
             'last_name' => "ALTER TABLE ris_patients ADD COLUMN last_name VARCHAR(120) DEFAULT NULL AFTER full_name",
             'alt_phone' => "ALTER TABLE ris_patients ADD COLUMN alt_phone VARCHAR(20) DEFAULT NULL AFTER phone",
+            'patient_group' => "ALTER TABLE ris_patients ADD COLUMN patient_group VARCHAR(120) DEFAULT NULL AFTER alt_phone",
             'address_line1' => "ALTER TABLE ris_patients ADD COLUMN address_line1 VARCHAR(255) DEFAULT NULL AFTER email",
             'address_line2' => "ALTER TABLE ris_patients ADD COLUMN address_line2 VARCHAR(255) DEFAULT NULL AFTER address_line1",
             'address_line3' => "ALTER TABLE ris_patients ADD COLUMN address_line3 VARCHAR(255) DEFAULT NULL AFTER address_line2",

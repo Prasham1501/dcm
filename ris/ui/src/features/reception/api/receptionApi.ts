@@ -12,6 +12,7 @@ export interface Patient {
   sex: string | null;
   phone: string | null;
   alt_phone: string | null;
+  patient_group?: string | null;
   email: string | null;
   address: string | null;
   address_line1: string | null;
@@ -23,6 +24,8 @@ export interface Patient {
   id_proof_type: string | null;
   id_proof_number: string | null;
   aadhaar_number: string | null;
+  age_months?: number | null;
+  age_days?: number | null;
   created_at?: string;
   updated_at?: string;
 }
@@ -40,6 +43,13 @@ export interface Service {
   name: string;
   modality: string;
   body_part: string | null;
+  department?: string | null;
+  family?: string | null;
+  lab_name?: string | null;
+  sample_type?: string | null;
+  tube_type?: string | null;
+  tube_count?: number;
+  barcode_label_count?: number;
   price: string;
   default_duration_min: number;
   is_active: number;
@@ -48,6 +58,8 @@ export interface Service {
 export interface ReferringDoctor {
   id: number;
   name: string;
+  doctor_type?: 'gp' | 'consultant' | 'both';
+  qualification?: string | null;
   phone: string | null;
   registration_no: string | null;
   clinic_name: string | null;
@@ -63,8 +75,8 @@ export interface Order {
   service_id: number | null;
   modality: string | null;
   accession_number: string;
-  token_no?: string | null;
   study_instance_uid: string | null;
+  linked_study_uid?: string | null;
   room_title?: string | null;
   status: string;
   price: string;
@@ -74,6 +86,29 @@ export interface Visit {
   id: number;
   visit_no: string;
   patient_id: number;
+  center_name?: string | null;
+  consultant_doctor?: string | null;
+  sample_collected_at?: string | null;
+  ref_no?: string | null;
+  urgent_report?: number | string | null;
+  visit_comment?: string | null;
+  phlebotomy_staff?: string | null;
+  home_visit_area?: string | null;
+  home_visit_amount?: string | null;
+  home_visit_time?: string | null;
+  home_visit?: number | string | null;
+  dispatch_mode?: string | null;
+  dispatch_note?: string | null;
+  delivery_destination?: string | null;
+  pro_name?: string | null;
+  commission_amount?: string | null;
+  regular_patient?: number | string | null;
+  misc_charge?: string | null;
+  print_barcode?: number | string | null;
+  print_srs?: number | string | null;
+  print_receipt?: number | string | null;
+  print_bill_receipt?: number | string | null;
+  send_to_printer?: number | string | null;
   net_amount: string;
   balance: string;
   status: string;
@@ -91,12 +126,85 @@ export interface PatientHistoryVisit extends Visit {
   paid_amount: string;
   orders: Array<Order & { service_name?: string | null }>;
   receipts: Array<{ id: number; receipt_no: string; print_url?: string; total: string; created_at?: string }>;
-  payments: Array<{ id: number; amount: string; mode: string; reference?: string | null; received_at?: string }>;
+  payments: Array<{
+    id: number;
+    amount: string;
+    mode: string;
+    reference?: string | null;
+    received_at?: string;
+    payer_name?: string | null;
+    payer_relation?: string | null;
+    payer_mobile?: string | null;
+    notes?: string | null;
+    received_by_name?: string | null;
+  }>;
 }
 
 export interface PatientHistory {
   patient: Patient;
   visits: PatientHistoryVisit[];
+  duplicate_patient_ids?: number[];
+}
+
+export interface ReceptionVisitRow {
+  id: number;
+  visit_no: string;
+  visit_datetime: string;
+  center_name: string | null;
+  total_amount: string;
+  misc_charge: string | null;
+  discount: string;
+  net_amount: string;
+  paid_amount: string;
+  balance: string;
+  status: string;
+  consultant_doctor: string | null;
+  ref_no: string | null;
+  urgent_report: number | string | null;
+  visit_comment: string | null;
+  dispatch_mode: string | null;
+  dispatch_note: string | null;
+  delivery_destination: string | null;
+  print_barcode: number | string | null;
+  print_srs: number | string | null;
+  print_receipt: number | string | null;
+  print_bill_receipt: number | string | null;
+  send_to_printer: number | string | null;
+  refund_total: string | number | null;
+  report_emailed_at: string | null;
+  report_printed_at: string | null;
+  order_count: number | string | null;
+  results_ready_count: number | string | null;
+  patient_id: number;
+  mrn: string;
+  full_name: string;
+  phone: string | null;
+  age_years: number | null;
+  sex: string | null;
+  patient_group: string | null;
+  doctor_name: string | null;
+  user_name: string | null;
+  test_names: string | null;
+  departments: string | null;
+  groups: string | null;
+}
+
+export interface VisitTotals {
+  records: number | string;
+  total: number | string;
+  others: number | string;
+  discount: number | string;
+  net: number | string;
+  paid: number | string;
+  balance: number | string;
+  refund: number | string;
+}
+
+export interface ReceptionVisitsResult {
+  rows: ReceptionVisitRow[];
+  totals: VisitTotals;
+  page?: number;
+  page_size?: number;
 }
 
 const PATIENTS = '/api/reception/patients.php';
@@ -104,12 +212,27 @@ const NETWORK = '/api/system/network-info.php';
 const SERVICES = '/api/reception/services.php';
 const REFDOCS = '/api/reception/referring-doctors.php';
 const REGISTER = '/api/reception/register.php';
+const VISITS = '/api/reception/visits.php';
+const DISPATCH = '/api/reception/dispatch.php';
+const UPDATE_VISIT = '/api/reception/update-visit.php';
+const MATCH_REPORTS = '/api/worklist/match-studies.php';
 const GENERATE_WORKLIST = '/api/worklist/generate.php';
 const UPDATE_ACCESSION = '/api/worklist/update-accession.php';
 const UPDATE_DESTINATION = '/api/worklist/update-destination.php';
 
 async function readJson(res: Response): Promise<any> {
-  const json = await res.json();
+  const text = await res.text();
+  let json: any = null;
+  try {
+    json = text ? JSON.parse(text) : null;
+  } catch {
+    const cleaned = text
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    throw new Error(cleaned || `Request failed with HTTP ${res.status}`);
+  }
   if (!json || json.success === false) {
     throw new Error((json && (json.error || json.message)) || 'Request failed');
   }
@@ -124,6 +247,69 @@ export async function apiSearchPatients(query: string, limit = 20): Promise<Pati
 export async function apiPatientHistory(patientId: number): Promise<PatientHistory> {
   const url = `${PATIENTS}?action=history&id=${patientId}`;
   return (await readJson(await fetch(url, { credentials: 'include' }))) as PatientHistory;
+}
+
+export async function apiReceptionVisits(filters: Record<string, string | boolean | number>): Promise<ReceptionVisitsResult> {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(filters)) {
+    if (value !== '' && value !== false) params.set(key, String(value));
+  }
+  const data = await readJson(await fetch(`${VISITS}?${params.toString()}`, { credentials: 'include' }));
+  // Back-compat: older response shape was a bare array.
+  if (Array.isArray(data)) {
+    return { rows: data as ReceptionVisitRow[], totals: { records: data.length, total: 0, others: 0, discount: 0, net: 0, paid: 0, balance: 0, refund: 0 } };
+  }
+  return data as ReceptionVisitsResult;
+}
+
+export async function apiUpdateDispatch(payload: {
+  visit_id: number;
+  dispatch_mode?: string;
+  delivery_destination?: string;
+  dispatch_note?: string;
+}): Promise<Visit> {
+  const res = await fetch(DISPATCH, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(payload),
+  });
+  return (await readJson(res)) as Visit;
+}
+
+export async function apiUpdateVisitDetails(payload: Record<string, unknown>): Promise<Visit> {
+  const res = await fetch(UPDATE_VISIT, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(payload),
+  });
+  return (await readJson(res)) as Visit;
+}
+
+/** Targeted single/few-field patch (Others, Discount, Change Center, Invalidate). */
+export async function apiQuickUpdateVisit(payload: { visit_id: number } & Record<string, unknown>): Promise<Visit> {
+  const res = await fetch('/api/reception/quick-update.php', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(payload),
+  });
+  return (await readJson(res)) as Visit;
+}
+
+export async function apiSyncReturnedReports(): Promise<{
+  matched: number;
+  orders: Array<{ order_id: number; accession_number?: string | null; study_uid: string }>;
+  synced?: { studies_added?: number; studies_updated?: number };
+  unmatched?: unknown[];
+}> {
+  return (await readJson(await fetch(MATCH_REPORTS, { credentials: 'include' }))) as {
+    matched: number;
+    orders: Array<{ order_id: number; accession_number?: string | null; study_uid: string }>;
+    synced?: { studies_added?: number; studies_updated?: number };
+    unmatched?: unknown[];
+  };
 }
 
 export async function apiCreatePatient(payload: Record<string, unknown>): Promise<Patient> {

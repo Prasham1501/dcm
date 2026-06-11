@@ -66,6 +66,7 @@ export const useReceptionStore = create<ReceptionState>()((set) => ({
   },
 
   loadServices: async () => {
+    if (useReceptionStore.getState().services.length > 0) return;
     try {
       const services = await apiListServices();
       set({ services });
@@ -75,6 +76,7 @@ export const useReceptionStore = create<ReceptionState>()((set) => ({
   },
 
   loadReferringDoctors: async (query = '') => {
+    if (query === '' && useReceptionStore.getState().referringDoctors.length > 0) return;
     try {
       const referringDoctors = await apiListReferringDoctors(query);
       set({ referringDoctors });

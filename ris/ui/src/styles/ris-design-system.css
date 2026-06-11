@@ -152,7 +152,7 @@ body { background: var(--app-bg); color: var(--app-text); font-family: var(--fon
 .modality-tag { align-items: center; display: inline-flex; font-size: 12px; font-weight: 600; gap: 6px; }
 .mod-dot { border-radius: 999px; display: inline-block; height: 9px; width: 9px; }
 
-.table-wrap { background: var(--app-bg); border: 1px solid var(--app-border); border-radius: var(--radius-md); overflow: hidden; }
+.table-wrap { background: var(--app-bg); border: 1px solid var(--app-border); border-radius: var(--radius-md); overflow: auto; }
 .dt { border-collapse: collapse; font-size: 13px; width: 100%; }
 .dt th { background: var(--app-header-bg); border-bottom: 1px solid var(--app-border); color: var(--app-text-secondary); font-size: 11px; font-weight: 600; padding: 9px 14px; text-align: left; white-space: nowrap; }
 .dt td { border-top: 1px solid var(--app-border-soft); padding: 9px 14px; vertical-align: middle; }
@@ -184,6 +184,10 @@ body { background: var(--app-bg); color: var(--app-text); font-family: var(--fon
 .workflow-step { background: var(--app-bg); border: 1px solid var(--app-border); border-radius: var(--radius-sm); color: var(--app-text-muted); font-size: 12px; font-weight: 700; padding: 10px 12px; text-align: center; text-transform: uppercase; }
 .workflow-step.active { border-color: var(--app-accent); box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.08); color: var(--app-accent); }
 .workflow-step.done { background: var(--app-accent-light); border-color: var(--app-accent); color: var(--app-accent); }
+.visit-tabs { border-bottom: 1px solid var(--app-border); display: flex; gap: 2px; margin: -4px -4px 12px; overflow-x: auto; padding: 0 4px; }
+.visit-tabs button { background: transparent; border: 0; border-bottom: 2px solid transparent; color: var(--app-text-secondary); cursor: pointer; font: inherit; font-size: 13px; font-weight: 600; padding: 8px 10px; white-space: nowrap; }
+.visit-tabs button:hover { color: var(--app-text); }
+.visit-tabs button.active { border-bottom-color: var(--app-accent); color: var(--app-accent); }
 .accession-list { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
 .accession-code { background: #fff; border: 1px solid var(--app-accent); border-radius: var(--radius-xs); color: var(--app-accent); font-family: var(--font-mono); font-size: 18px; font-weight: 800; letter-spacing: 0.02em; padding: 8px 10px; }
 .history-detail { background: var(--app-surface); border-top: 1px solid var(--app-border); padding: 14px; }
@@ -197,7 +201,14 @@ body { background: var(--app-bg); color: var(--app-text); font-family: var(--fon
 .receipt-preview-strip { align-items: center; background: var(--app-surface); border: 1px dashed var(--app-border); border-radius: var(--radius-sm); display: flex; gap: 12px; padding: 10px; }
 .receipt-preview-strip img { background: #fff; border: 1px solid var(--app-border-soft); max-height: 64px; max-width: 160px; object-fit: contain; padding: 4px; }
 .between { align-items: center; display: flex; justify-content: space-between; }
+.stack-tight { display: grid; gap: 4px; }
 .actions { align-items: center; display: flex; flex-wrap: wrap; gap: 8px; }
+.modal-backdrop { align-items: flex-start; background: rgba(0,0,0,.42); display: flex; inset: 0; justify-content: center; overflow: auto; padding: 20px; position: fixed; z-index: 100; }
+.modal-panel { background: var(--app-bg); border: 1px solid var(--app-border); border-radius: var(--radius-lg); box-shadow: var(--shadow-md); margin: auto 0; max-height: calc(100vh - 48px); max-width: 760px; overflow: auto; padding: 18px; width: min(760px, 100%); }
+.modal-panel-wide { max-width: 1120px; width: min(1120px, 100%); }
+.context-menu { background: var(--app-bg); border: 1px solid var(--app-border); border-radius: var(--radius-md); box-shadow: var(--shadow-md); display: flex; flex-direction: column; min-width: 190px; padding: 6px; position: fixed; z-index: 120; }
+.context-menu button { background: transparent; border: 0; border-radius: var(--radius-sm); color: var(--app-text); cursor: pointer; font: inherit; font-size: 13px; padding: 8px 10px; text-align: left; }
+.context-menu button:hover { background: var(--app-hover); }
 .mt-3 { margin-top: 12px; }
 .mt-4 { margin-top: 16px; }
 .mt-5 { margin-top: 20px; }

@@ -33,9 +33,21 @@ export interface DayBook {
 const TAKE = '/api/billing/take-payment.php';
 const RECEIPT = '/api/billing/receipt.php';
 const DAYBOOK = '/api/billing/daybook.php';
+const PRINT_ASSETS = '/api/billing/print-assets.php';
 
 async function readJson(res: Response): Promise<any> {
-  const json = await res.json();
+  const text = await res.text();
+  let json: any = null;
+  try {
+    json = text ? JSON.parse(text) : null;
+  } catch {
+    const cleaned = text
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    throw new Error(cleaned || `Request failed with HTTP ${res.status}`);
+  }
   if (!json || json.success === false) {
     throw new Error((json && (json.error || json.message)) || 'Request failed');
   }
@@ -43,7 +55,15 @@ async function readJson(res: Response): Promise<any> {
 }
 
 export async function apiTakePayment(payload: {
-  visit_id: number; amount: number; mode: string; reference?: string; is_refund?: boolean;
+  visit_id: number;
+  amount: number;
+  mode: string;
+  reference?: string;
+  is_refund?: boolean;
+  payer_name?: string;
+  payer_relation?: string;
+  payer_mobile?: string;
+  notes?: string;
 }): Promise<{ payment: any; visit: VisitBalance }> {
   const res = await fetch(TAKE, {
     method: 'POST',
@@ -70,4 +90,10 @@ export async function apiGetDaybook(from?: string, to?: string): Promise<DayBook
   if (to) params.set('to', to);
   const url = params.toString() ? `${DAYBOOK}?${params}` : DAYBOOK;
   return (await readJson(await fetch(url, { credentials: 'include' }))) as DayBook;
+}
+
+export type PrintAssetType = 'barcode' | 'srs' | 'bill_receipt';
+
+export function printAssetUrl(visitId: number, type: PrintAssetType): string {
+  return `${PRINT_ASSETS}?visit_id=${visitId}&type=${type}`;
 }

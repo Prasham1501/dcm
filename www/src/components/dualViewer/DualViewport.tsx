@@ -11,6 +11,7 @@ import { createPortal } from 'react-dom';
 import { cornerstone, cornerstoneTools } from '@/lib/cornerstoneSetup';
 import { useDualViewerStore, type PanelId } from '@/stores/dualViewerStore';
 import { refitCornerstoneViewport, resetCornerstoneViewport } from '@/lib/cornerstoneViewport';
+import { applyDicomPixelSpacing } from '@/lib/dicomMetadata';
 import { findAnnotationAtPoint, setupAutoDeactivate, markDblClickHandled } from '@/lib/annotationUtils';
 import { AnnotationEditOverlay } from '@/components/shared/AnnotationEditOverlay';
 import { X, Plus, Minus, Trash2, Check } from 'lucide-react';
@@ -112,9 +113,11 @@ function DualViewportInner({
     if (imageId === currentImageIdRef.current) return;
 
     let cancelled = false;
-    cornerstone.loadAndCacheImage(imageId).then((image: any) => {
+    cornerstone.loadAndCacheImage(imageId).then(async (image: any) => {
       if (cancelled || !enabledRef.current) return;
       try {
+        await applyDicomPixelSpacing(image);
+        if (cancelled || !enabledRef.current) return;
         cornerstone.displayImage(el, image);
         cornerstone.resize(el, true);
         currentImageIdRef.current = imageId;

@@ -23,6 +23,19 @@ if (!hasRole(['admin', 'super_admin', 'receptionist', 'doctor'])) {
 
 try {
     $db = getDbConnection();
+    foreach ([
+        'department' => "ALTER TABLE ris_services ADD COLUMN department VARCHAR(120) DEFAULT NULL AFTER body_part",
+        'family' => "ALTER TABLE ris_services ADD COLUMN family VARCHAR(120) DEFAULT NULL AFTER department",
+        'lab_name' => "ALTER TABLE ris_services ADD COLUMN lab_name VARCHAR(160) DEFAULT NULL AFTER family",
+        'sample_type' => "ALTER TABLE ris_services ADD COLUMN sample_type VARCHAR(80) DEFAULT NULL AFTER lab_name",
+        'tube_type' => "ALTER TABLE ris_services ADD COLUMN tube_type VARCHAR(80) DEFAULT NULL AFTER sample_type",
+        'tube_count' => "ALTER TABLE ris_services ADD COLUMN tube_count INT(11) NOT NULL DEFAULT 1 AFTER tube_type",
+        'barcode_label_count' => "ALTER TABLE ris_services ADD COLUMN barcode_label_count INT(11) NOT NULL DEFAULT 1 AFTER tube_count",
+    ] as $column => $sql) {
+        $safe = $db->real_escape_string($column);
+        $exists = $db->query("SHOW COLUMNS FROM ris_services LIKE '{$safe}'");
+        if (!$exists || $exists->num_rows === 0) { $db->query($sql); }
+    }
 
     if ($_SERVER['REQUEST_METHOD'] === 'DELETE') {
         $id = (int)($_GET['id'] ?? 0);
@@ -50,6 +63,13 @@ try {
         $name = trim((string)($input['name'] ?? ''));
         $modality = strtoupper(trim((string)($input['modality'] ?? '')));
         $bodyPart = trim((string)($input['body_part'] ?? ''));
+        $department = trim((string)($input['department'] ?? ''));
+        $family = trim((string)($input['family'] ?? ''));
+        $labName = trim((string)($input['lab_name'] ?? ''));
+        $sampleType = trim((string)($input['sample_type'] ?? ''));
+        $tubeType = trim((string)($input['tube_type'] ?? ''));
+        $tubeCount = max(1, (int)($input['tube_count'] ?? 1));
+        $barcodeLabelCount = max(1, (int)($input['barcode_label_count'] ?? 1));
         $price = (float)($input['price'] ?? 0);
         $duration = (int)($input['default_duration_min'] ?? 20);
         $active = !empty($input['is_active']) ? 1 : 0;
@@ -65,22 +85,60 @@ try {
 
         if ($id > 0) {
             $stmt = $db->prepare(
-                'UPDATE ris_services SET code = ?, name = ?, modality = ?, body_part = ?, price = ?, default_duration_min = ?, is_active = ? WHERE id = ?'
+                'UPDATE ris_services SET code = ?, name = ?, modality = ?, body_part = ?, department = ?, family = ?,
+                 lab_name = ?, sample_type = ?, tube_type = ?, tube_count = ?, barcode_label_count = ?,
+                 price = ?, default_duration_min = ?, is_active = ? WHERE id = ?'
             );
-            $stmt->bind_param('ssssdiii', $code, $name, $modality, $bodyPart, $price, $duration, $active, $id);
+            $stmt->bind_param(
+                'sssssssssiidiii',
+                $code,
+                $name,
+                $modality,
+                $bodyPart,
+                $department,
+                $family,
+                $labName,
+                $sampleType,
+                $tubeType,
+                $tubeCount,
+                $barcodeLabelCount,
+                $price,
+                $duration,
+                $active,
+                $id
+            );
             $stmt->execute();
             $stmt->close();
         } else {
             $stmt = $db->prepare(
-                'INSERT INTO ris_services (code, name, modality, body_part, price, default_duration_min, is_active) VALUES (?,?,?,?,?,?,?)'
+                'INSERT INTO ris_services
+                 (code, name, modality, body_part, department, family, lab_name, sample_type, tube_type,
+                  tube_count, barcode_label_count, price, default_duration_min, is_active)
+                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
             );
-            $stmt->bind_param('ssssdii', $code, $name, $modality, $bodyPart, $price, $duration, $active);
+            $stmt->bind_param(
+                'sssssssssiidii',
+                $code,
+                $name,
+                $modality,
+                $bodyPart,
+                $department,
+                $family,
+                $labName,
+                $sampleType,
+                $tubeType,
+                $tubeCount,
+                $barcodeLabelCount,
+                $price,
+                $duration,
+                $active
+            );
             $stmt->execute();
             $id = (int)$stmt->insert_id;
             $stmt->close();
         }
 
-        $stmt = $db->prepare('SELECT id, code, name, modality, body_part, price, default_duration_min, is_active FROM ris_services WHERE id = ?');
+        $stmt = $db->prepare('SELECT id, code, name, modality, body_part, department, family, lab_name, sample_type, tube_type, tube_count, barcode_label_count, price, default_duration_min, is_active FROM ris_services WHERE id = ?');
         $stmt->bind_param('i', $id);
         $stmt->execute();
         $row = $stmt->get_result()->fetch_assoc();
@@ -91,7 +149,7 @@ try {
     if ($_SERVER['REQUEST_METHOD'] !== 'GET') { sendErrorResponse('Method not allowed', 405); }
 
     $onlyActive = ($_GET['active'] ?? '1') !== '0';
-    $sql = 'SELECT id, code, name, modality, body_part, price, default_duration_min, is_active
+    $sql = 'SELECT id, code, name, modality, body_part, department, family, lab_name, sample_type, tube_type, tube_count, barcode_label_count, price, default_duration_min, is_active
             FROM ris_services' . ($onlyActive ? ' WHERE is_active = 1' : '') . ' ORDER BY name';
     $res = $db->query($sql);
     $out = [];

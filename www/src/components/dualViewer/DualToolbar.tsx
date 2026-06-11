@@ -13,7 +13,9 @@ import {
 import { DualPrintPreview } from './DualPrintPreview';
 import { undoLastAnnotationOnElement, deleteActiveAnnotationOnElement } from '@/lib/annotationUtils';
 import { FormFButton } from '@/features/pcpndt/FormFButton';
-import { Volume3DButton } from '@/features/volume3d/Volume3DButton';
+// 3D rendering is disabled in the USG printing viewer. Keep the button import
+// commented for future CT/PACS use.
+// import { Volume3DButton } from '@/features/volume3d/Volume3DButton';
 
 export function DualToolbar() {
   const {
@@ -173,6 +175,9 @@ export function DualToolbar() {
         <FormFButton patientId={activeP.patientId} patientName={activeP.patientName} compact />
 
         {/* 3D Volume — active panel's CT/MR series. */}
+        {/*
+        3D Volume - disabled in this USG printing viewer. Kept for future
+        CT/PACS viewer use.
         <Volume3DButton
           patientName={activeP.patientName}
           patientId={activeP.patientId}
@@ -182,6 +187,7 @@ export function DualToolbar() {
           filePaths={activeP.images.map((img: any) => img.filePath).filter(Boolean)}
           compact
         />
+        */}
 
         {/* Report — toggles the inline report panel; passes filePaths from
             the active panel so the Electron dual-window flow can kick in. */}

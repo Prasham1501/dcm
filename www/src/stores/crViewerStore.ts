@@ -4,6 +4,7 @@
  */
 import { create } from 'zustand';
 import { localFileToImageId, prefetchImages, purgeCache } from '@/lib/dicomLoader';
+import { filterSecondaryCaptureImageIds } from '@/lib/dicomMetadata';
 import { useReportStore } from '@/stores/reportStore';
 import { getAutoOrientationForLayout } from '@/lib/layoutUtils';
 import { useUndoStore } from '@/stores/undoStore';
@@ -219,13 +220,17 @@ export async function openCRViewerPopup(params: {
   modality?: string;
   studyDescription?: string;
 }, navigate: (path: string) => void) {
-  const imageCount = params.filePaths.length;
+  const filtered = await filterSecondaryCaptureImageIds(
+    params.filePaths.map((filePath) => ({ filePath, imageId: localFileToImageId(filePath) })),
+  );
+  const launchParams = { ...params, filePaths: filtered.kept.map((entry) => entry.filePath) };
+  const imageCount = launchParams.filePaths.length;
   const layout = autoSelectLayout(imageCount);
   const portrait = isPortraitLayout(layout);
 
   // Store launch data for the popup window to read
   localStorage.setItem('cr-viewer-launch', JSON.stringify({
-    ...params,
+    ...launchParams,
     timestamp: Date.now(),
   }));
 
@@ -241,7 +246,7 @@ export async function openCRViewerPopup(params: {
   }
 
   // Fallback: load study in current window and navigate
-  useCRViewerStore.getState().loadStudy(params);
+  useCRViewerStore.getState().loadStudy(launchParams);
   navigate('/cr-viewer');
 }
 
@@ -305,7 +310,7 @@ export const useCRViewerStore = create<CRViewerState>((set, get) => ({
   isLoading: false,
   applyToAll: false,
 
-  loadStudy: (params) => {
+  loadStudy: async (params) => {
     // Different patient → evict the previous study's decoded images so the
     // renderer doesn't accumulate RAM across reused-window opens.
     const prev = useCRViewerStore.getState();
@@ -323,13 +328,22 @@ export const useCRViewerStore = create<CRViewerState>((set, get) => ({
     set({ isLoading: true });
     useUndoStore.getState().clear('crViewer');
 
-    const imageIds = params.filePaths.map((fp) => localFileToImageId(fp));
-    const crImages: CRImage[] = imageIds.map((imageId, i) => ({
+    const sourceImages = params.filePaths.map((filePath, i) => {
+      const imageId = localFileToImageId(filePath);
+      return {
+        id: `cr-${i}`,
+        imageUrl: imageId,
+        imageId,
+        description: filePath.split('/').pop() || `Image ${i + 1}`,
+        instanceNumber: i + 1,
+        filePath,
+      };
+    });
+    const { kept } = await filterSecondaryCaptureImageIds(sourceImages);
+    const crImages: CRImage[] = kept.map(({ imageId: _imageId, ...image }, i) => ({
+      ...image,
       id: `cr-${i}`,
-      imageUrl: imageId,
-      description: params.filePaths[i].split('/').pop() || `Image ${i + 1}`,
       instanceNumber: i + 1,
-      filePath: params.filePaths[i],
     }));
 
     const layout = autoSelectLayout(crImages.length);
@@ -365,7 +379,7 @@ export const useCRViewerStore = create<CRViewerState>((set, get) => ({
         viewer:       'cr',
         patient_name: params.patientName,
         patient_id:   params.patientId,
-        files:        params.filePaths,
+        files:        crImages.map((image) => image.filePath),
       });
     }).catch(() => {});
   },

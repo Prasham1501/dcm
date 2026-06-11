@@ -11,7 +11,10 @@ export interface PatientForm {
   sex?: string;
   dob?: string;
   age_years?: number | string;
+  age_months?: number | string;
+  age_days?: number | string;
   email?: string;
+  patient_group?: string;
   address_line1?: string;
   address_line2?: string;
   address_line3?: string;
@@ -25,7 +28,7 @@ export interface PatientForm {
 }
 
 const OPTIONAL_STRING_FIELDS: (keyof PatientForm)[] = [
-  'name_prefix', 'last_name', 'phone', 'alt_phone', 'sex', 'dob', 'email',
+  'name_prefix', 'last_name', 'phone', 'alt_phone', 'patient_group', 'sex', 'dob', 'email',
   'address_line1', 'address_line2', 'address_line3', 'city', 'state',
   'husband_or_father_name', 'id_proof_type', 'id_proof_number',
   'dicom_patient_id', 'mrn',
@@ -85,8 +88,10 @@ export function buildPatientPayload(
       out[field] = String(value).trim();
     }
   }
-  if (form.age_years != null && String(form.age_years).trim() !== '') {
-    out.age_years = Number(form.age_years);
+  for (const ageField of ['age_years', 'age_months', 'age_days'] as const) {
+    if (form[ageField] != null && String(form[ageField]).trim() !== '') {
+      out[ageField] = Number(form[ageField]);
+    }
   }
   return out;
 }

@@ -32,7 +32,7 @@ try {
     if ($orderId <= 0 || $accession === '') {
         sendErrorResponse('Order and accession number are required', 400);
     }
-    if (!preg_match('/^[A-Z0-9_-]{3,32}$/', $accession)) {
+    if (!preg_match('/^[A-Z0-9_-]{1,64}$/', $accession)) {
         sendErrorResponse('Use only letters, numbers, dash, or underscore', 400);
     }
 

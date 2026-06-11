@@ -15,14 +15,59 @@ class RisBillingRepository
     }
 
     /** @return array{payment:array,visit:array} */
-    public function takePayment(int $visitId, float $amount, string $mode, ?string $ref, ?int $userId, bool $isRefund = false): array
+    public function takePayment(
+        int $visitId,
+        float $amount,
+        string $mode,
+        ?string $ref,
+        ?int $userId,
+        bool $isRefund = false,
+        array $details = []
+    ): array
     {
+        $this->ensurePaymentDetailsSchema();
         $refund = $isRefund ? 1 : 0;
-        $stmt = $this->db->prepare(
-            "INSERT INTO ris_payments (visit_id, amount, mode, reference, is_refund, received_by)
-             VALUES (?, ?, ?, ?, ?, ?)"
+        $payerName = $details['payer_name'] ?? null;
+        $payerRelation = $details['payer_relation'] ?? null;
+        $payerMobile = $details['payer_mobile'] ?? null;
+        $notes = $details['notes'] ?? null;
+
+        $dupe = $this->db->prepare(
+            "SELECT id FROM ris_payments
+             WHERE visit_id = ? AND amount = ? AND mode = ? AND is_refund = ? AND received_by <=> ?
+               AND received_at >= DATE_SUB(NOW(), INTERVAL 8 SECOND)
+             ORDER BY id DESC LIMIT 1"
         );
-        $stmt->bind_param('idssii', $visitId, $amount, $mode, $ref, $refund, $userId);
+        $dupe->bind_param('idsii', $visitId, $amount, $mode, $refund, $userId);
+        $dupe->execute();
+        $existing = $dupe->get_result()->fetch_assoc();
+        $dupe->close();
+        if ($existing) {
+            $this->recalculateVisit($visitId);
+            return [
+                'payment' => $this->row('ris_payments', (int) $existing['id']),
+                'visit' => $this->row('ris_visits', $visitId),
+            ];
+        }
+
+        $stmt = $this->db->prepare(
+            "INSERT INTO ris_payments
+                (visit_id, amount, mode, reference, payer_name, payer_relation, payer_mobile, notes, is_refund, received_by)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        );
+        $stmt->bind_param(
+            'idssssssii',
+            $visitId,
+            $amount,
+            $mode,
+            $ref,
+            $payerName,
+            $payerRelation,
+            $payerMobile,
+            $notes,
+            $refund,
+            $userId
+        );
         $stmt->execute();
         $paymentId = $stmt->insert_id;
         $stmt->close();
@@ -148,6 +193,23 @@ class RisBillingRepository
         $row = $stmt->get_result()->fetch_assoc();
         $stmt->close();
         return $row ? $row['setting_value'] : null;
+    }
+
+    private function ensurePaymentDetailsSchema(): void
+    {
+        $columns = [
+            'payer_name' => "ALTER TABLE ris_payments ADD COLUMN payer_name VARCHAR(160) DEFAULT NULL AFTER reference",
+            'payer_relation' => "ALTER TABLE ris_payments ADD COLUMN payer_relation VARCHAR(80) DEFAULT NULL AFTER payer_name",
+            'payer_mobile' => "ALTER TABLE ris_payments ADD COLUMN payer_mobile VARCHAR(20) DEFAULT NULL AFTER payer_relation",
+            'notes' => "ALTER TABLE ris_payments ADD COLUMN notes TEXT DEFAULT NULL AFTER payer_mobile",
+        ];
+        foreach ($columns as $column => $sql) {
+            $safe = $this->db->real_escape_string($column);
+            $res = $this->db->query("SHOW COLUMNS FROM ris_payments LIKE '{$safe}'");
+            if (!$res || $res->num_rows === 0) {
+                $this->db->query($sql);
+            }
+        }
     }
 
     private function row(string $table, int $id): array

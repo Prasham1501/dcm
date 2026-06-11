@@ -5,6 +5,7 @@
  */
 import { create } from 'zustand';
 import { localFileToImageId, prefetchImages } from '@/lib/dicomLoader';
+import { filterSecondaryCaptureImageIds } from '@/lib/dicomMetadata';
 import { useUndoStore } from '@/stores/undoStore';
 import { useHospitalConfigStore } from '@/stores/hospitalConfigStore';
 
@@ -307,15 +308,24 @@ export const useDualViewerStore = create<DualViewerState>((set, get) => {
 
   // ── Panel Actions ──
 
-  loadPanelStudy: (panelId, params) => {
+  loadPanelStudy: async (panelId, params) => {
     useUndoStore.getState().clear('dualViewer');
-    const imageIds = params.filePaths.map(fp => localFileToImageId(fp));
-    const dualImages: DualImage[] = imageIds.map((imageId, i) => ({
+    const sourceImages = params.filePaths.map((filePath, i) => {
+      const imageId = localFileToImageId(filePath);
+      return {
+        id: `dual-${panelId}-${i}`,
+        imageUrl: imageId,
+        imageId,
+        description: filePath.split('/').pop() || `Image ${i + 1}`,
+        instanceNumber: i + 1,
+        filePath,
+      };
+    });
+    const { kept } = await filterSecondaryCaptureImageIds(sourceImages);
+    const dualImages: DualImage[] = kept.map(({ imageId: _imageId, ...image }, i) => ({
+      ...image,
       id: `dual-${panelId}-${i}`,
-      imageUrl: imageId,
-      description: params.filePaths[i].split('/').pop() || `Image ${i + 1}`,
       instanceNumber: i + 1,
-      filePath: params.filePaths[i],
     }));
 
     const layout = autoSelectLayout(dualImages.length);
@@ -349,7 +359,7 @@ export const useDualViewerStore = create<DualViewerState>((set, get) => {
         viewer:       panelId === 'left' ? 'dual-left' : 'dual-right',
         patient_name: params.patientName,
         patient_id:   params.patientId,
-        files:        params.filePaths,
+        files:        dualImages.map((image) => image.filePath),
       });
     }).catch(() => {});
   },
@@ -858,9 +868,18 @@ export async function openDualViewerPopup(
   params: { leftStudy: DualStudyParams; rightStudy: DualStudyParams },
   navigate: (path: string) => void,
 ) {
+  const [leftFiltered, rightFiltered] = await Promise.all([
+    filterSecondaryCaptureImageIds(params.leftStudy.filePaths.map((filePath) => ({ filePath, imageId: localFileToImageId(filePath) }))),
+    filterSecondaryCaptureImageIds(params.rightStudy.filePaths.map((filePath) => ({ filePath, imageId: localFileToImageId(filePath) }))),
+  ]);
+  const launchParams = {
+    leftStudy: { ...params.leftStudy, filePaths: leftFiltered.kept.map((entry) => entry.filePath) },
+    rightStudy: { ...params.rightStudy, filePaths: rightFiltered.kept.map((entry) => entry.filePath) },
+  };
+
   localStorage.setItem('dual-viewer-launch', JSON.stringify({
-    leftStudy: params.leftStudy,
-    rightStudy: params.rightStudy,
+    leftStudy: launchParams.leftStudy,
+    rightStudy: launchParams.rightStudy,
     timestamp: Date.now(),
   }));
 
@@ -876,7 +895,7 @@ export async function openDualViewerPopup(
 
   // Fallback: load studies and navigate
   const store = useDualViewerStore.getState();
-  store.loadPanelStudy('left', params.leftStudy);
-  store.loadPanelStudy('right', params.rightStudy);
+  store.loadPanelStudy('left', launchParams.leftStudy);
+  store.loadPanelStudy('right', launchParams.rightStudy);
   navigate('/dual-viewer');
 }

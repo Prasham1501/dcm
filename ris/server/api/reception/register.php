@@ -7,6 +7,7 @@
 if (!defined('DICOM_VIEWER')) {
     define('DICOM_VIEWER', true);
 }
+ini_set('display_errors', '0');
 require_once __DIR__ . '/../../includes/config.php';
 require_once __DIR__ . '/../../auth/session.php';
 require_once __DIR__ . '/../../includes/ris/RisCounters.php';
@@ -22,14 +23,16 @@ header('Access-Control-Allow-Origin: ' . CORS_ALLOWED_ORIGINS);
 header('Access-Control-Allow-Methods: POST, OPTIONS');
 header('Access-Control-Allow-Headers: ' . CORS_ALLOWED_HEADERS);
 
-if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') { http_response_code(200); exit; }
-if ($_SERVER['REQUEST_METHOD'] !== 'POST') { sendErrorResponse('Method not allowed', 405); }
-if (!validateSession()) { sendErrorResponse('Unauthorized - Please log in', 401); }
-if (!hasRole(['admin', 'super_admin', 'receptionist', 'doctor'])) {
-    sendErrorResponse('Forbidden - reception access required', 403);
-}
+ob_start();
 
 try {
+    if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') { http_response_code(200); exit; }
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') { sendErrorResponse('Method not allowed', 405); }
+    if (!validateSession()) { sendErrorResponse('Unauthorized - Please log in', 401); }
+    if (!hasRole(['admin', 'super_admin', 'receptionist', 'doctor'])) {
+        sendErrorResponse('Forbidden - reception access required', 403);
+    }
+
     $user = getCurrentUser();
     $db = getDbConnection();
 
@@ -67,8 +70,10 @@ try {
         $user['id'], 'create', 'ris_visit', $result['visit']['id'],
         'Registered visit ' . $result['visit']['visit_no'] . ' with ' . count($result['orders']) . ' order(s)'
     );
+    if (ob_get_length()) { ob_clean(); }
     sendSuccessResponse($result, 'Visit registered');
 } catch (Throwable $e) {
     logMessage('Reception register error: ' . $e->getMessage(), 'error', 'ris.log');
+    if (ob_get_length()) { ob_clean(); }
     sendErrorResponse('Server error: ' . $e->getMessage(), 500);
 }

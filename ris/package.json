@@ -8,8 +8,8 @@
   "private": true,
   "scripts": {
     "setup": "npm install && cd ui && npm install",
-    "start": "concurrently \"cd ui && npm run dev\" \"electron . --dev\"",
-    "dev": "concurrently \"cd ui && npm run dev\" \"electron . --dev\"",
+    "start": "electron . --dev",
+    "dev": "electron . --dev",
     "dev:ui": "cd ui && npm run dev",
     "dev:electron": "electron . --dev",
     "build:ui": "cd ui && npm run build",

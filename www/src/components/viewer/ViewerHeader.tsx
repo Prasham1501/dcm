@@ -9,7 +9,9 @@ import { useReportStore } from '@/stores/reportStore';
 import { useReportRouter } from '@/features/report-router/useReportRouter';
 import { resetViewport } from '@/lib/viewerTools';
 import { FormFButton } from '@/features/pcpndt/FormFButton';
-import { Volume3DButton } from '@/features/volume3d/Volume3DButton';
+// 3D rendering is disabled in the USG printing viewer. Keep the button import
+// commented for future CT/PACS use.
+// import { Volume3DButton } from '@/features/volume3d/Volume3DButton';
 import {
   Sun, Moon, ChevronLeft, ChevronRight, Printer, X, Copy, Check,
   PanelRightClose, PanelRightOpen, Undo2, RotateCcw, CheckSquare, Trash2, ImagePlus, FileText,
@@ -201,6 +203,9 @@ export function ViewerHeader({ showThumbnails = true, onToggleThumbnails }: { sh
         {/* 3D Volume — CT/MR gated. The main viewer keeps the
             original local DICOM path on each image's wadouri URL
             (?path=…), so we extract it back out to hand to cs3d. */}
+        {/*
+        3D Volume - disabled in this USG printing viewer. Kept for future
+        CT/PACS viewer use.
         <Volume3DButton
           patientName={patientName}
           patientId={patientId}
@@ -215,6 +220,7 @@ export function ViewerHeader({ showThumbnails = true, onToggleThumbnails }: { sh
             .filter(Boolean)}
           className="px-2 py-1 text-[10px] 2xl:text-sm font-semibold border-2 border-app-accent text-app-accent bg-app-bg rounded hover:bg-app-accent hover:text-white transition-colors flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
         />
+        */}
 
         {/* Report - highlighted */}
         <button

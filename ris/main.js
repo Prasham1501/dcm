@@ -64,7 +64,7 @@ const licenseFile   = path.join(sharedDataDir, '.ris-license');
 const LICENSE_API_BASE = 'https://mehrgrewal.com/mediview/api';
 
 // Track which services we own so we don't kill someone else's processes.
-const owned = { mysql: null, orthanc: null, php: null };
+const owned = { mysql: null, orthanc: null, php: null, ui: null };
 let staticServer = null;
 let mainWindow = null;
 let licenseHeartbeatTimer = null;
@@ -259,6 +259,42 @@ async function waitForHttp(url, maxAttempts = 30, delayMs = 500) {
         await new Promise(r => setTimeout(r, delayMs));
     }
     return false;
+}
+
+function npmCommand() {
+    return process.platform === 'win32' ? 'npm.cmd' : 'npm';
+}
+
+async function startDevUiServer() {
+    if (!isDev) return true;
+
+    const target = 'http://localhost:5174';
+    if (await probeHttp(target)) {
+        console.log('[RIS][UI] Vite already running on 5174 — reusing.');
+        return true;
+    }
+
+    const uiDir = path.join(__dirname, 'ui');
+    if (!fs.existsSync(path.join(uiDir, 'package.json'))) {
+        console.error('[RIS][UI] Missing UI package at', uiDir);
+        return false;
+    }
+
+    console.log('[RIS][UI] Starting Vite dev server on 5174');
+    const proc = spawn(npmCommand(), ['run', 'dev'], {
+        cwd: uiDir,
+        windowsHide: true,
+        env: { ...process.env, BROWSER: 'none' },
+    });
+    proc.stdout.on('data', d => process.stdout.write('[RIS][UI] ' + d));
+    proc.stderr.on('data', d => process.stdout.write('[RIS][UI] ' + d));
+    proc.on('exit', (code) => {
+        console.log('[RIS][UI] exited', code);
+        owned.ui = null;
+    });
+    owned.ui = proc;
+
+    return waitForHttp(target, 60, 500);
 }
 
 // ------------------------------------------------------------------
@@ -515,7 +551,7 @@ async function bootServices() {
 
 function shutdownOwned() {
     if (staticServer) { try { staticServer.close(); } catch {} staticServer = null; }
-    for (const key of ['php', 'orthanc', 'mysql']) {
+    for (const key of ['ui', 'php', 'orthanc', 'mysql']) {
         const p = owned[key];
         if (!p) continue;
         try {
@@ -539,7 +575,8 @@ async function createWindow() {
         minWidth: 1100, minHeight: 700,
         title: 'One Clickz RIS',
         icon: path.join(__dirname, 'icon.ico'),
-        backgroundColor: '#0f1115',
+        backgroundColor: '#ffffff',
+        show: false,
         webPreferences: {
             preload: path.join(__dirname, 'preload.js'),
             contextIsolation: true,
@@ -548,6 +585,14 @@ async function createWindow() {
         autoHideMenuBar: true,
     });
     Menu.setApplicationMenu(null);
+
+    // Show the splash immediately (local file = instant) so there's no blank/black window
+    // while the dev server / app content is still loading.
+    const splashPath = path.join(__dirname, 'splash.html');
+    if (fs.existsSync(splashPath)) {
+        mainWindow.loadFile(splashPath).catch(() => {});
+    }
+    mainWindow.show();
 
     const target = isDev ? 'http://localhost:5174' : `http://127.0.0.1:${UI_PORT}`;
     console.log('[RIS] Loading', target);
@@ -577,6 +622,7 @@ async function createWindow() {
     });
 
     if (isDev) {
+        await startDevUiServer();
         const ready = await waitForHttp(target, 60, 500);
         if (!ready) {
             console.error('[RIS] Vite dev server did not become ready at', target);

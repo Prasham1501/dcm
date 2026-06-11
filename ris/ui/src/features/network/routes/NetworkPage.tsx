@@ -145,10 +145,42 @@ export function NetworkPage() {
     }
   };
 
+  const firewallCmd = 'netsh advfirewall firewall add rule name="One Clickz RIS 8090" dir=in action=allow protocol=TCP localport=8090';
+
   return (
     <div className="content-narrow">
       {error && <div className="banner banner-warning">{error}</div>}
       {message && <div className="banner banner-success mt-3">{message}</div>}
+
+      <div className="card card-pad mt-4" style={{ borderColor: 'var(--app-accent)' }}>
+        <SectionHeader icon={Server} title="Branch & multi-shop access" sub="Open the same RIS from reception/reporting PCs at other shops. They share this PC's live data — no separate database.">
+          <Button variant="secondary" size="sm" icon={RefreshCw} onClick={load}>Refresh</Button>
+        </SectionHeader>
+        <div className="field-label mt-3">1. On any other PC in this shop, open one of these in a browser:</div>
+        {networkInfo && networkInfo.client_urls.length > 0 ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }} className="mt-3">
+            {networkInfo.client_urls.filter((u) => !u.includes('127.0.0.1')).map((url) => (
+              <div key={url} className="between card card-surface" style={{ padding: '9px 12px' }}>
+                <span className="mono" style={{ color: 'var(--success)', fontSize: 14 }}>{url}</span>
+                <Button variant="ghost" size="sm" icon={Copy} onClick={() => copy(url)}>Copy</Button>
+              </div>
+            ))}
+          </div>
+        ) : <div className="field-hint mt-3">No LAN address detected yet — click Refresh.</div>}
+
+        <div className="field-label mt-4">2. First time only — allow the port through Windows Firewall on THIS PC:</div>
+        <div className="between card card-surface mt-3" style={{ padding: '9px 12px' }}>
+          <span className="mono" style={{ fontSize: 12, wordBreak: 'break-all' }}>{firewallCmd}</span>
+          <Button variant="ghost" size="sm" icon={Copy} onClick={() => copy(firewallCmd)}>Copy</Button>
+        </div>
+        <div className="field-hint mt-1">Run it once in an Administrator Command Prompt on this main PC.</div>
+
+        <div className="mt-4">
+          <Banner kind="info">
+            <b>Shops in different locations?</b> Install <b>Tailscale</b> (free) on this PC and each other PC — they all get a private IP that works across cities. Then open <span className="mono">http://&lt;this-PC-Tailscale-IP&gt;:8090</span> from any shop. Everything (reports, statuses) stays in sync because it's one shared database.
+          </Banner>
+        </div>
+      </div>
 
       <div className="card card-pad mt-4">
         <SectionHeader icon={Network} title="Machine connection" sub="Use this for real USG, X-ray, CT, MR, and CR consoles">

@@ -11,6 +11,7 @@ import {
   prefetchImages,
   purgeCache,
 } from '@/lib/dicomLoader';
+import { filterSecondaryCaptureImageIds } from '@/lib/dicomMetadata';
 import { useUndoStore } from '@/stores/undoStore';
 import { useReportStore } from '@/stores/reportStore';
 
@@ -243,19 +244,23 @@ export async function openViewerPopup(params: {
   modality?: string;
   studyDescription?: string;
 }, navigate: (path: string) => void) {
-  const imageCount = params.filePaths.length;
+  const filtered = await filterSecondaryCaptureImageIds(
+    params.filePaths.map((filePath) => ({ filePath, imageId: localFileToImageId(filePath) })),
+  );
+  const launchParams = { ...params, filePaths: filtered.kept.map((entry) => entry.filePath) };
+  const imageCount = launchParams.filePaths.length;
   const { orientation } = autoSelectLayout(imageCount);
   const isPortrait = orientation === 'portrait';
 
   // Store launch data for the popup window to read
   localStorage.setItem('viewer-launch', JSON.stringify({
-    patientName: params.patientName,
-    patientId: params.patientId,
-    studyDate: params.studyDate,
-    filePaths: params.filePaths,
-    layoutParam: params.layoutParam,
-    modality: params.modality,
-    studyDescription: params.studyDescription,
+    patientName: launchParams.patientName,
+    patientId: launchParams.patientId,
+    studyDate: launchParams.studyDate,
+    filePaths: launchParams.filePaths,
+    layoutParam: launchParams.layoutParam,
+    modality: launchParams.modality,
+    studyDescription: launchParams.studyDescription,
     timestamp: Date.now(),
   }));
 
@@ -272,8 +277,8 @@ export async function openViewerPopup(params: {
   }
 
   // Fallback: load study in current window and navigate
-  useViewerStore.getState().loadStudyFiles(params);
-  navigate(params.layoutParam ? `/viewer?layout=${params.layoutParam}` : '/viewer');
+  useViewerStore.getState().loadStudyFiles(launchParams);
+  navigate(launchParams.layoutParam ? `/viewer?layout=${launchParams.layoutParam}` : '/viewer');
 }
 
 function recalcPages(totalImages: number, spotsPerPage: number) {
@@ -961,12 +966,12 @@ export const useViewerStore = create<ViewerState>((set, get) => ({
     }
   },
 
-  loadLocalFiles: (files: FileList | File[]) => {
+  loadLocalFiles: async (files: FileList | File[]) => {
     const imageIds = filesToImageIds(files);
 
     if (imageIds.length === 0) return;
 
-    const dicomImages: DicomImage[] = imageIds.map((imageId, i) => ({
+    const sourceImages: DicomImage[] = imageIds.map((imageId, i) => ({
       id: `local-${i}`,
       instanceUID: `local-${i}`,
       seriesUID: 'local',
@@ -977,6 +982,9 @@ export const useViewerStore = create<ViewerState>((set, get) => ({
       orthancId: '',
       imageUrl: imageId,
     }));
+    const { kept: dicomImages } = await filterSecondaryCaptureImageIds(
+      sourceImages.map((image) => ({ ...image, imageId: image.imageUrl })),
+    );
 
     const { layout, orientation } = autoSelectLayout(dicomImages.length);
     set({
@@ -1010,7 +1018,7 @@ export const useViewerStore = create<ViewerState>((set, get) => ({
     try {
       const { imageIds, files } = await scanLocalDirectory(dirPath, 200);
 
-      const dicomImages: DicomImage[] = imageIds.map((imageId, i) => ({
+      const sourceImages: DicomImage[] = imageIds.map((imageId, i) => ({
         id: `dir-${i}`,
         instanceUID: `dir-${i}`,
         seriesUID: 'local-dir',
@@ -1021,6 +1029,9 @@ export const useViewerStore = create<ViewerState>((set, get) => ({
         orthancId: '',
         imageUrl: imageId,
       }));
+      const { kept: dicomImages } = await filterSecondaryCaptureImageIds(
+        sourceImages.map((image) => ({ ...image, imageId: image.imageUrl })),
+      );
 
       const { layout, orientation } = autoSelectLayout(dicomImages.length);
       set({
@@ -1063,7 +1074,7 @@ export const useViewerStore = create<ViewerState>((set, get) => ({
     }
   },
 
-  loadStudyFiles: (params) => {
+  loadStudyFiles: async (params) => {
     // When the user opens a different patient in the same reused viewer
     // window, drop the previous study's images from cornerstone's cache
     // first. Otherwise RAM grows every open and (eventually) decode workers
@@ -1079,18 +1090,30 @@ export const useViewerStore = create<ViewerState>((set, get) => ({
       useReportStore.getState().setActiveReadingSet(null);
     } catch { /* ignore */ }
 
-    const imageIds = params.filePaths.map((fp) => localFileToImageId(fp));
+    set({ loadingStudy: true, studyError: null, loadProgress: 0 });
 
-    const dicomImages: DicomImage[] = imageIds.map((imageId, i) => ({
+    const sourceImages = params.filePaths.map((filePath, i) => {
+      const imageId = localFileToImageId(filePath);
+      return {
+        id: `study-${i}`,
+        instanceUID: `study-${i}`,
+        seriesUID: 'synced',
+        studyUID: 'synced',
+        instanceNumber: i + 1,
+        seriesNumber: 1,
+        description: filePath.split('/').pop() || `Image ${i + 1}`,
+        orthancId: '',
+        imageUrl: imageId,
+        imageId,
+        filePath,
+      };
+    });
+    const { kept } = await filterSecondaryCaptureImageIds(sourceImages);
+    const dicomImages: DicomImage[] = kept.map(({ imageId: _imageId, filePath: _filePath, ...image }, i) => ({
+      ...image,
       id: `study-${i}`,
       instanceUID: `study-${i}`,
-      seriesUID: 'synced',
-      studyUID: 'synced',
       instanceNumber: i + 1,
-      seriesNumber: 1,
-      description: params.filePaths[i].split('/').pop() || `Image ${i + 1}`,
-      orthancId: '',
-      imageUrl: imageId,
     }));
 
     const { layout, orientation } = autoSelectLayout(dicomImages.length);

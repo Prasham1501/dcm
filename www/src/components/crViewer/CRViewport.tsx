@@ -11,6 +11,7 @@ import { cornerstone, cornerstoneTools } from '@/lib/cornerstoneSetup';
 import { useCRViewerStore } from '@/stores/crViewerStore';
 import { useStampStore } from '@/stores/stampStore';
 import { refitCornerstoneViewport, resetCornerstoneViewport } from '@/lib/cornerstoneViewport';
+import { applyDicomPixelSpacing } from '@/lib/dicomMetadata';
 import { findAnnotationAtPoint, setupAutoDeactivate, markDblClickHandled } from '@/lib/annotationUtils';
 import { AnnotationEditOverlay } from '@/components/shared/AnnotationEditOverlay';
 import { X, Plus, Minus, Trash2, Check } from 'lucide-react';
@@ -121,9 +122,11 @@ function CRViewportInner({
     if (imageId === currentImageIdRef.current) return;
 
     let cancelled = false;
-    cornerstone.loadAndCacheImage(imageId).then((image: any) => {
+    cornerstone.loadAndCacheImage(imageId).then(async (image: any) => {
       if (cancelled || !enabledRef.current) return;
       try {
+        await applyDicomPixelSpacing(image);
+        if (cancelled || !enabledRef.current) return;
         cornerstone.displayImage(el, image);
         if (image.columns && image.rows) {
           useCRViewerStore.getState().setImageAspectRatio(image.columns / image.rows);

@@ -6,6 +6,7 @@ import { apiDashboardSummary, misExportUrl, type DashboardSummary } from '../api
 
 const ROLES = ['receptionist'];
 const EXPORT_ROLES = ['receptionist'];
+const dashboardCache: { key: string; summary: DashboardSummary | null } = { key: '', summary: null };
 
 export function DashboardPage() {
   const role = (useAuthStore((state) => state.user)?.role as string) || '';
@@ -18,7 +19,17 @@ export function DashboardPage() {
 
   useEffect(() => {
     if (!ROLES.includes(role)) return;
-    apiDashboardSummary(from, to).then(setSummary).catch((err) => setError(err?.message || 'Failed to load'));
+    const key = `${from}|${to}`;
+    if (dashboardCache.key === key && dashboardCache.summary) {
+      setSummary(dashboardCache.summary);
+    }
+    apiDashboardSummary(from, to)
+      .then((next) => {
+        dashboardCache.key = key;
+        dashboardCache.summary = next;
+        setSummary(next);
+      })
+      .catch((err) => setError(err?.message || 'Failed to load'));
   }, [role, from, to]);
 
   if (!ROLES.includes(role)) {
@@ -38,7 +49,7 @@ export function DashboardPage() {
 
       <div className="grid-5 mt-4">
         <StatTile icon={ClipboardList} label="Registrations" value={summary?.registrations_range ?? '-'} />
-        <StatTile icon={ListChecks} label="Pending worklist" value={summary?.pending_worklist ?? '-'} />
+        <StatTile icon={ListChecks} label="Console pending" value={summary?.pending_worklist ?? '-'} />
         <StatTile icon={PackageCheck} label="Ready to collect" value={summary?.ready_to_collect ?? '-'} />
         <StatTile icon={Receipt} label="Collections" value={summary ? `Rs ${Number(summary.collections_range).toFixed(0)}` : '-'} accent />
         <StatTile

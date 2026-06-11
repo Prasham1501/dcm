@@ -11,7 +11,9 @@ import {
 } from 'lucide-react';
 import { CRPrintPreview } from './CRPrintPreview';
 import { FormFButton } from '@/features/pcpndt/FormFButton';
-import { Volume3DButton } from '@/features/volume3d/Volume3DButton';
+// 3D rendering is disabled in the USG printing viewer. Keep the button import
+// commented for future CT/PACS use.
+// import { Volume3DButton } from '@/features/volume3d/Volume3DButton';
 
 export function CRToolbar() {
   const {
@@ -115,6 +117,9 @@ export function CRToolbar() {
 
         {/* 3D Volume — CT/MR gated. CR store keeps an explicit
             filePath on each image, so we just collect them. */}
+        {/*
+        3D Volume - disabled in this USG printing viewer. Kept for future
+        CT/PACS viewer use.
         <Volume3DButton
           patientName={patientName}
           patientId={patientId}
@@ -123,6 +128,7 @@ export function CRToolbar() {
           modality={modality}
           filePaths={images.map((img: any) => img.filePath).filter(Boolean)}
         />
+        */}
 
         {/* Report — toggles the inline report panel, mirrors the main
             Viewer header behaviour. Passes filePaths so the Electron

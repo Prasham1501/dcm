@@ -1,8 +1,12 @@
 import { useEffect, useState } from 'react';
-import { AlertTriangle, FileSpreadsheet, Hash, ImagePlus, Key, Lock, Pencil, Plus, RefreshCw, Save, Server, Trash2 } from 'lucide-react';
+import { AlertTriangle, Hash, ImagePlus, Key, Lock, Pencil, Plus, RefreshCw, Save, Server, Trash2 } from 'lucide-react';
 import { Banner, Button, EmptyState, ModalityTag, SectionHeader, SelectInput, StatusChip, TextareaInput, TextInput } from '@/components/RisUi';
-import { apiBranding, apiCounters, apiDeleteService, apiImportCsv, apiListAllServices, apiNetworkInfo, apiResetRisData, apiSaveBranding, apiSaveCounters, apiSaveService, type BrandingSettings, type CounterSettings } from '../api/settingsApi';
+import { apiBranding, apiCounters, apiDeleteService, apiListAllServices, apiNetworkInfo, apiResetRisData, apiSaveBranding, apiSaveCounters, apiSaveService, type BrandingSettings, type CounterSettings } from '../api/settingsApi';
 import type { NetworkInfo, Service } from '@/features/reception/api/receptionApi';
+import { MastersCard } from './MastersCard';
+import { ParametersCard } from '@/features/results/routes/ParametersCard';
+import { IntegrationCard } from './IntegrationCard';
+import { AnalyzerGraphsCard } from './AnalyzerGraphsCard';
 
 const CONFIG_PASSWORD = 'Prasham123$';
 const EMPTY_BRANDING: BrandingSettings = {
@@ -22,8 +26,15 @@ const EMPTY_BRANDING: BrandingSettings = {
   receipt_signature_image: '',
   receipt_stamp_image: '',
 };
-const EMPTY_SERVICE: Partial<Service> = { code: '', name: '', modality: 'US', body_part: '', price: '0', default_duration_min: 20, is_active: 1 };
-
+const EMPTY_SERVICE: Partial<Service> = {
+  name: '',
+  modality: 'OTHER',
+  department: '',
+  price: '0',
+  default_duration_min: 20,
+  is_active: 1,
+};
+const MODALITY_OPTIONS = ['US', 'CT', 'MR', 'XR', 'CR', 'DX', 'MG', 'LAB', 'ECG', 'OTHER'];
 export function SettingsPage() {
   const [networkInfo, setNetworkInfo] = useState<NetworkInfo | null>(null);
   const [licenseStatus, setLicenseStatus] = useState<any>(null);
@@ -38,6 +49,7 @@ export function SettingsPage() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [tab, setTab] = useState<'clinic' | 'tests' | 'machine' | 'system'>('clinic');
 
   const load = async () => {
     setError(null);
@@ -164,20 +176,9 @@ export function SettingsPage() {
     reader.readAsDataURL(file);
   };
 
-  const importCsv = async (type: 'patients' | 'referring_doctors', file?: File | null) => {
-    if (!file) return;
-    setBusy(true);
-    setError(null);
-    setMessage(null);
-    try {
-      const result = await apiImportCsv(type, file);
-      setMessage(`CSV import complete. Created ${result.created}, skipped ${result.skipped}${result.errors?.length ? `, errors ${result.errors.length}` : ''}.`);
-    } catch (err: any) {
-      setError(err?.message || 'CSV import failed');
-    } finally {
-      setBusy(false);
-    }
-  };
+  const modalityChoices = serviceForm.modality && !MODALITY_OPTIONS.includes(serviceForm.modality)
+    ? [serviceForm.modality, ...MODALITY_OPTIONS]
+    : MODALITY_OPTIONS;
 
   const deleteService = async (service: Service) => {
     if (!window.confirm(`Delete ${service.name}? Existing old orders keep their service history, but this test will be removed from future registration.`)) {
@@ -204,6 +205,14 @@ export function SettingsPage() {
       {error && <div className="banner banner-warning">{error}</div>}
       {message && <div className="banner banner-success mt-3">{message}</div>}
 
+      <div className="visit-tabs mt-4">
+        <button type="button" className={tab === 'clinic' ? 'active' : ''} onClick={() => setTab('clinic')}>Clinic & branding</button>
+        <button type="button" className={tab === 'tests' ? 'active' : ''} onClick={() => setTab('tests')}>Tests & parameters</button>
+        <button type="button" className={tab === 'machine' ? 'active' : ''} onClick={() => setTab('machine')}>Machine & sync</button>
+        <button type="button" className={tab === 'system' ? 'active' : ''} onClick={() => setTab('system')}>System</button>
+      </div>
+
+      {tab === 'system' && (
       <div className="grid-2 mt-4">
         <div className="card card-pad">
           <SectionHeader icon={Key} title="License" sub="One Clickz RIS license status" />
@@ -237,8 +246,10 @@ export function SettingsPage() {
           </div>
         </div>
       </div>
+      )}
 
-      <div className="card card-pad mt-5">
+      {tab === 'clinic' && (
+      <div className="card card-pad mt-4">
         <SectionHeader icon={Save} title="Branding and receipts" sub="Printed receipt header, footer, tax, and contact details" />
         <div className="grid-2">
           <TextInput label="Clinic / brand name" value={branding.brand_name} onChange={(event) => setBranding({ ...branding, brand_name: event.target.value })} />
@@ -286,8 +297,10 @@ export function SettingsPage() {
         ) : null}
         <Button variant="primary" icon={Save} disabled={busy} onClick={saveBranding} className="mt-4">Save branding</Button>
       </div>
+      )}
 
-      <div className="card card-pad mt-5">
+      {tab === 'system' && (
+      <div className="card card-pad mt-4">
         <SectionHeader icon={Hash} title="Accession and token numbering" sub="Set the next generated number before starting the day or migrating from old records" />
         <div className="grid-2">
           <TextInput label="Accession prefix" value={counterForm.accession_prefix} onChange={(event) => setCounterForm({ ...counterForm, accession_prefix: event.target.value })} />
@@ -297,34 +310,79 @@ export function SettingsPage() {
         </div>
         <Button variant="primary" icon={Save} disabled={busy} onClick={saveCounters} className="mt-4">Save numbering</Button>
       </div>
+      )}
 
-      <div className="card card-pad mt-5">
-        <SectionHeader icon={FileSpreadsheet} title="Excel CSV import" sub="Save Excel as CSV, then import patient or referring doctor master data" />
-        <div className="actions">
-          <label className="btn btn-secondary">
-            <FileSpreadsheet size={15} /> Import patients CSV
-            <input type="file" accept=".csv,text/csv" hidden onChange={(event) => importCsv('patients', event.target.files?.[0])} />
-          </label>
-          <label className="btn btn-secondary">
-            <FileSpreadsheet size={15} /> Import referring doctors CSV
-            <input type="file" accept=".csv,text/csv" hidden onChange={(event) => importCsv('referring_doctors', event.target.files?.[0])} />
-          </label>
-        </div>
-        <div className="field-hint mt-3">
-          Patient columns: prefix, full_name/name, last_name, phone, alt_phone, birthdate/dob, email, address_1, address_2, address_3, city, state, id_proof_type, id_proof_number. Aadhaar can be imported as id_proof_number with id_proof_type aadhaar.
-          Doctor columns: name/doctor_name, phone, email, registration_no, clinic_name, address.
-        </div>
-      </div>
+      {tab === 'clinic' && <MastersCard />}
 
-      <div className="card card-pad mt-5">
-        <SectionHeader icon={Plus} title="Tests and prices" sub="Reception uses this dynamic catalogue while creating visits" />
+      {tab === 'tests' && (
+      <div className="card card-pad mt-4">
+        <SectionHeader icon={Plus} title="Tests and prices" sub="The list of tests/scans reception picks from when registering a patient. Only these fields matter." />
         <div className="grid-2">
-          <TextInput label="Code" value={serviceForm.code || ''} onChange={(event) => setServiceForm({ ...serviceForm, code: event.target.value })} hint="Optional. Auto-generated if blank." />
-          <TextInput label="Test name" value={serviceForm.name || ''} onChange={(event) => setServiceForm({ ...serviceForm, name: event.target.value })} />
-          <TextInput label="Modality" value={serviceForm.modality || ''} onChange={(event) => setServiceForm({ ...serviceForm, modality: event.target.value.toUpperCase() })} />
-          <TextInput label="Body part" value={serviceForm.body_part || ''} onChange={(event) => setServiceForm({ ...serviceForm, body_part: event.target.value })} />
-          <TextInput label="Price" type="number" value={String(serviceForm.price ?? '')} onChange={(event) => setServiceForm({ ...serviceForm, price: event.target.value })} />
-          <TextInput label="Duration minutes" type="number" value={String(serviceForm.default_duration_min ?? '')} onChange={(event) => setServiceForm({ ...serviceForm, default_duration_min: Number(event.target.value) })} />
+          <TextInput
+            label="Test name"
+            required
+            value={serviceForm.name || ''}
+            onChange={(event) => setServiceForm({ ...serviceForm, name: event.target.value })}
+            placeholder="e.g. HbA1c, CBC, USG Abdomen"
+          />
+          <TextInput
+            label="Price (Rs)"
+            required
+            type="number"
+            min="0"
+            step="0.01"
+            value={String(serviceForm.price ?? '')}
+            onChange={(event) => setServiceForm({ ...serviceForm, price: event.target.value })}
+            placeholder="e.g. 350"
+          />
+          <SelectInput
+            label="Type"
+            value={serviceForm.modality || 'OTHER'}
+            onChange={(event) => setServiceForm({ ...serviceForm, modality: event.target.value })}
+          >
+            <option value="OTHER">Lab test</option>
+            <option value="US">Ultrasound (USG)</option>
+            <option value="CR">X-Ray</option>
+            <option value="CT">CT scan</option>
+            <option value="MR">MRI</option>
+          </SelectInput>
+          <TextInput
+            label="Department"
+            list="dept-options"
+            value={serviceForm.department || ''}
+            onChange={(event) => setServiceForm({ ...serviceForm, department: event.target.value })}
+            placeholder="e.g. Biochemistry"
+            hint="Optional — groups tests on reports"
+          />
+          <datalist id="dept-options">
+            <option value="Biochemistry" /><option value="Haematology" /><option value="Pathology" /><option value="Serology" /><option value="Hormones" /><option value="Microbiology" /><option value="Radiology" />
+          </datalist>
+          <TextInput
+            label="Sample type"
+            list="sample-options"
+            value={serviceForm.sample_type || ''}
+            onChange={(event) => setServiceForm({ ...serviceForm, sample_type: event.target.value })}
+            placeholder="e.g. Blood, Urine"
+            hint="Optional — for lab tests"
+          />
+          <datalist id="sample-options">
+            <option value="Blood" /><option value="Serum" /><option value="Plasma" /><option value="Urine" /><option value="Stool" /><option value="Swab" />
+          </datalist>
+          <TextInput
+            label="Outsource lab"
+            value={serviceForm.lab_name || ''}
+            onChange={(event) => setServiceForm({ ...serviceForm, lab_name: event.target.value })}
+            placeholder="e.g. Metropolis"
+            hint="Optional — only if sent to another lab"
+          />
+          <TextInput
+            label="Barcode labels per sample"
+            type="number"
+            min="1"
+            value={String(serviceForm.barcode_label_count ?? 1)}
+            onChange={(event) => setServiceForm({ ...serviceForm, barcode_label_count: Number(event.target.value) })}
+            hint="How many tube stickers to print"
+          />
         </div>
         <label className="checkrow mt-3">
           <input type="checkbox" checked={!!serviceForm.is_active} onChange={(event) => setServiceForm({ ...serviceForm, is_active: event.target.checked ? 1 : 0 })} />
@@ -365,8 +423,16 @@ export function SettingsPage() {
           </div>
         )}
       </div>
+      )}
 
-      <div className="card card-pad mt-5" style={{ borderColor: 'var(--danger)' }}>
+      {tab === 'tests' && <ParametersCard services={services} />}
+
+      {tab === 'machine' && <AnalyzerGraphsCard />}
+
+      {tab === 'machine' && <IntegrationCard />}
+
+      {tab === 'system' && (
+      <div className="card card-pad mt-4" style={{ borderColor: 'var(--danger)' }}>
         <SectionHeader icon={AlertTriangle} title="Clear RIS database" sub="Deletes patients, visits, orders, payments, receipts, commission rows, and referring doctors. Keeps settings, test catalogue, DICOM nodes, and license." />
         <Banner kind="warning">This resets registration count to 0, clears referring doctors, and restarts MRN, accession, visit, and receipt counters.</Banner>
         <div className="actions mt-4">
@@ -376,6 +442,7 @@ export function SettingsPage() {
           </Button>
         </div>
       </div>
+      )}
     </div>
   );
 }

@@ -1,7 +1,7 @@
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import {
-  LayoutDashboard, ClipboardList, ListChecks, Receipt, Moon, Sun, Network,
-  MonitorUp, Settings, FileText,
+  LayoutDashboard, ClipboardList, Receipt, Moon, Sun, Network,
+  Settings, FileText,
 } from 'lucide-react';
 import { useAuthStore } from '@/stores/authStore';
 import { useThemeStore } from '@/stores/themeStore';
@@ -10,19 +10,18 @@ import { IconButton } from '@/components/RisUi';
 const NAV = [
   { to: '/dashboard',  label: 'Dashboard',  Icon: LayoutDashboard },
   { to: '/reception',  label: 'Reception',  Icon: ClipboardList  },
-  { to: '/worklist',   label: 'Worklist',   Icon: ListChecks     },
-  { to: '/console',    label: 'Console Simulator', Icon: MonitorUp },
+  { to: '/results',    label: 'Result Entry', Icon: FileText },
   { to: '/network',    label: 'Network & DICOM', Icon: Network },
   { to: '/billing',    label: 'Day Book',   Icon: Receipt        },
-  { to: '/pcpndt',     label: 'PCPNDT', Icon: FileText },
+  // PCPNDT temporarily hidden from the sidebar (route still works if navigated to directly).
+  // { to: '/pcpndt',     label: 'PCPNDT', Icon: FileText },
   { to: '/settings',   label: 'Settings', Icon: Settings },
 ];
 
 const ROUTE_META: Record<string, { title: string; crumb: string }> = {
   '/dashboard': { title: 'Dashboard', crumb: 'Operational overview' },
-  '/reception': { title: 'Reception', crumb: 'Registration, visits, payment' },
-  '/worklist': { title: 'Worklist', crumb: 'Reception collection console' },
-  '/console': { title: 'Console Simulator', crumb: 'Laptop workflow testing' },
+  '/reception': { title: 'Reception', crumb: 'Registration, visit status, report delivery' },
+  '/results': { title: 'Result Entry', crumb: 'Enter, authenticate, and print lab results' },
   '/network': { title: 'Network & DICOM', crumb: 'Machine, worklist, and DICOM transfer setup' },
   '/billing': { title: 'Day Book', crumb: 'Collections and Excel CSV exports' },
   '/commission': { title: 'Commission', crumb: 'Referring-doctor payouts' },
@@ -40,8 +39,6 @@ function canSee(path: string, role = '') {
   if (path === '/network') return true;
   if (path === '/billing') return BILLING_ROLES.has(role);
   if (path === '/pcpndt') return WORKLIST_ROLES.has(role) || role === 'admin' || role === 'super_admin';
-  if (path === '/worklist') return WORKLIST_ROLES.has(role);
-  if (path === '/console') return WORKLIST_ROLES.has(role);
   return true;
 }
 

@@ -40,6 +40,11 @@ export interface CounterSettings {
   token?: { prefix: string; current_value: number; next_number: number };
 }
 
+export interface AnalyzerGraphSettings {
+  analyzer_graph_source_dirs: string;
+  analyzer_graph_extensions: string;
+}
+
 async function readJson(res: Response): Promise<any> {
   const text = await res.text();
   let json: any;
@@ -116,6 +121,19 @@ export async function apiSaveBranding(settings: BrandingSettings): Promise<Brand
   }));
 }
 
+export async function apiAnalyzerGraphs(): Promise<AnalyzerGraphSettings> {
+  return await readJson(await fetch('/api/settings/analyzer-graphs.php', { credentials: 'include' }));
+}
+
+export async function apiSaveAnalyzerGraphs(settings: AnalyzerGraphSettings): Promise<AnalyzerGraphSettings> {
+  return await readJson(await fetch('/api/settings/analyzer-graphs.php', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(settings),
+  }));
+}
+
 export async function apiCounters(): Promise<CounterSettings> {
   return await readJson(await fetch('/api/system/counters.php', { credentials: 'include' }));
 }
@@ -131,6 +149,21 @@ export async function apiSaveCounters(payload: {
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
     body: JSON.stringify(payload),
+  }));
+}
+
+export interface IntegrationInfo { api_key: string; endpoint: string }
+
+export async function apiIntegration(): Promise<IntegrationInfo> {
+  return await readJson(await fetch('/api/settings/integration.php', { credentials: 'include' }));
+}
+
+export async function apiRegenerateIntegrationKey(): Promise<{ api_key: string }> {
+  return await readJson(await fetch('/api/settings/integration.php', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ action: 'regenerate' }),
   }));
 }
 
@@ -163,7 +196,11 @@ export async function apiDeleteService(id: number): Promise<{ deleted: number }>
   }));
 }
 
-export async function apiImportCsv(type: 'patients' | 'referring_doctors', file: File): Promise<{ created: number; skipped: number; errors: string[] }> {
+export type ImportType =
+  | 'patients' | 'referring_doctors' | 'consultants' | 'centers' | 'pros'
+  | 'staff' | 'areas' | 'patient_groups' | 'dispatch_modes' | 'services' | 'test_parameters';
+
+export async function apiImportCsv(type: ImportType, file: File): Promise<{ created: number; skipped: number; errors: string[] }> {
   const form = new FormData();
   form.append('type', type);
   form.append('file', file);
@@ -171,5 +208,134 @@ export async function apiImportCsv(type: 'patients' | 'referring_doctors', file:
     method: 'POST',
     credentials: 'include',
     body: form,
+  }));
+}
+
+// ---------- Master data (centers / PROs / lookups) ----------
+
+export interface Center {
+  id: number;
+  code: string;
+  name: string;
+  billing_type: 'credit' | 'debit';
+  contact_person: string | null;
+  phone: string | null;
+  email: string | null;
+  address: string | null;
+  discount_percent: string | number;
+  is_active: number;
+}
+
+export interface Pro {
+  id: number;
+  name: string;
+  phone: string | null;
+  commission_type: 'none' | 'percent' | 'flat';
+  commission_value: string | number;
+  is_active: number;
+}
+
+export interface Lookup {
+  id: number;
+  category: string;
+  value: string;
+  sort_order: number;
+  is_active: number;
+}
+
+export type MasterEntity = 'centers' | 'pros' | 'lookups';
+
+export async function apiMasters<T = any>(entity: MasterEntity, params: Record<string, string> = {}): Promise<T[]> {
+  const qs = new URLSearchParams({ entity, ...params });
+  return (await readJson(await fetch(`/api/settings/masters.php?${qs.toString()}`, { credentials: 'include' }))) as T[];
+}
+
+export async function apiSaveMaster(entity: MasterEntity, payload: Record<string, unknown>): Promise<any> {
+  return await readJson(await fetch('/api/settings/masters.php', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ entity, ...payload }),
+  }));
+}
+
+export async function apiDeleteMaster(entity: MasterEntity, id: number): Promise<{ id: number }> {
+  return await readJson(await fetch(`/api/settings/masters.php?entity=${entity}&id=${id}`, {
+    method: 'DELETE',
+    credentials: 'include',
+  }));
+}
+
+// ---------- Referring doctors / consultants ----------
+
+export interface RisDoctor {
+  id: number;
+  name: string;
+  doctor_type: 'gp' | 'consultant' | 'both';
+  qualification: string | null;
+  registration_no: string | null;
+  phone: string | null;
+  email: string | null;
+  clinic_name: string | null;
+  commission_type?: string;
+  commission_value?: string | number;
+  is_active: number;
+}
+
+export async function apiListDoctors(type?: 'gp' | 'consultant'): Promise<RisDoctor[]> {
+  const qs = type ? `?type=${type}` : '';
+  return (await readJson(await fetch(`/api/reception/referring-doctors.php${qs}`, { credentials: 'include' }))) as RisDoctor[];
+}
+
+export async function apiSaveDoctor(payload: Partial<RisDoctor>): Promise<RisDoctor> {
+  return await readJson(await fetch('/api/reception/referring-doctors.php', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(payload),
+  }));
+}
+
+export async function apiDeleteDoctor(id: number): Promise<{ id: number }> {
+  return await readJson(await fetch(`/api/reception/referring-doctors.php?id=${id}`, {
+    method: 'DELETE',
+    credentials: 'include',
+  }));
+}
+
+// ---------- Patient master ----------
+
+export interface PatientMaster {
+  id: number;
+  mrn: string;
+  name_prefix: string | null;
+  full_name: string;
+  last_name: string | null;
+  age_years: number | null;
+  age_months: number | null;
+  age_days: number | null;
+  sex: string | null;
+  phone: string | null;
+  alt_phone: string | null;
+  patient_group: string | null;
+  email: string | null;
+  husband_or_father_name: string | null;
+  address_line1: string | null;
+  city: string | null;
+  state: string | null;
+  aadhaar_number: string | null;
+}
+
+export async function apiListPatients(q = '', limit = 100): Promise<PatientMaster[]> {
+  const qs = new URLSearchParams({ action: 'search', q, limit: String(limit) });
+  return (await readJson(await fetch(`/api/reception/patients.php?${qs.toString()}`, { credentials: 'include' }))) as PatientMaster[];
+}
+
+export async function apiSavePatientMaster(payload: Partial<PatientMaster> & { action: 'create' | 'update' }): Promise<PatientMaster> {
+  return await readJson(await fetch('/api/reception/patients.php', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(payload),
   }));
 }

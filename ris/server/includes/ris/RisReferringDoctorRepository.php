@@ -5,7 +5,7 @@ class RisReferringDoctorRepository
     private mysqli $db;
 
     private const FIELDS = [
-        'name', 'qualification', 'registration_no', 'phone', 'email', 'clinic_name',
+        'name', 'qualification', 'doctor_type', 'registration_no', 'phone', 'email', 'clinic_name',
         'address', 'commission_type', 'commission_value', 'commission_overrides',
     ];
 
@@ -73,6 +73,32 @@ class RisReferringDoctorRepository
         $stmt = $this->db->prepare('SELECT * FROM ris_referring_doctors WHERE is_active = 1 ORDER BY name');
         $stmt->execute();
         return self::rows($stmt);
+    }
+
+    /**
+     * Active doctors of a given role. 'gp' returns gp+both; 'consultant' returns consultant+both.
+     */
+    public function listByType(string $type): array
+    {
+        if ($type !== 'gp' && $type !== 'consultant') {
+            return $this->listActive();
+        }
+        $stmt = $this->db->prepare(
+            "SELECT * FROM ris_referring_doctors
+             WHERE is_active = 1 AND (doctor_type = ? OR doctor_type = 'both')
+             ORDER BY name"
+        );
+        $stmt->bind_param('s', $type);
+        $stmt->execute();
+        return self::rows($stmt);
+    }
+
+    public function deactivate(int $id): void
+    {
+        $stmt = $this->db->prepare('UPDATE ris_referring_doctors SET is_active = 0 WHERE id = ?');
+        $stmt->bind_param('i', $id);
+        $stmt->execute();
+        $stmt->close();
     }
 
     public function update(int $id, array $data): array

@@ -9,7 +9,14 @@ interface BillingState {
   lastReceipt: Receipt | null;
   loading: boolean;
   error: string | null;
-  takePayment: (visitId: number, amount: number, mode: string, reference?: string, isRefund?: boolean) => Promise<VisitBalance | null>;
+  takePayment: (
+    visitId: number,
+    amount: number,
+    mode: string,
+    reference?: string,
+    isRefund?: boolean,
+    details?: { payer_name?: string; payer_relation?: string; payer_mobile?: string; notes?: string },
+  ) => Promise<VisitBalance | null>;
   generateReceipt: (visitId: number) => Promise<Receipt | null>;
   loadDaybook: (from?: string, to?: string) => Promise<void>;
 }
@@ -20,10 +27,10 @@ export const useBillingStore = create<BillingState>()((set) => ({
   loading: false,
   error: null,
 
-  takePayment: async (visitId, amount, mode, reference, isRefund) => {
+  takePayment: async (visitId, amount, mode, reference, isRefund, details) => {
     set({ loading: true, error: null });
     try {
-      const { visit } = await apiTakePayment({ visit_id: visitId, amount, mode, reference, is_refund: isRefund });
+      const { visit } = await apiTakePayment({ visit_id: visitId, amount, mode, reference, is_refund: isRefund, ...details });
       set({ loading: false });
       return visit;
     } catch (e: any) {

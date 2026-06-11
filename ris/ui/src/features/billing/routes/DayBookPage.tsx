@@ -4,6 +4,7 @@ import { useAuthStore } from '@/stores/authStore';
 import { DateRange, EmptyState, ExportLink, SectionHeader, StatTile } from '@/components/RisUi';
 import { misExportUrl } from '@/features/dashboard/api/dashboardApi';
 import { useBillingStore } from '../stores/billingStore';
+import { CenterInvoicesPanel } from './CenterInvoicesPanel';
 
 const ROLES = ['admin', 'super_admin', 'receptionist'];
 
@@ -13,6 +14,7 @@ export function DayBookPage() {
   const today = new Date().toISOString().slice(0, 10);
   const [from, setFrom] = useState(today);
   const [to, setTo] = useState(today);
+  const [tab, setTab] = useState<'daybook' | 'centers'>('daybook');
 
   useEffect(() => {
     if (ROLES.includes(role)) loadDaybook(from, to);
@@ -25,6 +27,13 @@ export function DayBookPage() {
 
   return (
     <div className="content-narrow">
+      <div className="visit-tabs" style={{ marginBottom: 16 }}>
+        <button type="button" className={tab === 'daybook' ? 'active' : ''} onClick={() => setTab('daybook')}>Day Book</button>
+        <button type="button" className={tab === 'centers' ? 'active' : ''} onClick={() => setTab('centers')}>Center Invoices</button>
+      </div>
+
+      {tab === 'centers' ? <CenterInvoicesPanel /> : (
+      <>
       <div className="card card-pad">
         <SectionHeader icon={Receipt} title="Day book collections" sub="Live payment aggregates from billing/daybook.php">
           <div className="actions">
@@ -72,6 +81,8 @@ export function DayBookPage() {
             )}
           </div>
         </>
+      )}
+      </>
       )}
     </div>
   );

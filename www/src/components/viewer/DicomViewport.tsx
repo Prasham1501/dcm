@@ -12,6 +12,7 @@ import { useCustomAnnotationStore, type TextAnnotation, type DrawPath } from '@/
 import { useStampStore } from '@/stores/stampStore';
 import { resetViewport, activateTool } from '@/lib/viewerTools';
 import { refitCornerstoneViewport } from '@/lib/cornerstoneViewport';
+import { applyDicomPixelSpacing } from '@/lib/dicomMetadata';
 import { findAnnotationAtPoint, setupAutoDeactivate, markDblClickHandled } from '@/lib/annotationUtils';
 import { AnnotationEditOverlay } from '@/components/shared/AnnotationEditOverlay';
 import { X, Plus, Minus, Trash2, Check } from 'lucide-react';
@@ -293,9 +294,11 @@ function DicomViewportInner({
     // DICOM from scratch, which is what made large studies feel slow. The CR
     // and Dual viewports (and cine playback) already use the cached loader.
     cornerstone.loadAndCacheImage(imageId).then(
-      (image: any) => {
+      async (image: any) => {
         if (cancelled || !enabledRef.current) return;
         try {
+          await applyDicomPixelSpacing(image);
+          if (cancelled || !enabledRef.current) return;
           cornerstone.displayImage(el, image);
           currentImageIdRef.current = imageId;
 
