@@ -1,4 +1,5 @@
 /** Thin fetch wrappers for the reception endpoints. */
+import { cachedRequest, invalidateCache } from '../../../lib/risDataCache';
 
 export interface Patient {
   id: number;
@@ -124,12 +125,14 @@ export interface PatientHistoryVisit extends Visit {
   total_amount: string;
   discount: string;
   paid_amount: string;
+  refund_total?: string | number | null;
   orders: Array<Order & { service_name?: string | null }>;
   receipts: Array<{ id: number; receipt_no: string; print_url?: string; total: string; created_at?: string }>;
   payments: Array<{
     id: number;
     amount: string;
     mode: string;
+    is_refund?: number | string | null;
     reference?: string | null;
     received_at?: string;
     payer_name?: string | null;
@@ -170,6 +173,11 @@ export interface ReceptionVisitRow {
   print_receipt: number | string | null;
   print_bill_receipt: number | string | null;
   send_to_printer: number | string | null;
+  phlebotomy_staff?: string | null;
+  home_visit_area?: string | null;
+  home_visit_amount?: string | number | null;
+  home_visit_time?: string | null;
+  home_visit?: number | string | null;
   refund_total: string | number | null;
   report_emailed_at: string | null;
   report_printed_at: string | null;
@@ -241,12 +249,16 @@ async function readJson(res: Response): Promise<any> {
 
 export async function apiSearchPatients(query: string, limit = 20): Promise<Patient[]> {
   const url = `${PATIENTS}?action=search&q=${encodeURIComponent(query)}&limit=${limit}`;
-  return (await readJson(await fetch(url, { credentials: 'include' }))) as Patient[];
+  return cachedRequest(`GET ${url}`, async () => (
+    (await readJson(await fetch(url, { credentials: 'include' }))) as Patient[]
+  ), { ttlMs: 30_000 });
 }
 
 export async function apiPatientHistory(patientId: number): Promise<PatientHistory> {
   const url = `${PATIENTS}?action=history&id=${patientId}`;
-  return (await readJson(await fetch(url, { credentials: 'include' }))) as PatientHistory;
+  return cachedRequest(`GET ${url}`, async () => (
+    (await readJson(await fetch(url, { credentials: 'include' }))) as PatientHistory
+  ), { ttlMs: 30_000 });
 }
 
 export async function apiReceptionVisits(filters: Record<string, string | boolean | number>): Promise<ReceptionVisitsResult> {
@@ -254,7 +266,10 @@ export async function apiReceptionVisits(filters: Record<string, string | boolea
   for (const [key, value] of Object.entries(filters)) {
     if (value !== '' && value !== false) params.set(key, String(value));
   }
-  const data = await readJson(await fetch(`${VISITS}?${params.toString()}`, { credentials: 'include' }));
+  const url = `${VISITS}?${params.toString()}`;
+  const data = await cachedRequest(`GET ${url}`, async () => (
+    await readJson(await fetch(url, { credentials: 'include' }))
+  ), { ttlMs: 20_000 });
   // Back-compat: older response shape was a bare array.
   if (Array.isArray(data)) {
     return { rows: data as ReceptionVisitRow[], totals: { records: data.length, total: 0, others: 0, discount: 0, net: 0, paid: 0, balance: 0, refund: 0 } };
@@ -274,7 +289,11 @@ export async function apiUpdateDispatch(payload: {
     credentials: 'include',
     body: JSON.stringify(payload),
   });
-  return (await readJson(res)) as Visit;
+  const visit = (await readJson(res)) as Visit;
+  invalidateCache('GET /api/reception/visits.php');
+  invalidateCache('GET /api/reception/patients.php?action=history');
+  invalidateCache('GET /api/dashboard/');
+  return visit;
 }
 
 export async function apiUpdateVisitDetails(payload: Record<string, unknown>): Promise<Visit> {
@@ -284,7 +303,11 @@ export async function apiUpdateVisitDetails(payload: Record<string, unknown>): P
     credentials: 'include',
     body: JSON.stringify(payload),
   });
-  return (await readJson(res)) as Visit;
+  const visit = (await readJson(res)) as Visit;
+  invalidateCache('GET /api/reception/visits.php');
+  invalidateCache('GET /api/reception/patients.php?action=history');
+  invalidateCache('GET /api/dashboard/');
+  return visit;
 }
 
 /** Targeted single/few-field patch (Others, Discount, Change Center, Invalidate). */
@@ -295,7 +318,11 @@ export async function apiQuickUpdateVisit(payload: { visit_id: number } & Record
     credentials: 'include',
     body: JSON.stringify(payload),
   });
-  return (await readJson(res)) as Visit;
+  const visit = (await readJson(res)) as Visit;
+  invalidateCache('GET /api/reception/visits.php');
+  invalidateCache('GET /api/reception/patients.php?action=history');
+  invalidateCache('GET /api/dashboard/');
+  return visit;
 }
 
 export async function apiSyncReturnedReports(): Promise<{
@@ -304,12 +331,16 @@ export async function apiSyncReturnedReports(): Promise<{
   synced?: { studies_added?: number; studies_updated?: number };
   unmatched?: unknown[];
 }> {
-  return (await readJson(await fetch(MATCH_REPORTS, { credentials: 'include' }))) as {
+  const result = (await readJson(await fetch(MATCH_REPORTS, { credentials: 'include' }))) as {
     matched: number;
     orders: Array<{ order_id: number; accession_number?: string | null; study_uid: string }>;
     synced?: { studies_added?: number; studies_updated?: number };
     unmatched?: unknown[];
   };
+  invalidateCache('GET /api/reception/visits.php');
+  invalidateCache('GET /api/worklist/');
+  invalidateCache('GET /api/dashboard/');
+  return result;
 }
 
 export async function apiCreatePatient(payload: Record<string, unknown>): Promise<Patient> {
@@ -319,20 +350,42 @@ export async function apiCreatePatient(payload: Record<string, unknown>): Promis
     credentials: 'include',
     body: JSON.stringify(payload),
   });
-  return (await readJson(res)) as Patient;
+  const patient = (await readJson(res)) as Patient;
+  invalidateCache('GET /api/reception/patients.php');
+  return patient;
+}
+
+export async function apiUpdatePatient(payload: Record<string, unknown> & { id: number }): Promise<Patient> {
+  const res = await fetch(PATIENTS, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ action: 'update', ...payload }),
+  });
+  const patient = (await readJson(res)) as Patient;
+  invalidateCache('GET /api/reception/patients.php');
+  invalidateCache('GET /api/reception/visits.php');
+  return patient;
 }
 
 export async function apiGetNetworkInfo(): Promise<NetworkInfo> {
-  return (await readJson(await fetch(NETWORK, { credentials: 'include' }))) as NetworkInfo;
+  return cachedRequest(`GET ${NETWORK}`, async () => (
+    (await readJson(await fetch(NETWORK, { credentials: 'include' }))) as NetworkInfo
+  ), { ttlMs: 5 * 60_000 });
 }
 
 export async function apiListServices(): Promise<Service[]> {
-  return (await readJson(await fetch(`${SERVICES}?active=1`, { credentials: 'include' }))) as Service[];
+  const url = `${SERVICES}?active=1`;
+  return cachedRequest(`GET ${url}`, async () => (
+    (await readJson(await fetch(url, { credentials: 'include' }))) as Service[]
+  ), { ttlMs: 60_000 });
 }
 
 export async function apiListReferringDoctors(query = ''): Promise<ReferringDoctor[]> {
   const url = query ? `${REFDOCS}?q=${encodeURIComponent(query)}` : REFDOCS;
-  return (await readJson(await fetch(url, { credentials: 'include' }))) as ReferringDoctor[];
+  return cachedRequest(`GET ${url}`, async () => (
+    (await readJson(await fetch(url, { credentials: 'include' }))) as ReferringDoctor[]
+  ), { ttlMs: 60_000 });
 }
 
 export async function apiCreateReferringDoctor(payload: Record<string, unknown>): Promise<ReferringDoctor> {
@@ -342,7 +395,10 @@ export async function apiCreateReferringDoctor(payload: Record<string, unknown>)
     credentials: 'include',
     body: JSON.stringify(payload),
   });
-  return (await readJson(res)) as ReferringDoctor;
+  const doctor = (await readJson(res)) as ReferringDoctor;
+  invalidateCache(`GET ${REFDOCS}`);
+  invalidateCache('GET /api/settings/masters.php');
+  return doctor;
 }
 
 export async function apiRegisterVisit(payload: object): Promise<RegisterResult> {
@@ -352,16 +408,23 @@ export async function apiRegisterVisit(payload: object): Promise<RegisterResult>
     credentials: 'include',
     body: JSON.stringify(payload),
   });
-  return (await readJson(res)) as RegisterResult;
+  const result = (await readJson(res)) as RegisterResult;
+  invalidateCache('GET /api/reception/visits.php');
+  invalidateCache('GET /api/reception/patients.php');
+  invalidateCache('GET /api/worklist/');
+  invalidateCache('GET /api/dashboard/');
+  return result;
 }
 
 export async function apiGenerateWorklist(orderId?: number): Promise<{ generated: number }> {
-  return (await readJson(await fetch(GENERATE_WORKLIST, {
+  const result = (await readJson(await fetch(GENERATE_WORKLIST, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
     body: JSON.stringify(orderId ? { order_id: orderId } : {}),
   }))) as { generated: number };
+  invalidateCache('GET /api/worklist/');
+  return result;
 }
 
 export async function apiUpdateAccession(orderId: number, accessionNumber: string): Promise<Order> {
@@ -371,7 +434,10 @@ export async function apiUpdateAccession(orderId: number, accessionNumber: strin
     credentials: 'include',
     body: JSON.stringify({ order_id: orderId, accession_number: accessionNumber }),
   });
-  return (await readJson(res)) as Order;
+  const order = (await readJson(res)) as Order;
+  invalidateCache('GET /api/reception/visits.php');
+  invalidateCache('GET /api/worklist/');
+  return order;
 }
 
 export async function apiUpdateOrderDestination(orderId: number, nodeId: number): Promise<Order> {
@@ -381,5 +447,8 @@ export async function apiUpdateOrderDestination(orderId: number, nodeId: number)
     credentials: 'include',
     body: JSON.stringify({ order_id: orderId, node_id: nodeId }),
   });
-  return (await readJson(res)) as Order;
+  const order = (await readJson(res)) as Order;
+  invalidateCache('GET /api/reception/visits.php');
+  invalidateCache('GET /api/worklist/');
+  return order;
 }

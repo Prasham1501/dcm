@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, FileText, Image, Printer, RefreshCw, Save, Search, ShieldCheck } from 'lucide-react';
+import { ChevronLeft, ChevronRight, FileText, Image, Printer, Save, Search, ShieldCheck } from 'lucide-react';
 import { Banner, Button, EmptyState, SectionHeader, StatusChip, TextareaInput, TextInput } from '@/components/RisUi';
 import {
   apiResultSheet, apiSaveResults, apiSetResultStatus, apiResultGraphs, graphFileUrl, reportPrintUrl,
   type ResultSheet, type ResultOrder, type ResultStatus, type ResultAsset,
 } from '../api/resultsApi';
 import { apiReceptionVisits, type ReceptionVisitRow } from '@/features/reception/api/receptionApi';
+import { formatRisDateTime } from '../../../lib/dateFormat';
 
 function daysAgo(n: number) { const d = new Date(); d.setDate(d.getDate() - n); return d.toISOString().slice(0, 10); }
 
@@ -35,7 +36,6 @@ export function ResultEntryPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [graphs, setGraphs] = useState<ResultAsset[]>([]);
-  const [graphBusy, setGraphBusy] = useState(false);
   const [worklist, setWorklist] = useState<ReceptionVisitRow[]>([]);
   const [worklistQuery, setWorklistQuery] = useState('');
   const [worklistFrom, setWorklistFrom] = useState(daysAgo(7));
@@ -60,15 +60,23 @@ export function ResultEntryPage() {
 
   const activeOrder = sheet?.orders.find((o) => o.id === activeOrderId) || null;
 
-  const loadGraphs = async (orderId: number, scan = false) => {
-    setGraphBusy(true);
-    try { const r = await apiResultGraphs(orderId, scan); setGraphs(r.assets || []); if (scan) setMessage(`Found ${r.discovered?.length || 0} machine file(s)`); }
-    catch (e: any) { setError(e?.message || 'Could not load graphs'); }
-    finally { setGraphBusy(false); }
+  const loadGraphs = async (orderId: number) => {
+    try {
+      const r = await apiResultGraphs(orderId, false);
+      setGraphs(r.assets || []);
+    } catch {
+      setGraphs([]);
+    }
   };
 
   useEffect(() => {
-    if (activeOrderId) loadGraphs(activeOrderId, false); else setGraphs([]);
+    if (!activeOrderId) {
+      setGraphs([]);
+      return;
+    }
+    loadGraphs(activeOrderId);
+    const timer = window.setInterval(() => loadGraphs(activeOrderId), 10000);
+    return () => window.clearInterval(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeOrderId]);
 
@@ -178,13 +186,13 @@ export function ResultEntryPage() {
           ) : (
             <div className="table-wrap mt-3">
               <table className="dt">
-                <thead><tr><th>Reg No</th><th>Patient</th><th>Date</th><th>Doctor</th><th /></tr></thead>
+                <thead><tr><th>Reg No</th><th>Patient</th><th>Date / Time</th><th>Doctor</th><th /></tr></thead>
                 <tbody>
                   {filteredWorklist.map((r) => (
                     <tr key={r.id} style={{ cursor: 'pointer' }} onClick={() => loadSheet({ visitId: r.id })}>
                       <td className="mono">{r.visit_no}</td>
                       <td className="strong">{r.full_name} <span className="field-hint">[{r.age_years || '-'} {r.sex || '-'}]</span></td>
-                      <td>{String(r.visit_datetime || '').slice(0, 10)}</td>
+                      <td>{formatRisDateTime(r.visit_datetime)}</td>
                       <td>{r.doctor_name || '-'}</td>
                       <td className="num"><Button size="sm" variant="secondary" onClick={(e) => { e.stopPropagation(); loadSheet({ visitId: r.id }); }}>Open</Button></td>
                     </tr>
@@ -199,7 +207,7 @@ export function ResultEntryPage() {
           <div className="card card-pad mt-4">
             <div className="grid-3">
               <div><div className="field-label">Patient</div><div className="strong">{[sheet.visit.name_prefix, sheet.visit.full_name].filter(Boolean).join(' ')}</div><div className="field-hint">{sheet.visit.mrn} · {sheet.visit.age_years ?? '-'} / {sheet.visit.sex ?? '-'}</div></div>
-              <div><div className="field-label">Reg No</div><div className="strong mono">{sheet.visit.visit_no}</div><div className="field-hint">{String(sheet.visit.visit_datetime || '').slice(0, 16)}</div></div>
+              <div><div className="field-label">Reg No</div><div className="strong mono">{sheet.visit.visit_no}</div><div className="field-hint">{formatRisDateTime(sheet.visit.visit_datetime)}</div></div>
               <div><div className="field-label">Doctor</div><div className="strong">{sheet.visit.doctor_name || 'Self'}</div></div>
             </div>
           </div>
@@ -263,12 +271,9 @@ export function ResultEntryPage() {
                   </div>
 
                   <div className="divider" />
-                  <div className="between">
-                    <div className="field-label"><Image size={14} /> Machine graphs / images</div>
-                    <Button size="sm" variant="secondary" icon={RefreshCw} disabled={graphBusy} onClick={() => loadGraphs(activeOrder.id, true)}>Fetch machine graphs</Button>
-                  </div>
+                  <div className="field-label"><Image size={14} /> Machine data received automatically</div>
                   {graphs.length === 0 ? (
-                    <div className="field-hint mt-3">No graphs attached. Configure the export folders in Settings → Machine graphs, then click Fetch. They print on the report automatically.</div>
+                    <div className="field-hint mt-3">No machine files yet. They appear here automatically when the machine or reporting software sends them, and print on the report.</div>
                   ) : (
                     <div className="grid-auto mt-3">
                       {graphs.map((g) => (

@@ -49,7 +49,7 @@ export function validatePatientForm(form: PatientForm): string[] {
   if (form.alt_phone && form.alt_phone.trim() !== '') {
     const digits = form.alt_phone.replace(/\D/g, '');
     if (!/^[6-9]\d{9}$/.test(digits)) {
-      errors.push('Alternate phone must be a valid 10 digit Indian number');
+      errors.push('WhatsApp number must be a valid 10 digit Indian number');
     }
   }
   const proof = (form.id_proof_type || '').toLowerCase();

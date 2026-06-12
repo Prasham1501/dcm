@@ -1,4 +1,5 @@
 /** Thin fetch wrappers for the doctor worklist endpoints. */
+import { cachedRequest, invalidateCache } from '../../../lib/risDataCache';
 
 export interface WorklistOrder {
   id: number;
@@ -82,11 +83,16 @@ export async function apiDoctorList(status?: string, modality?: string): Promise
   if (status) params.set('status', status);
   if (modality) params.set('modality', modality);
   const url = params.toString() ? `${LIST}?${params}` : LIST;
-  return (await readJson(await fetch(url, { credentials: 'include' }))) as WorklistOrder[];
+  return cachedRequest(`GET ${url}`, async () => (
+    (await readJson(await fetch(url, { credentials: 'include' }))) as WorklistOrder[]
+  ), { ttlMs: 15_000 });
 }
 
 export async function apiCollectionList(): Promise<WorklistOrder[]> {
-  return (await readJson(await fetch(`${LIST}?collection=1`, { credentials: 'include' }))) as WorklistOrder[];
+  const url = `${LIST}?collection=1`;
+  return cachedRequest(`GET ${url}`, async () => (
+    (await readJson(await fetch(url, { credentials: 'include' }))) as WorklistOrder[]
+  ), { ttlMs: 15_000 });
 }
 
 export async function apiTransition(orderId: number, action: WorklistAction, reportId?: number): Promise<void> {
@@ -97,14 +103,23 @@ export async function apiTransition(orderId: number, action: WorklistAction, rep
     body: JSON.stringify({ order_id: orderId, action, report_id: reportId }),
   });
   await readJson(res);
+  invalidateCache('GET /api/worklist/');
+  invalidateCache('GET /api/reception/visits.php');
 }
 
 export async function apiRunMatch(): Promise<MatchResult> {
-  return (await readJson(await fetch(MATCH, { method: 'POST', credentials: 'include' }))) as MatchResult;
+  const result = (await readJson(await fetch(MATCH, { method: 'POST', credentials: 'include' }))) as MatchResult;
+  invalidateCache('GET /api/worklist/');
+  invalidateCache('GET /api/reception/visits.php');
+  invalidateCache('GET /api/dashboard/');
+  return result;
 }
 
 export async function apiFetchGraphAssets(orderId: number, scan = false): Promise<GraphFetchResult> {
   const params = new URLSearchParams({ order_id: String(orderId) });
   if (scan) params.set('scan', '1');
-  return (await readJson(await fetch(`${GRAPH_ASSETS}?${params}`, { credentials: 'include' }))) as GraphFetchResult;
+  const url = `${GRAPH_ASSETS}?${params}`;
+  const load = async () => (await readJson(await fetch(url, { credentials: 'include' }))) as GraphFetchResult;
+  if (scan) return await load();
+  return cachedRequest(`GET ${url}`, load, { ttlMs: 5_000 });
 }

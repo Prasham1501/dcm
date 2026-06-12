@@ -1,5 +1,7 @@
 /** Thin fetch wrappers for the commission endpoints. */
 
+import { cachedRequest, invalidateCache } from '../../../lib/risDataCache';
+
 export interface CommissionReportRow {
   referring_doctor_id: number;
   name: string | null;
@@ -48,22 +50,35 @@ export async function apiCommissionReport(from?: string, to?: string): Promise<{
   if (from) p.set('from', from);
   if (to) p.set('to', to);
   const url = p.toString() ? `${REPORT}?${p}` : REPORT;
-  return await readJson(await fetch(url, { credentials: 'include' }));
+  return cachedRequest(`GET ${url}`, async () => (
+    await readJson(await fetch(url, { credentials: 'include' }))
+  ), { ttlMs: 30_000 });
 }
 export async function apiCommissionStatement(doctorId: number, period?: string): Promise<Statement> {
   const p = new URLSearchParams({ doctor_id: String(doctorId) });
   if (period) p.set('period', period);
-  return (await readJson(await fetch(`${STATEMENT}?${p}`, { credentials: 'include' }))) as Statement;
+  const url = `${STATEMENT}?${p}`;
+  return cachedRequest(`GET ${url}`, async () => (
+    (await readJson(await fetch(url, { credentials: 'include' }))) as Statement
+  ), { ttlMs: 30_000 });
 }
 export async function apiCreatePayout(doctorId: number, from: string, to: string): Promise<Payout> {
-  return (await readJson(await post(PAYOUTS, { action: 'create', doctor_id: doctorId, from, to }))) as Payout;
+  const payout = (await readJson(await post(PAYOUTS, { action: 'create', doctor_id: doctorId, from, to }))) as Payout;
+  invalidateCache('GET /api/commission/');
+  return payout;
 }
 export async function apiPayPayout(payoutId: number): Promise<Payout> {
-  return (await readJson(await post(PAYOUTS, { action: 'pay', payout_id: payoutId }))) as Payout;
+  const payout = (await readJson(await post(PAYOUTS, { action: 'pay', payout_id: payoutId }))) as Payout;
+  invalidateCache('GET /api/commission/');
+  return payout;
 }
 export async function apiGetCommissionEnabled(): Promise<boolean> {
-  return (await readJson(await fetch(SETTINGS, { credentials: 'include' }))).enabled;
+  return cachedRequest(`GET ${SETTINGS}`, async () => (
+    (await readJson(await fetch(SETTINGS, { credentials: 'include' }))).enabled
+  ), { ttlMs: 60_000 });
 }
 export async function apiSetCommissionEnabled(enabled: boolean): Promise<boolean> {
-  return (await readJson(await post(SETTINGS, { enabled }))).enabled;
+  const next = (await readJson(await post(SETTINGS, { enabled }))).enabled;
+  invalidateCache('GET /api/commission/');
+  return next;
 }

@@ -1,3 +1,5 @@
+import { cachedRequest, invalidateCache } from '../../../lib/risDataCache';
+
 async function readJson(res: Response): Promise<any> {
   const text = await res.text();
   let json: any = null;
@@ -69,7 +71,10 @@ export async function apiResultSheet(params: { visitId?: number; visitNo?: strin
   const qs = new URLSearchParams();
   if (params.visitId) qs.set('visit_id', String(params.visitId));
   if (params.visitNo) qs.set('visit_no', params.visitNo);
-  return (await readJson(await fetch(`${ENTRY}?${qs.toString()}`, { credentials: 'include' }))) as ResultSheet;
+  const url = `${ENTRY}?${qs.toString()}`;
+  return cachedRequest(`GET ${url}`, async () => (
+    (await readJson(await fetch(url, { credentials: 'include' }))) as ResultSheet
+  ), { ttlMs: 15_000 });
 }
 
 export async function apiSaveResults(payload: {
@@ -79,28 +84,39 @@ export async function apiSaveResults(payload: {
   advice?: string;
   note?: string;
 }): Promise<ResultSheet> {
-  return (await readJson(await fetch(ENTRY, {
+  const saved = (await readJson(await fetch(ENTRY, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
     body: JSON.stringify({ action: 'save', ...payload }),
   }))) as ResultSheet;
+  invalidateCache(`GET ${ENTRY}`);
+  invalidateCache('GET /api/reception/visits.php');
+  invalidateCache('GET /api/dashboard/');
+  return saved;
 }
 
 export async function apiSetResultStatus(orderId: number, status: ResultStatus): Promise<{ order_id: number; result_status: ResultStatus }> {
-  return await readJson(await fetch(ENTRY, {
+  const updated = await readJson(await fetch(ENTRY, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
     body: JSON.stringify({ action: 'status', order_id: orderId, status }),
   }));
+  invalidateCache(`GET ${ENTRY}`);
+  invalidateCache('GET /api/reception/visits.php');
+  invalidateCache('GET /api/dashboard/');
+  return updated;
 }
 
 export interface TrendPoint { visit_date: string; value: string; flag: string }
 
 export async function apiResultTrend(patientId: number, parameterId: number): Promise<TrendPoint[]> {
   const qs = new URLSearchParams({ trend: '1', patient_id: String(patientId), parameter_id: String(parameterId) });
-  return (await readJson(await fetch(`${ENTRY}?${qs.toString()}`, { credentials: 'include' }))) as TrendPoint[];
+  const url = `${ENTRY}?${qs.toString()}`;
+  return cachedRequest(`GET ${url}`, async () => (
+    (await readJson(await fetch(url, { credentials: 'include' }))) as TrendPoint[]
+  ), { ttlMs: 30_000 });
 }
 
 export function reportPrintUrl(orderId: number, opts: { header?: boolean; preview?: boolean } = {}): string {
@@ -139,20 +155,29 @@ export interface TestParameter {
 const PARAMS = '/api/settings/test-parameters.php';
 
 export async function apiListParameters(serviceId: number): Promise<TestParameter[]> {
-  return (await readJson(await fetch(`${PARAMS}?service_id=${serviceId}`, { credentials: 'include' }))) as TestParameter[];
+  const url = `${PARAMS}?service_id=${serviceId}`;
+  return cachedRequest(`GET ${url}`, async () => (
+    (await readJson(await fetch(url, { credentials: 'include' }))) as TestParameter[]
+  ), { ttlMs: 60_000 });
 }
 
 export async function apiSaveParameter(payload: Partial<TestParameter> & { service_id: number; name: string }): Promise<TestParameter> {
-  return (await readJson(await fetch(PARAMS, {
+  const saved = (await readJson(await fetch(PARAMS, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
     body: JSON.stringify(payload),
   }))) as TestParameter;
+  invalidateCache(`GET ${PARAMS}`);
+  invalidateCache(`GET ${ENTRY}`);
+  return saved;
 }
 
 export async function apiDeleteParameter(id: number): Promise<{ id: number }> {
-  return await readJson(await fetch(`${PARAMS}?id=${id}`, { method: 'DELETE', credentials: 'include' }));
+  const deleted = await readJson(await fetch(`${PARAMS}?id=${id}`, { method: 'DELETE', credentials: 'include' }));
+  invalidateCache(`GET ${PARAMS}`);
+  invalidateCache(`GET ${ENTRY}`);
+  return deleted;
 }
 
 // ---- Machine graphs / attachments ----
@@ -168,7 +193,10 @@ export interface ResultAsset {
 export async function apiResultGraphs(orderId: number, scan = false): Promise<{ assets: ResultAsset[]; discovered: any[] }> {
   const qs = new URLSearchParams({ order_id: String(orderId) });
   if (scan) qs.set('scan', '1');
-  return await readJson(await fetch(`/api/results/graph-assets.php?${qs.toString()}`, { credentials: 'include' }));
+  const url = `/api/results/graph-assets.php?${qs.toString()}`;
+  const load = async () => await readJson(await fetch(url, { credentials: 'include' }));
+  if (scan) return await load();
+  return cachedRequest(`GET ${url}`, load, { ttlMs: 5_000 });
 }
 
 export function graphFileUrl(assetId: number): string {

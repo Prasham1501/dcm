@@ -2,7 +2,7 @@
 /**
  * RIS counter settings.
  * GET returns current prefixes/next numbers.
- * POST { accession_start?, accession_prefix?, token_start?, token_prefix? } updates counters.
+ * POST { patient_start?, patient_prefix?, visit_start?, visit_prefix? } updates counters.
  */
 if (!defined('DICOM_VIEWER')) { define('DICOM_VIEWER', true); }
 require_once __DIR__ . '/../../includes/config.php';
@@ -18,7 +18,7 @@ if (!validateSession()) { sendErrorResponse('Unauthorized', 401); }
 if (!hasRole(['admin', 'super_admin', 'receptionist'])) { sendErrorResponse('Forbidden', 403); }
 
 function ris_counter_rows(mysqli $db): array {
-    $res = $db->query("SELECT name, current_value, prefix FROM app_counters WHERE name IN ('accession','token','receipt','visit','mrn') ORDER BY name");
+    $res = $db->query("SELECT name, current_value, prefix FROM app_counters WHERE name IN ('accession','receipt','visit','mrn') ORDER BY name");
     $out = [];
     while ($res && $row = $res->fetch_assoc()) {
         $out[$row['name']] = [
@@ -56,7 +56,7 @@ function ris_update_counter(mysqli $db, string $name, ?string $prefix, $nextNumb
 
 try {
     $db = getDbConnection();
-    $db->query("INSERT INTO app_counters (name, current_value, prefix) VALUES ('token', 0, 'T') ON DUPLICATE KEY UPDATE name = name");
+    $db->query("INSERT INTO app_counters (name, current_value, prefix) VALUES ('mrn', 0, 'P'), ('visit', 0, 'V') ON DUPLICATE KEY UPDATE name = name");
 
     if ($_SERVER['REQUEST_METHOD'] === 'GET') {
         sendSuccessResponse(ris_counter_rows($db));
@@ -64,8 +64,8 @@ try {
     if ($_SERVER['REQUEST_METHOD'] !== 'POST') { sendErrorResponse('Method not allowed', 405); }
 
     $input = json_decode(file_get_contents('php://input'), true) ?: [];
-    ris_update_counter($db, 'accession', $input['accession_prefix'] ?? null, $input['accession_start'] ?? null);
-    ris_update_counter($db, 'token', $input['token_prefix'] ?? null, $input['token_start'] ?? null);
+    ris_update_counter($db, 'mrn', $input['patient_prefix'] ?? null, $input['patient_start'] ?? null);
+    ris_update_counter($db, 'visit', $input['visit_prefix'] ?? null, $input['visit_start'] ?? null);
     sendSuccessResponse(ris_counter_rows($db), 'Counters updated');
 } catch (Throwable $e) {
     logMessage('RIS counters error: ' . $e->getMessage(), 'error', 'ris.log');

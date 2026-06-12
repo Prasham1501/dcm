@@ -19,7 +19,7 @@ interface WorklistState {
   runMatch: (silent?: boolean) => Promise<MatchResult | null>;
 }
 
-export const useWorklistStore = create<WorklistState>()((set) => ({
+export const useWorklistStore = create<WorklistState>()((set, get) => ({
   orders: [],
   collection: [],
   loading: false,
@@ -27,7 +27,8 @@ export const useWorklistStore = create<WorklistState>()((set) => ({
   lastMatch: null,
 
   load: async (status, modality, silent = false) => {
-    if (!silent) set({ loading: true, error: null });
+    const hasRows = get().orders.length > 0;
+    if (!silent) set({ loading: hasRows ? false : true, error: null });
     try {
       const orders = await apiDoctorList(status, modality);
       set({ orders, loading: false });

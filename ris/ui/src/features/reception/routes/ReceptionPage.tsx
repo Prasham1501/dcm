@@ -1,15 +1,17 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { CheckCircle2, ClipboardList, Flag, History, Mail, MessageSquare, MonitorUp, MoreVertical, Plus, Printer, Receipt, RefreshCw, Search, UserPlus } from 'lucide-react';
+import { CheckCircle2, ClipboardList, Flag, History, Mail, MessageSquare, MonitorUp, MoreVertical, Plus, Printer, Receipt, RefreshCw, Search, UserPlus, X } from 'lucide-react';
 import { useAuthStore } from '@/stores/authStore';
-import { Banner, Button, EmptyState, ModalityTag, SectionHeader, SelectInput, StatusChip, TextareaInput, TextInput } from '@/components/RisUi';
+import { Banner, Button, EmptyState, IconButton, ModalityTag, SectionHeader, SelectInput, StatusChip, TextareaInput, TextInput } from '@/components/RisUi';
 import { useReceptionStore } from '../stores/receptionStore';
-import { apiGenerateWorklist, apiPatientHistory, apiQuickUpdateVisit, apiReceptionVisits, apiSyncReturnedReports, apiUpdateAccession, apiUpdateDispatch, apiUpdateOrderDestination, apiUpdateVisitDetails, type Order, type Patient, type PatientHistory, type PatientHistoryVisit, type ReceptionVisitRow, type VisitTotals } from '../api/receptionApi';
+import { apiGenerateWorklist, apiPatientHistory, apiQuickUpdateVisit, apiReceptionVisits, apiSyncReturnedReports, apiUpdateAccession, apiUpdateDispatch, apiUpdateOrderDestination, apiUpdatePatient, apiUpdateVisitDetails, type Order, type Patient, type PatientHistory, type PatientHistoryVisit, type ReceptionVisitRow, type VisitTotals } from '../api/receptionApi';
 import { apiDicomNodes, apiMasters, type DicomNode, type Center, type Pro, type Lookup } from '@/features/settings/api/settingsApi';
 import type { PatientForm } from '../lib/patientForm';
 import type { VisitForm } from '../lib/visitForm';
 import { useBillingStore } from '@/features/billing/stores/billingStore';
 import { apiTakePayment, printAssetUrl, type Receipt as ReceiptRow } from '@/features/billing/api/billingApi';
+import { getCachedData } from '../../../lib/risDataCache';
+import { formatRisDateTime } from '../../../lib/dateFormat';
 
 const RECEPTION_ROLES = ['receptionist'];
 
@@ -42,6 +44,18 @@ const EMPTY_TOTALS: VisitTotals = { records: 0, total: 0, others: 0, discount: 0
 const receptionVisitCache: { key: string; rows: ReceptionVisitRow[]; totals: VisitTotals; at: number } = { key: '', rows: [], totals: EMPTY_TOTALS, at: 0 };
 const patientHistoryCache = new Map<number, PatientHistory>();
 
+function receptionVisitsKey(filters: Record<string, string | boolean | number>) {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(filters)) {
+    if (value !== '' && value !== false) params.set(key, String(value));
+  }
+  return `GET /api/reception/visits.php?${params.toString()}`;
+}
+
+function ModalCloseButton({ onClick, title = 'Close' }: { onClick: () => void; title?: string }) {
+  return <IconButton className="modal-x" sm bordered icon={X} title={title} aria-label={title} onClick={onClick} />;
+}
+
 export function ReceptionPage() {
   const navigate = useNavigate();
   const role = (useAuthStore((state) => state.user)?.role as string) || '';
@@ -55,7 +69,6 @@ export function ReceptionPage() {
   const [visitRows, setVisitRows] = useState<ReceptionVisitRow[]>([]);
   const [visitTotals, setVisitTotals] = useState<VisitTotals>(EMPTY_TOTALS);
   const [page, setPage] = useState(1);
-  const [scanCode, setScanCode] = useState('');
   const [showLegend, setShowLegend] = useState(false);
   const [indicatorFilter, setIndicatorFilter] = useState<IndicatorKey | null>(null);
   const [actionModal, setActionModal] = useState<{ kind: 'payment' | 'refund' | 'others' | 'discount' | 'center' | 'comment'; row: ReceptionVisitRow } | null>(null);
@@ -80,6 +93,9 @@ export function ReceptionPage() {
   const [patientModalOpen, setPatientModalOpen] = useState(false);
   const [visitModalOpen, setVisitModalOpen] = useState(false);
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
+  const [patientEditing, setPatientEditing] = useState(false);
+  const [patientSaving, setPatientSaving] = useState(false);
+  const [patientEditForm, setPatientEditForm] = useState<Record<string, string | number | null>>({});
   const [history, setHistory] = useState<PatientHistory | null>(null);
   const [historyLoading, setHistoryLoading] = useState(false);
 
@@ -135,14 +151,43 @@ export function ReceptionPage() {
     printLinks: Array<{ label: string; url: string }>;
   } | null>(null);
 
+  const closeAllReceptionOverlays = () => {
+    setActionModal(null);
+    setRowMenu(null);
+    setPatientModalOpen(false);
+    setVisitModalOpen(false);
+    setCompleted(null);
+    setSelectedPatient(null);
+    setHistory(null);
+    setPatientEditing(false);
+    resetVisitForm();
+  };
+
+  useEffect(() => {
+    const onReselect = () => closeAllReceptionOverlays();
+    window.addEventListener('ris:reception-reselect', onReselect);
+    return () => window.removeEventListener('ris:reception-reselect', onReselect);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   useEffect(() => {
     if (!RECEPTION_ROLES.includes(role)) return;
     loadServices();
     loadReferringDoctors();
     if (receptionVisitCache.rows.length > 0) {
       setVisitRows(receptionVisitCache.rows);
+      setVisitTotals(receptionVisitCache.totals);
     } else {
-      loadVisitRows();
+      const initial = { ...visitFilters, page: 1, page_size: PAGE_SIZE, include_totals: 0 };
+      const warmed = getCachedData<{ rows: ReceptionVisitRow[]; totals: VisitTotals }>(receptionVisitsKey(initial), 60_000);
+      if (warmed?.rows?.length) {
+        receptionVisitCache.key = JSON.stringify(initial);
+        receptionVisitCache.rows = warmed.rows;
+        receptionVisitCache.totals = warmed.totals || EMPTY_TOTALS;
+        receptionVisitCache.at = Date.now();
+        setVisitRows(warmed.rows);
+        setVisitTotals(warmed.totals || EMPTY_TOTALS);
+      }
     }
     apiDicomNodes().then(setNodes).catch(() => setNodes([]));
     apiMasters<Center>('centers', { active: '1' }).then(setCenters).catch(() => setCenters([]));
@@ -153,13 +198,41 @@ export function ReceptionPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [role, loadServices, loadReferringDoctors]);
 
-  const loadVisitRows = async (nextFilters = visitFilters, nextPage = page) => {
-    const merged = { ...nextFilters, page: nextPage, page_size: PAGE_SIZE };
+  useEffect(() => {
+    if (!selectedPatient) {
+      setPatientEditForm({});
+      return;
+    }
+    setPatientEditForm({
+      name_prefix: selectedPatient.name_prefix || '',
+      full_name: selectedPatient.full_name || '',
+      phone: selectedPatient.phone || '',
+      alt_phone: selectedPatient.alt_phone || '',
+      patient_group: selectedPatient.patient_group || '',
+      sex: selectedPatient.sex || '',
+      dob: selectedPatient.dob || '',
+      age_years: selectedPatient.age_years ?? '',
+      email: selectedPatient.email || '',
+      address_line1: selectedPatient.address_line1 || selectedPatient.address || '',
+    });
+  }, [selectedPatient]);
+
+  const loadVisitRows = async (nextFilters = visitFilters, nextPage = page, includeTotals = false) => {
+    const merged = { ...nextFilters, page: nextPage, page_size: PAGE_SIZE, include_totals: includeTotals ? 1 : 0 };
     const key = JSON.stringify(merged);
     if (receptionVisitCache.key === key && receptionVisitCache.rows.length > 0 && Date.now() - receptionVisitCache.at < 60000) {
       setVisitRows(receptionVisitCache.rows);
       setVisitTotals(receptionVisitCache.totals);
       return;
+    }
+    const warmed = getCachedData<{ rows: ReceptionVisitRow[]; totals: VisitTotals }>(receptionVisitsKey(merged), 60_000);
+    if (warmed?.rows) {
+      receptionVisitCache.key = key;
+      receptionVisitCache.rows = warmed.rows;
+      receptionVisitCache.totals = warmed.totals || EMPTY_TOTALS;
+      receptionVisitCache.at = Date.now();
+      setVisitRows(warmed.rows);
+      setVisitTotals(warmed.totals || EMPTY_TOTALS);
     }
     try {
       const { rows, totals } = await apiReceptionVisits(merged);
@@ -181,12 +254,33 @@ export function ReceptionPage() {
     setVisitFilters((current) => ({ ...current, [key]: value }));
   };
 
+  const updatePatientEditField = (key: keyof Patient, value: string | number | null) => {
+    setPatientEditForm((current) => ({ ...current, [key]: value }));
+  };
+
+  const savePatientDetails = async () => {
+    if (!selectedPatient || patientSaving) return;
+    setPatientSaving(true);
+    try {
+      const saved = await apiUpdatePatient({ id: selectedPatient.id, ...patientEditForm });
+      setSelectedPatient(saved);
+      setHistory((current) => current ? { ...current, patient: saved } : current);
+      patientHistoryCache.delete(selectedPatient.id);
+      setPatientEditing(false);
+      setMessage('Patient details updated');
+    } catch (err: any) {
+      setMessage(err?.message || 'Could not update patient details');
+    } finally {
+      setPatientSaving(false);
+    }
+  };
+
   useEffect(() => {
     if (!RECEPTION_ROLES.includes(role)) return;
     const id = window.setTimeout(() => {
       setPage(1);
       loadVisitRows(visitFilters, 1);
-    }, 250);
+    }, 80);
     return () => window.clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visitFilters, role]);
@@ -709,19 +803,6 @@ export function ReceptionPage() {
     }
   };
 
-  const runScan = () => {
-    const code = scanCode.trim();
-    if (!code) return;
-    const found = visitRows.find((r) => (r.visit_no || '').toLowerCase() === code.toLowerCase());
-    if (found) {
-      chooseVisitRow(found);
-    } else {
-      updateVisitFilter('patient', code);
-      setMessage(`Searching for "${code}"...`);
-    }
-    setScanCode('');
-  };
-
   const editAccession = async (order: Order) => {
     const value = window.prompt('Enter accession number', order.accession_number);
     const next = value?.trim();
@@ -768,6 +849,7 @@ export function ReceptionPage() {
       {actionModal && (
         <div className="modal-backdrop" onClick={() => setActionModal(null)}>
           <div className="modal-panel" onClick={(event) => event.stopPropagation()} style={{ maxWidth: 420 }}>
+            <ModalCloseButton onClick={() => setActionModal(null)} />
             <SectionHeader icon={Receipt} title={actionTitles[actionModal.kind]} sub={`${actionModal.row.visit_no} · ${actionModal.row.full_name}`} />
             {actionModal.kind === 'center' ? (
               <SelectInput label="Center" value={actionValue} onChange={(event) => setActionValue(event.target.value)}>
@@ -796,7 +878,6 @@ export function ReceptionPage() {
             <div className="field-hint mt-3">Current balance: Rs {actionModal.row.balance}</div>
             <div className="actions mt-4">
               <Button variant="primary" onClick={submitAction}>Save</Button>
-              <Button variant="ghost" onClick={() => setActionModal(null)}>Cancel</Button>
             </div>
           </div>
         </div>
@@ -805,39 +886,29 @@ export function ReceptionPage() {
       <div className="workflow-steps mt-4">
         <Step active={!selectedPatient} done={!!selectedPatient} label="Patient" />
         <Step active={!!selectedPatient && !completed} done={!!completed} label="Visit & payment" />
-        <Step active={!!completed} done={!!completed} label="Receipt & accession" />
+        <Step active={!!completed} done={!!completed} label="Receipt" />
       </div>
 
       {visitModalOpen && completed && (
         <div className="modal-backdrop" onClick={() => setVisitModalOpen(false)}>
         <div className="modal-panel modal-panel-wide" onClick={(event) => event.stopPropagation()} style={{ borderColor: 'var(--success)' }}>
-          <SectionHeader icon={CheckCircle2} title={`Visit ${completed.visitNo} completed`} sub="Next: send patient details to the machine console">
+          <ModalCloseButton onClick={() => setVisitModalOpen(false)} />
+          <SectionHeader icon={CheckCircle2} title={`Visit ${completed.visitNo} completed`} sub="Print documents are ready">
             <StatusChip status={Number(completed.balance) <= 0 ? 'paid' : 'pending'} label={Number(completed.balance) <= 0 ? 'Paid' : `Balance Rs ${completed.balance}`} />
           </SectionHeader>
           <div className="grid-2">
             <div className="card card-surface card-pad">
-              <div className="field-label">Send details before scan</div>
+              <div className="field-label">Saved tests</div>
               {completed.orders.map((order) => (
                 <div key={order.id} className="card card-pad mt-3">
                   <div className="between">
                     <div>
                       <div className="strong">{order.service_name || 'Study'}</div>
-                      <div className="accession-list">
-                        <span className="accession-code">{order.accession_number}</span>
-                      </div>
+                      {/* Accession/console details intentionally hidden from reception completion UI. */}
                     </div>
                     <ModalityTag modality={order.modality} />
                   </div>
-                  <div className="actions mt-3">
-                    <SendDetailsActions
-                      nodes={nodes}
-                      patient={selectedPatient}
-                      order={order}
-                      prepareConsoleWorklist={prepareConsoleWorklist}
-                      editAccession={editAccession}
-                    />
-                  </div>
-                  <div className="field-hint mt-3">The machine must query DICOM Modality Worklist from RIS, select this accession, scan, then send images back to ONECLICKZ:3458.</div>
+                  {/* SendDetailsActions removed from visible flow per reception requirement. */}
                 </div>
               ))}
             </div>
@@ -862,9 +933,6 @@ export function ReceptionPage() {
             <Button variant="secondary" icon={ClipboardList} onClick={() => { setCompleted(null); resetVisitForm(); }}>
               Add another visit for this patient
             </Button>
-            <Button variant="ghost" onClick={() => setVisitModalOpen(false)}>
-              Close
-            </Button>
           </div>
         </div>
         </div>
@@ -873,6 +941,7 @@ export function ReceptionPage() {
       {selectedPatient && visitModalOpen && !completed && (
         <div className="modal-backdrop" onClick={() => setVisitModalOpen(false)}>
         <div className="modal-panel modal-panel-wide" onClick={(event) => event.stopPropagation()}>
+        <ModalCloseButton onClick={() => setVisitModalOpen(false)} />
         {(visitSaveError || error || billingError) && <div className="banner banner-warning">{visitSaveError || error || billingError}</div>}
         <VisitPanel
           patient={selectedPatient}
@@ -1009,8 +1078,6 @@ export function ReceptionPage() {
             <span>Outstanding only</span>
           </label>
           <Button variant="secondary" icon={Search} onClick={() => loadVisitRows()}>Search</Button>
-          <TextInput placeholder="Scan code / Reg No" value={scanCode} onChange={(event) => setScanCode(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') runScan(); }} style={{ minWidth: 200 }} />
-          <Button variant="ghost" onClick={runScan}>Open scanned</Button>
           <div style={{ position: 'relative' }}>
             <Button variant={indicatorFilter ? 'secondary' : 'ghost'} className="legend-toggle" onClick={() => setShowLegend((v) => !v)}>
               {indicatorFilter ? `Filter: ${INDICATOR_ITEMS.find((i) => i.key === indicatorFilter)?.label.split(' (')[0]}` : 'Legend'}
@@ -1024,7 +1091,7 @@ export function ReceptionPage() {
               <tr>
                 <th />
                 <th>Reg No</th>
-                <th>Date</th>
+                <th>Date / Time</th>
                 <th>Center</th>
                 <th>Patient</th>
                 <th>Doctor</th>
@@ -1038,7 +1105,6 @@ export function ReceptionPage() {
                 <th>Mobile</th>
                 <th>Consultant</th>
                 <th>User</th>
-                <th>Reg Time</th>
                 <th>Status</th>
                 <th />
               </tr>
@@ -1058,7 +1124,7 @@ export function ReceptionPage() {
                 >
                   <td><RowIndicators row={row} /></td>
                   <td className="mono">{row.visit_no}</td>
-                  <td>{String(row.visit_datetime || '').slice(0, 10)}</td>
+                  <td>{formatRisDateTime(row.visit_datetime)}</td>
                   <td>{row.center_name || '-'}</td>
                   <td className="strong">{row.full_name} <span className="field-hint">[{row.age_years || '-'} {row.sex || '-'}]</span></td>
                   <td>{row.doctor_name || '-'}</td>
@@ -1072,12 +1138,8 @@ export function ReceptionPage() {
                   <td>{row.phone || '-'}</td>
                   <td>{row.consultant_doctor || '-'}</td>
                   <td>{row.user_name || '-'}</td>
-                  <td>{String(row.visit_datetime || '').slice(11, 19)}</td>
                   <td>
-                    <div className="stack-tight">
-                      <strong>{workflowForRow(row).label}</strong>
-                      <VisitStatusLabel row={row} />
-                    </div>
+                    <VisitStatusCell row={row} />
                   </td>
                   <td className="num">
                     <div className="actions" style={{ justifyContent: 'flex-end', flexWrap: 'nowrap' }}>
@@ -1091,7 +1153,7 @@ export function ReceptionPage() {
                   </td>
                 </tr>
               ))}
-              {displayedRows.length === 0 && <tr><td colSpan={19}><EmptyState title="No registrations" sub={indicatorFilter ? 'No visits match this status filter.' : 'Adjust filters or add a new patient and visit.'} /></td></tr>}
+              {displayedRows.length === 0 && <tr><td colSpan={18}><EmptyState title="No registrations" sub={indicatorFilter ? 'No visits match this status filter.' : 'Adjust filters or add a new patient and visit.'} /></td></tr>}
             </tbody>
             {displayedRows.length > 0 && (
               <tfoot>
@@ -1104,7 +1166,7 @@ export function ReceptionPage() {
                   <td className="num">{Number(footerTotals.paid).toFixed(2)}</td>
                   <td className="num">{Number(footerTotals.balance).toFixed(2)}</td>
                   <td className="num">{Number(footerTotals.refund).toFixed(2)}</td>
-                  <td colSpan={6} />
+                  <td colSpan={5} />
                 </tr>
               </tfoot>
             )}
@@ -1139,31 +1201,77 @@ export function ReceptionPage() {
       )}
 
       {selectedPatient && !visitModalOpen && (
-        <div className="card card-pad mt-5">
-          <SectionHeader icon={UserPlus} title={selectedPatient.full_name} sub={`${selectedPatient.mrn} | ${selectedPatient.phone || 'No mobile'}`}>
-            <Button variant="secondary" onClick={() => { setSelectedPatient(null); setHistory(null); resetVisitForm(); }}>
-              Back
+        <div className="patient-profile mt-5">
+          <div className="patient-profile-head">
+            <div>
+              <div className="patient-name">{selectedPatient.full_name}</div>
+              <div className="patient-sub">{selectedPatient.mrn} | Patient ID {selectedPatient.id}</div>
+            </div>
+            <div className="actions">
+            <Button variant="secondary" onClick={() => setPatientEditing((current) => !current)}>
+              {patientEditing ? 'Cancel edit' : 'Edit patient'}
             </Button>
             <Button variant="primary" icon={Plus} onClick={() => { setCompleted(null); resetVisitForm(); setVisitModalOpen(true); }}>
               New visit
             </Button>
-          </SectionHeader>
-          <div className="grid-3">
-            <DetailBox label="Mobile" value={selectedPatient.phone || '-'} />
-            <DetailBox label="Type" value={selectedPatient.patient_group || '-'} />
-            <DetailBox label="Age / Gender" value={`${selectedPatient.age_years || '-'} / ${selectedPatient.sex || '-'}`} />
+              <IconButton bordered icon={X} title="Close patient" aria-label="Close patient" onClick={() => { setSelectedPatient(null); setHistory(null); resetVisitForm(); }} />
+            </div>
           </div>
+          <PatientBalanceSummary visits={history?.visits || []} />
+          <div className="patient-facts">
+            <PatientFact label="Mobile" value={selectedPatient.phone || '-'} />
+            <PatientFact label="Type" value={selectedPatient.patient_group || '-'} />
+            <PatientFact label="Age / Gender" value={`${selectedPatient.age_years || '-'} / ${selectedPatient.sex || '-'}`} />
+            <PatientFact label="Address" value={[selectedPatient.address_line1 || selectedPatient.address, selectedPatient.city, selectedPatient.state].filter(Boolean).join(', ') || '-'} wide />
+          </div>
+          {patientEditing && (
+            <div className="patient-edit-panel mt-3">
+              <div className="grid-2">
+                <TextInput label="Patient ID" value={String(selectedPatient.id)} disabled />
+                <TextInput label="Mobile" value={String(patientEditForm.phone || '')} onChange={(event) => updatePatientEditField('phone', event.target.value)} />
+                <SelectInput label="Title" value={String(patientEditForm.name_prefix || '')} onChange={(event) => updatePatientEditField('name_prefix', event.target.value)}>
+                  <option value="">-</option>
+                  <option value="Mr.">Mr.</option>
+                  <option value="Mrs.">Mrs.</option>
+                  <option value="Ms.">Ms.</option>
+                  <option value="Dr.">Dr.</option>
+                  <option value="Master">Master</option>
+                  <option value="Baby">Baby</option>
+                </SelectInput>
+                <TextInput label="Name" required value={String(patientEditForm.full_name || '')} onChange={(event) => updatePatientEditField('full_name', event.target.value)} />
+                <TextInput label="WhatsApp number" value={String(patientEditForm.alt_phone || '')} onChange={(event) => updatePatientEditField('alt_phone', event.target.value)} placeholder="Optional" />
+                <SelectInput label="Type" value={String(patientEditForm.patient_group || '')} onChange={(event) => updatePatientEditField('patient_group', event.target.value)}>
+                  <option value="">Select type</option>
+                  {(groupList.length > 0 ? groupList.map((g) => g.value) : ['Regular', 'Center', 'Home visit', 'Corporate']).map((g) => (
+                    <option key={g} value={g}>{g}</option>
+                  ))}
+                </SelectInput>
+                <SelectInput label="Gender" value={String(patientEditForm.sex || '')} onChange={(event) => updatePatientEditField('sex', event.target.value)}>
+                  <option value="">-</option>
+                  <option value="male">Male</option>
+                  <option value="female">Female</option>
+                  <option value="other">Other</option>
+                </SelectInput>
+                <TextInput label="DOB" type="date" value={String(patientEditForm.dob || '')} onChange={(event) => updatePatientEditField('dob', event.target.value)} hint="Age fills in automatically" />
+                <TextInput label="Age (years)" type="number" value={String(patientEditForm.age_years ?? '')} onChange={(event) => updatePatientEditField('age_years', event.target.value)} hint="Or enter directly if DOB unknown" />
+                <TextInput label="Email" type="email" value={String(patientEditForm.email || '')} onChange={(event) => updatePatientEditField('email', event.target.value)} />
+              </div>
+              <TextareaInput label="Address" rows={3} className="mt-3" value={String(patientEditForm.address_line1 || '')} onChange={(event) => updatePatientEditField('address_line1', event.target.value)} />
+              <div className="actions mt-3">
+                <Button variant="primary" disabled={patientSaving} onClick={savePatientDetails}>{patientSaving ? 'Saving...' : 'Save patient'}</Button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
       {patientModalOpen && (
         <div className="modal-backdrop" onClick={() => setPatientModalOpen(false)}>
           <form className="modal-panel" onSubmit={createPatient} onClick={(event) => event.stopPropagation()}>
-            <SectionHeader icon={UserPlus} title="New patient" sub="Create the patient and continue to visit entry">
-              <Button type="button" variant="ghost" onClick={() => setPatientModalOpen(false)}>Close</Button>
-            </SectionHeader>
+            <ModalCloseButton onClick={() => setPatientModalOpen(false)} />
+            <SectionHeader icon={UserPlus} title="New patient" sub="Create the patient and continue to visit entry" />
             <div className="grid-2">
-              <TextInput label="Patient ID" value="Auto" disabled />
+              <TextInput label="Patient ID" value="Generated on save" disabled />
               <TextInput label="Mobile" value={patientForm.phone || ''} onChange={(event) => setPatientField('phone', event.target.value)} placeholder="10 digit mobile" />
               <SelectInput label="Title" value={patientForm.name_prefix || ''} onChange={(event) => setPatientField('name_prefix', event.target.value)}>
                 <option value="">-</option>
@@ -1175,7 +1283,7 @@ export function ReceptionPage() {
                 <option value="Baby">Baby</option>
               </SelectInput>
               <TextInput label="Name" required value={patientForm.full_name || ''} onChange={(event) => setPatientField('full_name', event.target.value)} />
-              <TextInput label="Phone" value={patientForm.alt_phone || ''} onChange={(event) => setPatientField('alt_phone', event.target.value)} placeholder="Optional" />
+              <TextInput label="WhatsApp number" value={patientForm.alt_phone || ''} onChange={(event) => setPatientField('alt_phone', event.target.value)} placeholder="Optional" />
               <SelectInput label="Type" value={patientForm.patient_group || ''} onChange={(event) => setPatientField('patient_group', event.target.value)}>
                 <option value="">Select type</option>
                 {(groupList.length > 0 ? groupList.map((g) => g.value) : ['Regular', 'Center', 'Home visit', 'Corporate']).map((g) => (
@@ -1209,6 +1317,11 @@ export function ReceptionPage() {
         <HistoryPanel
           history={history}
           nodes={nodes}
+          centers={centers}
+          referringDoctors={referringDoctors}
+          staffList={staffList}
+          areaList={areaList}
+          pros={pros}
           loading={historyLoading}
           onMessage={setMessage}
           onRefresh={refreshSelectedHistory}
@@ -1243,11 +1356,20 @@ function VisitStatusLabel({ row }: { row: ReceptionVisitRow }) {
   if (note.includes('delivered') || note.includes('report given')) labels.push('Delivered');
   else if (note.includes('report received')) labels.push('Report received');
   else if (note.includes('images print received')) labels.push('Print received');
-  if (Number(row.send_to_printer || 0) === 1) labels.push('Print requested');
-  if (Number(row.print_receipt || 0) === 1) labels.push('Receipt');
-  if (Number(row.print_barcode || 0) === 1) labels.push('Barcode');
-  if (Number(row.print_srs || 0) === 1) labels.push('SRS');
   return <span className="field-hint">{labels.length ? labels.join(' / ') : 'Pending'}</span>;
+}
+
+function VisitStatusCell({ row }: { row: ReceptionVisitRow }) {
+  return (
+    <div className="status-cell">
+      <div className="status-main">
+        <strong>{workflowForRow(row).label}</strong>
+        <StatusChip status={row.status || 'open'} />
+      </div>
+      <VisitStatusLabel row={row} />
+      <VisitTags visit={row} />
+    </div>
+  );
 }
 
 // Status flags for a row, used by both the icon cluster and the legend filter.
@@ -1372,7 +1494,7 @@ function workflowFromParts({
     return { label: `${urgentPrefix}Images print received`, step: 3 };
   }
   if (hasSoftCopy) return { label: `${urgentPrefix}Soft copy received`, step: 2 };
-  if (hasConsoleOrder) return { label: `${urgentPrefix}Sent to console`, step: 1 };
+  if (hasConsoleOrder) return { label: `${urgentPrefix}Registered`, step: 1 };
   if (due > 0) return { label: `${urgentPrefix}Payment pending`, step: 1 };
   return { label: `${urgentPrefix}Registered`, step: 0 };
 }
@@ -1504,10 +1626,10 @@ function VisitPanel(props: {
       <SectionHeader icon={ClipboardList} title={`Visit for ${props.patient.full_name}`} sub={`${props.patient.mrn} | ${props.patient.phone || 'No phone'}`}>
         <Button size="sm" variant="ghost" onClick={props.changePatient}>Change patient</Button>
       </SectionHeader>
-      <div className="grid-2">
+      <div>
         <div>
           <div className="grid-2">
-            <TextInput label="Visit ID" value="Auto" disabled />
+            <TextInput label="Visit ID" value="Generated on save" disabled />
             <TextInput label="Date" type="date" value={props.regDate} onChange={(event) => props.setRegDate(event.target.value)} />
             {props.centers.length > 0 ? (
               <div>
@@ -1681,16 +1803,16 @@ function VisitPanel(props: {
             </div>
           )}
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <div className="grid-2">
+        <div className="card card-surface card-pad mt-4">
+          <div className="field-label">Costing and payment</div>
+          <div className="grid-3 mt-3">
             <TextInput label="Total" value={props.selectedTotal.toFixed(2)} disabled />
+            <TextInput label="Home visit" value={props.homeVisitAmount} onChange={(event) => props.setHomeVisitAmount(event.target.value)} />
             <TextInput label="Extra charge" value={props.miscCharge} onChange={(event) => props.setMiscCharge(event.target.value)} />
             <TextInput label="Discount" value={props.discount} onChange={(event) => props.setDiscount(event.target.value)} />
             <TextInput label="Final amount" value={props.netTotal.toFixed(2)} disabled />
             <TextInput label="Advance" value={props.payAmount} onChange={(event) => props.setPayAmount(event.target.value)} />
             <TextInput label="Balance" value={props.balanceDue.toFixed(2)} disabled />
-          </div>
-          <div className="grid-2">
             <SelectInput label="Payment mode" value={props.payMode} onChange={(event) => props.setPayMode(event.target.value)}>
               <option value="cash">Cash</option>
               <option value="upi">UPI</option>
@@ -1699,18 +1821,21 @@ function VisitPanel(props: {
             </SelectInput>
             <TextInput label="Payment reference" value={props.paymentRef} onChange={(event) => props.setPaymentRef(event.target.value)} />
           </div>
-          <div className="grid-3">
+          <div className="grid-3 mt-3">
             <TextInput label="Paid by" value={props.payerName} onChange={(event) => props.setPayerName(event.target.value)} placeholder="Patient, mother, relative..." />
             <TextInput label="Relation" value={props.payerRelation} onChange={(event) => props.setPayerRelation(event.target.value)} />
             <TextInput label="Payer mobile" value={props.payerMobile} onChange={(event) => props.setPayerMobile(event.target.value)} />
           </div>
-          <div className="field-hint">After saving, print documents (Barcode, SRS, Receipt, Bill Receipt) are available on the completion screen.</div>
-          <div className="card card-surface card-pad">
-            <div className="between"><span className="muted">Total</span><span className="strong">Rs {props.selectedTotal.toFixed(2)}</span></div>
-            <div className="between mt-3"><span className="muted">Final amount</span><span className="strong accent">Rs {props.netTotal.toFixed(2)}</span></div>
-            <div className="between mt-3"><span className="muted">Balance</span><span className="strong">Rs {props.balanceDue.toFixed(2)}</span></div>
+          <div className="cost-summary mt-3">
+            <div className="cost-row"><span>Tests total</span><strong>Rs {props.selectedTotal.toFixed(2)}</strong></div>
+            <div className="cost-row"><span>Home visit</span><strong>Rs {Number(props.homeVisitAmount || 0).toFixed(2)}</strong></div>
+            <div className="cost-row"><span>Extra charge</span><strong>Rs {Number(props.miscCharge || 0).toFixed(2)}</strong></div>
+            <div className="cost-row"><span>Discount</span><strong>- Rs {Number(props.discount || 0).toFixed(2)}</strong></div>
+            <div className="cost-row total"><span>Net</span><strong>Rs {props.netTotal.toFixed(2)}</strong></div>
+            <div className="cost-row"><span>Advance / paid now</span><strong>Rs {Number(props.payAmount || 0).toFixed(2)}</strong></div>
+            <div className={`cost-row ${props.balanceDue > 0 ? 'balance-due' : ''}`}><span>Balance</span><strong>Rs {props.balanceDue.toFixed(2)}</strong></div>
           </div>
-          <Button variant="primary" icon={Receipt} disabled={props.loading || props.saving || props.selectedServiceIds.length === 0} onClick={props.completeVisit}>
+          <Button className="mt-3" variant="primary" icon={Receipt} disabled={props.loading || props.saving || props.selectedServiceIds.length === 0} onClick={props.completeVisit}>
             {props.saving ? 'Saving...' : 'Save'}
           </Button>
         </div>
@@ -1722,6 +1847,11 @@ function VisitPanel(props: {
 function HistoryPanel({
   history,
   nodes,
+  centers,
+  referringDoctors,
+  staffList,
+  areaList,
+  pros,
   loading,
   onMessage,
   onRefresh,
@@ -1729,6 +1859,11 @@ function HistoryPanel({
 }: {
   history: PatientHistory | null;
   nodes: DicomNode[];
+  centers: Center[];
+  referringDoctors: any[];
+  staffList: Lookup[];
+  areaList: Lookup[];
+  pros: Pro[];
   loading: boolean;
   onMessage: (message: string | null) => void;
   onRefresh: () => Promise<void>;
@@ -1738,6 +1873,7 @@ function HistoryPanel({
   const [openVisitId, setOpenVisitId] = useState<number | null>(null);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const pendingActionRef = useRef<string | null>(null);
+  const [printVisit, setPrintVisit] = useState<PatientHistoryVisit | null>(null);
   const [paymentEditor, setPaymentEditor] = useState<{ visitId: number; isRefund: boolean } | null>(null);
   const [paymentForm, setPaymentForm] = useState({
     amount: '',
@@ -1870,6 +2006,9 @@ function HistoryPanel({
   };
   return (
     <div className="card mt-5">
+      {printVisit && (
+        <PrintOptionsModal visit={printVisit} onClose={() => setPrintVisit(null)} />
+      )}
       <div className="card-head">
         <span className="ch-title"><History size={16} /> Patient history</span>
       </div>
@@ -1879,7 +2018,7 @@ function HistoryPanel({
       ) : (
         <div className="table-wrap" style={{ border: 0, borderRadius: 0 }}>
           <table className="dt">
-            <thead><tr><th>Visit</th><th>Date</th><th>Services / accession</th><th>Paid</th><th>Status</th><th>Next step</th><th>Receipt</th></tr></thead>
+            <thead><tr><th>Visit</th><th>Date / Time</th><th>Tests</th><th>Paid</th><th>Status</th><th>Print</th></tr></thead>
             <tbody>
               {visits.map((visit) => (
                 <Fragment key={visit.id}>
@@ -1887,13 +2026,14 @@ function HistoryPanel({
                     <td className="mono">
                       {visit.visit_no}
                       {Number(visit.urgent_report || 0) === 1 ? <div className="status-chip"><Flag size={13} /> Urgent report</div> : null}
+                      <VisitTags visit={visit} />
                     </td>
-                    <td>{visit.visit_datetime}</td>
+                    <td>{formatRisDateTime(visit.visit_datetime)}</td>
                     <td>
                       {visit.orders.map((order) => (
                         <div key={order.id}>
                           <span className="strong">{order.service_name || 'Service'}</span>
-                          <span className="mono"> {order.accession_number}</span>
+                          {/* Accession hidden from reception history list. */}
                           {order.linked_study_uid ? <span className="field-hint"> Soft copy received</span> : null}
                         </div>
                       ))}
@@ -1906,31 +2046,21 @@ function HistoryPanel({
                       </div>
                     </td>
                     <td onClick={(event) => event.stopPropagation()}>
-                      {visit.orders[0] && history?.patient ? (
-        <SendDetailsActions
-          nodes={nodes}
-          patient={history.patient}
-          order={visit.orders[0]}
-          prepareConsoleWorklist={prepareConsoleWorklist}
-          editAccession={editAccession}
-        />
-                      ) : <span className="field-hint">-</span>}
-                    </td>
-                    <td onClick={(event) => event.stopPropagation()}>
-                      {visit.receipts[0]?.print_url ? (
-                        <a className="btn btn-secondary" href={visit.receipts[0].print_url} target="_blank" rel="noreferrer">
-                          <Printer size={16} /> Print
-                        </a>
-                      ) : <span className="field-hint">-</span>}
+                      <button type="button" className="btn btn-secondary" onClick={() => setPrintVisit(visit)}>
+                        <Printer size={16} /> Print
+                      </button>
                     </td>
                   </tr>
                   {openVisitId === visit.id && (
                     <tr>
-                      <td colSpan={7}>
+                      <td colSpan={6}>
                         <div className="history-detail">
                           <div className="grid-3">
                             <DetailBox label="Visit" value={`${visit.visit_no} | ${visit.status}`} />
-                            <DetailBox label="Amount" value={`Net Rs ${visit.net_amount} | Paid Rs ${visit.paid_amount} | Balance Rs ${visit.balance}`} />
+                            <div className="card card-surface card-pad">
+                              <div className="field-label">Amount</div>
+                              <div className="mt-3"><AmountBadges visit={visit} /></div>
+                            </div>
                             <DetailBox label="Dispatch" value={visit.dispatch_mode ? `${visit.dispatch_mode} | ${visit.delivery_destination || 'patient'}` : 'Pending'} />
                           </div>
                           {Number(visit.urgent_report || 0) === 1 ? <div className="banner banner-warning mt-3"><Flag /> This report is urgent.</div> : null}
@@ -1945,30 +2075,16 @@ function HistoryPanel({
                           </div>
                           <div className="grid-2 mt-3">
                             <div>
-                              <div className="field-label">Services and accession numbers</div>
+                              <div className="field-label">Services</div>
                               {visit.orders.map((order) => (
                                 <div key={order.id} className="card card-surface card-pad mt-3">
                                   <div className="between">
                                     <span className="strong">{order.service_name || 'Service'}</span>
                                     <StatusChip status={order.status} />
                                   </div>
-                                  <div className="accession-list">
-                                    <span className="accession-code">{order.accession_number}</span>
-                                  </div>
+                                  {/* Accession hidden from reception visit detail. */}
                                   {order.room_title ? <div className="field-hint mt-3">Room: {order.room_title}</div> : null}
-                                  <div className="field-hint mt-3">Scheduled UID: <span className="mono">{order.study_instance_uid || '-'}</span></div>
-                                  <div className="field-hint mt-3">Received UID: <span className="mono">{order.linked_study_uid || '-'}</span></div>
-                                  {history?.patient && (
-                                    <div className="actions mt-3">
-                                      <SendDetailsActions
-                                        nodes={nodes}
-                                        patient={history.patient}
-                                        order={order}
-                                        prepareConsoleWorklist={prepareConsoleWorklist}
-                                        editAccession={editAccession}
-                                      />
-                                    </div>
-                                  )}
+                                  {/* Console / accession actions intentionally hidden from reception. */}
                                 </div>
                               ))}
                             </div>
@@ -2006,7 +2122,7 @@ function HistoryPanel({
                                 <div key={payment.id} className="card card-surface card-pad mt-3">
                                   <div className="between">
                                     <span className="strong">Rs {payment.amount} ({payment.mode})</span>
-                                    <span className="field-hint">{payment.received_at || '-'}</span>
+                                    <span className="field-hint">{formatRisDateTime(payment.received_at)}</span>
                                   </div>
                                   <div className="field-hint mt-3">
                                     Paid by: <span className="strong">{payment.payer_name || 'Patient'}</span>
@@ -2017,31 +2133,19 @@ function HistoryPanel({
                                   <div className="field-hint mt-3">Received by: {payment.received_by_name || '-'}</div>
                                 </div>
                               ))}
-                              <div className="actions mt-3">
-                                {Number(visit.print_barcode || 0) === 1 ? (
-                                  <a className="btn btn-secondary" href={printAssetUrl(visit.id, 'barcode')} target="_blank" rel="noreferrer">
-                                    <Printer size={16} /> Barcode
-                                  </a>
-                                ) : null}
-                                {Number(visit.print_srs || 0) === 1 ? (
-                                  <a className="btn btn-secondary" href={printAssetUrl(visit.id, 'srs')} target="_blank" rel="noreferrer">
-                                    <Printer size={16} /> SRS
-                                  </a>
-                                ) : null}
-                                {Number(visit.print_bill_receipt || 0) === 1 ? (
-                                  <a className="btn btn-secondary" href={printAssetUrl(visit.id, 'bill_receipt')} target="_blank" rel="noreferrer">
-                                    <Printer size={16} /> Bill Receipt
-                                  </a>
-                                ) : null}
-                                {visit.receipts.map((receipt) => (
-                                  <a key={receipt.id} className="btn btn-secondary" href={receipt.print_url || '#'} target="_blank" rel="noreferrer">
-                                    <Printer size={16} /> Print {receipt.receipt_no}
-                                  </a>
-                                ))}
-                              </div>
+                              {/* Print buttons moved to the receipt-column print modal. */}
                             </div>
                           </div>
-                          <VisitDetailEditor visit={visit} saving={pendingAction === `details:${visit.id}`} onSave={saveVisitDetails} />
+                          <VisitDetailEditor
+                            visit={visit}
+                            centers={centers}
+                            referringDoctors={referringDoctors}
+                            staffList={staffList}
+                            areaList={areaList}
+                            pros={pros}
+                            saving={pendingAction === `details:${visit.id}`}
+                            onSave={saveVisitDetails}
+                          />
                         </div>
                       </td>
                     </tr>
@@ -2056,7 +2160,54 @@ function HistoryPanel({
   );
 }
 
-function VisitDetailEditor({ visit, saving, onSave }: { visit: PatientHistoryVisit; saving: boolean; onSave: (payload: Record<string, unknown>) => Promise<void> }) {
+function PrintOptionsModal({ visit, onClose }: { visit: PatientHistoryVisit; onClose: () => void }) {
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal-panel" onClick={(event) => event.stopPropagation()} style={{ maxWidth: 520 }}>
+        <ModalCloseButton onClick={onClose} />
+        <SectionHeader icon={Printer} title={`Print ${visit.visit_no}`} sub="Choose the document to print" />
+        <div className="actions mt-3">
+          <a className="btn btn-secondary" href={printAssetUrl(visit.id, 'barcode')} target="_blank" rel="noreferrer">
+            <Printer size={16} /> Barcode
+          </a>
+          <a className="btn btn-secondary" href={printAssetUrl(visit.id, 'srs')} target="_blank" rel="noreferrer">
+            <Printer size={16} /> SRS
+          </a>
+          {visit.receipts.map((receipt) => (
+            <a key={receipt.id} className="btn btn-secondary" href={receipt.print_url || '#'} target="_blank" rel="noreferrer">
+              <Printer size={16} /> Receipt {receipt.receipt_no}
+            </a>
+          ))}
+          {visit.receipts.length === 0 ? <span className="field-hint">Receipt not generated yet</span> : null}
+          <a className="btn btn-secondary" href={printAssetUrl(visit.id, 'bill_receipt')} target="_blank" rel="noreferrer">
+            <Printer size={16} /> Bill Receipt
+          </a>
+        </div>
+        <VisitTags visit={visit} />
+      </div>
+    </div>
+  );
+}
+
+function VisitDetailEditor({
+  visit,
+  centers,
+  referringDoctors,
+  staffList,
+  areaList,
+  pros,
+  saving,
+  onSave,
+}: {
+  visit: PatientHistoryVisit;
+  centers: Center[];
+  referringDoctors: any[];
+  staffList: Lookup[];
+  areaList: Lookup[];
+  pros: Pro[];
+  saving: boolean;
+  onSave: (payload: Record<string, unknown>) => Promise<void>;
+}) {
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState(() => visitDetailForm(visit));
   useEffect(() => {
@@ -2076,15 +2227,30 @@ function VisitDetailEditor({ visit, saving, onSave }: { visit: PatientHistoryVis
         <Button size="sm" variant="ghost" onClick={() => setOpen(false)}>Hide</Button>
       </SectionHeader>
       <div className="grid-3">
-        <TextInput label="Center" value={form.center_name} onChange={(event) => update('center_name', event.target.value)} />
-        <TextInput label="Consultant" value={form.consultant_doctor} onChange={(event) => update('consultant_doctor', event.target.value)} />
+        <SelectInput label="Center" value={form.center_name} onChange={(event) => update('center_name', event.target.value)}>
+          <option value="Main Lab">Main Lab</option>
+          {centers.map((center) => <option key={center.id} value={center.name}>{center.name}</option>)}
+        </SelectInput>
+        <SelectInput label="Consultant" value={form.consultant_doctor} onChange={(event) => update('consultant_doctor', event.target.value)}>
+          <option value="">Select consultant</option>
+          {referringDoctors.map((doctor) => <option key={doctor.id} value={doctor.name}>{doctor.name}</option>)}
+        </SelectInput>
         <TextInput label="Reference" value={form.ref_no} onChange={(event) => update('ref_no', event.target.value)} />
         <TextInput label="Sample date/time" value={form.sample_collected_at} onChange={(event) => update('sample_collected_at', event.target.value)} placeholder="YYYY-MM-DD HH:MM:SS" />
-        <TextInput label="Home visit staff" value={form.phlebotomy_staff} onChange={(event) => update('phlebotomy_staff', event.target.value)} />
-        <TextInput label="Home visit area" value={form.home_visit_area} onChange={(event) => update('home_visit_area', event.target.value)} />
+        <SelectInput label="Home visit staff" value={form.phlebotomy_staff} onChange={(event) => update('phlebotomy_staff', event.target.value)}>
+          <option value="">Select staff</option>
+          {staffList.map((staff) => <option key={staff.id} value={staff.value}>{staff.value}</option>)}
+        </SelectInput>
+        <SelectInput label="Home visit area" value={form.home_visit_area} onChange={(event) => update('home_visit_area', event.target.value)}>
+          <option value="">Select area</option>
+          {areaList.map((area) => <option key={area.id} value={area.value}>{area.value}</option>)}
+        </SelectInput>
         <TextInput label="Home visit amount" value={form.home_visit_amount} onChange={(event) => update('home_visit_amount', event.target.value)} />
         <TextInput label="Home visit time" value={form.home_visit_time} onChange={(event) => update('home_visit_time', event.target.value)} />
-        <TextInput label="PRO" value={form.pro_name} onChange={(event) => update('pro_name', event.target.value)} />
+        <SelectInput label="PRO" value={form.pro_name} onChange={(event) => update('pro_name', event.target.value)}>
+          <option value="">Select PRO</option>
+          {pros.map((pro) => <option key={pro.id} value={pro.name}>{pro.name}</option>)}
+        </SelectInput>
         <TextInput label="Commission" value={form.commission_amount} onChange={(event) => update('commission_amount', event.target.value)} />
         <TextInput label="Extra charge" value={form.misc_charge} onChange={(event) => update('misc_charge', event.target.value)} />
         <TextInput label="Discount" value={form.discount} onChange={(event) => update('discount', event.target.value)} />
@@ -2115,7 +2281,7 @@ function VisitDetailEditor({ visit, saving, onSave }: { visit: PatientHistoryVis
       <TextareaInput label="Comment" rows={3} className="mt-3" value={form.visit_comment} onChange={(event) => update('visit_comment', event.target.value)} />
       <TextareaInput label="Dispatch notes" rows={3} className="mt-3" value={form.dispatch_note} onChange={(event) => update('dispatch_note', event.target.value)} />
       <div className="actions mt-3">
-        <Button size="sm" variant="primary" disabled={saving} onClick={() => onSave({ visit_id: visit.id, ...form })}>
+        <Button size="sm" variant="primary" disabled={saving} onClick={async () => { await onSave({ visit_id: visit.id, ...form }); setOpen(false); }}>
           {saving ? 'Saving...' : 'Save details'}
         </Button>
       </div>
@@ -2193,6 +2359,75 @@ function SendDetailsActions({
       <Button size="sm" variant="ghost" disabled={!!busy} onClick={() => runOnce('accession', () => editAccession(order))}>
         Edit accession
       </Button>
+    </div>
+  );
+}
+
+function PatientBalanceSummary({ visits }: { visits: PatientHistoryVisit[] }) {
+  const totalBalance = visits.reduce((sum, visit) => sum + Number(visit.balance || 0), 0);
+  if (totalBalance <= 0) {
+    return <div className="banner banner-success mt-3">No pending balance for this patient.</div>;
+  }
+  const unpaid = visits.filter((visit) => Number(visit.balance || 0) > 0);
+  return (
+    <div className="banner banner-warning mt-3" style={{ borderColor: 'var(--danger, #dc2626)', color: 'var(--danger, #dc2626)' }}>
+      Pending balance: Rs {totalBalance.toFixed(2)} across {unpaid.length} visit(s)
+    </div>
+  );
+}
+
+function PatientFact({ label, value, wide = false }: { label: string; value: string; wide?: boolean }) {
+  return (
+    <div className={`patient-fact ${wide ? 'wide' : ''}`}>
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
+  );
+}
+
+function visitTags(visit: Partial<PatientHistoryVisit & ReceptionVisitRow>): Array<{ label: string; tone?: 'due' }> {
+  const tags: Array<{ label: string; tone?: 'due' }> = [];
+  if (Number(visit.home_visit_amount || 0) > 0 || visit.home_visit_area || visit.delivery_destination === 'home' || visit.dispatch_mode === 'home') {
+    tags.push({ label: `Home visit${visit.home_visit_area ? `: ${visit.home_visit_area}` : ''}` });
+  }
+  if (visit.center_name && visit.center_name !== 'Main Lab') tags.push({ label: `Center: ${visit.center_name}` });
+  if (Number(visit.urgent_report || 0) === 1) tags.push({ label: 'Urgent' });
+  if (Number(visit.balance || 0) > 0) tags.push({ label: `Due Rs ${Number(visit.balance).toFixed(2)}`, tone: 'due' });
+  return tags;
+}
+
+function VisitTags({ visit }: { visit: Partial<PatientHistoryVisit & ReceptionVisitRow> }) {
+  const tags = visitTags(visit);
+  if (tags.length === 0) return null;
+  return (
+    <div className="visit-tags">
+      {tags.map((tag) => <span key={tag.label} className={`visit-tag ${tag.tone || ''}`}>{tag.label}</span>)}
+    </div>
+  );
+}
+
+function AmountBadges({ visit }: { visit: Partial<PatientHistoryVisit & ReceptionVisitRow> }) {
+  const paymentRefundTotal = Array.isArray((visit as PatientHistoryVisit).payments)
+    ? (visit as PatientHistoryVisit).payments.reduce((sum, payment) => (
+        Number(payment.is_refund || 0) === 1 ? sum + Number(payment.amount || 0) : sum
+      ), 0)
+    : 0;
+  const refund = Number((visit as any).refund_total || 0) || paymentRefundTotal;
+  const balance = Number(visit.balance || 0);
+  const items = [
+    ['Net', Number(visit.net_amount || 0)],
+    ['Paid', Number(visit.paid_amount || 0)],
+    ['Refund', refund],
+    ['Balance', balance],
+  ] as const;
+  return (
+    <div className="amount-badges">
+      {items.map(([label, value]) => (
+        <div key={label} className={`amount-badge ${label === 'Balance' && value > 0 ? 'balance-due' : ''}`}>
+          <div className="label">{label}</div>
+          <div className="value">Rs {value.toFixed(2)}</div>
+        </div>
+      ))}
     </div>
   );
 }

@@ -29,7 +29,7 @@ const LOOKUP_CATEGORY: Partial<Record<TabKey, string>> = {
 
 // CSV import type + downloadable header template per tab.
 const IMPORT: Record<TabKey, { type: ImportType; headers: string[] }> = {
-  patients: { type: 'patients', headers: ['mrn', 'prefix', 'full_name', 'last_name', 'age', 'sex', 'phone', 'alt_phone', 'dob', 'email', 'patient_group', 'husband_or_father_name', 'address', 'city', 'state', 'aadhaar_number'] },
+  patients: { type: 'patients', headers: ['mrn', 'prefix', 'full_name', 'last_name', 'age', 'sex', 'phone', 'whatsapp_number', 'dob', 'email', 'patient_group', 'husband_or_father_name', 'address', 'city', 'state', 'aadhaar_number'] },
   centers: { type: 'centers', headers: ['code', 'name', 'billing_type', 'contact_person', 'phone', 'email', 'address', 'discount_percent'] },
   doctors: { type: 'referring_doctors', headers: ['name', 'doctor_type', 'phone', 'email', 'registration_no', 'clinic_name', 'address'] },
   pros: { type: 'pros', headers: ['name', 'phone', 'commission_type', 'commission_value'] },
@@ -44,6 +44,93 @@ function downloadCsvTemplate(name: string, headers: string[]) {
   const a = document.createElement('a');
   a.href = url;
   a.download = `${name}_template.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+type CsvColumn<T> = { header: string; value: (row: T) => unknown };
+
+const EXPORT_COLUMNS: {
+  patients: Array<CsvColumn<PatientMaster>>;
+  centers: Array<CsvColumn<Center>>;
+  doctors: Array<CsvColumn<RisDoctor>>;
+  pros: Array<CsvColumn<Pro>>;
+  lookups: Array<CsvColumn<Lookup>>;
+} = {
+  patients: [
+    { header: 'mrn', value: (p) => p.mrn },
+    { header: 'prefix', value: (p) => p.name_prefix },
+    { header: 'full_name', value: (p) => p.full_name },
+    { header: 'last_name', value: (p) => p.last_name },
+    { header: 'age_years', value: (p) => p.age_years },
+    { header: 'age_months', value: (p) => p.age_months },
+    { header: 'age_days', value: (p) => p.age_days },
+    { header: 'sex', value: (p) => p.sex },
+    { header: 'phone', value: (p) => p.phone },
+    { header: 'whatsapp_number', value: (p) => p.alt_phone },
+    { header: 'dob', value: (p) => p.dob },
+    { header: 'email', value: (p) => p.email },
+    { header: 'patient_group', value: (p) => p.patient_group },
+    { header: 'husband_or_father_name', value: (p) => p.husband_or_father_name },
+    { header: 'address', value: (p) => p.address_line1 },
+    { header: 'city', value: (p) => p.city },
+    { header: 'state', value: (p) => p.state },
+    { header: 'aadhaar_number', value: (p) => p.aadhaar_number },
+  ],
+  centers: [
+    { header: 'code', value: (c) => c.code },
+    { header: 'name', value: (c) => c.name },
+    { header: 'billing_type', value: (c) => c.billing_type },
+    { header: 'contact_person', value: (c) => c.contact_person },
+    { header: 'phone', value: (c) => c.phone },
+    { header: 'email', value: (c) => c.email },
+    { header: 'address', value: (c) => c.address },
+    { header: 'discount_percent', value: (c) => c.discount_percent },
+    { header: 'is_active', value: (c) => c.is_active },
+  ],
+  doctors: [
+    { header: 'name', value: (d) => d.name },
+    { header: 'doctor_type', value: (d) => d.doctor_type },
+    { header: 'qualification', value: (d) => d.qualification },
+    { header: 'phone', value: (d) => d.phone },
+    { header: 'email', value: (d) => d.email },
+    { header: 'registration_no', value: (d) => d.registration_no },
+    { header: 'clinic_name', value: (d) => d.clinic_name },
+    { header: 'commission_type', value: (d) => d.commission_type },
+    { header: 'commission_value', value: (d) => d.commission_value },
+    { header: 'is_active', value: (d) => d.is_active },
+  ],
+  pros: [
+    { header: 'name', value: (p) => p.name },
+    { header: 'phone', value: (p) => p.phone },
+    { header: 'commission_type', value: (p) => p.commission_type },
+    { header: 'commission_value', value: (p) => p.commission_value },
+    { header: 'is_active', value: (p) => p.is_active },
+  ],
+  lookups: [
+    { header: 'category', value: (l) => l.category },
+    { header: 'value', value: (l) => l.value },
+    { header: 'sort_order', value: (l) => l.sort_order },
+    { header: 'is_active', value: (l) => l.is_active },
+  ],
+};
+
+function csvCell(value: unknown): string {
+  const raw = value == null ? '' : String(value);
+  const safe = /^[=+\-@]/.test(raw) ? `'${raw}` : raw;
+  return /[",\r\n]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe;
+}
+
+function downloadCsv<T>(filename: string, columns: Array<CsvColumn<T>>, rows: T[]) {
+  const csv = [
+    columns.map((column) => csvCell(column.header)).join(','),
+    ...rows.map((row) => columns.map((column) => csvCell(column.value(row))).join(',')),
+  ].join('\n') + '\n';
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
   a.click();
   URL.revokeObjectURL(url);
 }
@@ -141,6 +228,32 @@ export function MastersCard() {
     }, 'Import complete');
   };
 
+  const exportCsv = () => wrap(async () => {
+    const stamp = new Date().toISOString().slice(0, 10);
+    if (tab === 'patients') {
+      const rows = await apiListPatients('', 10000);
+      downloadCsv(`patients_master_${stamp}.csv`, EXPORT_COLUMNS.patients, rows);
+      return;
+    }
+    if (tab === 'centers') {
+      const rows = await apiMasters<Center>('centers');
+      downloadCsv(`centers_master_${stamp}.csv`, EXPORT_COLUMNS.centers, rows);
+      return;
+    }
+    if (tab === 'doctors') {
+      const rows = await apiListDoctors();
+      downloadCsv(`referring_doctors_master_${stamp}.csv`, EXPORT_COLUMNS.doctors, rows);
+      return;
+    }
+    if (tab === 'pros') {
+      const rows = await apiMasters<Pro>('pros');
+      downloadCsv(`pros_master_${stamp}.csv`, EXPORT_COLUMNS.pros, rows);
+      return;
+    }
+    const rows = await apiMasters<Lookup>('lookups', { category: LOOKUP_CATEGORY[tab]! });
+    downloadCsv(`${tab}_master_${stamp}.csv`, EXPORT_COLUMNS.lookups, rows);
+  }, 'CSV exported');
+
   const tabLabel = useMemo(() => TABS.find((t) => t.key === tab)?.label ?? '', [tab]);
 
   return (
@@ -162,6 +275,7 @@ export function MastersCard() {
           <input type="file" accept=".csv,text/csv" hidden onChange={(e) => importCsv(e.target.files?.[0])} />
         </label>
         <Button variant="ghost" icon={Download} onClick={() => downloadCsvTemplate(tab, IMPORT[tab].headers)}>Download template</Button>
+        <Button variant="secondary" icon={Download} disabled={busy} onClick={exportCsv}>Export CSV</Button>
       </div>
 
       {/* ---------- Patients ---------- */}

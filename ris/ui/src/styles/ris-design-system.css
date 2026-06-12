@@ -206,6 +206,34 @@ body { background: var(--app-bg); color: var(--app-text); font-family: var(--fon
 .modal-backdrop { align-items: flex-start; background: rgba(0,0,0,.42); display: flex; inset: 0; justify-content: center; overflow: auto; padding: 20px; position: fixed; z-index: 100; }
 .modal-panel { background: var(--app-bg); border: 1px solid var(--app-border); border-radius: var(--radius-lg); box-shadow: var(--shadow-md); margin: auto 0; max-height: calc(100vh - 48px); max-width: 760px; overflow: auto; padding: 18px; width: min(760px, 100%); }
 .modal-panel-wide { max-width: 1120px; width: min(1120px, 100%); }
+.modal-panel { position: relative; }
+.modal-x { position: absolute; right: 12px; top: 12px; z-index: 2; }
+.stat-clickable { border: 1px solid var(--app-border); color: inherit; cursor: pointer; font: inherit; text-align: left; width: 100%; }
+.stat-clickable:hover { border-color: var(--app-accent); box-shadow: var(--shadow-sm); transform: translateY(-1px); }
+.amount-badges { display: flex; flex-wrap: wrap; gap: 8px; }
+.amount-badge { border: 1px solid var(--app-border); border-radius: 8px; background: var(--app-surface); padding: 8px 10px; min-width: 118px; }
+.amount-badge .label { color: var(--app-text-muted); font-size: 11px; font-weight: 700; text-transform: uppercase; }
+.amount-badge .value { font-size: 14px; font-weight: 800; margin-top: 2px; }
+.amount-badge.balance-due { border-color: var(--danger, #dc2626); color: var(--danger, #dc2626); }
+.status-cell { display: grid; gap: 5px; min-width: 190px; }
+.status-main { align-items: center; display: flex; flex-wrap: wrap; gap: 6px; }
+.visit-tags { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 4px; }
+.visit-tag { border: 1px solid var(--app-border); border-radius: 999px; color: var(--app-text-muted); font-size: 11px; font-weight: 700; padding: 2px 7px; }
+.visit-tag.due { border-color: var(--danger, #dc2626); color: var(--danger, #dc2626); }
+.patient-profile { background: var(--app-bg); border: 1px solid var(--app-border); border-radius: var(--radius-md); box-shadow: var(--shadow-sm); padding: 14px; }
+.patient-profile-head { align-items: flex-start; display: flex; gap: 14px; justify-content: space-between; }
+.patient-name { font-size: 20px; font-weight: 800; }
+.patient-sub { color: var(--app-text-muted); font-size: 12px; margin-top: 3px; }
+.patient-facts { display: grid; gap: 8px; grid-template-columns: repeat(4, minmax(0, 1fr)); margin-top: 12px; }
+.patient-fact { background: var(--app-surface); border: 1px solid var(--app-border); border-radius: 8px; padding: 9px 10px; }
+.patient-fact.wide { grid-column: span 2; }
+.patient-fact span { color: var(--app-text-muted); display: block; font-size: 11px; font-weight: 700; text-transform: uppercase; }
+.patient-fact strong { display: block; font-size: 13px; margin-top: 3px; overflow-wrap: anywhere; }
+.patient-edit-panel { background: var(--app-surface); border: 1px solid var(--app-border); border-radius: var(--radius-md); padding: 12px; }
+.cost-summary { display: grid; gap: 8px; }
+.cost-row { display: flex; justify-content: space-between; gap: 16px; }
+.cost-row.total { border-top: 1px solid var(--app-border); font-weight: 800; padding-top: 8px; }
+.cost-row.balance-due { color: var(--danger, #dc2626); font-weight: 800; }
 .context-menu { background: var(--app-bg); border: 1px solid var(--app-border); border-radius: var(--radius-md); box-shadow: var(--shadow-md); display: flex; flex-direction: column; min-width: 190px; padding: 6px; position: fixed; z-index: 120; }
 .context-menu button { background: transparent; border: 0; border-radius: var(--radius-sm); color: var(--app-text); cursor: pointer; font: inherit; font-size: 13px; padding: 8px 10px; text-align: left; }
 .context-menu button:hover { background: var(--app-hover); }
@@ -222,5 +250,11 @@ body { background: var(--app-bg); color: var(--app-text); font-family: var(--fon
 @media (max-width: 1100px) {
   .grid-5 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .grid-3, .grid-2 { grid-template-columns: 1fr; }
+  .patient-profile-head { flex-direction: column; }
+  .patient-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .sidebar { width: 210px; }
+}
+@media (max-width: 720px) {
+  .patient-facts { grid-template-columns: 1fr; }
+  .patient-fact.wide { grid-column: span 1; }
 }

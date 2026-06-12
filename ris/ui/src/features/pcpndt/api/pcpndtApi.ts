@@ -1,3 +1,5 @@
+import { cachedRequest, invalidateCache } from '../../../lib/risDataCache';
+
 export interface PcpndtOrder {
   id: number;
   visit_id: number;
@@ -90,7 +92,10 @@ export async function apiPcpndtOrders(q = ''): Promise<PcpndtOrder[]> {
   const params = new URLSearchParams();
   if (q.trim()) params.set('q', q.trim());
   params.set('limit', '100');
-  return readJson<PcpndtOrder[]>(await fetch(`/api/pcpndt/orders.php?${params}`, { credentials: 'include' }));
+  const url = `/api/pcpndt/orders.php?${params}`;
+  return cachedRequest(`GET ${url}`, async () => (
+    readJson<PcpndtOrder[]>(await fetch(url, { credentials: 'include' }))
+  ), { ttlMs: 20_000 });
 }
 
 export async function apiPcpndtPrefill(order: PcpndtOrder): Promise<PcpndtPrefill> {
@@ -98,25 +103,32 @@ export async function apiPcpndtPrefill(order: PcpndtOrder): Promise<PcpndtPrefil
   params.set('study_uid', order.linked_study_uid || order.study_instance_uid);
   params.set('patient_id', String(order.patient_id));
   if (order.patient_name) params.set('patient_name', order.patient_name);
-  return readJson<PcpndtPrefill>(await fetch(`/api/pcpndt/prefill.php?${params}`, { credentials: 'include' }));
+  const url = `/api/pcpndt/prefill.php?${params}`;
+  return cachedRequest(`GET ${url}`, async () => (
+    readJson<PcpndtPrefill>(await fetch(url, { credentials: 'include' }))
+  ), { ttlMs: 30_000 });
 }
 
 export async function apiPcpndtSave(studyUid: string, fields: FormFFields): Promise<FormFFields> {
-  return readJson<FormFFields>(await fetch('/api/pcpndt/save.php', {
+  const saved = await readJson<FormFFields>(await fetch('/api/pcpndt/save.php', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
     body: JSON.stringify({ study_uid: studyUid, ...fields }),
   }));
+  invalidateCache('GET /api/pcpndt/');
+  return saved;
 }
 
 export async function apiPcpndtSetStatus(studyUid: string, status: string, portalAckNo?: string): Promise<FormFFields> {
-  return readJson<FormFFields>(await fetch('/api/pcpndt/submit-status.php', {
+  const updated = await readJson<FormFFields>(await fetch('/api/pcpndt/submit-status.php', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
     body: JSON.stringify({ study_uid: studyUid, status, portal_ack_no: portalAckNo || undefined }),
   }));
+  invalidateCache('GET /api/pcpndt/');
+  return updated;
 }
 
 export function pcpndtFormHtmlUrl(studyUid: string) {

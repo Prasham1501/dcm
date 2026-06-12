@@ -20,7 +20,7 @@ interface CommissionState {
   setEnabled: (enabled: boolean) => Promise<void>;
 }
 
-export const useCommissionStore = create<CommissionState>()((set) => ({
+export const useCommissionStore = create<CommissionState>()((set, get) => ({
   report: [],
   statement: null,
   payouts: [],
@@ -29,7 +29,7 @@ export const useCommissionStore = create<CommissionState>()((set) => ({
   error: null,
 
   loadReport: async (from, to) => {
-    set({ loading: true, error: null });
+    set({ loading: get().report.length > 0 ? false : true, error: null });
     try {
       const { rows } = await apiCommissionReport(from, to);
       set({ report: rows, loading: false });

@@ -1,14 +1,12 @@
 import { useEffect, useState } from 'react';
-import { AlertTriangle, Hash, ImagePlus, Key, Lock, Pencil, Plus, RefreshCw, Save, Server, Trash2 } from 'lucide-react';
+import { AlertTriangle, Hash, ImagePlus, Key, Pencil, Plus, RefreshCw, Save, Server, Trash2 } from 'lucide-react';
 import { Banner, Button, EmptyState, ModalityTag, SectionHeader, SelectInput, StatusChip, TextareaInput, TextInput } from '@/components/RisUi';
 import { apiBranding, apiCounters, apiDeleteService, apiListAllServices, apiNetworkInfo, apiResetRisData, apiSaveBranding, apiSaveCounters, apiSaveService, type BrandingSettings, type CounterSettings } from '../api/settingsApi';
 import type { NetworkInfo, Service } from '@/features/reception/api/receptionApi';
 import { MastersCard } from './MastersCard';
 import { ParametersCard } from '@/features/results/routes/ParametersCard';
 import { IntegrationCard } from './IntegrationCard';
-import { AnalyzerGraphsCard } from './AnalyzerGraphsCard';
 
-const CONFIG_PASSWORD = 'Prasham123$';
 const EMPTY_BRANDING: BrandingSettings = {
   brand_name: '',
   brand_tagline: '',
@@ -40,12 +38,10 @@ export function SettingsPage() {
   const [licenseStatus, setLicenseStatus] = useState<any>(null);
   const [branding, setBranding] = useState<BrandingSettings>(EMPTY_BRANDING);
   const [counters, setCounters] = useState<CounterSettings>({});
-  const [counterForm, setCounterForm] = useState({ accession_prefix: 'OCZ', accession_start: '', token_prefix: 'T', token_start: '' });
+  const [counterForm, setCounterForm] = useState({ patient_prefix: 'P', patient_start: '', visit_prefix: 'V', visit_start: '' });
   const [services, setServices] = useState<Service[]>([]);
   const [serviceForm, setServiceForm] = useState<Partial<Service>>(EMPTY_SERVICE);
   const [resetConfirm, setResetConfirm] = useState('');
-  const [unlocked, setUnlocked] = useState(false);
-  const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -60,10 +56,10 @@ export function SettingsPage() {
       setServices(serviceRows);
       setCounters(counterRows);
       setCounterForm({
-        accession_prefix: counterRows.accession?.prefix || 'OCZ',
-        accession_start: String(counterRows.accession?.next_number || ''),
-        token_prefix: counterRows.token?.prefix || 'T',
-        token_start: String(counterRows.token?.next_number || ''),
+        patient_prefix: counterRows.mrn?.prefix || 'P',
+        patient_start: String(counterRows.mrn?.next_number || ''),
+        visit_prefix: counterRows.visit?.prefix || 'V',
+        visit_start: String(counterRows.visit?.next_number || ''),
       });
       if (window.risAPI) setLicenseStatus(await window.risAPI.getLicenseStatus());
     } catch (err: any) {
@@ -72,32 +68,9 @@ export function SettingsPage() {
   };
 
   useEffect(() => {
-    if (unlocked) load();
+    load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [unlocked]);
-
-  if (!unlocked) {
-    return (
-      <div className="content-narrow">
-        <div className="card card-pad" style={{ maxWidth: 420 }}>
-          <SectionHeader icon={Lock} title="Doctor password required" sub="Protects license, branding, and reset options" />
-          <TextInput
-            label="Password"
-            type="password"
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter' && password === CONFIG_PASSWORD) setUnlocked(true);
-            }}
-          />
-          {password && password !== CONFIG_PASSWORD ? <div className="field-error mt-3">Invalid password</div> : null}
-          <Button className="mt-4" variant="primary" icon={Lock} onClick={() => setUnlocked(password === CONFIG_PASSWORD)}>
-            Unlock settings
-          </Button>
-        </div>
-      </div>
-    );
-  }
+  }, []);
 
   const saveBranding = async () => {
     setBusy(true);
@@ -121,9 +94,15 @@ export function SettingsPage() {
       const result = await apiResetRisData(resetConfirm);
       setResetConfirm('');
       const wl = result.worklist_files_removed ?? 0;
+      const assets = result.asset_files_removed ?? 0;
+      const settings = result.settings_removed ?? 0;
+      setServiceForm(EMPTY_SERVICE);
+      await load();
       setMessage(
         `RIS data cleared. Tables: ${result.cleared.join(', ')}` +
-        (wl > 0 ? ` · Worklist files removed: ${wl}` : ' · Worklist folder empty'),
+        ` · Settings removed: ${settings}` +
+        (wl > 0 ? ` · Worklist files removed: ${wl}` : ' · Worklist folder empty') +
+        (assets > 0 ? ` · Machine files removed: ${assets}` : ' · Machine files empty'),
       );
     } catch (err: any) {
       setError(err?.message || 'Failed to reset RIS data');
@@ -156,12 +135,12 @@ export function SettingsPage() {
       const saved = await apiSaveCounters(counterForm);
       setCounters(saved);
       setCounterForm({
-        accession_prefix: saved.accession?.prefix || counterForm.accession_prefix,
-        accession_start: String(saved.accession?.next_number || ''),
-        token_prefix: saved.token?.prefix || counterForm.token_prefix,
-        token_start: String(saved.token?.next_number || ''),
+        patient_prefix: saved.mrn?.prefix || counterForm.patient_prefix,
+        patient_start: String(saved.mrn?.next_number || ''),
+        visit_prefix: saved.visit?.prefix || counterForm.visit_prefix,
+        visit_start: String(saved.visit?.next_number || ''),
       });
-      setMessage('Accession and token counters saved');
+      setMessage('Patient ID and Visit ID numbering saved');
     } catch (err: any) {
       setError(err?.message || 'Failed to save counters');
     } finally {
@@ -301,12 +280,12 @@ export function SettingsPage() {
 
       {tab === 'system' && (
       <div className="card card-pad mt-4">
-        <SectionHeader icon={Hash} title="Accession and token numbering" sub="Set the next generated number before starting the day or migrating from old records" />
+        <SectionHeader icon={Hash} title="Patient and visit ID numbering" sub="Set the prefix and next number before starting the day or migrating old records" />
         <div className="grid-2">
-          <TextInput label="Accession prefix" value={counterForm.accession_prefix} onChange={(event) => setCounterForm({ ...counterForm, accession_prefix: event.target.value })} />
-          <TextInput label="Next accession number" type="number" value={counterForm.accession_start} onChange={(event) => setCounterForm({ ...counterForm, accession_start: event.target.value })} hint={`Current next: ${counters.accession?.next_number ?? '-'}`} />
-          <TextInput label="Token prefix" value={counterForm.token_prefix} onChange={(event) => setCounterForm({ ...counterForm, token_prefix: event.target.value })} />
-          <TextInput label="Next token number" type="number" value={counterForm.token_start} onChange={(event) => setCounterForm({ ...counterForm, token_start: event.target.value })} hint={`Current next: ${counters.token?.next_number ?? '-'}`} />
+          <TextInput label="Patient ID prefix" value={counterForm.patient_prefix} onChange={(event) => setCounterForm({ ...counterForm, patient_prefix: event.target.value })} />
+          <TextInput label="Next patient ID number" type="number" value={counterForm.patient_start} onChange={(event) => setCounterForm({ ...counterForm, patient_start: event.target.value })} hint={`Current next: ${counters.mrn?.next_number ?? '-'}`} />
+          <TextInput label="Visit ID prefix" value={counterForm.visit_prefix} onChange={(event) => setCounterForm({ ...counterForm, visit_prefix: event.target.value })} />
+          <TextInput label="Next visit ID number" type="number" value={counterForm.visit_start} onChange={(event) => setCounterForm({ ...counterForm, visit_start: event.target.value })} hint={`Current next: ${counters.visit?.next_number ?? '-'}`} />
         </div>
         <Button variant="primary" icon={Save} disabled={busy} onClick={saveCounters} className="mt-4">Save numbering</Button>
       </div>
@@ -427,14 +406,12 @@ export function SettingsPage() {
 
       {tab === 'tests' && <ParametersCard services={services} />}
 
-      {tab === 'machine' && <AnalyzerGraphsCard />}
-
       {tab === 'machine' && <IntegrationCard />}
 
       {tab === 'system' && (
       <div className="card card-pad mt-4" style={{ borderColor: 'var(--danger)' }}>
-        <SectionHeader icon={AlertTriangle} title="Clear RIS database" sub="Deletes patients, visits, orders, payments, receipts, commission rows, and referring doctors. Keeps settings, test catalogue, DICOM nodes, and license." />
-        <Banner kind="warning">This resets registration count to 0, clears referring doctors, and restarts MRN, accession, visit, and receipt counters.</Banner>
+        <SectionHeader icon={AlertTriangle} title="Clear RIS database" sub="Deletes RIS patients, visits, orders, billing, reports, masters, tests, parameters, PCPNDT rows, DICOM nodes, integration settings, and machine attachments. Keeps app users and license." />
+        <Banner kind="warning">This resets all RIS sections, clears configured tests and parameters, and restarts MRN, accession, visit, token, and receipt counters.</Banner>
         <div className="actions mt-4">
           <TextInput label="Type RESET RIS" value={resetConfirm} onChange={(event) => setResetConfirm(event.target.value)} style={{ width: 240 }} />
           <Button variant="danger" icon={Trash2} disabled={busy || resetConfirm !== 'RESET RIS'} onClick={resetRis}>

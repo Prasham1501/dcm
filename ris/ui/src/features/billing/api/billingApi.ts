@@ -1,4 +1,5 @@
 /** Thin fetch wrappers for the billing endpoints. */
+import { cachedRequest, invalidateCache } from '../../../lib/risDataCache';
 
 export interface VisitBalance {
   id: number;
@@ -71,7 +72,12 @@ export async function apiTakePayment(payload: {
     credentials: 'include',
     body: JSON.stringify(payload),
   });
-  return (await readJson(res)) as { payment: any; visit: VisitBalance };
+  const result = (await readJson(res)) as { payment: any; visit: VisitBalance };
+  invalidateCache('GET /api/billing/');
+  invalidateCache('GET /api/reception/visits.php');
+  invalidateCache('GET /api/reception/patients.php?action=history');
+  invalidateCache('GET /api/dashboard/');
+  return result;
 }
 
 export async function apiGenerateReceipt(visitId: number): Promise<Receipt> {
@@ -81,7 +87,10 @@ export async function apiGenerateReceipt(visitId: number): Promise<Receipt> {
     credentials: 'include',
     body: JSON.stringify({ visit_id: visitId }),
   });
-  return (await readJson(res)) as Receipt;
+  const receipt = (await readJson(res)) as Receipt;
+  invalidateCache('GET /api/billing/');
+  invalidateCache('GET /api/reception/patients.php?action=history');
+  return receipt;
 }
 
 export async function apiGetDaybook(from?: string, to?: string): Promise<DayBook> {
@@ -89,7 +98,9 @@ export async function apiGetDaybook(from?: string, to?: string): Promise<DayBook
   if (from) params.set('from', from);
   if (to) params.set('to', to);
   const url = params.toString() ? `${DAYBOOK}?${params}` : DAYBOOK;
-  return (await readJson(await fetch(url, { credentials: 'include' }))) as DayBook;
+  return cachedRequest(`GET ${url}`, async () => (
+    (await readJson(await fetch(url, { credentials: 'include' }))) as DayBook
+  ), { ttlMs: 30_000 });
 }
 
 export type PrintAssetType = 'barcode' | 'srs' | 'bill_receipt';

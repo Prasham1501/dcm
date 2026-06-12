@@ -21,7 +21,7 @@ interface BillingState {
   loadDaybook: (from?: string, to?: string) => Promise<void>;
 }
 
-export const useBillingStore = create<BillingState>()((set) => ({
+export const useBillingStore = create<BillingState>()((set, get) => ({
   daybook: null,
   lastReceipt: null,
   loading: false,
@@ -51,7 +51,9 @@ export const useBillingStore = create<BillingState>()((set) => ({
   },
 
   loadDaybook: async (from, to) => {
-    set({ loading: true, error: null });
+    const current = get().daybook;
+    const sameRange = current && current.from === from && current.to === to;
+    set({ loading: sameRange ? false : true, error: null });
     try {
       const daybook = await apiGetDaybook(from, to);
       set({ daybook, loading: false });

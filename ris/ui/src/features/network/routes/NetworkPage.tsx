@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Copy, Lock, Network, Pencil, Plug, Plus, RefreshCw, Save, Send, Server, Trash2 } from 'lucide-react';
+import { Copy, Network, Pencil, Plug, Plus, RefreshCw, Save, Send, Server, Trash2 } from 'lucide-react';
 import { Banner, Button, EmptyState, SectionHeader, SelectInput, StatusChip, TextInput } from '@/components/RisUi';
 import type { NetworkInfo } from '@/features/reception/api/receptionApi';
 import {
@@ -13,7 +13,6 @@ import {
 } from '@/features/settings/api/settingsApi';
 
 const EMPTY_NODE = { name: '', ae_title: '', host_name: '', port: 104, is_default: 0 };
-const CONFIG_PASSWORD = 'Prasham123$';
 
 export function NetworkPage() {
   const [networkInfo, setNetworkInfo] = useState<NetworkInfo | null>(null);
@@ -24,9 +23,6 @@ export function NetworkPage() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [unlocked, setUnlocked] = useState(false);
-  const [password, setPassword] = useState('');
-
   const load = async () => {
     setError(null);
     try {
@@ -40,32 +36,9 @@ export function NetworkPage() {
   };
 
   useEffect(() => {
-    if (unlocked) load();
+    load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [unlocked]);
-
-  if (!unlocked) {
-    return (
-      <div className="content-narrow">
-        <div className="card card-pad" style={{ maxWidth: 420 }}>
-          <SectionHeader icon={Lock} title="Doctor password required" sub="Protects machine, DICOM node, and transfer setup" />
-          <TextInput
-            label="Password"
-            type="password"
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter' && password === CONFIG_PASSWORD) setUnlocked(true);
-            }}
-          />
-          {password && password !== CONFIG_PASSWORD ? <div className="field-error mt-3">Invalid password</div> : null}
-          <Button className="mt-4" variant="primary" icon={Lock} onClick={() => setUnlocked(password === CONFIG_PASSWORD)}>
-            Unlock network setup
-          </Button>
-        </div>
-      </div>
-    );
-  }
+  }, []);
 
   const selectedNode = nodes.find((node) => String(node.id) === nodeId) || null;
 

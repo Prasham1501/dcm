@@ -74,7 +74,9 @@ function ris_h(string $value): string
 function ris_render_receipt_html(mysqli $db, int $receiptId): void
 {
     $stmt = $db->prepare(
-        "SELECT r.*, v.visit_no, v.visit_datetime, v.paid_amount, v.balance, v.status AS visit_status,
+        "SELECT r.*, v.visit_no, v.visit_datetime, v.total_amount, v.misc_charge,
+                v.home_visit_area, v.home_visit_amount, v.home_visit_time, v.phlebotomy_staff,
+                v.paid_amount, v.balance, v.status AS visit_status,
                 p.mrn, p.full_name, p.phone, p.sex, p.age_years
          FROM ris_receipts r
          JOIN ris_visits v ON v.id = r.visit_id
@@ -131,10 +133,11 @@ function ris_render_receipt_html(mysqli $db, int $receiptId): void
     header('Content-Type: text/html; charset=utf-8');
     $orderRows = '';
     foreach ($orders as $order) {
-        $orderRows .= '<tr><td>' . ris_h($order['service_name'] ?: '-') . '</td><td>' . ris_h($order['modality'] ?: '-') . '</td><td>' . ris_h($order['accession_number'] ?: '-') . '</td><td class="num">Rs ' . number_format((float)$order['price'], 2) . '</td></tr>';
+        // Accession is intentionally not shown on reception receipts.
+        $orderRows .= '<tr><td>' . ris_h($order['service_name'] ?: '-') . '</td><td>' . ris_h($order['modality'] ?: '-') . '</td><td class="num">Rs ' . number_format((float)$order['price'], 2) . '</td></tr>';
     }
     if ($orderRows === '') {
-        $orderRows = '<tr><td colspan="4" class="muted">No services found</td></tr>';
+        $orderRows = '<tr><td colspan="3" class="muted">No services found</td></tr>';
     }
 
     $paymentRows = '';
@@ -165,10 +168,10 @@ body{font-family:Arial,sans-serif;margin:0;background:#f5f5f5;color:#171717}.pag
 </style></head><body><div class="page">
 <div class="top"><div class="brand-wrap">' . $logoHtml . '<div><div class="brand">' . ris_h($brand['name']) . '</div><div class="tag">' . ris_h($brand['tagline']) . '</div><div class="tag">' . nl2br(ris_h($brand['address'])) . '</div></div></div><div class="meta"><b>Receipt</b><br>' . ris_h($receipt['receipt_no']) . '<br>' . ris_h((string)$receipt['created_at']) . '<br>' . ris_h($brand['phone']) . '<br>' . ris_h($brand['email']) . '</div></div>
 ' . ($brand['header'] !== '' ? '<div class="note">' . nl2br(ris_h($brand['header'])) . '</div>' : '') . '
-<div class="grid"><div class="box"><div class="label">Patient</div><div class="value">' . ris_h($receipt['full_name']) . '</div><div class="muted">MRN ' . ris_h($receipt['mrn']) . ' | ' . ris_h($receipt['sex'] ?: '-') . ' ' . ris_h((string)($receipt['age_years'] ?? '')) . '</div><div class="muted">' . ris_h($receipt['phone'] ?: '-') . '</div></div><div class="box"><div class="label">Visit</div><div class="value">' . ris_h($receipt['visit_no']) . '</div><div class="muted">' . ris_h($receipt['visit_datetime']) . '</div><div class="muted">Status: ' . ris_h($receipt['visit_status']) . '</div></div></div>
-<h3>Services</h3><table><thead><tr><th>Service</th><th>Modality</th><th>Accession</th><th class="num">Amount</th></tr></thead><tbody>' . $orderRows . '</tbody></table>
+<div class="grid"><div class="box"><div class="label">Patient</div><div class="value">' . ris_h($receipt['full_name']) . '</div><div class="muted">MRN ' . ris_h($receipt['mrn']) . ' | ' . ris_h($receipt['sex'] ?: '-') . ' ' . ris_h((string)($receipt['age_years'] ?? '')) . '</div><div class="muted">' . ris_h($receipt['phone'] ?: '-') . '</div></div><div class="box"><div class="label">Visit</div><div class="value">' . ris_h($receipt['visit_no']) . '</div><div class="muted">' . ris_h($receipt['visit_datetime']) . '</div><div class="muted">Status: ' . ris_h($receipt['visit_status']) . '</div><div class="muted">Home visit: ' . ris_h(((float)($receipt['home_visit_amount'] ?? 0) > 0 || ($receipt['home_visit_area'] ?? '') !== '') ? (($receipt['home_visit_area'] ?: '-') . ' | Rs ' . number_format((float)$receipt['home_visit_amount'], 2) . ' | ' . ($receipt['home_visit_time'] ?: '-')) : 'No') . '</div></div></div>
+<h3>Services</h3><table><thead><tr><th>Service</th><th>Modality</th><th class="num">Amount</th></tr></thead><tbody>' . $orderRows . '</tbody></table>
 <h3>Payments</h3><table><thead><tr><th>Mode</th><th>Reference</th><th>Received</th><th class="num">Amount</th></tr></thead><tbody>' . $paymentRows . '</tbody></table>
-<table class="totals"><tr><td>Subtotal</td><td class="num">Rs ' . number_format((float)$receipt['subtotal'], 2) . '</td></tr><tr><td>Discount</td><td class="num">Rs ' . number_format((float)$receipt['discount'], 2) . '</td></tr><tr><td>Tax</td><td class="num">Rs ' . number_format((float)$receipt['tax_amount'], 2) . '</td></tr><tr><th>Total</th><th class="num">Rs ' . number_format((float)$receipt['total'], 2) . '</th></tr><tr><td>Paid</td><td class="num">Rs ' . number_format((float)$receipt['paid_amount'], 2) . '</td></tr><tr><td>Balance</td><td class="num">Rs ' . number_format((float)$receipt['balance'], 2) . '</td></tr></table>
+<table class="totals"><tr><td>Tests total</td><td class="num">Rs ' . number_format((float)$receipt['total_amount'], 2) . '</td></tr><tr><td>Home visit</td><td class="num">Rs ' . number_format((float)$receipt['home_visit_amount'], 2) . '</td></tr><tr><td>Extra charge</td><td class="num">Rs ' . number_format((float)$receipt['misc_charge'], 2) . '</td></tr><tr><td>Subtotal</td><td class="num">Rs ' . number_format((float)$receipt['subtotal'], 2) . '</td></tr><tr><td>Discount</td><td class="num">Rs ' . number_format((float)$receipt['discount'], 2) . '</td></tr><tr><td>Tax</td><td class="num">Rs ' . number_format((float)$receipt['tax_amount'], 2) . '</td></tr><tr><th>Total</th><th class="num">Rs ' . number_format((float)$receipt['total'], 2) . '</th></tr><tr><td>Paid</td><td class="num">Rs ' . number_format((float)$receipt['paid_amount'], 2) . '</td></tr><tr><td>Balance</td><td class="num">Rs ' . number_format((float)$receipt['balance'], 2) . '</td></tr></table>
 ' . ($receipt['gst_number'] ? '<div class="muted">GST: ' . ris_h($receipt['gst_number']) . '</div>' : '') . '
 ' . $signature . '
 ' . $regBarcode . '

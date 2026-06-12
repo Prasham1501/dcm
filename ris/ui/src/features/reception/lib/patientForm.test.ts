@@ -12,7 +12,13 @@ describe('validatePatientForm', () => {
 
   it('rejects an implausible phone', () => {
     expect(validatePatientForm({ full_name: 'Asha', phone: '12' })).toContain(
-      'Phone number looks invalid'
+      'Mobile number must be a valid 10 digit Indian number'
+    );
+  });
+
+  it('uses WhatsApp wording for the secondary number', () => {
+    expect(validatePatientForm({ full_name: 'Asha', alt_phone: '12' })).toContain(
+      'WhatsApp number must be a valid 10 digit Indian number'
     );
   });
 });

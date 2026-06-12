@@ -80,7 +80,13 @@ try {
             $placeholders = implode(',', array_fill(0, count($patientIds), '?'));
             $types = str_repeat('i', count($patientIds));
             $stmt = $db->prepare(
-                "SELECT * FROM ris_visits WHERE patient_id IN ($placeholders) ORDER BY urgent_report DESC, visit_datetime DESC, id DESC LIMIT 50"
+                "SELECT v.*,
+                        (SELECT COALESCE(SUM(pay.amount), 0)
+                         FROM ris_payments pay
+                         WHERE pay.visit_id = v.id AND pay.is_refund = 1) AS refund_total
+                 FROM ris_visits v
+                 WHERE v.patient_id IN ($placeholders)
+                 ORDER BY v.visit_datetime DESC, v.id DESC LIMIT 50"
             );
             $bindArgs = [$types];
             foreach ($patientIds as $key => $value) {
@@ -139,7 +145,7 @@ try {
         }
         // default: search
         $q = trim((string) ($_GET['q'] ?? ''));
-        $limit = min(100, max(1, (int) ($_GET['limit'] ?? 20)));
+        $limit = min(10000, max(1, (int) ($_GET['limit'] ?? 20)));
         sendSuccessResponse($repo->search($q, $limit));
     }
 

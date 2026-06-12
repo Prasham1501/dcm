@@ -176,7 +176,7 @@ try {
                     'full_name' => $name,
                     'last_name' => val($row, ['last_name', 'surname']),
                     'phone' => val($row, ['phone', 'mobile']),
-                    'alt_phone' => val($row, ['alt_phone', 'alternate_phone']),
+                    'alt_phone' => val($row, ['whatsapp_number', 'whatsapp', 'alt_phone', 'alternate_phone']),
                     'dob' => val($row, ['dob', 'birthdate', 'birth_date']),
                     'age_years' => val($row, ['age', 'age_years', 'years']),
                     'age_months' => val($row, ['age_months', 'months']),

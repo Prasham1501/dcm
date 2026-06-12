@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, ClipboardList, Receipt, Moon, Sun, Network,
@@ -32,6 +33,8 @@ const ROUTE_META: Record<string, { title: string; crumb: string }> = {
 const ADMIN_ONLY = new Set(['/commission']);
 const BILLING_ROLES = new Set(['admin', 'super_admin', 'receptionist']);
 const WORKLIST_ROLES = new Set(['receptionist']);
+const todayInput = () => new Date().toISOString().slice(0, 10);
+const monthStartInput = () => new Date().toISOString().slice(0, 8) + '01';
 
 function canSee(path: string, role = '') {
   if (ADMIN_ONLY.has(path)) return role === 'admin' || role === 'super_admin';
@@ -57,6 +60,71 @@ export function AppShell() {
   const location = routeLocation.pathname;
   const meta = ROUTE_META[location] || ROUTE_META['/dashboard'];
 
+  useEffect(() => {
+    if (!user) return undefined;
+
+    const run = () => {
+      const today = todayInput();
+      const monthStart = monthStartInput();
+
+      void import('@/features/settings/api/settingsApi').then((api) => {
+        void api.apiNetworkInfo().catch(() => undefined);
+        void api.apiDicomNodes().catch(() => undefined);
+        void api.apiMasters('centers', { active: '1' }).catch(() => undefined);
+        void api.apiMasters('pros', { active: '1' }).catch(() => undefined);
+        void api.apiMasters('lookups', { category: 'patient_group' }).catch(() => undefined);
+        void api.apiMasters('lookups', { category: 'dispatch_mode' }).catch(() => undefined);
+        if (role === 'admin' || role === 'super_admin') {
+          void api.apiBranding().catch(() => undefined);
+          void api.apiCounters().catch(() => undefined);
+          void api.apiIntegration().catch(() => undefined);
+        }
+      }).catch(() => undefined);
+
+      void import('@/features/reception/api/receptionApi').then((api) => {
+        void api.apiListServices().catch(() => undefined);
+        void api.apiListReferringDoctors().catch(() => undefined);
+        if (WORKLIST_ROLES.has(role)) {
+          void api.apiReceptionVisits({
+            from: monthStart,
+            to: today,
+            page: 1,
+            page_size: 50,
+            include_totals: 0,
+          }).catch(() => undefined);
+        }
+      }).catch(() => undefined);
+
+      if (WORKLIST_ROLES.has(role)) {
+        void import('@/features/worklist/api/worklistApi').then((api) => {
+          void api.apiDoctorList('scheduled,sent_to_viewer,acquired,reported,delivered').catch(() => undefined);
+          void api.apiCollectionList().catch(() => undefined);
+        }).catch(() => undefined);
+      }
+
+      if (BILLING_ROLES.has(role)) {
+        void import('@/features/billing/api/billingApi').then((api) => {
+          void api.apiGetDaybook(today, today).catch(() => undefined);
+        }).catch(() => undefined);
+      }
+
+      if (role === 'admin' || role === 'super_admin' || WORKLIST_ROLES.has(role)) {
+        void import('@/features/pcpndt/api/pcpndtApi').then((api) => {
+          void api.apiPcpndtOrders().catch(() => undefined);
+        }).catch(() => undefined);
+      }
+
+      if (role === 'admin' || role === 'super_admin') {
+        void import('@/features/commission/api/commissionApi').then((api) => {
+          void api.apiGetCommissionEnabled().catch(() => undefined);
+        }).catch(() => undefined);
+      }
+    };
+
+    const timer = window.setTimeout(run, 250);
+    return () => window.clearTimeout(timer);
+  }, [role, user]);
+
   return (
     <div className="app">
       <aside className="sidebar">
@@ -70,6 +138,11 @@ export function AppShell() {
             <NavLink
               key={to}
               to={to}
+              onClick={() => {
+                if (to === '/reception' && location === '/reception') {
+                  window.dispatchEvent(new CustomEvent('ris:reception-reselect'));
+                }
+              }}
               className={({ isActive }) =>
                 `nav-link ${isActive ? 'active' : ''}`
               }

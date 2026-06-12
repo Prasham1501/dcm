@@ -61,13 +61,15 @@ try {
 
     $whereSql = implode(' AND ', $where);
 
+    $includeTotals = (string)($_GET['include_totals'] ?? '1') !== '0';
     $sql = "
         SELECT
             v.id, v.visit_no, v.visit_datetime, v.center_name, v.total_amount, v.misc_charge,
             v.discount, v.net_amount, v.paid_amount, v.balance, v.status, v.consultant_doctor,
             v.ref_no, v.urgent_report, v.visit_comment, v.dispatch_mode, v.dispatch_note,
             v.delivery_destination, v.print_barcode, v.print_srs, v.print_receipt,
-            v.print_bill_receipt, v.send_to_printer,
+            v.print_bill_receipt, v.send_to_printer, v.phlebotomy_staff, v.home_visit_area,
+            v.home_visit_amount, v.home_visit_time, v.home_visit,
             p.id AS patient_id, p.mrn, p.full_name, p.phone, p.age_years, p.sex, p.patient_group,
             rd.name AS doctor_name,
             COALESCE(u.full_name, u.username) AS user_name,
@@ -87,16 +89,17 @@ try {
         LEFT JOIN ris_services s ON s.id = o.service_id
         WHERE $whereSql
         GROUP BY v.id
-        ORDER BY v.urgent_report DESC, v.visit_datetime DESC, v.id DESC
+        ORDER BY v.visit_datetime DESC, v.id DESC
         LIMIT ? OFFSET ?";
 
     // Pagination.
     $page = max(1, (int)($_GET['page'] ?? 1));
     $pageSize = min(200, max(10, (int)($_GET['page_size'] ?? 50)));
     $offset = ($page - 1) * $pageSize;
+    $rowsLimit = $includeTotals ? $pageSize : $pageSize + 1;
 
     $rowsTypes = $types . 'ii';
-    $rowsVals = array_merge($vals, [$pageSize, $offset]);
+    $rowsVals = array_merge($vals, [$rowsLimit, $offset]);
     $stmt = $db->prepare($sql);
     $bindArgs = [$rowsTypes];
     foreach ($rowsVals as $key => $value) {
@@ -110,9 +113,15 @@ try {
         $rows[] = $row;
     }
     $stmt->close();
+    $hasMore = false;
+    if (!$includeTotals && count($rows) > $pageSize) {
+        $hasMore = true;
+        $rows = array_slice($rows, 0, $pageSize);
+    }
 
     // Totals over the full filtered set (per-visit aggregation, then summed).
-    $totalsSql = "
+    if ($includeTotals) {
+        $totalsSql = "
         SELECT
             COUNT(*) AS records,
             COALESCE(SUM(total_amount), 0) AS total,
@@ -133,15 +142,36 @@ try {
             WHERE $whereSql
             GROUP BY v.id
         ) t";
-    $tstmt = $db->prepare($totalsSql);
-    $tbind = [$types];
-    foreach ($vals as $key => $value) {
-        $tbind[] = &$vals[$key];
+        $tstmt = $db->prepare($totalsSql);
+        $tbind = [$types];
+        foreach ($vals as $key => $value) {
+            $tbind[] = &$vals[$key];
+        }
+        call_user_func_array([$tstmt, 'bind_param'], $tbind);
+        $tstmt->execute();
+        $totals = $tstmt->get_result()->fetch_assoc() ?: [];
+        $tstmt->close();
+    } else {
+        $totals = [
+            'records' => $offset + count($rows) + ($hasMore ? 1 : 0),
+            'total' => 0,
+            'others' => 0,
+            'discount' => 0,
+            'net' => 0,
+            'paid' => 0,
+            'balance' => 0,
+            'refund' => 0,
+        ];
+        foreach ($rows as $row) {
+            $totals['total'] += (float)($row['total_amount'] ?? 0);
+            $totals['others'] += (float)($row['misc_charge'] ?? 0);
+            $totals['discount'] += (float)($row['discount'] ?? 0);
+            $totals['net'] += (float)($row['net_amount'] ?? 0);
+            $totals['paid'] += (float)($row['paid_amount'] ?? 0);
+            $totals['balance'] += (float)($row['balance'] ?? 0);
+            $totals['refund'] += (float)($row['refund_total'] ?? 0);
+        }
     }
-    call_user_func_array([$tstmt, 'bind_param'], $tbind);
-    $tstmt->execute();
-    $totals = $tstmt->get_result()->fetch_assoc() ?: [];
-    $tstmt->close();
 
     sendSuccessResponse(['rows' => $rows, 'totals' => $totals, 'page' => $page, 'page_size' => $pageSize]);
 } catch (Throwable $e) {

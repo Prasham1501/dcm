@@ -165,21 +165,35 @@ export function StatTile({
   value,
   accent,
   sub,
+  onClick,
 }: {
   icon?: LucideIcon;
   label: string;
   value: ReactNode;
   accent?: boolean;
   sub?: ReactNode;
+  onClick?: () => void;
 }) {
-  return (
-    <div className="stat">
+  const content = (
+    <>
       <div className="stat-top">
         {Icon ? <span className="stat-ico"><Icon aria-hidden /></span> : null}
         <span className="stat-label">{label}</span>
       </div>
       <div className={`stat-value ${accent ? 'accent' : ''}`}>{value}</div>
       {sub ? <div className="stat-delta">{sub}</div> : null}
+    </>
+  );
+  if (onClick) {
+    return (
+      <button type="button" className="stat stat-clickable" onClick={onClick}>
+        {content}
+      </button>
+    );
+  }
+  return (
+    <div className="stat">
+      {content}
     </div>
   );
 }

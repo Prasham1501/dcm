@@ -152,14 +152,15 @@ function ci_render_statement(mysqli $db, int $invoiceId): void
          JOIN ris_centers c ON c.id = ?
          WHERE (v.center_id = c.id OR v.center_name = c.name)
            AND DATE_FORMAT(v.visit_datetime,'%Y-%m') = ? AND v.status <> 'cancelled'
-         ORDER BY v.visit_datetime"
+         ORDER BY v.visit_datetime DESC, v.id DESC"
     );
     $vstmt->bind_param('is', $centerId, $period);
     $vstmt->execute();
     $vres = $vstmt->get_result();
     $rows = '';
     while ($v = $vres->fetch_assoc()) {
-        $rows .= '<tr><td>' . ci_h($v['visit_no']) . '</td><td>' . ci_h(substr((string)$v['visit_datetime'], 0, 10)) . '</td><td>' . ci_h($v['full_name']) . '</td><td class="num">Rs ' . number_format((float)$v['net_amount'], 2) . '</td></tr>';
+        $visitDate = $v['visit_datetime'] ? date('d/m/y/H/i', strtotime((string)$v['visit_datetime'])) : '-';
+        $rows .= '<tr><td>' . ci_h($v['visit_no']) . '</td><td>' . ci_h($visitDate) . '</td><td>' . ci_h($v['full_name']) . '</td><td class="num">Rs ' . number_format((float)$v['net_amount'], 2) . '</td></tr>';
     }
     $vstmt->close();
 

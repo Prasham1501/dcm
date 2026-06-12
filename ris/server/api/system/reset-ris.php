@@ -1,7 +1,7 @@
 <?php
 /**
- * Clear operational RIS data so a clinic can start over without deleting
- * configuration, DICOM node setup, license data, or the service catalog.
+ * Clear RIS data so a clinic can start over without deleting app users or
+ * license data.
  */
 if (!defined('DICOM_VIEWER')) { define('DICOM_VIEWER', true); }
 require_once __DIR__ . '/../../includes/config.php';
@@ -29,14 +29,26 @@ try {
         'ris_commission_entries',
         'ris_commission_payouts',
         'pcpndt_form_f',
+        'pcpndt_portal_credentials',
+        'ris_test_results',
+        'ris_test_ref_ranges',
+        'ris_test_parameters',
+        'ris_result_assets',
         'ris_receipts',
         'ris_payments',
+        'ris_center_invoices',
+        'ris_outbox',
         'ris_orders',
         'ris_visits',
         'ris_patients',
         'ris_referring_doctors',
+        'ris_services',
+        'ris_centers',
+        'ris_pros',
+        'ris_lookups',
         'cached_studies',
         'cached_patients',
+        'dicom_nodes',
     ];
     $cleared = [];
 
@@ -50,15 +62,69 @@ try {
     }
     $db->query('SET FOREIGN_KEY_CHECKS = 1');
 
-    $counters = ['mrn', 'accession', 'receipt', 'visit'];
-    $stmt = $db->prepare("UPDATE app_counters SET current_value = 0 WHERE name = ?");
+    $counterDefaults = [
+        'mrn' => 'P',
+        'accession' => 'OCZ',
+        'receipt' => 'RCP',
+        'visit' => 'V',
+    ];
+    $stmt = $db->prepare(
+        "INSERT INTO app_counters (name, current_value, prefix)
+         VALUES (?, 0, ?)
+         ON DUPLICATE KEY UPDATE current_value = 0, prefix = VALUES(prefix)"
+    );
     $reset = [];
-    foreach ($counters as $counter) {
-        $stmt->bind_param('s', $counter);
+    foreach ($counterDefaults as $counter => $prefix) {
+        $stmt->bind_param('ss', $counter, $prefix);
         $stmt->execute();
-        if ($stmt->affected_rows >= 0) { $reset[] = $counter; }
+        $reset[] = $counter;
     }
     $stmt->close();
+
+    $settingKeys = [
+        'clinic_state',
+        'accession_prefix',
+        'default_station_ae',
+        'worklist_dir',
+        'dicom_uid_root',
+        'brand_name',
+        'brand_tagline',
+        'brand_phone',
+        'brand_email',
+        'brand_address',
+        'brand_website',
+        'brand_logo_image',
+        'receipt_header',
+        'receipt_footer',
+        'receipt_paper_size',
+        'receipt_signature_label',
+        'receipt_signature_image',
+        'receipt_stamp_image',
+        'gst_number',
+        'default_tax_percentage',
+        'commission_enabled',
+        'pcpndt_registration_no',
+        'barcode_label_width_mm',
+        'barcode_label_height_mm',
+        'smtp_host',
+        'smtp_port',
+        'smtp_user',
+        'smtp_pass',
+        'smtp_from',
+        'smtp_secure',
+        'integration_api_key',
+        'analyzer_graph_source_dirs',
+        'analyzer_graph_extensions',
+        'orthanc_dicom_port',
+    ];
+    $deletedSettings = 0;
+    $settingStmt = $db->prepare('DELETE FROM hospital_settings WHERE setting_key = ?');
+    foreach ($settingKeys as $key) {
+        $settingStmt->bind_param('s', $key);
+        $settingStmt->execute();
+        $deletedSettings += max(0, $settingStmt->affected_rows);
+    }
+    $settingStmt->close();
 
     // Wipe the on-disk Modality Worklist (.wl files watched by Orthanc).
     // Truncating ris_orders alone leaves stale worklist entries visible to
@@ -75,6 +141,13 @@ try {
         logMessage('RIS reset worklist cleanup error: ' . $wlErr->getMessage(), 'warning', 'ris.log');
     }
 
+    $assetFilesCleared = 0;
+    try {
+        $assetFilesCleared = ris_delete_directory_contents(__DIR__ . '/../../data/ris_graphs');
+    } catch (Throwable $assetErr) {
+        logMessage('RIS reset graph/image cleanup error: ' . $assetErr->getMessage(), 'warning', 'ris.log');
+    }
+
     $orthancDeleted = 0;
     try {
         $patients = ris_orthanc_json('GET', '/patients');
@@ -88,12 +161,14 @@ try {
         logMessage('RIS reset Orthanc cleanup error: ' . $orthancErr->getMessage(), 'warning', 'ris.log');
     }
 
-    logAuditEvent((int)(getCurrentUser()['id'] ?? 0), 'reset', 'ris_data', null, 'Cleared RIS operational data, referring doctors, and worklist files');
+    logAuditEvent((int)(getCurrentUser()['id'] ?? 0), 'reset', 'ris_data', null, 'Cleared RIS data, settings, tests, masters, DICOM nodes, worklist files, and machine attachments');
     sendSuccessResponse(
         [
             'cleared' => $cleared,
             'counters_reset' => $reset,
+            'settings_removed' => $deletedSettings,
             'worklist_files_removed' => $worklistCleared,
+            'asset_files_removed' => $assetFilesCleared,
             'orthanc_patients_deleted' => $orthancDeleted,
         ],
         'RIS data cleared'
@@ -129,4 +204,36 @@ function ris_orthanc_request(string $method, string $path): array
     curl_close($ch);
     if ($err) { throw new RuntimeException($err); }
     return ['code' => $code, 'body' => (string)$body];
+}
+
+function ris_delete_directory_contents(string $dir): int
+{
+    if (!is_dir($dir)) {
+        return 0;
+    }
+
+    $removed = 0;
+    $items = scandir($dir);
+    if ($items === false) {
+        return 0;
+    }
+
+    foreach ($items as $item) {
+        if ($item === '.' || $item === '..') {
+            continue;
+        }
+
+        $path = $dir . DIRECTORY_SEPARATOR . $item;
+        if (is_dir($path)) {
+            $removed += ris_delete_directory_contents($path);
+            @rmdir($path);
+            continue;
+        }
+
+        if (is_file($path) && @unlink($path)) {
+            $removed++;
+        }
+    }
+
+    return $removed;
 }

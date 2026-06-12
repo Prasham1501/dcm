@@ -1,5 +1,6 @@
 import type { NetworkInfo } from '@/features/reception/api/receptionApi';
 import type { Service } from '@/features/reception/api/receptionApi';
+import { cachedRequest, invalidateCache } from '../../../lib/risDataCache';
 
 export interface DicomNode {
   id: number;
@@ -36,13 +37,8 @@ export interface BrandingSettings {
 }
 
 export interface CounterSettings {
-  accession?: { prefix: string; current_value: number; next_number: number };
-  token?: { prefix: string; current_value: number; next_number: number };
-}
-
-export interface AnalyzerGraphSettings {
-  analyzer_graph_source_dirs: string;
-  analyzer_graph_extensions: string;
+  mrn?: { prefix: string; current_value: number; next_number: number };
+  visit?: { prefix: string; current_value: number; next_number: number };
 }
 
 async function readJson(res: Response): Promise<any> {
@@ -61,28 +57,38 @@ async function readJson(res: Response): Promise<any> {
 }
 
 export async function apiNetworkInfo(): Promise<NetworkInfo> {
-  return (await readJson(await fetch('/api/system/network-info.php', { credentials: 'include' }))) as NetworkInfo;
+  const url = '/api/system/network-info.php';
+  return cachedRequest(`GET ${url}`, async () => (
+    (await readJson(await fetch(url, { credentials: 'include' }))) as NetworkInfo
+  ), { ttlMs: 5 * 60_000 });
 }
 
 export async function apiDicomNodes(): Promise<DicomNode[]> {
-  const json = await readJson(await fetch('/api/system/nodes.php', { credentials: 'include' }));
+  const url = '/api/system/nodes.php';
+  const json = await cachedRequest<any>(`GET ${url}`, async () => (
+    await readJson(await fetch(url, { credentials: 'include' }))
+  ), { ttlMs: 60_000 });
   return (json.nodes ?? json.data?.nodes ?? []) as DicomNode[];
 }
 
 export async function apiSaveDicomNode(node: Partial<DicomNode>): Promise<{ id: number }> {
-  return await readJson(await fetch('/api/system/nodes.php', {
+  const result = await readJson(await fetch('/api/system/nodes.php', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
     body: JSON.stringify(node),
   }));
+  invalidateCache('GET /api/system/nodes.php');
+  return result;
 }
 
 export async function apiDeleteDicomNode(id: number): Promise<{ deleted: number }> {
-  return await readJson(await fetch(`/api/system/nodes.php?id=${id}`, {
+  const result = await readJson(await fetch(`/api/system/nodes.php?id=${id}`, {
     method: 'DELETE',
     credentials: 'include',
   }));
+  invalidateCache('GET /api/system/nodes.php');
+  return result;
 }
 
 export async function apiEchoNode(node: DicomNode): Promise<{ time?: number }> {
@@ -109,91 +115,111 @@ export async function apiSendStudy(nodeId: number, studyUidOrOrthancId: string):
 }
 
 export async function apiBranding(): Promise<BrandingSettings> {
-  return await readJson(await fetch('/api/settings/branding.php', { credentials: 'include' }));
+  const url = '/api/settings/branding.php';
+  return cachedRequest(`GET ${url}`, async () => (
+    await readJson(await fetch(url, { credentials: 'include' }))
+  ), { ttlMs: 60_000 });
 }
 
 export async function apiSaveBranding(settings: BrandingSettings): Promise<BrandingSettings> {
-  return await readJson(await fetch('/api/settings/branding.php', {
+  const saved = await readJson(await fetch('/api/settings/branding.php', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
     body: JSON.stringify(settings),
   }));
-}
-
-export async function apiAnalyzerGraphs(): Promise<AnalyzerGraphSettings> {
-  return await readJson(await fetch('/api/settings/analyzer-graphs.php', { credentials: 'include' }));
-}
-
-export async function apiSaveAnalyzerGraphs(settings: AnalyzerGraphSettings): Promise<AnalyzerGraphSettings> {
-  return await readJson(await fetch('/api/settings/analyzer-graphs.php', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    credentials: 'include',
-    body: JSON.stringify(settings),
-  }));
+  invalidateCache('GET /api/settings/branding.php');
+  return saved;
 }
 
 export async function apiCounters(): Promise<CounterSettings> {
-  return await readJson(await fetch('/api/system/counters.php', { credentials: 'include' }));
+  const url = '/api/system/counters.php';
+  return cachedRequest(`GET ${url}`, async () => (
+    await readJson(await fetch(url, { credentials: 'include' }))
+  ), { ttlMs: 60_000 });
 }
 
 export async function apiSaveCounters(payload: {
-  accession_prefix?: string;
-  accession_start?: number | string;
-  token_prefix?: string;
-  token_start?: number | string;
+  patient_prefix?: string;
+  patient_start?: number | string;
+  visit_prefix?: string;
+  visit_start?: number | string;
 }): Promise<CounterSettings> {
-  return await readJson(await fetch('/api/system/counters.php', {
+  const saved = await readJson(await fetch('/api/system/counters.php', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
     body: JSON.stringify(payload),
   }));
+  invalidateCache('GET /api/system/counters.php');
+  return saved;
 }
 
 export interface IntegrationInfo { api_key: string; endpoint: string }
 
 export async function apiIntegration(): Promise<IntegrationInfo> {
-  return await readJson(await fetch('/api/settings/integration.php', { credentials: 'include' }));
+  const url = '/api/settings/integration.php';
+  return cachedRequest(`GET ${url}`, async () => (
+    await readJson(await fetch(url, { credentials: 'include' }))
+  ), { ttlMs: 60_000 });
 }
 
 export async function apiRegenerateIntegrationKey(): Promise<{ api_key: string }> {
-  return await readJson(await fetch('/api/settings/integration.php', {
+  const result = await readJson(await fetch('/api/settings/integration.php', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
     body: JSON.stringify({ action: 'regenerate' }),
   }));
+  invalidateCache('GET /api/settings/integration.php');
+  return result;
 }
 
-export async function apiResetRisData(confirm: string): Promise<{ cleared: string[]; counters_reset: string[]; worklist_files_removed?: number }> {
-  return await readJson(await fetch('/api/system/reset-ris.php', {
+export async function apiResetRisData(confirm: string): Promise<{
+  cleared: string[];
+  counters_reset: string[];
+  settings_removed?: number;
+  worklist_files_removed?: number;
+  asset_files_removed?: number;
+  orthanc_patients_deleted?: number;
+}> {
+  const result = await readJson(await fetch('/api/system/reset-ris.php', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
     body: JSON.stringify({ confirm }),
   }));
+  invalidateCache();
+  return result;
 }
 
 export async function apiListAllServices(): Promise<Service[]> {
-  return (await readJson(await fetch('/api/reception/services.php?active=0', { credentials: 'include' }))) as Service[];
+  const url = '/api/reception/services.php?active=0';
+  return cachedRequest(`GET ${url}`, async () => (
+    (await readJson(await fetch(url, { credentials: 'include' }))) as Service[]
+  ), { ttlMs: 60_000 });
 }
 
 export async function apiSaveService(service: Partial<Service>): Promise<Service> {
-  return await readJson(await fetch('/api/reception/services.php', {
+  const saved = await readJson(await fetch('/api/reception/services.php', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
     body: JSON.stringify(service),
   }));
+  invalidateCache('GET /api/reception/services.php');
+  invalidateCache('GET /api/reception/visits.php');
+  return saved;
 }
 
 export async function apiDeleteService(id: number): Promise<{ deleted: number }> {
-  return await readJson(await fetch(`/api/reception/services.php?id=${id}`, {
+  const result = await readJson(await fetch(`/api/reception/services.php?id=${id}`, {
     method: 'DELETE',
     credentials: 'include',
   }));
+  invalidateCache('GET /api/reception/services.php');
+  invalidateCache('GET /api/reception/visits.php');
+  return result;
 }
 
 export type ImportType =
@@ -204,11 +230,13 @@ export async function apiImportCsv(type: ImportType, file: File): Promise<{ crea
   const form = new FormData();
   form.append('type', type);
   form.append('file', file);
-  return await readJson(await fetch('/api/reception/import-csv.php', {
+  const result = await readJson(await fetch('/api/reception/import-csv.php', {
     method: 'POST',
     credentials: 'include',
     body: form,
   }));
+  invalidateCache();
+  return result;
 }
 
 // ---------- Master data (centers / PROs / lookups) ----------
@@ -247,23 +275,32 @@ export type MasterEntity = 'centers' | 'pros' | 'lookups';
 
 export async function apiMasters<T = any>(entity: MasterEntity, params: Record<string, string> = {}): Promise<T[]> {
   const qs = new URLSearchParams({ entity, ...params });
-  return (await readJson(await fetch(`/api/settings/masters.php?${qs.toString()}`, { credentials: 'include' }))) as T[];
+  const url = `/api/settings/masters.php?${qs.toString()}`;
+  return cachedRequest(`GET ${url}`, async () => (
+    (await readJson(await fetch(url, { credentials: 'include' }))) as T[]
+  ), { ttlMs: 60_000 });
 }
 
 export async function apiSaveMaster(entity: MasterEntity, payload: Record<string, unknown>): Promise<any> {
-  return await readJson(await fetch('/api/settings/masters.php', {
+  const result = await readJson(await fetch('/api/settings/masters.php', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
     body: JSON.stringify({ entity, ...payload }),
   }));
+  invalidateCache('GET /api/settings/masters.php');
+  invalidateCache('GET /api/reception/visits.php');
+  return result;
 }
 
 export async function apiDeleteMaster(entity: MasterEntity, id: number): Promise<{ id: number }> {
-  return await readJson(await fetch(`/api/settings/masters.php?entity=${entity}&id=${id}`, {
+  const result = await readJson(await fetch(`/api/settings/masters.php?entity=${entity}&id=${id}`, {
     method: 'DELETE',
     credentials: 'include',
   }));
+  invalidateCache('GET /api/settings/masters.php');
+  invalidateCache('GET /api/reception/visits.php');
+  return result;
 }
 
 // ---------- Referring doctors / consultants ----------
@@ -284,23 +321,32 @@ export interface RisDoctor {
 
 export async function apiListDoctors(type?: 'gp' | 'consultant'): Promise<RisDoctor[]> {
   const qs = type ? `?type=${type}` : '';
-  return (await readJson(await fetch(`/api/reception/referring-doctors.php${qs}`, { credentials: 'include' }))) as RisDoctor[];
+  const url = `/api/reception/referring-doctors.php${qs}`;
+  return cachedRequest(`GET ${url}`, async () => (
+    (await readJson(await fetch(url, { credentials: 'include' }))) as RisDoctor[]
+  ), { ttlMs: 60_000 });
 }
 
 export async function apiSaveDoctor(payload: Partial<RisDoctor>): Promise<RisDoctor> {
-  return await readJson(await fetch('/api/reception/referring-doctors.php', {
+  const saved = await readJson(await fetch('/api/reception/referring-doctors.php', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
     body: JSON.stringify(payload),
   }));
+  invalidateCache('GET /api/reception/referring-doctors.php');
+  invalidateCache('GET /api/reception/visits.php');
+  return saved;
 }
 
 export async function apiDeleteDoctor(id: number): Promise<{ id: number }> {
-  return await readJson(await fetch(`/api/reception/referring-doctors.php?id=${id}`, {
+  const result = await readJson(await fetch(`/api/reception/referring-doctors.php?id=${id}`, {
     method: 'DELETE',
     credentials: 'include',
   }));
+  invalidateCache('GET /api/reception/referring-doctors.php');
+  invalidateCache('GET /api/reception/visits.php');
+  return result;
 }
 
 // ---------- Patient master ----------
@@ -311,6 +357,7 @@ export interface PatientMaster {
   name_prefix: string | null;
   full_name: string;
   last_name: string | null;
+  dob: string | null;
   age_years: number | null;
   age_months: number | null;
   age_days: number | null;
@@ -328,14 +375,20 @@ export interface PatientMaster {
 
 export async function apiListPatients(q = '', limit = 100): Promise<PatientMaster[]> {
   const qs = new URLSearchParams({ action: 'search', q, limit: String(limit) });
-  return (await readJson(await fetch(`/api/reception/patients.php?${qs.toString()}`, { credentials: 'include' }))) as PatientMaster[];
+  const url = `/api/reception/patients.php?${qs.toString()}`;
+  return cachedRequest(`GET ${url}`, async () => (
+    (await readJson(await fetch(url, { credentials: 'include' }))) as PatientMaster[]
+  ), { ttlMs: 30_000 });
 }
 
 export async function apiSavePatientMaster(payload: Partial<PatientMaster> & { action: 'create' | 'update' }): Promise<PatientMaster> {
-  return await readJson(await fetch('/api/reception/patients.php', {
+  const saved = await readJson(await fetch('/api/reception/patients.php', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
     body: JSON.stringify(payload),
   }));
+  invalidateCache('GET /api/reception/patients.php');
+  invalidateCache('GET /api/reception/visits.php');
+  return saved;
 }

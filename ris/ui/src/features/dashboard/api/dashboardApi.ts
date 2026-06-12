@@ -1,4 +1,5 @@
 /** Dashboard summary + MIS export helpers. */
+import { cachedRequest } from '../../../lib/risDataCache';
 
 export interface DashboardSummary {
   date: string;
@@ -21,12 +22,14 @@ export async function apiDashboardSummary(from?: string, to?: string): Promise<D
   if (from) params.set('from', from);
   if (to) params.set('to', to);
   const url = `/api/dashboard/summary.php?${params}`;
-  const res = await fetch(url, { credentials: 'include' });
-  const json = await res.json();
-  if (!json || json.success === false) {
-    throw new Error((json && (json.error || json.message)) || 'Request failed');
-  }
-  return json.data as DashboardSummary;
+  return cachedRequest(`GET ${url}`, async () => {
+    const res = await fetch(url, { credentials: 'include' });
+    const json = await res.json();
+    if (!json || json.success === false) {
+      throw new Error((json && (json.error || json.message)) || 'Request failed');
+    }
+    return json.data as DashboardSummary;
+  }, { ttlMs: 30_000 });
 }
 
 export function misExportUrl(type: 'visits' | 'payments' | 'commission', from: string, to: string): string {
