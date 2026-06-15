@@ -161,25 +161,11 @@ export function SlotsPage() {
                       {s.windowsPrinterName || 'No printer mapped'}
                     </span>
                   </div>
-                  {/* Paper size + (optional) quota pill */}
+                  {/* Paper size pill */}
                   <div className="mt-0.5 flex flex-wrap items-center gap-1 text-[10px]">
                     <span className="rounded bg-app-accent/10 px-1.5 py-0.5 font-semibold uppercase tracking-wide text-app-accent">
                       {PAPER_SHORT[s.paperSize] || s.paperSize || 'A4'}
                     </span>
-                    {s.quotaEnabled && (
-                      <span
-                        className={`rounded px-1.5 py-0.5 font-semibold uppercase tracking-wide ${
-                          s.quotaRemaining <= 0
-                            ? 'bg-red-500/15 text-red-500'
-                            : s.quotaRemaining <= 50
-                              ? 'bg-amber-500/15 text-amber-500'
-                              : 'bg-green-500/15 text-green-500'
-                        }`}
-                        title={`${s.quotaRemaining} of ${s.quotaTotal || s.quotaRemaining} prints left`}
-                      >
-                        {s.quotaRemaining} prints left
-                      </span>
-                    )}
                   </div>
                 </button>
               </div>
