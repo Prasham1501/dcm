@@ -188,6 +188,14 @@ body { background: var(--app-bg); color: var(--app-text); font-family: var(--fon
 .visit-tabs button { background: transparent; border: 0; border-bottom: 2px solid transparent; color: var(--app-text-secondary); cursor: pointer; font: inherit; font-size: 13px; font-weight: 600; padding: 8px 10px; white-space: nowrap; }
 .visit-tabs button:hover { color: var(--app-text); }
 .visit-tabs button.active { border-bottom-color: var(--app-accent); color: var(--app-accent); }
+.reception-toolbar { align-items: end; display: grid; gap: 10px; grid-template-columns: minmax(240px, 1.3fr) minmax(150px, .7fr) auto auto auto auto; }
+.filter-panel { background: var(--app-surface); border: 1px solid var(--app-border); border-radius: var(--radius-md); padding: 12px; }
+.seg-toggle { align-items: center; background: var(--app-surface); border: 1px solid var(--app-border); border-radius: var(--radius-sm); display: inline-flex; padding: 2px; }
+.seg-toggle button { background: transparent; border: 0; border-radius: 6px; color: var(--app-text-secondary); cursor: pointer; font: inherit; font-size: 12px; font-weight: 700; min-height: 32px; padding: 0 10px; white-space: nowrap; }
+.seg-toggle button.active { background: var(--app-bg); box-shadow: var(--shadow-sm); color: var(--app-accent); }
+.reg-layout { align-items: start; display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr) minmax(320px, 380px); }
+.bill-sticky { position: sticky; top: 12px; }
+.bill-sticky .grid-3 { grid-template-columns: 1fr; gap: 10px; }
 .accession-list { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
 .accession-code { background: #fff; border: 1px solid var(--app-accent); border-radius: var(--radius-xs); color: var(--app-accent); font-family: var(--font-mono); font-size: 18px; font-weight: 800; letter-spacing: 0.02em; padding: 8px 10px; }
 .history-detail { background: var(--app-surface); border-top: 1px solid var(--app-border); padding: 14px; }
@@ -248,6 +256,9 @@ body { background: var(--app-bg); color: var(--app-text); font-family: var(--fon
 @keyframes spin { to { transform: rotate(360deg); } }
 
 @media (max-width: 1100px) {
+  .reception-toolbar { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .reg-layout { grid-template-columns: 1fr; }
+  .bill-sticky { position: static; }
   .grid-5 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .grid-3, .grid-2 { grid-template-columns: 1fr; }
   .patient-profile-head { flex-direction: column; }

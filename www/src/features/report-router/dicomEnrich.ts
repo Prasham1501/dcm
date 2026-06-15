@@ -21,9 +21,9 @@ export interface ExtractedDicomMeta {
 export async function extractDicomMeta(filePaths: string[] | undefined): Promise<ExtractedDicomMeta | null> {
   if (!filePaths || filePaths.length === 0) return null;
   const api = (window as any).electronAPI;
-  if (!api?.invoke) return null;
+  if (!api?.extractDicomMetadata) return null;
   try {
-    const meta = await api.invoke('extract-dicom-metadata', { filePaths: filePaths.slice(0, 1) });
+    const meta = await api.extractDicomMetadata({ filePaths: filePaths.slice(0, 1) });
     if (!meta || typeof meta !== 'object') return null;
     return {
       modality:          meta.modality,

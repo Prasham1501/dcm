@@ -4,11 +4,8 @@ import { useConfigStore } from '@/stores/configStore';
 import { SlotCard } from '@/components/SlotCard';
 import { SlotHistoryModal } from '@/components/SlotHistoryModal';
 import { SlotQuotaModal } from '@/components/SlotQuotaModal';
-import { PasswordModal } from '@/components/PasswordModal';
 import type { PrinterSlot } from '@/types/bridge';
-
-// Same password protects "Add Printer Slot" and "Quota Settings".
-const ADMIN_PASSWORD = 'Prasham123$';
+import { PAPER_SHORT } from '@/lib/paperSizes';
 
 export function SlotsPage() {
   const config = useConfigStore((s) => s.config);
@@ -18,9 +15,6 @@ export function SlotsPage() {
   const [editing, setEditing] = useState<PrinterSlot | null>(null);
   const [editingIndex, setEditingIndex] = useState(0);
   const [historySlot, setHistorySlot] = useState<PrinterSlot | null>(null);
-  // `passwordIntent` describes what to do once the password modal succeeds.
-  // Keeps the gate generic without baking specific actions into the modal.
-  const [passwordIntent, setPasswordIntent] = useState<null | { kind: 'add' } | { kind: 'quota'; slotId: string }>(null);
   const [quotaSlot, setQuotaSlot] = useState<PrinterSlot | null>(null);
   const [ips, setIps] = useState<{ iface: string; address: string }[]>([]);
   const [copied, setCopied] = useState<string>('');
@@ -69,7 +63,7 @@ export function SlotsPage() {
           </p>
         </div>
         <button
-          onClick={() => setPasswordIntent({ kind: 'add' })}
+          onClick={doAdd}
           className="flex items-center gap-1 rounded border-2 border-app-accent bg-app-accent px-3 py-1.5 text-xs font-semibold text-white hover:bg-app-accent-hover"
         >
           <Plus className="h-3.5 w-3.5" /> Add Printer Slot
@@ -136,7 +130,7 @@ export function SlotsPage() {
                       <FileText className="h-3.5 w-3.5" />
                     </button>
                     <button
-                      onClick={(e) => { e.stopPropagation(); setPasswordIntent({ kind: 'quota', slotId: s.id }); }}
+                      onClick={(e) => { e.stopPropagation(); setQuotaSlot(s); }}
                       title="Quota settings (Ctrl+Shift+Q)"
                       className="rounded p-0.5 text-app-text-muted hover:bg-app-hover hover:text-app-accent"
                     >
@@ -170,7 +164,7 @@ export function SlotsPage() {
                   {/* Paper size + (optional) quota pill */}
                   <div className="mt-0.5 flex flex-wrap items-center gap-1 text-[10px]">
                     <span className="rounded bg-app-accent/10 px-1.5 py-0.5 font-semibold uppercase tracking-wide text-app-accent">
-                      {s.paperSize || 'A4'}
+                      {PAPER_SHORT[s.paperSize] || s.paperSize || 'A4'}
                     </span>
                     {s.quotaEnabled && (
                       <span
@@ -211,28 +205,6 @@ export function SlotsPage() {
         <SlotQuotaModal slot={quotaSlot} onClose={() => setQuotaSlot(null)} />
       )}
 
-      {passwordIntent && (
-        <PasswordModal
-          title={passwordIntent.kind === 'add' ? 'Add Printer Slot' : 'Quota Settings'}
-          message={
-            passwordIntent.kind === 'add'
-              ? 'Enter the admin password to add a new printer slot.'
-              : 'Enter the admin password to change print-quota settings.'
-          }
-          expected={ADMIN_PASSWORD}
-          onOk={() => {
-            const intent = passwordIntent;
-            setPasswordIntent(null);
-            if (intent.kind === 'add') {
-              doAdd();
-            } else {
-              const slot = config.slots.find((s) => s.id === intent.slotId);
-              if (slot) setQuotaSlot(slot);
-            }
-          }}
-          onCancel={() => setPasswordIntent(null)}
-        />
-      )}
     </div>
   );
 }
@@ -281,4 +253,3 @@ function SlotConfigModal({ slot, index, primaryIp, onClose }: { slot: PrinterSlo
     </div>
   );
 }
-

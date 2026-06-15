@@ -10,7 +10,8 @@
     "postinstall": "cd ui && npm install",
     "build:ui": "cd ui && npm run build",
     "build:win": "npm run build:ui && electron-builder --win",
-    "pack": "electron-builder --dir"
+    "pack": "electron-builder --dir",
+    "test": "node --test \"src/**/*.test.js\""
   },
   "author": "One Clickz Team",
   "license": "MIT",

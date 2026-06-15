@@ -5,6 +5,7 @@ import { usePrintStore } from '@/stores/printStore';
 import { useViewerStore } from '@/stores/viewerStore';
 import { usePatientStore } from '@/stores/patientStore';
 import { useHospitalConfigStore, getFormattedAddress, buildBrandHeaderHtml, buildFooterHtml } from '@/stores/hospitalConfigStore';
+import { sanitizeHtml } from '@/lib/sanitizeHtml';
 import { getAutoOrientationForLayout, getLayoutAreaNames, getLayoutGridTemplate } from '@/lib/layoutUtils';
 import { captureCornerstoneViewportForPrintAsync, waitForViewportImages, PrintOverlay, PrintDrawPath } from '@/lib/printCapture';
 import { fillEmptyPrintSlots } from '@/lib/printPageUtils';
@@ -206,11 +207,11 @@ export function PrintPreview() {
   };
 
   const buildHeaderHtml = () => {
-    return buildBrandHeaderHtml(hospitalConfig as any);
+    return sanitizeHtml(buildBrandHeaderHtml(hospitalConfig as any));
   };
 
   const buildPrintFooterHtml = () => {
-    return buildFooterHtml(hospitalConfig as any);
+    return sanitizeHtml(buildFooterHtml(hospitalConfig as any));
   };
 
   const patientBarHtml = (pageNum: number) => {
@@ -414,8 +415,8 @@ export function PrintPreview() {
       }
 
       addPrintJob({ patientName, studyDate, layout: `${currentLayout.spots} Spots`, copies: localCopies, paperSize: localPaperSize });
-      if (electronAPI?.invoke) {
-        electronAPI.invoke('mark-patient-printed', { patientId, patientName }).catch(() => {});
+      if (electronAPI?.markPatientPrinted) {
+        electronAPI.markPatientPrinted({ patientId, patientName }).catch(() => {});
       }
       const { patients, editPatient } = usePatientStore.getState();
       const matchedPatient = patients.find(p => p.patientId === patientId && p.patientName === patientName);
@@ -576,7 +577,7 @@ export function PrintPreview() {
                     <div
                       className="flex-shrink-0"
                       style={{ width: '100%' }}
-                      dangerouslySetInnerHTML={{ __html: buildBrandHeaderHtml(hospitalConfig as any) }}
+                      dangerouslySetInnerHTML={{ __html: sanitizeHtml(buildBrandHeaderHtml(hospitalConfig as any)) }}
                     />
                   )}
                   <div style={{ border: hospitalConfig.printBorderEnabled ? `1px solid ${previewBorderCol}` : 'none', display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }}>

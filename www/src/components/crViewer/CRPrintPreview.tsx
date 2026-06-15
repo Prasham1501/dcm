@@ -3,6 +3,7 @@ import { Printer, X, ZoomIn, ZoomOut, Plus, Trash2, Check } from 'lucide-react';
 import { useCRViewerStore } from '@/stores/crViewerStore';
 import { usePrintStore } from '@/stores/printStore';
 import { useHospitalConfigStore, getFormattedAddress, renderPrintSlot, buildBrandHeaderHtml, buildFooterHtml } from '@/stores/hospitalConfigStore';
+import { sanitizeHtml } from '@/lib/sanitizeHtml';
 import { usePatientStore } from '@/stores/patientStore';
 import { getAutoOrientationForLayout, getLayoutAreaNames, getLayoutGridTemplate } from '@/lib/layoutUtils';
 import { captureCornerstoneViewportForPrintAsync, waitForViewportImages, PrintOverlay } from '@/lib/printCapture';
@@ -296,10 +297,10 @@ export function CRPrintPreview({ onClose, initialPageMode = 'all' }: CRPrintPrev
     const areaNames = getLayoutAreaNames(currentLayout.areas);
 
     const buildHeaderHtml = () => {
-      return buildBrandHeaderHtml(hospitalConfig as any);
+      return sanitizeHtml(buildBrandHeaderHtml(hospitalConfig as any));
     };
     const buildPrintFooterHtml = () => {
-      return buildFooterHtml(hospitalConfig as any);
+      return sanitizeHtml(buildFooterHtml(hospitalConfig as any));
     };
     const borderCol = hospitalConfig.printBorderEnabled ? (hospitalConfig.printBorderColor || '#333') : 'transparent';
     const headerBorderCol = 'transparent';
@@ -408,8 +409,8 @@ export function CRPrintPreview({ onClose, initialPageMode = 'all' }: CRPrintPrev
       }
 
       addPrintJob({ patientName, studyDate, layout: `${currentLayout.spots} Spots`, copies: localCopies, paperSize: localPaperSize });
-      if (electronAPI?.invoke) {
-        electronAPI.invoke('mark-patient-printed', { patientId, patientName }).catch(() => {});
+      if (electronAPI?.markPatientPrinted) {
+        electronAPI.markPatientPrinted({ patientId, patientName }).catch(() => {});
       }
       const { patients, editPatient } = usePatientStore.getState();
       const matchedPatient = patients.find(p => p.patientId === patientId && p.patientName === patientName);
@@ -547,7 +548,7 @@ export function CRPrintPreview({ onClose, initialPageMode = 'all' }: CRPrintPrev
                     <div
                       className="flex-shrink-0"
                       style={{ width: '100%' }}
-                      dangerouslySetInnerHTML={{ __html: buildBrandHeaderHtml(hospitalConfig as any) }}
+                      dangerouslySetInnerHTML={{ __html: sanitizeHtml(buildBrandHeaderHtml(hospitalConfig as any)) }}
                     />
                   )}
                   <div style={{ border: hospitalConfig.printBorderEnabled ? `1px solid ${previewBorderCol}` : 'none', display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }}>

@@ -11,7 +11,7 @@
  * No "upload whole header as image" mode. Logo upload stays.
  */
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
-import { Save, RotateCcw, Upload, X, Plus, ArrowUp, ArrowDown } from 'lucide-react';
+import { Save, RotateCcw, Upload, X, Plus, ArrowUp, ArrowDown, Copy, Trash2 } from 'lucide-react';
 import { useConfigStore } from '@/stores/configStore';
 import type { HospitalBranding, PrintSlotContent, FooterSlotItem, FooterSlotPos } from '@/types/bridge';
 import { buildBrandHeaderHtml, buildFooterHtml } from '@/lib/brandingHtml';
@@ -79,13 +79,37 @@ const SLOT_OPTIONS: { value: PrintSlotContent; label: string }[] = [
 export function BrandingPage() {
   const config = useConfigStore((s) => s.config);
   const saveBranding = useConfigStore((s) => s.saveBranding);
+  const createBranding = useConfigStore((s) => s.createBranding);
+  const deleteBranding = useConfigStore((s) => s.deleteBranding);
+  const brandings = config?.brandings || [];
+
+  const [selectedId, setSelectedId] = useState<string>('');
   const [local, setLocal] = useState<HospitalBranding>(DEFAULT_BRANDING);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
+  // Keep a valid selection as brandings load / change.
   useEffect(() => {
-    if (config?.branding) setLocal({ ...DEFAULT_BRANDING, ...config.branding });
-  }, [config?.branding]);
+    if (!brandings.length) return;
+    if (!brandings.some((b) => b.id === selectedId)) {
+      const fallback = config?.defaultBrandingId && brandings.some((b) => b.id === config.defaultBrandingId)
+        ? config.defaultBrandingId
+        : brandings[0].id;
+      setSelectedId(fallback);
+    }
+  }, [brandings, config?.defaultBrandingId, selectedId]);
+
+  const selected = brandings.find((b) => b.id === selectedId);
+
+  // Load the selected branding into the editor when the selection changes.
+  useEffect(() => {
+    if (selected) setLocal({ ...DEFAULT_BRANDING, ...selected });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedId]);
+
+  const dirty = selected
+    ? JSON.stringify({ ...DEFAULT_BRANDING, ...selected }) !== JSON.stringify(local)
+    : false;
 
   const update = useCallback(<K extends keyof HospitalBranding>(key: K, value: HospitalBranding[K]) => {
     setLocal((prev) => ({ ...prev, [key]: value }));
@@ -132,6 +156,32 @@ export function BrandingPage() {
     setSaved(false);
   }, []);
 
+  function selectBranding(id: string) {
+    if (id === selectedId) return;
+    if (dirty && !confirm('Discard unsaved branding changes?')) return;
+    setSelectedId(id);
+  }
+
+  async function handleNew() {
+    const created = await createBranding({ name: `Branding ${brandings.length + 1}` });
+    setSelectedId(created.id);
+  }
+
+  async function handleDuplicate() {
+    if (!selected) return;
+    const created = await createBranding({ name: `${selected.name} copy`, copyFromId: selected.id });
+    setSelectedId(created.id);
+  }
+
+  async function handleDelete() {
+    if (!selected) return;
+    if (brandings.length <= 1) { alert('At least one branding is required.'); return; }
+    if (!confirm(`Delete branding "${selected.name}"? Slots using it fall back to the default.`)) return;
+    const r = await deleteBranding(selected.id);
+    if (!r.ok) alert(r.error || 'Delete failed');
+    else setSelectedId('');
+  }
+
   async function handleSave() {
     setSaving(true);
     try {
@@ -143,10 +193,49 @@ export function BrandingPage() {
     }
   }
 
-  function handleReset() { setLocal(DEFAULT_BRANDING); setSaved(false); }
+  function handleReset() { if (selected) setLocal({ ...DEFAULT_BRANDING, ...selected }); setSaved(false); }
 
   return (
     <div className="space-y-4 p-4 text-xs">
+      {/* Branding selector — pick which branding to edit, rename inline, or
+          create / duplicate / delete. Slots are assigned a branding on their
+          own card (Slots tab). */}
+      <div className="flex flex-wrap items-center gap-2 rounded-lg border border-app-border bg-app-surface p-3">
+        <span className="text-[10px] font-bold uppercase tracking-wide text-app-text-muted">Editing branding</span>
+        <select
+          value={selectedId}
+          onChange={(e) => selectBranding(e.target.value)}
+          className="rounded border border-app-border bg-app-bg px-2 py-1 text-xs text-app-text"
+        >
+          {brandings.map((b) => (
+            <option key={b.id} value={b.id}>
+              {b.name}{b.id === config?.defaultBrandingId ? ' (default)' : ''}
+            </option>
+          ))}
+        </select>
+        <input
+          value={local.name ?? ''}
+          onChange={(e) => update('name', e.target.value)}
+          placeholder="Branding name"
+          title="Rename (applied on Save & Apply)"
+          className="w-44 rounded border border-app-border bg-app-bg px-2 py-1 text-xs text-app-text"
+        />
+        <div className="ml-auto flex items-center gap-1.5">
+          <button onClick={handleNew}
+            className="flex items-center gap-1 rounded border border-app-accent px-2 py-1 text-2xs font-semibold text-app-accent hover:bg-app-accent hover:text-white">
+            <Plus className="h-3 w-3" /> New
+          </button>
+          <button onClick={handleDuplicate}
+            className="flex items-center gap-1 rounded border border-app-border px-2 py-1 text-2xs font-semibold text-app-text hover:bg-app-hover">
+            <Copy className="h-3 w-3" /> Duplicate
+          </button>
+          <button onClick={handleDelete} disabled={brandings.length <= 1}
+            className="flex items-center gap-1 rounded border border-app-border px-2 py-1 text-2xs font-semibold text-red-500 hover:bg-app-hover disabled:opacity-40">
+            <Trash2 className="h-3 w-3" /> Delete
+          </button>
+        </div>
+      </div>
+
       {/* Hospital identity — base data the header/footer pull from.
           Labels stack above inputs so the grid stays tight across window sizes
           and never overflows. */}

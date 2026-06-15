@@ -11,14 +11,13 @@
 import { useEffect, useState } from 'react';
 import { X, Lock, Save, ToggleLeft, ToggleRight, Plus } from 'lucide-react';
 
-const ADMIN_PIN = 'Prasham123$';
-
 type Q = { enabled: boolean; remaining: number; total: number; valid?: boolean; reason?: string };
 
 export function LicenseQuotaModal() {
   const [open, setOpen]       = useState(false);
   const [step, setStep]       = useState<'password' | 'panel'>('password');
   const [password, setPassword] = useState('');
+  const [adminPin, setAdminPin] = useState('');
   const [pwErr, setPwErr]     = useState('');
   const [data, setData]       = useState<Q | null>(null);
   const [enabled, setEnabled] = useState(false);
@@ -35,6 +34,7 @@ export function LicenseQuotaModal() {
       setOpen(true);
       setStep('password');
       setPassword('');
+      setAdminPin('');
       setPwErr('');
       setErr('');
     });
@@ -57,8 +57,11 @@ export function LicenseQuotaModal() {
   if (!open) return null;
 
   const submitPassword = () => {
-    if (password === ADMIN_PIN) { setStep('panel'); setPassword(''); }
-    else { setPwErr('Incorrect password'); setPassword(''); }
+    if (!password.trim()) { setPwErr('Enter the configured admin PIN'); return; }
+    setAdminPin(password);
+    setStep('panel');
+    setPassword('');
+    setPwErr('');
   };
 
   const save = async () => {
@@ -68,7 +71,7 @@ export function LicenseQuotaModal() {
       const r = await api.setLicenseQuota({
         enabled,
         remaining: remaining + (topUp || 0),
-        adminPin: ADMIN_PIN,
+        adminPin,
       });
       if (!r?.ok) {
         setErr('Server rejected change: ' + (r?.reason || 'unknown'));

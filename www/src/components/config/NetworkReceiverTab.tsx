@@ -20,8 +20,8 @@ export function NetworkReceiverTab() {
 
   useEffect(() => {
     const electron = (window as any).electronAPI;
-    setIsElectron(!!electron?.isElectron || !!electron?.invoke);
-    if (electron?.isElectron || electron?.invoke) {
+    setIsElectron(!!electron?.isElectron);
+    if (electron?.isElectron) {
       loadConfig();
       loadFiles();
       const interval = setInterval(loadFiles, 5000);
@@ -32,9 +32,7 @@ export function NetworkReceiverTab() {
   const loadConfig = async () => {
     try {
       const api = (window as any).electronAPI;
-      const result = api.getNetworkDicomPath
-        ? await api.getNetworkDicomPath()
-        : await api.invoke('get-network-dicom-path');
+      const result = await api.getNetworkDicomPath();
       if (result.success) {
         setConfig({
           path: result.path,
@@ -53,9 +51,7 @@ export function NetworkReceiverTab() {
   const loadFiles = async () => {
     try {
       const api = (window as any).electronAPI;
-      const result = api.getReceivedDicomFiles
-        ? await api.getReceivedDicomFiles()
-        : await api.invoke('get-received-dicom-files');
+      const result = await api.getReceivedDicomFiles();
       if (result.success) {
         setFiles(result.files.sort((a: any, b: any) =>
           new Date(b.mtime).getTime() - new Date(a.mtime).getTime()
@@ -84,9 +80,7 @@ export function NetworkReceiverTab() {
     if (!config) return;
     try {
       const api = (window as any).electronAPI;
-      api.openFolder
-        ? await api.openFolder(config.path)
-        : await api.invoke('open-folder', config.path);
+      await api.openFolder(config.path);
     } catch (e) {
       console.error('Error opening folder:', e);
     }
@@ -96,9 +90,7 @@ export function NetworkReceiverTab() {
     if (!editPath.trim()) return;
     try {
       const api = (window as any).electronAPI;
-      const result = api.setNetworkDicomPath
-        ? await api.setNetworkDicomPath(editPath.trim())
-        : await api.invoke('set-network-dicom-path', editPath.trim());
+      const result = await api.setNetworkDicomPath(editPath.trim());
       if (result.success) {
         setStatusMsg('Storage path updated successfully');
         await loadConfig();
@@ -115,9 +107,7 @@ export function NetworkReceiverTab() {
   const handleRestart = async () => {
     try {
       const api = (window as any).electronAPI;
-      const result = api.restartNetworkReceiver
-        ? await api.restartNetworkReceiver()
-        : await api.invoke('restart-network-receiver');
+      const result = await api.restartNetworkReceiver();
       if (result.success) {
         setStatusMsg('Network receiver restarted on port ' + result.port);
         await loadConfig();

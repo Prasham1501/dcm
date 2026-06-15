@@ -94,14 +94,13 @@ export function PatientListPage() {
   // Auto-refresh when DICOM files are received via network
   useEffect(() => {
     const api = (window as any).electronAPI;
-    if (!api?.on) return;
+    if (!api?.onDicomFileReceived) return;
     let debounceTimer: ReturnType<typeof setTimeout>;
     const handler = () => {
       clearTimeout(debounceTimer);
       debounceTimer = setTimeout(() => loadPatients(), 2000);
     };
-    // api.on returns a cleanup function (removeListener)
-    const cleanup = api.on('dicom-file-received', handler);
+    const cleanup = api.onDicomFileReceived(handler);
     return () => {
       clearTimeout(debounceTimer);
       if (typeof cleanup === 'function') cleanup();

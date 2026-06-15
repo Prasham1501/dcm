@@ -3,6 +3,7 @@ import { Printer, X, ZoomIn, ZoomOut, Plus, Trash2, Check } from 'lucide-react';
 import { useDualViewerStore } from '@/stores/dualViewerStore';
 import { usePrintStore } from '@/stores/printStore';
 import { useHospitalConfigStore, getFormattedAddress, renderPrintSlot, buildBrandHeaderHtml } from '@/stores/hospitalConfigStore';
+import { sanitizeHtml } from '@/lib/sanitizeHtml';
 import { usePatientStore } from '@/stores/patientStore';
 import { captureCornerstoneElementForPrintAsync, PrintOverlay } from '@/lib/printCapture';
 import { fillEmptyPrintSlots } from '@/lib/printPageUtils';
@@ -330,7 +331,7 @@ export function DualPrintPreview({ onClose }: DualPrintPreviewProps) {
     const blackBg = hospitalConfig.printBlackBg;
     const pageBg = blackBg ? '#000' : '#fff';
 
-    const buildHeaderHtml = () => buildBrandHeaderHtml(hospitalConfig as any);
+    const buildHeaderHtml = () => sanitizeHtml(buildBrandHeaderHtml(hospitalConfig as any));
     const buildPrintFooterHtml = () => {
       const l = renderPrintSlot(dualFooterLayout.left as any, hospitalConfig as any, dualFooterCustomLeft, true);
       const c = renderPrintSlot(dualFooterLayout.center as any, hospitalConfig as any, dualFooterCustomCenter, true);
@@ -463,8 +464,8 @@ export function DualPrintPreview({ onClose }: DualPrintPreviewProps) {
       const jobName = leftPanel.patientName + ' vs ' + rightPanel.patientName;
       const jobLayout = 'Dual ' + leftPanel.currentLayout.spots + '+' + rightPanel.currentLayout.spots;
       addPrintJob({ patientName: jobName, studyDate: leftPanel.studyDate, layout: jobLayout, copies: localCopies, paperSize: localPaperSize });
-      if (electronAPI?.invoke) {
-        electronAPI.invoke('mark-patient-printed', { patientId: leftPanel.patientId, patientName: leftPanel.patientName }).catch(() => {});
+      if (electronAPI?.markPatientPrinted) {
+        electronAPI.markPatientPrinted({ patientId: leftPanel.patientId, patientName: leftPanel.patientName }).catch(() => {});
       }
       const { patients, editPatient } = usePatientStore.getState();
       const matchedPatient = patients.find(p => p.patientId === leftPanel.patientId && p.patientName === leftPanel.patientName);
@@ -513,7 +514,7 @@ export function DualPrintPreview({ onClose }: DualPrintPreviewProps) {
           <div
             className="flex-shrink-0"
             style={{ width: '100%' }}
-            dangerouslySetInnerHTML={{ __html: buildBrandHeaderHtml(hospitalConfig as any) }}
+            dangerouslySetInnerHTML={{ __html: sanitizeHtml(buildBrandHeaderHtml(hospitalConfig as any)) }}
           />
         )}
         <div style={{ border: wrapperBorder, display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }}>

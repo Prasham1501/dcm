@@ -25,9 +25,9 @@ async function dualAutoExtract(filePaths: string[], patientId: string) {
   if (store.extractionStatus === 'running') return;
   extractedStudyKeys.add(key);
   const api = (window as any).electronAPI;
-  if (api?.invoke && filePaths.length > 0) {
+  if (api?.extractDicomMetadata && filePaths.length > 0) {
     try {
-      const meta = await api.invoke('extract-dicom-metadata', { filePaths });
+      const meta = await api.extractDicomMetadata({ filePaths });
       if (meta && Object.keys(meta).length > 0) store.setDicomMetadata(meta);
     } catch { /* best-effort */ }
   }
@@ -81,6 +81,12 @@ export function DualViewerPage() {
       if (launchData) {
         const data = JSON.parse(launchData);
         if (Date.now() - data.timestamp < 10000) {
+          // Authorize both panels' paths with the host so the token-gated DICOM
+          // file server will serve them (otherwise serve-file 403s → no images).
+          (window as any).electronAPI?.authorizeDicomPaths?.([
+            ...(data.leftStudy?.filePaths || []),
+            ...(data.rightStudy?.filePaths || []),
+          ]);
           loadPanelStudy('left', {
             patientName: data.leftStudy.patientName,
             patientId: data.leftStudy.patientId,

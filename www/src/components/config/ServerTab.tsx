@@ -34,7 +34,7 @@ export function ServerTab() {
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
   const [filterSecondary, setFilterSecondary] = useState(() => {
     const stored = localStorage.getItem(LS_FILTER_KEY);
-    return stored !== null ? stored === 'true' : true;
+    return stored === 'true';
   });
   const [useApi, setUseApi] = useState(true);
 

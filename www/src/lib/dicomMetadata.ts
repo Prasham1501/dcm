@@ -54,9 +54,9 @@ function normalizeUid(value: unknown): string | null {
 export function isSecondaryImageFilterEnabled(): boolean {
   try {
     const stored = localStorage.getItem(FILTER_SECONDARY_STORAGE_KEY);
-    return stored === null ? true : stored === 'true';
+    return stored === 'true';
   } catch {
-    return true;
+    return false;
   }
 }
 

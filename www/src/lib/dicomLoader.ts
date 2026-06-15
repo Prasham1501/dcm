@@ -21,6 +21,16 @@ export function dicomBaseUrl(): string {
   return DICOM_API_BASE;
 }
 
+export function dicomAccessTokenQuery(prefix = '?'): string {
+  const token = (window as any).electronAPI?.dicomAccessToken;
+  return token ? `${prefix}token=${encodeURIComponent(token)}` : '';
+}
+
+export function dicomRequestUrl(pathAndQuery: string): string {
+  const separator = pathAndQuery.includes('?') ? '&' : '?';
+  return `${DICOM_API_BASE}${pathAndQuery}${dicomAccessTokenQuery(separator)}`;
+}
+
 export interface DicomFileInfo {
   path: string;
   filename: string;
@@ -35,7 +45,7 @@ export function localFileToImageId(filePath: string): string {
   // Normalize Windows backslashes to forward slashes for URL encoding
   const normalized = filePath.replace(/\\/g, '/');
   const encodedPath = encodeURIComponent(normalized);
-  return `wadouri:${DICOM_API_BASE}/dicom/serve-file.php?path=${encodedPath}`;
+  return `wadouri:${dicomRequestUrl(`/dicom/serve-file.php?path=${encodedPath}`)}`;
 }
 
 /**
@@ -104,7 +114,7 @@ export async function scanLocalDirectory(dirPath: string, limit = 100): Promise<
   files: DicomFileInfo[];
 }> {
   const response = await fetch(
-    `${DICOM_API_BASE}/dicom/scan-local.php?dir=${encodeURIComponent(dirPath)}&limit=${limit}`
+    dicomRequestUrl(`/dicom/scan-local.php?dir=${encodeURIComponent(dirPath)}&limit=${limit}`)
   );
   const data = await response.json();
 

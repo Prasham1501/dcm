@@ -2,7 +2,12 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useBillingStore } from './billingStore';
 
 function mockFetch(json: unknown) {
-  const fn = vi.fn().mockResolvedValue({ json: async () => json });
+  const fn = vi.fn().mockResolvedValue({
+    ok: true,
+    status: 200,
+    text: async () => JSON.stringify(json),
+    json: async () => json,
+  });
   (globalThis as any).fetch = fn;
   return fn;
 }

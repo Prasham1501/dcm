@@ -143,6 +143,26 @@ try {
             $stmt->close();
             sendSuccessResponse(['patient' => $patient, 'visits' => $visits, 'duplicate_patient_ids' => array_values(array_unique($patientIds))]);
         }
+        if ($action === 'unvisited') {
+            $q = trim((string) ($_GET['q'] ?? ''));
+            $limit = min(500, max(1, (int) ($_GET['limit'] ?? 50)));
+            $like = '%' . $q . '%';
+            $stmt = $db->prepare(
+                "SELECT p.*
+                 FROM ris_patients p
+                 WHERE NOT EXISTS (SELECT 1 FROM ris_visits v WHERE v.patient_id = p.id)
+                   AND (? = '' OR p.mrn LIKE ? OR p.full_name LIKE ? OR p.phone LIKE ?)
+                 ORDER BY p.id DESC
+                 LIMIT ?"
+            );
+            $stmt->bind_param('ssssi', $q, $like, $like, $like, $limit);
+            $stmt->execute();
+            $res = $stmt->get_result();
+            $rows = [];
+            while ($row = $res->fetch_assoc()) { $rows[] = $row; }
+            $stmt->close();
+            sendSuccessResponse($rows);
+        }
         // default: search
         $q = trim((string) ($_GET['q'] ?? ''));
         $limit = min(10000, max(1, (int) ($_GET['limit'] ?? 20)));

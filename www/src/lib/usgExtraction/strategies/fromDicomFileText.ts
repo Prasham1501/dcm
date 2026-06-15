@@ -17,13 +17,13 @@ export async function fromDicomFileText(
   }
 
   const api = (window as any).electronAPI;
-  if (!api?.invoke) {
+  if (!api?.extractDicomText) {
     warnings.push('Electron IPC not available — skipping DICOM file text extraction');
     return { readings: [], warnings };
   }
 
   try {
-    const result = await api.invoke('extract-dicom-text', { filePaths });
+    const result = await api.extractDicomText({ filePaths });
     const textStrings: string[] = result?.textStrings ?? [];
 
     if (textStrings.length === 0) {

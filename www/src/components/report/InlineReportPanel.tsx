@@ -18,6 +18,7 @@ import type { ReadingSet, Reading } from '@/lib/usgExtraction/types';
 import { buildReportHtml } from '@/lib/usgExtraction/templates/buildReportHtml';
 import { substituteTemplateTokens } from '@/lib/templateTokens';
 import { buildBrandHeaderHtml, buildFooterHtml } from '@/stores/hospitalConfigStore';
+import { sanitizeHtml } from '@/lib/sanitizeHtml';
 import {
   computeOBData, formatGA, parseGAtoWeeks, ordinal,
   FLAG_COLORS, type OBComputedReading, type OBComputedResult,
@@ -103,9 +104,9 @@ async function runOcrExtraction(
 
     // Also fetch metadata if not yet available
     const api = (window as any).electronAPI;
-    if (api?.invoke && filePaths.length > 0 && !useReportStore.getState().dicomMetadata) {
+    if (api?.extractDicomMetadata && filePaths.length > 0 && !useReportStore.getState().dicomMetadata) {
       try {
-        const meta = await api.invoke('extract-dicom-metadata', { filePaths });
+        const meta = await api.extractDicomMetadata({ filePaths });
         if (meta && Object.keys(meta).length > 0) {
           useReportStore.getState().setDicomMetadata(meta);
         }
@@ -783,7 +784,7 @@ export function InlineReportPanel() {
               <div
                 className="select-none"
                 style={{ padding: '30px 50px 0 50px' }}
-                dangerouslySetInnerHTML={{ __html: buildBrandHeaderHtml(useHospitalConfigStore.getState()) }}
+                dangerouslySetInnerHTML={{ __html: sanitizeHtml(buildBrandHeaderHtml(useHospitalConfigStore.getState())) }}
               />
               <div className="select-none" style={{ padding: '0 50px' }}>
 
@@ -919,7 +920,7 @@ export function InlineReportPanel() {
                 <div
                   className="select-none"
                   style={{ padding: '0 50px', marginTop: '10px' }}
-                  dangerouslySetInnerHTML={{ __html: buildFooterHtml(useHospitalConfigStore.getState()) }}
+                  dangerouslySetInnerHTML={{ __html: sanitizeHtml(buildFooterHtml(useHospitalConfigStore.getState())) }}
                 />
               )}
             </div>

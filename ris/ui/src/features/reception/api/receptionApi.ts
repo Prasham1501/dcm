@@ -254,6 +254,13 @@ export async function apiSearchPatients(query: string, limit = 20): Promise<Pati
   ), { ttlMs: 30_000 });
 }
 
+export async function apiUnvisitedPatients(query = '', limit = 50): Promise<Patient[]> {
+  const url = `${PATIENTS}?action=unvisited&q=${encodeURIComponent(query)}&limit=${limit}`;
+  return cachedRequest(`GET ${url}`, async () => (
+    (await readJson(await fetch(url, { credentials: 'include' }))) as Patient[]
+  ), { ttlMs: 30_000 });
+}
+
 export async function apiPatientHistory(patientId: number): Promise<PatientHistory> {
   const url = `${PATIENTS}?action=history&id=${patientId}`;
   return cachedRequest(`GET ${url}`, async () => (

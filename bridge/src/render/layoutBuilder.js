@@ -5,22 +5,7 @@
 
 const { resolveLayoutForJob, getLayoutGridTemplate, getLayoutAreaNames } = require('./layoutUtils');
 const { buildBrandHeaderHtml, buildFooterHtml, estimateHeaderHeightMm } = require('./brandingHtml');
-
-const PAPER_DIMS_MM = {
-  A4: { w: 210, h: 297 },
-  A3: { w: 297, h: 420 },
-  A5: { w: 148, h: 210 },
-  Letter: { w: 215.9, h: 279.4 },
-  Legal: { w: 215.9, h: 355.6 },
-  '8INX10IN': { w: 203.2, h: 254 },
-  '10INX12IN': { w: 254, h: 304.8 },
-  '10INX14IN': { w: 254, h: 355.6 },
-  '11INX14IN': { w: 279.4, h: 355.6 },
-  '14INX14IN': { w: 355.6, h: 355.6 },
-  '14INX17IN': { w: 355.6, h: 431.8 },
-  '24CMX24CM': { w: 240, h: 240 },
-  '24CMX30CM': { w: 240, h: 300 },
-};
+const { PAPER_DIMS_MM, isNamedSize } = require('./paperSizes');
 
 const PAGE_MARGIN_MM = 3;
 const HEADER_HEIGHT_MM = 7;
@@ -154,6 +139,7 @@ function buildPrintHtml({
   fillEmptySlots = true,
   pageSizeOverride,
   footerLayoutLabel,
+  lut,
 }) {
   const resolved = layoutOverride
     ? { layout: layoutOverride, orientation: orientationOverride || (layoutOverride.cols > layoutOverride.rows ? 'landscape' : 'portrait') }
@@ -169,8 +155,7 @@ function buildPrintHtml({
   // For standard paper sizes, use named size + orientation keyword so the
   // browser and printer driver agree.  For custom DICOM film sizes (e.g.
   // 14INX17IN) fall back to explicit mm dimensions.
-  const NAMED_SIZES = new Set(['A4', 'A3', 'A5', 'Letter', 'Legal']);
-  const pageCssSize = NAMED_SIZES.has(pageSize)
+  const pageCssSize = isNamedSize(pageSize)
     ? `${pageSize} ${orientation}`
     : `${w}mm ${h}mm`;
 
@@ -207,6 +192,24 @@ function buildPrintHtml({
   const gridW = contentW;
   const gridH = h - marginMm * 2 - headerBlock - footerBlock;
   const footerTop = h - marginMm - (hasFooter ? brandedFooterH : FOOTER_HEIGHT_MM);
+
+  // Per-slot print contrast (gamma LUT). Implemented as an inline SVG
+  // feComponentTransfer gamma curve (output = input^gamma) applied to the
+  // printed images. gamma > 1 deepens dark tones; white stays white so the
+  // paper background is untouched. A true LUT, rendered by Chromium at print.
+  const lutOn = lut && lut.enabled && Number.isFinite(lut.gamma) && Math.abs(lut.gamma - 1) > 1e-3;
+  const lutGamma = lutOn ? Math.min(3, Math.max(0.3, lut.gamma)) : 1;
+  const lutSvg = lutOn ? `
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <filter id="oc-lut" color-interpolation-filters="sRGB">
+      <feComponentTransfer>
+        <feFuncR type="gamma" amplitude="1" exponent="${lutGamma}" offset="0"/>
+        <feFuncG type="gamma" amplitude="1" exponent="${lutGamma}" offset="0"/>
+        <feFuncB type="gamma" amplitude="1" exponent="${lutGamma}" offset="0"/>
+      </feComponentTransfer>
+    </filter>
+  </svg>` : '';
+  const imgFilterCss = lutOn ? 'filter:url(#oc-lut);' : '';
 
   // Fill empty trailing slots with the last available image
   const lastImage = fillEmptySlots && images.length > 0 ? images.filter(Boolean).slice(-1)[0] : null;
@@ -363,10 +366,12 @@ function buildPrintHtml({
       width: 100%;
       height: 100%;
       object-fit: contain;
+      ${imgFilterCss}
     }
   </style>
 </head>
 <body>
+  ${lutSvg}
   ${pageHtml}
 </body>
 </html>`;

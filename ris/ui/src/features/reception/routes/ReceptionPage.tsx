@@ -1,16 +1,16 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { CheckCircle2, ClipboardList, Flag, History, Mail, MessageSquare, MonitorUp, MoreVertical, Plus, Printer, Receipt, RefreshCw, Search, UserPlus, X } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, ClipboardList, Flag, History, Mail, MessageSquare, MonitorUp, MoreVertical, Plus, Printer, Receipt, RefreshCw, Search, UserPlus, X } from 'lucide-react';
 import { useAuthStore } from '@/stores/authStore';
 import { Banner, Button, EmptyState, IconButton, ModalityTag, SectionHeader, SelectInput, StatusChip, TextareaInput, TextInput } from '@/components/RisUi';
 import { useReceptionStore } from '../stores/receptionStore';
-import { apiGenerateWorklist, apiPatientHistory, apiQuickUpdateVisit, apiReceptionVisits, apiSyncReturnedReports, apiUpdateAccession, apiUpdateDispatch, apiUpdateOrderDestination, apiUpdatePatient, apiUpdateVisitDetails, type Order, type Patient, type PatientHistory, type PatientHistoryVisit, type ReceptionVisitRow, type VisitTotals } from '../api/receptionApi';
-import { apiDicomNodes, apiMasters, type DicomNode, type Center, type Pro, type Lookup } from '@/features/settings/api/settingsApi';
+import { apiGenerateWorklist, apiPatientHistory, apiQuickUpdateVisit, apiReceptionVisits, apiSyncReturnedReports, apiUnvisitedPatients, apiUpdateAccession, apiUpdateDispatch, apiUpdateOrderDestination, apiUpdatePatient, apiUpdateVisitDetails, type Order, type Patient, type PatientHistory, type PatientHistoryVisit, type ReceptionVisitRow, type VisitTotals } from '../api/receptionApi';
+import { apiCounters, apiDicomNodes, apiMasters, type CounterSettings, type DicomNode, type Center, type Pro, type Lookup } from '@/features/settings/api/settingsApi';
 import type { PatientForm } from '../lib/patientForm';
 import type { VisitForm } from '../lib/visitForm';
 import { useBillingStore } from '@/features/billing/stores/billingStore';
 import { apiTakePayment, printAssetUrl, type Receipt as ReceiptRow } from '@/features/billing/api/billingApi';
-import { getCachedData } from '../../../lib/risDataCache';
+import { getCachedData, invalidateCache } from '../../../lib/risDataCache';
 import { formatRisDateTime } from '../../../lib/dateFormat';
 
 const RECEPTION_ROLES = ['receptionist'];
@@ -40,9 +40,14 @@ const todayInput = () => new Date().toISOString().slice(0, 10);
 const monthStartInput = () => new Date().toISOString().slice(0, 8) + '01';
 const timeInput = () => new Date().toTimeString().slice(0, 5);
 const PAGE_SIZE = 50;
+const COLUMN_PREF_KEY = 'ris.reception.columns';
 const EMPTY_TOTALS: VisitTotals = { records: 0, total: 0, others: 0, discount: 0, net: 0, paid: 0, balance: 0, refund: 0 };
 const receptionVisitCache: { key: string; rows: ReceptionVisitRow[]; totals: VisitTotals; at: number } = { key: '', rows: [], totals: EMPTY_TOTALS, at: 0 };
 const patientHistoryCache = new Map<number, PatientHistory>();
+
+const formatCounterPreview = (counter?: { prefix: string; next_number: number }) => (
+  counter ? `${counter.prefix}${String(counter.next_number).padStart(6, '0')}` : '-'
+);
 
 function receptionVisitsKey(filters: Record<string, string | boolean | number>) {
   const params = new URLSearchParams();
@@ -61,13 +66,20 @@ export function ReceptionPage() {
   const role = (useAuthStore((state) => state.user)?.role as string) || '';
   const {
     patients, services, referringDoctors, loading, error,
-    register, loadServices, loadReferringDoctors, registerVisit,
+    search, register, loadServices, loadReferringDoctors, registerVisit,
   } = useReceptionStore();
   const { takePayment, generateReceipt, error: billingError } = useBillingStore();
 
   const [query, setQuery] = useState('');
+  const [activeTab, setActiveTab] = useState<'registrations' | 'register'>('registrations');
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [datePreset, setDatePreset] = useState<'today' | 'yesterday' | 'last7' | 'month' | 'custom'>('month');
+  const [columnMode, setColumnMode] = useState<'compact' | 'all'>(() => (
+    typeof window !== 'undefined' && window.localStorage.getItem(COLUMN_PREF_KEY) === 'all' ? 'all' : 'compact'
+  ));
   const [visitRows, setVisitRows] = useState<ReceptionVisitRow[]>([]);
   const [visitTotals, setVisitTotals] = useState<VisitTotals>(EMPTY_TOTALS);
+  const [unvisitedPatients, setUnvisitedPatients] = useState<Patient[]>([]);
   const [page, setPage] = useState(1);
   const [showLegend, setShowLegend] = useState(false);
   const [indicatorFilter, setIndicatorFilter] = useState<IndicatorKey | null>(null);
@@ -90,8 +102,6 @@ export function ReceptionPage() {
     outstanding: false,
   });
   const [patientForm, setPatientForm] = useState<PatientForm>({ ...EMPTY_PATIENT });
-  const [patientModalOpen, setPatientModalOpen] = useState(false);
-  const [visitModalOpen, setVisitModalOpen] = useState(false);
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [patientEditing, setPatientEditing] = useState(false);
   const [patientSaving, setPatientSaving] = useState(false);
@@ -139,6 +149,7 @@ export function ReceptionPage() {
   const [staffList, setStaffList] = useState<Lookup[]>([]);
   const [areaList, setAreaList] = useState<Lookup[]>([]);
   const [groupList, setGroupList] = useState<Lookup[]>([]);
+  const [counters, setCounters] = useState<CounterSettings>({});
   const [message, setMessage] = useState<string | null>(null);
   const [visitSaveError, setVisitSaveError] = useState<string | null>(null);
   const [actionKey, setActionKey] = useState<string | null>(null);
@@ -152,15 +163,31 @@ export function ReceptionPage() {
   } | null>(null);
 
   const closeAllReceptionOverlays = () => {
+    setActiveTab('registrations');
     setActionModal(null);
     setRowMenu(null);
-    setPatientModalOpen(false);
-    setVisitModalOpen(false);
     setCompleted(null);
     setSelectedPatient(null);
     setHistory(null);
     setPatientEditing(false);
     resetVisitForm();
+  };
+
+  const loadCounters = async (force = false) => {
+    try {
+      if (force) invalidateCache('GET /api/system/counters.php');
+      setCounters(await apiCounters());
+    } catch {
+      setCounters({});
+    }
+  };
+
+  const loadUnvisitedPatients = async (nextQuery = query) => {
+    try {
+      setUnvisitedPatients(await apiUnvisitedPatients(nextQuery.trim(), 50));
+    } catch {
+      setUnvisitedPatients([]);
+    }
   };
 
   useEffect(() => {
@@ -169,6 +196,10 @@ export function ReceptionPage() {
     return () => window.removeEventListener('ris:reception-reselect', onReselect);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    window.localStorage.setItem(COLUMN_PREF_KEY, columnMode);
+  }, [columnMode]);
 
   useEffect(() => {
     if (!RECEPTION_ROLES.includes(role)) return;
@@ -192,9 +223,13 @@ export function ReceptionPage() {
     apiDicomNodes().then(setNodes).catch(() => setNodes([]));
     apiMasters<Center>('centers', { active: '1' }).then(setCenters).catch(() => setCenters([]));
     apiMasters<Pro>('pros', { active: '1' }).then(setPros).catch(() => setPros([]));
-    apiMasters<Lookup>('lookups', { category: 'phlebotomy_staff' }).then(setStaffList).catch(() => setStaffList([]));
+    apiMasters<Lookup>('staff', { active: '1' }).then(setStaffList).catch(() => {
+      apiMasters<Lookup>('lookups', { category: 'phlebotomy_staff' }).then(setStaffList).catch(() => setStaffList([]));
+    });
     apiMasters<Lookup>('lookups', { category: 'home_visit_area' }).then(setAreaList).catch(() => setAreaList([]));
     apiMasters<Lookup>('lookups', { category: 'patient_group' }).then(setGroupList).catch(() => setGroupList([]));
+    void loadCounters();
+    void loadUnvisitedPatients('');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [role, loadServices, loadReferringDoctors]);
 
@@ -254,8 +289,75 @@ export function ReceptionPage() {
     setVisitFilters((current) => ({ ...current, [key]: value }));
   };
 
+  const applyDatePreset = (preset: typeof datePreset) => {
+    setDatePreset(preset);
+    const today = new Date();
+    const fmt = (date: Date) => date.toISOString().slice(0, 10);
+    if (preset === 'custom') return;
+    if (preset === 'today') {
+      const value = fmt(today);
+      setVisitFilters((current) => ({ ...current, from: value, to: value }));
+      return;
+    }
+    if (preset === 'yesterday') {
+      const d = new Date(today);
+      d.setDate(d.getDate() - 1);
+      const value = fmt(d);
+      setVisitFilters((current) => ({ ...current, from: value, to: value }));
+      return;
+    }
+    if (preset === 'last7') {
+      const d = new Date(today);
+      d.setDate(d.getDate() - 6);
+      setVisitFilters((current) => ({ ...current, from: fmt(d), to: fmt(today) }));
+      return;
+    }
+    setVisitFilters((current) => ({ ...current, from: monthStartInput(), to: todayInput() }));
+  };
+
+  const clearAdvancedFilters = () => {
+    setIndicatorFilter(null);
+    setVisitFilters((current) => ({
+      ...current,
+      center: '',
+      doctor: '',
+      consultant: '',
+      dept: '',
+      group: '',
+      status: '',
+      ref_no: '',
+      test: '',
+      outstanding: false,
+    }));
+  };
+
+  const runUnifiedSearch = () => {
+    const value = query.trim();
+    if (/^V\d+/i.test(value)) {
+      const match = visitRows.find((row) => String(row.visit_no || '').toLowerCase() === value.toLowerCase());
+      if (match) {
+        void chooseVisitRow(match);
+        return;
+      }
+      setMessage(`Visit ${value.toUpperCase()} is not in the current date range. Adjust the date preset or filters.`);
+      return;
+    }
+    updateVisitFilter('patient', value);
+    void loadUnvisitedPatients(value);
+  };
+
   const updatePatientEditField = (key: keyof Patient, value: string | number | null) => {
     setPatientEditForm((current) => ({ ...current, [key]: value }));
+  };
+
+  const patchVisitRow = (visitId: number, patch: Partial<ReceptionVisitRow>) => {
+    setVisitRows((current) => current.map((row) => (row.id === visitId ? { ...row, ...patch } : row)));
+    if (rowMenu?.row.id === visitId) {
+      setRowMenu((current) => current ? { ...current, row: { ...current.row, ...patch } } : current);
+    }
+    if (actionModal?.row.id === visitId) {
+      setActionModal((current) => current ? { ...current, row: { ...current.row, ...patch } } : current);
+    }
   };
 
   const savePatientDetails = async () => {
@@ -343,8 +445,30 @@ export function ReceptionPage() {
     setRowMenu(null);
     try {
       await apiQuickUpdateVisit({ visit_id: row.id, mark });
+      if (mark === 'emailed') {
+        patchVisitRow(row.id, {
+          dispatch_mode: 'email',
+          dispatch_note: [row.dispatch_note, 'Report emailed'].filter(Boolean).join('\n'),
+          report_emailed_at: new Date().toISOString(),
+        });
+      } else if (mark === 'printed') {
+        patchVisitRow(row.id, {
+          dispatch_note: [row.dispatch_note, 'Report printed'].filter(Boolean).join('\n'),
+          report_printed_at: new Date().toISOString(),
+        });
+      } else if (mark === 'ready') {
+        patchVisitRow(row.id, { results_ready_count: row.order_count });
+      } else if (mark === 'not_ready') {
+        patchVisitRow(row.id, {
+          dispatch_mode: null,
+          dispatch_note: null,
+          report_emailed_at: null,
+          report_printed_at: null,
+          results_ready_count: 0,
+        });
+      }
       setMessage(label);
-      await refreshAfterVisitChange();
+      void refreshAfterVisitChange();
     } catch (err: any) {
       setMessage(err?.message || 'Could not update status');
     }
@@ -379,6 +503,7 @@ export function ReceptionPage() {
     setMessage(`${patient.full_name} selected`);
     const cached = patientHistoryCache.get(patient.id);
     if (cached) {
+      setSelectedPatient(cached.patient);
       setHistory(cached);
       setHistoryLoading(false);
     } else {
@@ -387,12 +512,32 @@ export function ReceptionPage() {
     try {
       const next = await apiPatientHistory(patient.id);
       patientHistoryCache.set(patient.id, next);
+      setSelectedPatient(next.patient);
       setHistory(next);
     } catch {
       if (!cached) setHistory(null);
     } finally {
       setHistoryLoading(false);
     }
+  };
+
+  const startNewRegistration = (patient?: Patient | null) => {
+    setActiveTab('register');
+    setCompleted(null);
+    resetVisitForm();
+    void loadCounters(true);
+    if (patient) {
+      void choosePatient(patient);
+    } else {
+      setSelectedPatient(null);
+      setHistory(null);
+      setPatientEditing(false);
+    }
+  };
+
+  const openPatientFromSaved = () => {
+    setActiveTab('registrations');
+    setCompleted(null);
   };
 
   const optimisticHistoryFromRow = (row: ReceptionVisitRow): PatientHistory => ({
@@ -485,11 +630,13 @@ export function ReceptionPage() {
     setVisitSaveError(null);
     setMessage(`${row.full_name} selected`);
     const cached = patientHistoryCache.get(row.patient_id);
+    if (cached) setSelectedPatient(cached.patient);
     setHistory(cached || optimisticHistoryFromRow(row));
     setHistoryLoading(!cached);
     try {
       const next = await apiPatientHistory(row.patient_id);
       patientHistoryCache.set(row.patient_id, next);
+      setSelectedPatient(next.patient);
       setHistory(next);
     } catch {
       if (!cached) setHistory(optimisticHistoryFromRow(row));
@@ -556,18 +703,19 @@ export function ReceptionPage() {
     try {
       if (existing) {
         setPatientForm({ ...EMPTY_PATIENT });
-        setPatientModalOpen(false);
         await choosePatient(existing);
-        setVisitModalOpen(true);
+        setActiveTab('register');
+        await loadUnvisitedPatients();
         setMessage(`Existing patient ${existing.mrn} selected for this mobile number`);
         return;
       }
       const created = await register(patientForm);
       if (created) {
         setPatientForm({ ...EMPTY_PATIENT });
-        setPatientModalOpen(false);
         await choosePatient(created);
-        setVisitModalOpen(true);
+        setActiveTab('register');
+        await loadCounters(true);
+        await loadUnvisitedPatients();
       }
     } finally {
       actionLockRef.current = null;
@@ -702,6 +850,8 @@ export function ReceptionPage() {
       await refreshSelectedHistory();
       receptionVisitCache.at = 0;
       await loadVisitRows();
+      await loadCounters(true);
+      await loadUnvisitedPatients();
     } catch (err: any) {
       setVisitSaveError(err?.message || 'Save failed. Please try again.');
     } finally {
@@ -756,19 +906,39 @@ export function ReceptionPage() {
       if (kind === 'payment' || kind === 'refund') {
         const amt = Number(actionValue || 0);
         if (amt <= 0) { setMessage('Enter an amount greater than zero'); return; }
-        await apiTakePayment({ visit_id: row.id, amount: amt, mode: actionMode, is_refund: kind === 'refund' });
+        const result = await apiTakePayment({ visit_id: row.id, amount: amt, mode: actionMode, is_refund: kind === 'refund' });
+        patchVisitRow(row.id, {
+          paid_amount: result.visit.paid_amount,
+          balance: result.visit.balance,
+          status: result.visit.status,
+          refund_total: kind === 'refund' ? (Number(row.refund_total || 0) + amt).toFixed(2) : row.refund_total,
+        });
       } else if (kind === 'others') {
-        await apiQuickUpdateVisit({ visit_id: row.id, misc_charge: Number(actionValue || 0) });
+        const visit = await apiQuickUpdateVisit({ visit_id: row.id, misc_charge: Number(actionValue || 0) });
+        patchVisitRow(row.id, {
+          misc_charge: String(visit.misc_charge ?? actionValue),
+          net_amount: visit.net_amount,
+          balance: visit.balance,
+          status: visit.status,
+        });
       } else if (kind === 'discount') {
-        await apiQuickUpdateVisit({ visit_id: row.id, discount: Number(actionValue || 0) });
+        const visit = await apiQuickUpdateVisit({ visit_id: row.id, discount: Number(actionValue || 0) });
+        patchVisitRow(row.id, {
+          discount: String(visit.discount ?? actionValue),
+          net_amount: visit.net_amount,
+          balance: visit.balance,
+          status: visit.status,
+        });
       } else if (kind === 'center') {
-        await apiQuickUpdateVisit({ visit_id: row.id, center_name: actionValue.trim() });
+        const visit = await apiQuickUpdateVisit({ visit_id: row.id, center_name: actionValue.trim() });
+        patchVisitRow(row.id, { center_name: visit.center_name ?? actionValue.trim() });
       } else if (kind === 'comment') {
-        await apiQuickUpdateVisit({ visit_id: row.id, visit_comment: actionValue });
+        const visit = await apiQuickUpdateVisit({ visit_id: row.id, visit_comment: actionValue });
+        patchVisitRow(row.id, { visit_comment: visit.visit_comment ?? actionValue });
       }
       setActionModal(null);
       setMessage('Updated');
-      await refreshAfterVisitChange();
+      void refreshAfterVisitChange();
     } catch (err: any) {
       setMessage(err?.message || 'Action failed');
     }
@@ -779,8 +949,9 @@ export function ReceptionPage() {
     const next = Number(row.urgent_report || 0) === 1 ? 0 : 1;
     try {
       await apiQuickUpdateVisit({ visit_id: row.id, urgent_report: next });
+      patchVisitRow(row.id, { urgent_report: next });
       setMessage(next ? 'Marked urgent — moved to top' : 'Urgent flag removed');
-      await refreshAfterVisitChange();
+      void refreshAfterVisitChange();
     } catch (err: any) {
       setMessage(err?.message || 'Could not update urgent flag');
     }
@@ -840,11 +1011,36 @@ export function ReceptionPage() {
         refund: Number(acc.refund) + Number(r.refund_total || 0),
       }), { ...EMPTY_TOTALS })
     : visitTotals;
+  const advancedFilterCount = [
+    visitFilters.center,
+    visitFilters.doctor,
+    visitFilters.consultant,
+    visitFilters.dept,
+    visitFilters.group,
+    visitFilters.status,
+    visitFilters.ref_no,
+    visitFilters.test,
+    visitFilters.outstanding ? '1' : '',
+  ].filter(Boolean).length;
+  const compact = columnMode === 'compact';
+  const tableColCount = compact ? 9 : 18;
+  const trailingTotalColSpan = compact ? 2 : 5;
+  const nextPatientId = formatCounterPreview(counters.mrn);
+  const nextVisitId = formatCounterPreview(counters.visit);
 
   return (
     <div className="content-narrow">
       {(error || billingError) && <div className="banner banner-warning">{error || billingError}</div>}
       {message && <div className="banner banner-success mt-3">{message}</div>}
+
+      <div className="visit-tabs mt-4">
+        <button type="button" className={activeTab === 'registrations' ? 'active' : ''} onClick={() => { setActiveTab('registrations'); setCompleted(null); setSelectedPatient(null); setHistory(null); resetVisitForm(); }}>
+          Registrations
+        </button>
+        <button type="button" className={activeTab === 'register' ? 'active' : ''} onClick={() => startNewRegistration(null)}>
+          New registration
+        </button>
+      </div>
 
       {actionModal && (
         <div className="modal-backdrop" onClick={() => setActionModal(null)}>
@@ -883,16 +1079,8 @@ export function ReceptionPage() {
         </div>
       )}
 
-      <div className="workflow-steps mt-4">
-        <Step active={!selectedPatient} done={!!selectedPatient} label="Patient" />
-        <Step active={!!selectedPatient && !completed} done={!!completed} label="Visit & payment" />
-        <Step active={!!completed} done={!!completed} label="Receipt" />
-      </div>
-
-      {visitModalOpen && completed && (
-        <div className="modal-backdrop" onClick={() => setVisitModalOpen(false)}>
-        <div className="modal-panel modal-panel-wide" onClick={(event) => event.stopPropagation()} style={{ borderColor: 'var(--success)' }}>
-          <ModalCloseButton onClick={() => setVisitModalOpen(false)} />
+      {activeTab === 'register' && completed && (
+        <div className="card card-pad mt-4" style={{ borderColor: 'var(--success)' }}>
           <SectionHeader icon={CheckCircle2} title={`Visit ${completed.visitNo} completed`} sub="Print documents are ready">
             <StatusChip status={Number(completed.balance) <= 0 ? 'paid' : 'pending'} label={Number(completed.balance) <= 0 ? 'Paid' : `Balance Rs ${completed.balance}`} />
           </SectionHeader>
@@ -927,21 +1115,102 @@ export function ReceptionPage() {
             </div>
           </div>
           <div className="actions mt-4">
-            <Button variant="primary" icon={UserPlus} onClick={() => { setSelectedPatient(null); setHistory(null); setCompleted(null); setVisitModalOpen(false); }}>
+            <Button variant="primary" icon={UserPlus} onClick={() => startNewRegistration(null)}>
               Next patient
             </Button>
-            <Button variant="secondary" icon={ClipboardList} onClick={() => { setCompleted(null); resetVisitForm(); }}>
-              Add another visit for this patient
+            <Button variant="secondary" icon={ClipboardList} onClick={openPatientFromSaved}>
+              Open patient
             </Button>
           </div>
         </div>
+      )}
+
+      {activeTab === 'register' && !selectedPatient && !completed && (
+        <div className="reg-layout mt-4">
+          <div className="stack-tight">
+            <div className="card card-pad">
+              <SectionHeader icon={UserPlus} title="Patient" sub="Search an existing patient or create a new one inline" />
+              <TextInput
+                label="Find existing patient"
+                placeholder="Search by name, mobile, or Patient ID"
+                value={query}
+                onChange={(event) => {
+                  setQuery(event.target.value);
+                  void search(event.target.value);
+                }}
+              />
+              {query.trim() && patients.length > 0 ? (
+                <div className="table-wrap mt-3">
+                  <table className="dt">
+                    <tbody>
+                      {patients.slice(0, 8).map((patient) => (
+                        <tr key={patient.id} style={{ cursor: 'pointer' }} onClick={() => choosePatient(patient)}>
+                          <td className="strong">{patient.full_name}</td>
+                          <td className="mono">{patient.mrn}</td>
+                          <td>{patient.phone || '-'}</td>
+                          <td className="num"><Button size="sm" variant="secondary">Select</Button></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : null}
+            </div>
+
+            <form className="card card-pad" onSubmit={createPatient}>
+              <SectionHeader icon={Plus} title="New patient" sub="Create the patient and continue to visit details" />
+              <div className="grid-2">
+                <TextInput label="Patient ID" value={nextPatientId} disabled />
+                <TextInput label="Mobile" value={patientForm.phone || ''} onChange={(event) => setPatientField('phone', event.target.value)} placeholder="10 digit mobile" />
+                <SelectInput label="Title" value={patientForm.name_prefix || ''} onChange={(event) => setPatientField('name_prefix', event.target.value)}>
+                  <option value="">-</option>
+                  <option value="Mr.">Mr.</option>
+                  <option value="Mrs.">Mrs.</option>
+                  <option value="Ms.">Ms.</option>
+                  <option value="Dr.">Dr.</option>
+                  <option value="Master">Master</option>
+                  <option value="Baby">Baby</option>
+                </SelectInput>
+                <TextInput label="Name" required value={patientForm.full_name || ''} onChange={(event) => setPatientField('full_name', event.target.value)} />
+                <TextInput label="WhatsApp number" value={patientForm.alt_phone || ''} onChange={(event) => setPatientField('alt_phone', event.target.value)} placeholder="Optional" />
+                <SelectInput label="Type" value={patientForm.patient_group || ''} onChange={(event) => setPatientField('patient_group', event.target.value)}>
+                  <option value="">Select type</option>
+                  {(groupList.length > 0 ? groupList.map((g) => g.value) : ['Regular', 'Center', 'Home visit', 'Corporate']).map((g) => (
+                    <option key={g} value={g}>{g}</option>
+                  ))}
+                </SelectInput>
+                <SelectInput label="Gender" value={patientForm.sex || ''} onChange={(event) => setPatientField('sex', event.target.value)}>
+                  <option value="">-</option>
+                  <option value="male">Male</option>
+                  <option value="female">Female</option>
+                  <option value="other">Other</option>
+                </SelectInput>
+                <TextInput label="DOB" type="date" value={patientForm.dob || ''} onChange={(event) => setPatientField('dob', event.target.value)} hint="Age fills in automatically" />
+                <TextInput label="Age (years)" type="number" value={String(patientForm.age_years ?? '')} onChange={(event) => setPatientField('age_years', event.target.value)} hint="Or enter directly if DOB unknown" />
+                <TextInput label="Email" type="email" value={patientForm.email || ''} onChange={(event) => setPatientField('email', event.target.value)} />
+              </div>
+              <TextareaInput label="Address" rows={3} className="mt-3" value={patientForm.address_line1 || ''} onChange={(event) => setPatientField('address_line1', event.target.value)} />
+              <div className="actions mt-4">
+                <Button type="submit" disabled={loading || actionKey === 'create-patient'} variant="primary" icon={Plus}>
+                  {loading || actionKey === 'create-patient' ? 'Saving...' : 'Save patient and continue'}
+                </Button>
+                <Button type="button" variant="secondary" onClick={() => setPatientForm({ ...EMPTY_PATIENT })}>
+                  Clear
+                </Button>
+              </div>
+            </form>
+          </div>
+          <div className="bill-sticky">
+            <div className="card card-pad">
+              <SectionHeader icon={Receipt} title="Bill & payment" sub="Select a patient first" />
+              <EmptyState title="No patient selected" sub="Choose an existing patient or save a new patient to continue." />
+            </div>
+          </div>
         </div>
       )}
 
-      {selectedPatient && visitModalOpen && !completed && (
-        <div className="modal-backdrop" onClick={() => setVisitModalOpen(false)}>
-        <div className="modal-panel modal-panel-wide" onClick={(event) => event.stopPropagation()}>
-        <ModalCloseButton onClick={() => setVisitModalOpen(false)} />
+      {activeTab === 'register' && selectedPatient && !completed && (
+        <>
         {(visitSaveError || error || billingError) && <div className="banner banner-warning">{visitSaveError || error || billingError}</div>}
         <VisitPanel
           patient={selectedPatient}
@@ -1025,25 +1294,61 @@ export function ReceptionPage() {
           loading={loading}
           saving={actionKey === 'complete-visit'}
           completeVisit={completeVisit}
-          changePatient={() => { setVisitModalOpen(false); resetVisitForm(); }}
+          changePatient={() => { setSelectedPatient(null); setHistory(null); resetVisitForm(); }}
+          nextVisitId={nextVisitId}
         />
-        </div>
-        </div>
+        </>
       )}
 
-      {!selectedPatient && (
+      {activeTab === 'registrations' && !selectedPatient && (
       <div className="card card-pad mt-5">
         <SectionHeader icon={Search} title="Registrations" sub="Filter registrations, open a record, or create a new patient">
           <Button variant="secondary" icon={RefreshCw} disabled={!!actionKey} onClick={syncReturnedReports}>
             Sync returned reports
           </Button>
-          <Button variant="primary" icon={UserPlus} onClick={() => setPatientModalOpen(true)}>
-            New patient
+          <Button variant="primary" icon={UserPlus} onClick={() => startNewRegistration(null)}>
+            New registration
           </Button>
         </SectionHeader>
-        <div className="grid-5">
-          <TextInput label="From" type="date" value={visitFilters.from} onChange={(event) => updateVisitFilter('from', event.target.value)} />
-          <TextInput label="To" type="date" value={visitFilters.to} onChange={(event) => updateVisitFilter('to', event.target.value)} />
+        <div className="reception-toolbar">
+          <TextInput
+            label="Search"
+            placeholder="Name / mobile / Reg No"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            onKeyDown={(event) => { if (event.key === 'Enter') runUnifiedSearch(); }}
+          />
+          <SelectInput label="Date" value={datePreset} onChange={(event) => applyDatePreset(event.target.value as typeof datePreset)}>
+            <option value="today">Today</option>
+            <option value="yesterday">Yesterday</option>
+            <option value="last7">Last 7 days</option>
+            <option value="month">This month</option>
+            <option value="custom">Custom</option>
+          </SelectInput>
+          {datePreset === 'custom' && (
+            <>
+              <TextInput label="From" type="date" value={visitFilters.from} onChange={(event) => updateVisitFilter('from', event.target.value)} />
+              <TextInput label="To" type="date" value={visitFilters.to} onChange={(event) => updateVisitFilter('to', event.target.value)} />
+            </>
+          )}
+          <Button variant="secondary" icon={Search} onClick={runUnifiedSearch}>Search</Button>
+          <Button variant={filtersOpen ? 'secondary' : 'ghost'} onClick={() => setFiltersOpen((current) => !current)}>
+            Filters{advancedFilterCount > 0 ? ` (${advancedFilterCount})` : ''}
+          </Button>
+          <div className="seg-toggle" aria-label="Columns">
+            <button type="button" className={columnMode === 'compact' ? 'active' : ''} onClick={() => setColumnMode('compact')}>Compact</button>
+            <button type="button" className={columnMode === 'all' ? 'active' : ''} onClick={() => setColumnMode('all')}>All</button>
+          </div>
+          <div style={{ position: 'relative' }}>
+            <Button variant={indicatorFilter ? 'secondary' : 'ghost'} className="legend-toggle" onClick={() => setShowLegend((v) => !v)}>
+              {indicatorFilter ? `Filter: ${INDICATOR_ITEMS.find((i) => i.key === indicatorFilter)?.label.split(' (')[0]}` : 'Legend'}
+            </Button>
+            {showLegend && <IndicatorLegend active={indicatorFilter} onSelect={(key) => { setIndicatorFilter(key); setShowLegend(false); }} />}
+          </div>
+        </div>
+        {filtersOpen && (
+        <div className="filter-panel mt-3">
+          <div className="grid-5">
           <TextInput label="Center" list="center-options-main" value={visitFilters.center} onChange={(event) => updateVisitFilter('center', event.target.value)} />
           <datalist id="center-options-main">
             <option value="Main Lab" />
@@ -1071,20 +1376,16 @@ export function ReceptionPage() {
           <TextInput label="Group" value={visitFilters.group} onChange={(event) => updateVisitFilter('group', event.target.value)} />
           <TextInput label="Test" value={visitFilters.test} onChange={(event) => updateVisitFilter('test', event.target.value)} />
           <TextInput label="Reference" value={visitFilters.ref_no} onChange={(event) => updateVisitFilter('ref_no', event.target.value)} />
-        </div>
-        <div className="actions mt-3" style={{ alignItems: 'flex-end' }}>
-          <label className="checkrow">
-            <input type="checkbox" checked={visitFilters.outstanding} onChange={(event) => updateVisitFilter('outstanding', event.target.checked)} />
-            <span>Outstanding only</span>
-          </label>
-          <Button variant="secondary" icon={Search} onClick={() => loadVisitRows()}>Search</Button>
-          <div style={{ position: 'relative' }}>
-            <Button variant={indicatorFilter ? 'secondary' : 'ghost'} className="legend-toggle" onClick={() => setShowLegend((v) => !v)}>
-              {indicatorFilter ? `Filter: ${INDICATOR_ITEMS.find((i) => i.key === indicatorFilter)?.label.split(' (')[0]}` : 'Legend'}
-            </Button>
-            {showLegend && <IndicatorLegend active={indicatorFilter} onSelect={(key) => { setIndicatorFilter(key); setShowLegend(false); }} />}
+          </div>
+          <div className="actions mt-3">
+            <label className="checkrow">
+              <input type="checkbox" checked={visitFilters.outstanding} onChange={(event) => updateVisitFilter('outstanding', event.target.checked)} />
+              <span>Outstanding only</span>
+            </label>
+            <Button variant="ghost" onClick={clearAdvancedFilters}>Clear all</Button>
           </div>
         </div>
+        )}
         <div className="table-wrap mt-3">
           <table className="dt">
             <thead>
@@ -1092,20 +1393,20 @@ export function ReceptionPage() {
                 <th />
                 <th>Reg No</th>
                 <th>Date / Time</th>
-                <th>Center</th>
+                {!compact && <th>Center</th>}
                 <th>Patient</th>
                 <th>Doctor</th>
-                <th>Total</th>
-                <th>Others</th>
-                <th>Discount</th>
+                {!compact && <th>Total</th>}
+                {!compact && <th>Others</th>}
+                {!compact && <th>Discount</th>}
                 <th>Final</th>
                 <th>Paid</th>
                 <th>Balance</th>
-                <th>Refund</th>
-                <th>Mobile</th>
-                <th>Consultant</th>
-                <th>User</th>
-                <th>Status</th>
+                {!compact && <th>Refund</th>}
+                {!compact && <th>Mobile</th>}
+                {!compact && <th>Consultant</th>}
+                {!compact && <th>User</th>}
+                {!compact && <th>Status</th>}
                 <th />
               </tr>
             </thead>
@@ -1125,24 +1426,27 @@ export function ReceptionPage() {
                   <td><RowIndicators row={row} /></td>
                   <td className="mono">{row.visit_no}</td>
                   <td>{formatRisDateTime(row.visit_datetime)}</td>
-                  <td>{row.center_name || '-'}</td>
+                  {!compact && <td>{row.center_name || '-'}</td>}
                   <td className="strong">{row.full_name} <span className="field-hint">[{row.age_years || '-'} {row.sex || '-'}]</span></td>
                   <td>{row.doctor_name || '-'}</td>
-                  <td className="num">{row.total_amount}</td>
-                  <td className="num">{row.misc_charge || '0.00'}</td>
-                  <td className="num">{row.discount}</td>
+                  {!compact && <td className="num">{row.total_amount}</td>}
+                  {!compact && <td className="num">{row.misc_charge || '0.00'}</td>}
+                  {!compact && <td className="num">{row.discount}</td>}
                   <td className="num">{row.net_amount}</td>
                   <td className="num">{row.paid_amount}</td>
                   <td className="num">{row.balance}</td>
-                  <td className="num">{Number(row.refund_total || 0) > 0 ? row.refund_total : '0.00'}</td>
-                  <td>{row.phone || '-'}</td>
-                  <td>{row.consultant_doctor || '-'}</td>
-                  <td>{row.user_name || '-'}</td>
-                  <td>
+                  {!compact && <td className="num">{Number(row.refund_total || 0) > 0 ? row.refund_total : '0.00'}</td>}
+                  {!compact && <td>{row.phone || '-'}</td>}
+                  {!compact && <td>{row.consultant_doctor || '-'}</td>}
+                  {!compact && <td>{row.user_name || '-'}</td>}
+                  {!compact && <td>
                     <VisitStatusCell row={row} />
-                  </td>
+                  </td>}
                   <td className="num">
                     <div className="actions" style={{ justifyContent: 'flex-end', flexWrap: 'nowrap' }}>
+                      <Button size="sm" variant={Number(row.balance || 0) > 0 ? 'primary' : 'secondary'} onClick={(event) => { event.stopPropagation(); openAction('payment', row); }}>
+                        Pay
+                      </Button>
                       <Button size="sm" variant="secondary" onClick={(event) => { event.stopPropagation(); chooseVisitRow(row); }}>
                         Open
                       </Button>
@@ -1153,20 +1457,20 @@ export function ReceptionPage() {
                   </td>
                 </tr>
               ))}
-              {displayedRows.length === 0 && <tr><td colSpan={18}><EmptyState title="No registrations" sub={indicatorFilter ? 'No visits match this status filter.' : 'Adjust filters or add a new patient and visit.'} /></td></tr>}
+              {displayedRows.length === 0 && <tr><td colSpan={tableColCount}><EmptyState title={datePreset === 'today' ? 'No registrations today' : 'No registrations'} sub={indicatorFilter ? 'No visits match this status filter.' : 'Adjust filters or add a new patient and visit.'} /></td></tr>}
             </tbody>
             {displayedRows.length > 0 && (
               <tfoot>
                 <tr style={{ fontWeight: 700, borderTop: '2px solid var(--app-border)' }}>
-                  <td colSpan={6} className="num">Totals ({footerTotals.records} records{indicatorFilter ? ', filtered' : ''})</td>
-                  <td className="num">{Number(footerTotals.total).toFixed(2)}</td>
-                  <td className="num">{Number(footerTotals.others).toFixed(2)}</td>
-                  <td className="num">{Number(footerTotals.discount).toFixed(2)}</td>
+                  <td colSpan={compact ? 4 : 6} className="num">Totals ({footerTotals.records} records{indicatorFilter ? ', filtered' : ''})</td>
+                  {!compact && <td className="num">{Number(footerTotals.total).toFixed(2)}</td>}
+                  {!compact && <td className="num">{Number(footerTotals.others).toFixed(2)}</td>}
+                  {!compact && <td className="num">{Number(footerTotals.discount).toFixed(2)}</td>}
                   <td className="num">{Number(footerTotals.net).toFixed(2)}</td>
                   <td className="num">{Number(footerTotals.paid).toFixed(2)}</td>
                   <td className="num">{Number(footerTotals.balance).toFixed(2)}</td>
-                  <td className="num">{Number(footerTotals.refund).toFixed(2)}</td>
-                  <td colSpan={5} />
+                  {!compact && <td className="num">{Number(footerTotals.refund).toFixed(2)}</td>}
+                  <td colSpan={trailingTotalColSpan} />
                 </tr>
               </tfoot>
             )}
@@ -1181,6 +1485,43 @@ export function ReceptionPage() {
               <Button size="sm" variant="secondary" disabled={page <= 1} onClick={() => gotoPage(page - 1)}>Previous</Button>
               <span className="field-hint" style={{ alignSelf: 'center' }}>Page {page} of {Math.max(1, Math.ceil(Number(visitTotals.records) / PAGE_SIZE))}</span>
               <Button size="sm" variant="secondary" disabled={page >= Math.ceil(Number(visitTotals.records) / PAGE_SIZE)} onClick={() => gotoPage(page + 1)}>Next</Button>
+            </div>
+          </div>
+        )}
+        {unvisitedPatients.length > 0 && (
+          <div className="card card-surface card-pad mt-4">
+            <div className="between">
+              <div>
+                <div className="field-label">Patients without visit</div>
+                <div className="field-hint">Patients created in reception but visit and billing are still pending.</div>
+              </div>
+              <StatusChip status="pending" label={`${unvisitedPatients.length} pending`} />
+            </div>
+            <div className="table-wrap mt-3">
+              <table className="dt">
+                <thead><tr><th>Patient ID</th><th>Patient</th><th>Mobile</th><th>Age / Gender</th><th>Created</th><th /></tr></thead>
+                <tbody>
+                  {unvisitedPatients.map((patient) => (
+                    <tr key={patient.id} style={{ cursor: 'pointer' }} onClick={() => choosePatient(patient)}>
+                      <td className="mono">{patient.mrn}</td>
+                      <td className="strong">{[patient.name_prefix, patient.full_name].filter(Boolean).join(' ')}</td>
+                      <td>{patient.phone || '-'}</td>
+                      <td>{patient.age_years || '-'} / {patient.sex || '-'}</td>
+                      <td>{formatRisDateTime(patient.created_at)}</td>
+                      <td className="num">
+                        <div className="actions" style={{ justifyContent: 'flex-end', flexWrap: 'nowrap' }}>
+                          <Button size="sm" variant="primary" onClick={(event) => { event.stopPropagation(); startNewRegistration(patient); }}>
+                            Create visit
+                          </Button>
+                          <Button size="sm" variant="secondary" onClick={(event) => { event.stopPropagation(); choosePatient(patient); }}>
+                            Open
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </div>
         )}
@@ -1200,18 +1541,21 @@ export function ReceptionPage() {
       </div>
       )}
 
-      {selectedPatient && !visitModalOpen && (
+      {activeTab === 'registrations' && selectedPatient && (
         <div className="patient-profile mt-5">
           <div className="patient-profile-head">
-            <div>
-              <div className="patient-name">{selectedPatient.full_name}</div>
-              <div className="patient-sub">{selectedPatient.mrn} | Patient ID {selectedPatient.id}</div>
+            <div className="actions" style={{ alignItems: 'flex-start' }}>
+              <IconButton bordered icon={ArrowLeft} title="Back to registrations" aria-label="Back to registrations" onClick={() => { setSelectedPatient(null); setHistory(null); resetVisitForm(); }} />
+              <div>
+                <div className="patient-name">{selectedPatient.full_name}</div>
+                <div className="patient-sub">{selectedPatient.mrn} | Patient ID {selectedPatient.id}</div>
+              </div>
             </div>
             <div className="actions">
             <Button variant="secondary" onClick={() => setPatientEditing((current) => !current)}>
               {patientEditing ? 'Cancel edit' : 'Edit patient'}
             </Button>
-            <Button variant="primary" icon={Plus} onClick={() => { setCompleted(null); resetVisitForm(); setVisitModalOpen(true); }}>
+            <Button variant="primary" icon={Plus} onClick={() => startNewRegistration(selectedPatient)}>
               New visit
             </Button>
               <IconButton bordered icon={X} title="Close patient" aria-label="Close patient" onClick={() => { setSelectedPatient(null); setHistory(null); resetVisitForm(); }} />
@@ -1265,55 +1609,7 @@ export function ReceptionPage() {
         </div>
       )}
 
-      {patientModalOpen && (
-        <div className="modal-backdrop" onClick={() => setPatientModalOpen(false)}>
-          <form className="modal-panel" onSubmit={createPatient} onClick={(event) => event.stopPropagation()}>
-            <ModalCloseButton onClick={() => setPatientModalOpen(false)} />
-            <SectionHeader icon={UserPlus} title="New patient" sub="Create the patient and continue to visit entry" />
-            <div className="grid-2">
-              <TextInput label="Patient ID" value="Generated on save" disabled />
-              <TextInput label="Mobile" value={patientForm.phone || ''} onChange={(event) => setPatientField('phone', event.target.value)} placeholder="10 digit mobile" />
-              <SelectInput label="Title" value={patientForm.name_prefix || ''} onChange={(event) => setPatientField('name_prefix', event.target.value)}>
-                <option value="">-</option>
-                <option value="Mr.">Mr.</option>
-                <option value="Mrs.">Mrs.</option>
-                <option value="Ms.">Ms.</option>
-                <option value="Dr.">Dr.</option>
-                <option value="Master">Master</option>
-                <option value="Baby">Baby</option>
-              </SelectInput>
-              <TextInput label="Name" required value={patientForm.full_name || ''} onChange={(event) => setPatientField('full_name', event.target.value)} />
-              <TextInput label="WhatsApp number" value={patientForm.alt_phone || ''} onChange={(event) => setPatientField('alt_phone', event.target.value)} placeholder="Optional" />
-              <SelectInput label="Type" value={patientForm.patient_group || ''} onChange={(event) => setPatientField('patient_group', event.target.value)}>
-                <option value="">Select type</option>
-                {(groupList.length > 0 ? groupList.map((g) => g.value) : ['Regular', 'Center', 'Home visit', 'Corporate']).map((g) => (
-                  <option key={g} value={g}>{g}</option>
-                ))}
-              </SelectInput>
-              <SelectInput label="Gender" value={patientForm.sex || ''} onChange={(event) => setPatientField('sex', event.target.value)}>
-                <option value="">-</option>
-                <option value="male">Male</option>
-                <option value="female">Female</option>
-                <option value="other">Other</option>
-              </SelectInput>
-              <TextInput label="DOB" type="date" value={patientForm.dob || ''} onChange={(event) => setPatientField('dob', event.target.value)} hint="Age fills in automatically" />
-              <TextInput label="Age (years)" type="number" value={String(patientForm.age_years ?? '')} onChange={(event) => setPatientField('age_years', event.target.value)} hint="Or enter directly if DOB unknown" />
-              <TextInput label="Email" type="email" value={patientForm.email || ''} onChange={(event) => setPatientField('email', event.target.value)} />
-            </div>
-            <TextareaInput label="Address" rows={3} className="mt-3" value={patientForm.address_line1 || ''} onChange={(event) => setPatientField('address_line1', event.target.value)} />
-            <div className="actions mt-4">
-              <Button type="submit" disabled={loading || actionKey === 'create-patient'} variant="primary" icon={Plus}>
-                {loading || actionKey === 'create-patient' ? 'Saving...' : 'Save patient'}
-              </Button>
-              <Button type="button" variant="secondary" onClick={() => setPatientForm({ ...EMPTY_PATIENT })}>
-                Clear
-              </Button>
-            </div>
-          </form>
-        </div>
-      )}
-
-      {selectedPatient && !visitModalOpen && (
+      {activeTab === 'registrations' && selectedPatient && (
         <HistoryPanel
           history={history}
           nodes={nodes}
@@ -1345,10 +1641,6 @@ function buildPrintLinks(
   return links;
 }
 
-function Step({ label, active, done }: { label: string; active: boolean; done: boolean }) {
-  return <div className={`workflow-step ${active ? 'active' : ''} ${done ? 'done' : ''}`}>{label}</div>;
-}
-
 function VisitStatusLabel({ row }: { row: ReceptionVisitRow }) {
   const note = `${row.dispatch_mode || ''} ${row.dispatch_note || ''}`.toLowerCase();
   const labels: string[] = [];
@@ -1367,7 +1659,7 @@ function VisitStatusCell({ row }: { row: ReceptionVisitRow }) {
         <StatusChip status={row.status || 'open'} />
       </div>
       <VisitStatusLabel row={row} />
-      <VisitTags visit={row} />
+      <VisitTags visit={row as Partial<PatientHistoryVisit & ReceptionVisitRow>} />
     </div>
   );
 }
@@ -1593,6 +1885,7 @@ function VisitPanel(props: {
   saving: boolean;
   completeVisit: () => void;
   changePatient: () => void;
+  nextVisitId: string;
 }) {
   const [activeTab, setActiveTab] = useState<'general' | 'home' | 'dispatch' | 'other'>('general');
   const [serviceSearch, setServiceSearch] = useState('');
@@ -1622,14 +1915,15 @@ function VisitPanel(props: {
   }, [activeTab]);
 
   return (
-    <div className="card card-pad mt-4" style={{ borderColor: 'var(--app-accent)' }}>
+    <div className="reg-layout mt-4">
+      <div className="card card-pad" style={{ borderColor: 'var(--app-accent)' }}>
       <SectionHeader icon={ClipboardList} title={`Visit for ${props.patient.full_name}`} sub={`${props.patient.mrn} | ${props.patient.phone || 'No phone'}`}>
         <Button size="sm" variant="ghost" onClick={props.changePatient}>Change patient</Button>
       </SectionHeader>
       <div>
         <div>
           <div className="grid-2">
-            <TextInput label="Visit ID" value="Generated on save" disabled />
+            <TextInput label="Visit ID" value={props.nextVisitId} disabled />
             <TextInput label="Date" type="date" value={props.regDate} onChange={(event) => props.setRegDate(event.target.value)} />
             {props.centers.length > 0 ? (
               <div>
@@ -1803,7 +2097,10 @@ function VisitPanel(props: {
             </div>
           )}
         </div>
-        <div className="card card-surface card-pad mt-4">
+      </div>
+      </div>
+      <div className="bill-sticky">
+        <div className="card card-pad">
           <div className="field-label">Costing and payment</div>
           <div className="grid-3 mt-3">
             <TextInput label="Total" value={props.selectedTotal.toFixed(2)} disabled />
@@ -1836,7 +2133,7 @@ function VisitPanel(props: {
             <div className={`cost-row ${props.balanceDue > 0 ? 'balance-due' : ''}`}><span>Balance</span><strong>Rs {props.balanceDue.toFixed(2)}</strong></div>
           </div>
           <Button className="mt-3" variant="primary" icon={Receipt} disabled={props.loading || props.saving || props.selectedServiceIds.length === 0} onClick={props.completeVisit}>
-            {props.saving ? 'Saving...' : 'Save'}
+            {props.saving ? 'Saving...' : 'Save registration'}
           </Button>
         </div>
       </div>

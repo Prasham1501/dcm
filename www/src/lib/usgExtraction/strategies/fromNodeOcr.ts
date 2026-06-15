@@ -12,7 +12,7 @@ export async function fromNodeOcr(filePaths?: string[]): Promise<{ readings: Rea
   const warnings: string[] = [];
 
   const api = (window as any).electronAPI;
-  if (!api?.invoke) {
+  if (!api?.ocrDicomBatch || !api?.ocrDicomFile || !api?.readFileBuffer || !api?.ocrImageBase64) {
     warnings.push('Electron IPC not available for Node OCR');
     return { readings: [], warnings };
   }
@@ -25,7 +25,7 @@ export async function fromNodeOcr(filePaths?: string[]): Promise<{ readings: Rea
 
     try {
       // Use batch handler (shared worker, 2 passes) — ~3-4× faster than per-file
-      const results: Array<{ text: string; success: boolean }> = await api.invoke('ocr-dicom-batch', { filePaths: paths });
+      const results: Array<{ text: string; success: boolean }> = await api.ocrDicomBatch({ filePaths: paths });
 
       if (results && results.length > 0) {
         for (let i = 0; i < results.length; i++) {
@@ -47,7 +47,7 @@ export async function fromNodeOcr(filePaths?: string[]): Promise<{ readings: Rea
       console.warn('[fromNodeOcr] Batch OCR failed, falling back to per-file:', err?.message);
       for (const fp of paths) {
         try {
-          const result = await api.invoke('ocr-dicom-file', { filePath: fp });
+          const result = await api.ocrDicomFile({ filePath: fp });
           if (result?.success && result.text?.trim()) {
             const { readings: fileReadings, warnings: fileWarnings } = parseTextBlock(result.text);
             allReadings.push(...fileReadings);
@@ -86,7 +86,7 @@ export async function fromNodeOcr(filePaths?: string[]): Promise<{ readings: Rea
     for (const fp of filePaths.slice(0, 30)) {
       let blobUrl: string | null = null;
       try {
-        const buf: ArrayBuffer = await api.invoke('read-file-buffer', fp);
+        const buf: ArrayBuffer = await api.readFileBuffer(fp);
         if (!buf || (buf as any).byteLength === 0) continue;
         const blob = new Blob([buf], { type: 'application/dicom' });
         blobUrl = URL.createObjectURL(blob);
@@ -132,7 +132,7 @@ export async function fromNodeOcr(filePaths?: string[]): Promise<{ readings: Rea
   console.log(`[fromNodeOcr] Sending ${Math.min(base64Images.length, 30)} of ${base64Images.length} crops for OCR`);
   for (const b64 of base64Images.slice(0, 30)) {
     try {
-      const result = await api.invoke('ocr-image-base64', { base64: b64 });
+      const result = await api.ocrImageBase64({ base64: b64 });
       if (result?.success && result.text?.trim()) {
         allText.push(result.text);
       }

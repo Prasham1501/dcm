@@ -22,8 +22,8 @@ export function PatientTable() {
   // Listen for IPC "patient-printed" broadcast from popup windows
   useEffect(() => {
     const api = (window as any).electronAPI;
-    if (!api?.on) return;
-    const unsub = api.on('patient-printed', (data: { patientId: string; patientName: string }) => {
+    if (!api?.onPatientPrinted) return;
+    const unsub = api.onPatientPrinted((data: { patientId: string; patientName: string }) => {
       const { patients, editPatient } = usePatientStore.getState();
       const matched = patients.find(p => p.patientId === data.patientId && p.patientName === data.patientName);
       if (matched) editPatient(matched.id, { printed: true });

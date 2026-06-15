@@ -1,4 +1,8 @@
-export type PaperSize = 'A3' | 'A4' | 'A5' | 'Letter' | 'Legal';
+export type PaperSize = 'A4' | 'A5' | 'B4JIS' | 'B5JIS' | 'ENV9' | 'ENV10' | 'CSHEET' | 'DSHEET';
+/** Target for a film-size mapping: a paper size or 'SAME' (keep the film size). */
+export type FilmMapTarget = PaperSize | 'SAME';
+/** DICOM Film Size ID (uppercase, e.g. "14INX17IN") → target paper. */
+export type FilmSizeMap = Record<string, FilmMapTarget>;
 /** Where a footer field appears (or 'none' to hide). */
 export type FooterSlotPos = 'none' | 'left' | 'center' | 'right';
 /** Legacy single-item slot type. Migrations expand it to an array. */
@@ -19,6 +23,10 @@ export interface HeaderFooterLayout {
 }
 
 export interface HospitalBranding {
+  /** Present once the branding lives in the config `brandings[]` list. */
+  id?: string;
+  name?: string;
+
   // Hospital identity
   hospitalName: string;
   brandNameSecondary: string;
@@ -124,7 +132,16 @@ export interface PrinterSlot {
   bindHost: string;
   port: number;
   windowsPrinterName: string;
+  /** Default/fallback paper — image jobs + unmapped film sizes. */
   paperSize: PaperSize;
+  /** Per-film-size → target paper (DICOM Print / Film Box jobs). */
+  filmSizeMap: FilmSizeMap;
+  /** Assigned branding id (null → use the config default). */
+  brandingId: string | null;
+  /** Per-slot print contrast (gamma LUT). */
+  lutEnabled?: boolean;
+  /** Gamma exponent: >1 darker/denser blacks, <1 lighter, 1 = no change. */
+  lutGamma?: number;
   layoutId: string;
   studyDebounceSeconds: number;
   copies: number;
@@ -154,12 +171,19 @@ export interface SlotHistoryEvent {
   error?: string;
 }
 
+export interface NamedBranding extends HospitalBranding {
+  id: string;
+  name: string;
+}
+
 export interface BridgeConfig {
   version: number;
   slots: PrinterSlot[];
   startupBehavior: 'tray' | 'window';
   logRetentionDays: number;
-  branding: HospitalBranding;
+  /** Named brandings; one of them is the default (defaultBrandingId). */
+  brandings: NamedBranding[];
+  defaultBrandingId: string;
 }
 
 export interface SystemPrinter {
@@ -212,14 +236,16 @@ export interface BridgeAPI {
   hideToTray: () => Promise<void>;
   quitApp: () => Promise<void>;
 
-  // Branding
-  saveBranding: (branding: Partial<HospitalBranding>) => Promise<HospitalBranding>;
+  // Branding (multi)
+  saveBranding: (branding: Partial<NamedBranding>) => Promise<NamedBranding>;
+  createBranding: (args?: { name?: string; copyFromId?: string }) => Promise<NamedBranding>;
+  deleteBranding: (id: string) => Promise<{ ok: boolean; error?: string; config?: BridgeConfig }>;
   pickAndEncodeLogo: () => Promise<string | null>;
 
   // Central sell-by-print quota (shared with viewer + website).
   getLicenseQuota: () => Promise<{ enabled: boolean; remaining: number; total: number; valid?: boolean; offline?: boolean; reason?: string }>;
-  decrementLicenseQuota: (pages: number) => Promise<{ ok: boolean; enabled?: boolean; remaining?: number; total?: number; reason?: string }>;
-  setLicenseQuota: (args: { enabled?: boolean; remaining?: number; adminPin: string }) => Promise<{ ok: boolean; enabled?: boolean; remaining?: number; total?: number; reason?: string }>;
+  getOfflineRechargeChallenge: (args?: { requestedPrints?: number; requestedDays?: number }) => Promise<{ ok: boolean; code: string; request: { requestId: string; fingerprint: string; licenseKey: string; requestedPrints: number; requestedDays?: number; currentExpiresAt?: string | null; expiresAt: string } }>;
+  applyOfflineRechargeVoucher: (voucher: string) => Promise<{ ok: boolean; enabled?: boolean; remaining?: number; total?: number; added?: number; addedExpiry?: boolean; expiresAt?: string | null; daysLeft?: number | null; reason?: string }>;
   onQuotaChanged: (cb: (q: { enabled: boolean; remaining: number; total: number }) => void) => () => void;
 }
 

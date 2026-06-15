@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { BridgeConfig, PrinterSlot, SlotStatus, SystemPrinter, HospitalBranding } from '@/types/bridge';
+import type { BridgeConfig, PrinterSlot, SlotStatus, SystemPrinter, NamedBranding } from '@/types/bridge';
 
 interface ConfigState {
   config: BridgeConfig | null;
@@ -13,7 +13,10 @@ interface ConfigState {
   newSlot: () => Promise<PrinterSlot>;
   upsertSlot: (slot: PrinterSlot) => Promise<{ ok: boolean; errors?: string[] }>;
   removeSlot: (slotId: string) => Promise<void>;
-  saveBranding: (branding: Partial<HospitalBranding>) => Promise<void>;
+  // Branding (multi)
+  saveBranding: (branding: Partial<NamedBranding>) => Promise<NamedBranding>;
+  createBranding: (args?: { name?: string; copyFromId?: string }) => Promise<NamedBranding>;
+  deleteBranding: (id: string) => Promise<{ ok: boolean; error?: string }>;
 }
 
 export const useConfigStore = create<ConfigState>((set, get) => ({
@@ -72,7 +75,30 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
     const saved = await window.bridgeAPI.saveBranding(branding);
     const config = get().config;
     if (config) {
-      set({ config: { ...config, branding: saved } });
+      const list = config.brandings || [];
+      const brandings = list.some((b) => b.id === saved.id)
+        ? list.map((b) => (b.id === saved.id ? saved : b))
+        : [...list, saved];
+      set({ config: { ...config, brandings } });
     }
+    return saved;
+  },
+
+  async createBranding(args) {
+    const created = await window.bridgeAPI.createBranding(args);
+    const config = get().config;
+    if (config) {
+      set({ config: { ...config, brandings: [...(config.brandings || []), created] } });
+    }
+    return created;
+  },
+
+  async deleteBranding(id) {
+    const r = await window.bridgeAPI.deleteBranding(id);
+    if (r.ok && r.config) {
+      set({ config: r.config });
+      await get().refreshSlotStatus();
+    }
+    return { ok: r.ok, error: r.error };
   },
 }));

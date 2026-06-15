@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { Patient, PatientFilters, DateRangePreset } from '@/types/patient';
 import { patientService } from '@/services/patientService';
+import { dicomRequestUrl } from '@/lib/dicomLoader';
 
 // Set to true to use real API (PHP backend), false for local file mode
 const USE_API = import.meta.env.VITE_USE_API === 'true';
@@ -12,20 +13,12 @@ async function scanNetworkDicomFolder(): Promise<Patient[]> {
     const api = (window as any).electronAPI;
     if (!api?.isElectron) return [];
 
-    // Use named method first, fallback to generic invoke
-    let info: any;
-    if (api.getNetworkDicomPath) {
-      info = await api.getNetworkDicomPath();
-    } else if (api.invoke) {
-      info = await api.invoke('get-network-dicom-path');
-    } else {
-      return [];
-    }
+    if (!api.getNetworkDicomPath) return [];
+    const info = await api.getNetworkDicomPath();
     if (!info?.path) return [];
 
     // Use the DICOM file server to scan the storage folder
-    const scanBase = 'http://localhost:3457';
-    const response = await fetch(`${scanBase}/api/dicom/scan-patients?dir=${encodeURIComponent(info.path)}`, {
+    const response = await fetch(dicomRequestUrl(`/dicom/scan-patients?dir=${encodeURIComponent(info.path)}`), {
       signal: AbortSignal.timeout(15000),
     });
     const data = await response.json();
@@ -629,10 +622,11 @@ export const usePatientStore = create<PatientState>()(
     set({ syncing: true, syncError: null, syncProgress: null, folderPath: dirPath });
     try {
       const isElectron = !!(window as any).electronAPI?.isElectron;
-      const scanBase = isElectron ? 'http://localhost:3457' : '';
 
       // Use streaming mode for real-time progress
-      const response = await fetch(`${scanBase}/api/dicom/scan-patients?dir=${encodeURIComponent(dirPath)}&stream=1`);
+      const response = await fetch(isElectron
+        ? dicomRequestUrl(`/dicom/scan-patients?dir=${encodeURIComponent(dirPath)}&stream=1`)
+        : `/api/dicom/scan-patients?dir=${encodeURIComponent(dirPath)}&stream=1`);
 
       if (!response.ok) {
         throw new Error(`Scan failed: ${response.statusText}`);
@@ -892,8 +886,8 @@ export const usePatientStore = create<PatientState>()(
 
   importFolder: async () => {
     const api = (window as any).electronAPI;
-    if (!api?.invoke) {
-      console.error('[importFolder] electronAPI.invoke not available');
+    if (!api?.showOpenDialog) {
+      console.error('[importFolder] electronAPI.showOpenDialog not available');
       return null;
     }
 
@@ -904,7 +898,7 @@ export const usePatientStore = create<PatientState>()(
     let pickedFiles: string[] = [];
     let dirPath: string | null = null;
     try {
-      const result = await api.invoke('show-open-dialog', {
+      const result = await api.showOpenDialog({
         properties: ['openFile', 'multiSelections'],
         title: 'Select DICOM file(s) to import',
         filters: [
@@ -930,16 +924,16 @@ export const usePatientStore = create<PatientState>()(
     set({ syncing: true, syncError: null, syncProgress: null });
 
     try {
-      const scanBase = 'http://localhost:3457';
+      const isElectron = !!(window as any).electronAPI?.isElectron;
       // POST when we have an explicit file list (URLs can't hold many paths).
       // GET ?dir=… when we have a directory (preserves the legacy path).
       const response = pickedFiles.length
-        ? await fetch(`${scanBase}/api/dicom/scan-patients?stream=1`, {
+        ? await fetch(dicomRequestUrl('/dicom/scan-patients?stream=1'), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ files: pickedFiles }),
           })
-        : await fetch(`${scanBase}/api/dicom/scan-patients?dir=${encodeURIComponent(dirPath || '')}&stream=1`);
+        : await fetch(dicomRequestUrl(`/dicom/scan-patients?dir=${encodeURIComponent(dirPath || '')}&stream=1`));
       if (!response.ok) throw new Error(`Scan failed: ${response.statusText}`);
 
       const contentType = response.headers.get('content-type') || '';
