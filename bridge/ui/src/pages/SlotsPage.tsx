@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
-import { Plus, Printer, X, Copy, Check, FileText, Coins } from 'lucide-react';
+import { Plus, Printer, X, Copy, Check, FileText } from 'lucide-react';
 import { useConfigStore } from '@/stores/configStore';
 import { SlotCard } from '@/components/SlotCard';
 import { SlotHistoryModal } from '@/components/SlotHistoryModal';
-import { SlotQuotaModal } from '@/components/SlotQuotaModal';
+
 import type { PrinterSlot } from '@/types/bridge';
 import { PAPER_SHORT } from '@/lib/paperSizes';
 
@@ -15,7 +15,7 @@ export function SlotsPage() {
   const [editing, setEditing] = useState<PrinterSlot | null>(null);
   const [editingIndex, setEditingIndex] = useState(0);
   const [historySlot, setHistorySlot] = useState<PrinterSlot | null>(null);
-  const [quotaSlot, setQuotaSlot] = useState<PrinterSlot | null>(null);
+
   const [ips, setIps] = useState<{ iface: string; address: string }[]>([]);
   const [copied, setCopied] = useState<string>('');
 
@@ -129,13 +129,6 @@ export function SlotsPage() {
                     >
                       <FileText className="h-3.5 w-3.5" />
                     </button>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); setQuotaSlot(s); }}
-                      title="Quota settings (Ctrl+Shift+Q)"
-                      className="rounded p-0.5 text-app-text-muted hover:bg-app-hover hover:text-app-accent"
-                    >
-                      <Coins className="h-3.5 w-3.5" />
-                    </button>
                   </div>
                 </div>
 
@@ -187,9 +180,7 @@ export function SlotsPage() {
         <SlotHistoryModal slot={historySlot} onClose={() => setHistorySlot(null)} />
       )}
 
-      {quotaSlot && (
-        <SlotQuotaModal slot={quotaSlot} onClose={() => setQuotaSlot(null)} />
-      )}
+
 
     </div>
   );

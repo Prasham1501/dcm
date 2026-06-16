@@ -1061,6 +1061,28 @@ app.whenReady().then(async () => {
     printedRoot,
     failedRoot,
   });
+
+  // Block print jobs before they start when the central quota is exhausted.
+  // Uses the on-disk cached value so no network round-trip delays the decision.
+  jobQueue.setPreflightCheck(async () => {
+    const lic = getLicenseData();
+    if (!lic) {
+      const trial = getTrialInfo();
+      if (trial.printsRemaining <= 0) {
+        return { block: true, reason: 'Trial print budget exhausted. Purchase a license to continue.' };
+      }
+      return { block: false };
+    }
+    const offlineCredit = Math.max(0, parseInt(lic.offlineQuotaCredit || 0, 10));
+    const centralQuotaOn = !!lic.quotaEnabled || offlineCredit > 0;
+    if (!centralQuotaOn) return { block: false };
+    const remaining = (lic.quotaRemaining || 0) + offlineCredit;
+    if (remaining <= 0) {
+      return { block: true, reason: 'Central print quota exhausted (0 prints remaining). Top up to resume printing.' };
+    }
+    return { block: false };
+  });
+
   jobQueue.on('printed', (job) => {
     logger.info(`[Job] printed slot=${job.slot.name} pages=${job.result.pages}`);
     notifySlotEvent('printed', { slotId: job.slot.id, pages: job.result.pages, layoutId: job.result.layoutId });
@@ -1078,31 +1100,6 @@ app.whenReady().then(async () => {
       modality:    job.result.modality    || job.modality    || '',
       studyUid:    job.studyUid || (job.result && job.result.studyUid) || '',
     });
-
-    // Decrement the slot's print quota when it's enabled. Each page counts.
-    const cur = config.get().slots.find((s) => s.id === job.slot.id);
-    if (cur && cur.quotaEnabled) {
-      const pages = Math.max(1, parseInt(job.result.pages || 1, 10));
-      const before = cur.quotaRemaining || 0;
-      const after  = Math.max(0, before - pages);
-      config.patchSlot(job.slot.id, { quotaRemaining: after });
-      // Fire warning at <= 50, separate notice at 0.
-      if (Notification.isSupported() && after === 0) {
-        new Notification({
-          title: 'One Clickz Bridge — quota exhausted',
-          body: `${job.slot.name}: print quota is 0. Printing is now paused for this slot.`,
-        }).show();
-      } else if (Notification.isSupported() && before > 50 && after <= 50) {
-        new Notification({
-          title: 'One Clickz Bridge — low quota',
-          body: `${job.slot.name}: only ${after} prints remaining. Top up soon.`,
-        }).show();
-      }
-      // Push the updated slot to renderer so the card UI refreshes.
-      if (configWindow && !configWindow.isDestroyed()) {
-        configWindow.webContents.send('bridge:config-changed', config.get());
-      }
-    }
 
     // Central sell-by-print quota — only decrement when quota mode is ON.
     // When quota is off, printing is unlimited — no server call needed.

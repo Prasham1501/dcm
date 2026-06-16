@@ -91,16 +91,8 @@ class JobQueue extends EventEmitter {
     while (this.queue.length > 0) {
       const job = this.queue.shift();
       try {
-        // Re-read the slot from disk in case quota was just exhausted by a
-        // previous job in this same tick.
         const fresh = this.printWorker?.configStore?.get?.()
           ?.slots?.find((s) => s.id === job.slot.id) || job.slot;
-        if (fresh.quotaEnabled && (fresh.quotaRemaining || 0) <= 0) {
-          this.logger.warn(`[Queue] slot=${fresh.name} quota=0; skipping print`);
-          this._move(job.files, this.failedRoot);
-          this.emit('failed', { ...job, slot: fresh, error: 'Print quota exhausted (0 remaining). Top up via Quota Settings.' });
-          continue;
-        }
 
         // Central sell-by-print quota check — refuses to print when the
         // server-shared counter (also used by the viewer + website) is
