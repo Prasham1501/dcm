@@ -226,6 +226,8 @@ class RisRegistrationRepository
             'print_receipt' => "ALTER TABLE ris_visits ADD COLUMN print_receipt TINYINT(1) NOT NULL DEFAULT 1",
             'print_bill_receipt' => "ALTER TABLE ris_visits ADD COLUMN print_bill_receipt TINYINT(1) NOT NULL DEFAULT 0",
             'send_to_printer' => "ALTER TABLE ris_visits ADD COLUMN send_to_printer TINYINT(1) NOT NULL DEFAULT 1",
+            'prescription_path' => "ALTER TABLE ris_visits ADD COLUMN prescription_path VARCHAR(255) DEFAULT NULL",
+            'prescription_name' => "ALTER TABLE ris_visits ADD COLUMN prescription_name VARCHAR(255) DEFAULT NULL",
         ];
         foreach ($visitColumns as $column => $sql) {
             $safe = $this->db->real_escape_string($column);

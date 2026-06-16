@@ -88,7 +88,7 @@ export function CenterInvoicesPanel() {
         <div className="table-wrap mt-3">
           <table className="dt">
             <thead>
-              <tr><th>Center</th><th>Type</th><th className="num">Visits</th><th className="num">Total</th><th className="num">Discount</th><th className="num">Net</th><th>Invoice</th><th className="num">Center paid</th><th className="num">Balance</th><th /></tr>
+              <tr><th>Center</th><th>Type</th><th className="num">Visits</th><th className="num">Total</th><th className="num">Discount</th><th className="num">Billed Amount</th><th>Invoice</th><th className="num">Received Amount</th><th className="num">Balance</th><th /></tr>
             </thead>
             <tbody>
               {rows.map((r) => {
@@ -110,7 +110,7 @@ export function CenterInvoicesPanel() {
                       <div className="actions" style={{ justifyContent: 'flex-end', flexWrap: 'nowrap' }}>
                         <Button size="sm" variant="secondary" icon={Save} disabled={busy || Number(r.visit_count) === 0} onClick={() => generate(r)}>{r.invoice_id ? 'Regenerate' : 'Generate'}</Button>
                         {r.invoice_id ? <a className="btn btn-ghost btn-sm" href={`${ENDPOINT}?print=1&invoice_id=${r.invoice_id}`} target="_blank" rel="noreferrer"><Printer size={14} /> Print</a> : null}
-                        {r.invoice_id ? <Button size="sm" variant="ghost" icon={FileText} disabled={busy} onClick={() => recordPayment(r)}>Pay</Button> : null}
+                        {r.invoice_id && bal > 0 ? <Button size="sm" variant="ghost" icon={FileText} disabled={busy} onClick={() => recordPayment(r)}>Pay</Button> : null}
                       </div>
                     </td>
                   </tr>

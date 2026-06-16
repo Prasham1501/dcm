@@ -4,7 +4,7 @@ import { ArrowLeft, CheckCircle2, ClipboardList, Flag, History, Mail, MessageSqu
 import { useAuthStore } from '@/stores/authStore';
 import { Banner, Button, EmptyState, IconButton, ModalityTag, SectionHeader, SelectInput, StatusChip, TextareaInput, TextInput } from '@/components/RisUi';
 import { useReceptionStore } from '../stores/receptionStore';
-import { apiGenerateWorklist, apiPatientHistory, apiQuickUpdateVisit, apiReceptionVisits, apiSyncReturnedReports, apiUnvisitedPatients, apiUpdateAccession, apiUpdateDispatch, apiUpdateOrderDestination, apiUpdatePatient, apiUpdateVisitDetails, type Order, type Patient, type PatientHistory, type PatientHistoryVisit, type ReceptionVisitRow, type VisitTotals } from '../api/receptionApi';
+import { apiGenerateWorklist, apiPatientHistory, apiQuickUpdateVisit, apiReceptionVisits, apiSyncReturnedReports, apiUnvisitedPatients, apiUpdateAccession, apiUpdateDispatch, apiUpdateOrderDestination, apiUpdatePatient, apiUpdateVisitDetails, apiUploadPrescription, prescriptionDownloadUrl, type Order, type Patient, type PatientHistory, type PatientHistoryVisit, type ReceptionVisitRow, type VisitTotals } from '../api/receptionApi';
 import { apiCounters, apiDicomNodes, apiMasters, type CounterSettings, type DicomNode, type Center, type Pro, type Lookup } from '@/features/settings/api/settingsApi';
 import type { PatientForm } from '../lib/patientForm';
 import type { VisitForm } from '../lib/visitForm';
@@ -143,6 +143,7 @@ export function ReceptionPage() {
   const [payerName, setPayerName] = useState('');
   const [payerRelation, setPayerRelation] = useState('');
   const [payerMobile, setPayerMobile] = useState('');
+  const [prescriptionFile, setPrescriptionFile] = useState<File | null>(null);
   const [nodes, setNodes] = useState<DicomNode[]>([]);
   const [centers, setCenters] = useState<Center[]>([]);
   const [pros, setPros] = useState<Pro[]>([]);
@@ -761,6 +762,7 @@ export function ReceptionPage() {
     setPayerName('');
     setPayerRelation('');
     setPayerMobile('');
+    setPrescriptionFile(null);
   };
 
   const completeVisit = async () => {
@@ -822,6 +824,11 @@ export function ReceptionPage() {
           return;
         }
         balance = paidVisit.balance;
+      }
+
+      if (prescriptionFile) {
+        try { await apiUploadPrescription(result.visit.id, prescriptionFile); }
+        catch { /* prescription upload is non-fatal — visit is already saved */ }
       }
 
       const receipt = await generateReceipt(result.visit.id);
@@ -1296,6 +1303,8 @@ export function ReceptionPage() {
           completeVisit={completeVisit}
           changePatient={() => { setSelectedPatient(null); setHistory(null); resetVisitForm(); }}
           nextVisitId={nextVisitId}
+          prescriptionFile={prescriptionFile}
+          setPrescriptionFile={setPrescriptionFile}
         />
         </>
       )}
@@ -1356,7 +1365,7 @@ export function ReceptionPage() {
             <option value="Center" />
             <option value="Home visit" />
           </datalist>
-          <SelectInput label="Doctor" value={visitFilters.doctor} onChange={(event) => updateVisitFilter('doctor', event.target.value)}>
+          <SelectInput label="Ref. Doctor" value={visitFilters.doctor} onChange={(event) => updateVisitFilter('doctor', event.target.value)}>
             <option value="">All</option>
             {referringDoctors.map((doctor) => <option key={doctor.id} value={doctor.name}>{doctor.name}</option>)}
           </SelectInput>
@@ -1395,12 +1404,12 @@ export function ReceptionPage() {
                 <th>Date / Time</th>
                 {!compact && <th>Center</th>}
                 <th>Patient</th>
-                <th>Doctor</th>
+                <th>Ref. Doctor</th>
                 {!compact && <th>Total</th>}
                 {!compact && <th>Others</th>}
                 {!compact && <th>Discount</th>}
-                <th>Final</th>
-                <th>Paid</th>
+                <th>Billed Amount</th>
+                <th>Received Amount</th>
                 <th>Balance</th>
                 {!compact && <th>Refund</th>}
                 {!compact && <th>Mobile</th>}
@@ -1444,9 +1453,11 @@ export function ReceptionPage() {
                   </td>}
                   <td className="num">
                     <div className="actions" style={{ justifyContent: 'flex-end', flexWrap: 'nowrap' }}>
-                      <Button size="sm" variant={Number(row.balance || 0) > 0 ? 'primary' : 'secondary'} onClick={(event) => { event.stopPropagation(); openAction('payment', row); }}>
-                        Pay
-                      </Button>
+                      {Number(row.balance || 0) > 0 && (
+                        <Button size="sm" variant="primary" onClick={(event) => { event.stopPropagation(); openAction('payment', row); }}>
+                          Pay
+                        </Button>
+                      )}
                       <Button size="sm" variant="secondary" onClick={(event) => { event.stopPropagation(); chooseVisitRow(row); }}>
                         Open
                       </Button>
@@ -1528,7 +1539,9 @@ export function ReceptionPage() {
         {rowMenu && (
           <div className="context-menu" style={{ left: rowMenu.x, top: rowMenu.y }} onClick={(event) => event.stopPropagation()}>
             <button type="button" onClick={() => openResult(rowMenu.row)}>Result entry</button>
-            <button type="button" onClick={() => openAction('payment', rowMenu.row)}>Payment</button>
+            {Number(rowMenu.row.balance || 0) > 0 && (
+              <button type="button" onClick={() => openAction('payment', rowMenu.row)}>Payment</button>
+            )}
             <button type="button" onClick={() => { window.open(printAssetUrl(rowMenu.row.id, 'barcode'), '_blank', 'noopener,noreferrer'); setRowMenu(null); }}>Print Barcode</button>
             <button type="button" onClick={() => openAction('comment', rowMenu.row)}>Add / edit comment</button>
             <div style={{ borderTop: '1px solid var(--app-border)', margin: '4px 0' }} />
@@ -1886,6 +1899,8 @@ function VisitPanel(props: {
   completeVisit: () => void;
   changePatient: () => void;
   nextVisitId: string;
+  prescriptionFile: File | null;
+  setPrescriptionFile: (file: File | null) => void;
 }) {
   const [activeTab, setActiveTab] = useState<'general' | 'home' | 'dispatch' | 'other'>('general');
   const [serviceSearch, setServiceSearch] = useState('');
@@ -2132,6 +2147,15 @@ function VisitPanel(props: {
             <div className="cost-row"><span>Advance / paid now</span><strong>Rs {Number(props.payAmount || 0).toFixed(2)}</strong></div>
             <div className={`cost-row ${props.balanceDue > 0 ? 'balance-due' : ''}`}><span>Balance</span><strong>Rs {props.balanceDue.toFixed(2)}</strong></div>
           </div>
+          <div className="mt-3">
+            <label className="field-label">Prescription (image / PDF)</label>
+            <input
+              type="file"
+              accept="image/jpeg,image/png,image/webp,application/pdf"
+              onChange={(event) => props.setPrescriptionFile(event.target.files?.[0] || null)}
+            />
+            {props.prescriptionFile && <span className="field-hint" style={{ marginLeft: 8 }}>Selected: {props.prescriptionFile.name}</span>}
+          </div>
           <Button className="mt-3" variant="primary" icon={Receipt} disabled={props.loading || props.saving || props.selectedServiceIds.length === 0} onClick={props.completeVisit}>
             {props.saving ? 'Saving...' : 'Save registration'}
           </Button>
@@ -2362,6 +2386,11 @@ function HistoryPanel({
                           </div>
                           {Number(visit.urgent_report || 0) === 1 ? <div className="banner banner-warning mt-3"><Flag /> This report is urgent.</div> : null}
                           <div className="actions mt-3">
+                            {visit.prescription_path ? (
+                              <a className="btn btn-secondary btn-sm" href={prescriptionDownloadUrl(visit.id)} target="_blank" rel="noreferrer" title={visit.prescription_name || 'Prescription'}>
+                                View prescription
+                              </a>
+                            ) : null}
                             <Button size="sm" disabled={!!pendingAction} variant={visit.dispatch_mode === 'report_received' ? 'success' : 'secondary'} onClick={() => markVisitDelivery(visit, 'report_received', 'patient', 'Report received by reception')}>Report received</Button>
                             <Button size="sm" disabled={!!pendingAction} variant={visit.dispatch_mode === 'images_print_received' ? 'success' : 'secondary'} onClick={() => markVisitDelivery(visit, 'images_print_received', 'patient', 'Images print received by reception')}>Images print received</Button>
                             <Button size="sm" disabled={!!pendingAction} variant={visit.dispatch_mode === 'email' ? 'success' : 'secondary'} onClick={() => markVisitDelivery(visit, 'email', 'patient', 'Report emailed to patient')}>Email</Button>

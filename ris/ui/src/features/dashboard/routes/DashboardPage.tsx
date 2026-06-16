@@ -69,7 +69,7 @@ export function DashboardPage() {
             ) : (
               <div className="table-wrap mt-3">
                 <table className="dt">
-                  <thead><tr><th>Reg No</th><th>Date / Time</th><th>Patient</th><th>Tests</th><th className="num">Net</th><th className="num">Paid</th><th className="num">Balance</th><th>Status</th></tr></thead>
+                  <thead><tr><th>Reg No</th><th>Date / Time</th><th>Patient</th><th>Tests</th><th className="num">Billed Amount</th><th className="num">Received Amount</th><th className="num">Balance</th><th>Status</th></tr></thead>
                   <tbody>
                     {detail.rows.map((row) => (
                       <tr key={row.id}>

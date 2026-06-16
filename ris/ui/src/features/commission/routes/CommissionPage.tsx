@@ -86,7 +86,7 @@ export function CommissionPage() {
           {report.length === 0 ? <EmptyState title="No commission in this range" /> : (
             <div className="table-wrap" style={{ border: 0, borderRadius: 0 }}>
               <table className="dt">
-                <thead><tr><th>Doctor</th><th>Tests</th><th className="num">Commission</th></tr></thead>
+                <thead><tr><th>Ref. Doctor</th><th>Tests</th><th className="num">Commission</th></tr></thead>
                 <tbody>
                   {report.map((row) => (
                     <tr key={row.referring_doctor_id} onClick={() => selectDoctor(row)} className={selected?.referring_doctor_id === row.referring_doctor_id ? 'selected' : ''} style={{ cursor: 'pointer' }}>
