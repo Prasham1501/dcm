@@ -21,6 +21,7 @@ $dotenv->load();
 
 // Database Configuration
 define('DB_HOST', $_ENV['DB_HOST'] ?? 'localhost');
+define('DB_PORT', (int)($_ENV['DB_PORT'] ?? 3306));
 define('DB_USER', $_ENV['DB_USER'] ?? 'root');
 define('DB_PASSWORD', $_ENV['DB_PASSWORD'] ?? '');
 define('DB_NAME', $_ENV['DB_NAME'] ?? 'dicom_viewer_v2_production');
@@ -136,10 +137,25 @@ function getDbConnection() {
     $connection = &__dbConnectionRef();
 
     if ($connection === null) {
-        $connection = new mysqli(DB_HOST, DB_USER, DB_PASSWORD, DB_NAME);
+        $host = strcasecmp(DB_HOST, 'localhost') === 0 ? '127.0.0.1' : DB_HOST;
+        $ports = [DB_PORT];
+        if (($host === '127.0.0.1' || $host === '::1') && DB_PORT === 3306) {
+            $ports[] = 3307;
+        }
 
-        if ($connection->connect_error) {
-            error_log("Database connection failed: " . $connection->connect_error);
+        $lastError = '';
+        foreach (array_values(array_unique($ports)) as $port) {
+            $candidate = @new mysqli($host, DB_USER, DB_PASSWORD, DB_NAME, (int)$port);
+            if (!$candidate->connect_error) {
+                $connection = $candidate;
+                break;
+            }
+            $lastError = $candidate->connect_error;
+            try { $candidate->close(); } catch (Throwable $e) { /* ignore failed connection cleanup */ }
+        }
+
+        if (!$connection || $connection->connect_error) {
+            error_log("Database connection failed: " . ($lastError ?: 'unknown error'));
             throw new Exception("Database connection failed");
         }
 

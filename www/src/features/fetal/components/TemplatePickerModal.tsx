@@ -13,6 +13,7 @@ import {
   groupedPlaceholders, resolvePlaceholders, type PlaceholderContext,
 } from '@/features/fetal/lib/placeholders';
 import { RichTextEditor } from '@/features/fetal/components/RichTextEditor';
+import { sanitizeHtml } from '@/lib/sanitizeHtml';
 
 interface Props {
   open: boolean;
@@ -245,7 +246,7 @@ export function TemplatePickerModal({ open, onClose, context }: Props) {
                 ) : preview ? (
                   <div
                     className="prose prose-sm max-w-none text-sm text-slate-700 dark:text-slate-200 dark:prose-invert"
-                    dangerouslySetInnerHTML={{ __html: preview }}
+                    dangerouslySetInnerHTML={{ __html: sanitizeHtml(preview) }}
                   />
                 ) : (
                   <div className="text-sm text-slate-400">Loading preview…</div>

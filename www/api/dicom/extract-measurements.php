@@ -15,7 +15,14 @@
  */
 
 header('Content-Type: application/json');
-header('Access-Control-Allow-Origin: *');
+$origin = $_SERVER['HTTP_ORIGIN'] ?? '';
+if ($origin !== '') {
+    $host = parse_url($origin, PHP_URL_HOST);
+    if (in_array($host, ['localhost', '127.0.0.1', '::1'], true)) {
+        header('Access-Control-Allow-Origin: ' . $origin);
+        header('Vary: Origin');
+    }
+}
 header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
 header('Access-Control-Allow-Headers: Content-Type');
 

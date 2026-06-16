@@ -10,22 +10,8 @@ const path = require('path');
 const { renderToPng, readMetadata } = require('../render/dicomRender');
 const { buildPrintHtml } = require('../render/layoutBuilder');
 const { resolveLayoutForJob } = require('../render/layoutUtils');
-
-const PAPER_DIMS_MM = {
-  A4: { w: 210, h: 297 },
-  A3: { w: 297, h: 420 },
-  A5: { w: 148, h: 210 },
-  Letter: { w: 215.9, h: 279.4 },
-  Legal: { w: 215.9, h: 355.6 },
-  '8INX10IN': { w: 203.2, h: 254 },
-  '10INX12IN': { w: 254, h: 304.8 },
-  '10INX14IN': { w: 254, h: 355.6 },
-  '11INX14IN': { w: 279.4, h: 355.6 },
-  '14INX14IN': { w: 355.6, h: 355.6 },
-  '14INX17IN': { w: 355.6, h: 431.8 },
-  '24CMX24CM': { w: 240, h: 240 },
-  '24CMX30CM': { w: 240, h: 300 },
-};
+const { electronPageSize, pdfPageSize, isNamedSize } = require('../render/paperSizes');
+const { resolveTargetPaper, resolveBranding, resolveLut } = require('./printResolve');
 
 function clampCopies(value) {
   const n = parseInt(value, 10);
@@ -40,25 +26,24 @@ function orientationFromFilm(value) {
   return null;
 }
 
-function filmSizeToPageSize(filmSizeId, fallback) {
-  const id = String(filmSizeId || '').toUpperCase().replace(/\s+/g, '');
-  if (!id) return fallback;
-  if (id === 'A4' || id === 'A3' || id === 'A5') return id;
-  if (id === 'LETTER') return 'Letter';
-  if (id === 'LEGAL') return 'Legal';
-  return PAPER_DIMS_MM[id] ? id : fallback;
+async function loadPrintHtml(win, html) {
+  await win.loadURL('about:blank');
+  await win.webContents.executeJavaScript(`
+    document.open();
+    document.write(${JSON.stringify(html)});
+    document.close();
+  `);
 }
 
-function electronPageSize(pageSize) {
-  const dims = PAPER_DIMS_MM[pageSize];
-  if (!dims) return pageSize;
-  if (['A4', 'A3', 'A5', 'Letter', 'Legal'].includes(pageSize)) return pageSize;
-  // Custom DICOM film sizes return explicit micron dimensions
-  return { width: Math.round(dims.w * 1000), height: Math.round(dims.h * 1000) };
-}
-
-function isNamedPageSize(pageSize) {
-  return ['A4', 'A3', 'A5', 'Letter', 'Legal'].includes(pageSize);
+function hardenPrintWindow(win) {
+  win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  win.webContents.on('will-navigate', (event, url) => {
+    if (url === 'about:blank') return;
+    event.preventDefault();
+  });
+  win.webContents.on('devtools-opened', () => {
+    try { win.webContents.closeDevTools(); } catch {}
+  });
 }
 
 class PrintWorker {
@@ -111,8 +96,8 @@ class PrintWorker {
     const pages = Math.ceil(images.length / layout.spots);
     this.logger.info(`[Print] resolved layout=${layout.id} images=${images.length} spots=${layout.spots} pages=${pages}`);
 
-    const branding = this.configStore ? this.configStore.get().branding : null;
-    const html = buildPrintHtml({ slot, images, metadata, branding });
+    const branding = this.configStore ? resolveBranding(this.configStore.get(), slot) : null;
+    const html = buildPrintHtml({ slot, images, metadata, branding, lut: resolveLut(slot) });
     return this._spoolHtml({
       slot,
       html,
@@ -159,12 +144,12 @@ class PrintWorker {
     if (!images.some(Boolean)) throw new Error('no renderable images in direct print job');
 
     const copies = clampCopies(directPrint.copies || 1);
-    const pageSize = filmSizeToPageSize(directPrint.filmSizeId, slot.paperSize);
+    const pageSize = resolveTargetPaper(slot, directPrint.filmSizeId);
     const orientation = orientationFromFilm(directPrint.filmOrientation)
       || (directPrint.layout.cols > directPrint.layout.rows ? 'landscape' : 'portrait');
     const slotForPrint = { ...slot, copies, paperSize: pageSize };
     const metadata = firstMeta || {};
-    const branding = this.configStore ? this.configStore.get().branding : null;
+    const branding = this.configStore ? resolveBranding(this.configStore.get(), slot) : null;
     const html = buildPrintHtml({
       slot: slotForPrint,
       images,
@@ -175,6 +160,7 @@ class PrintWorker {
       fillEmptySlots: false,
       pageSizeOverride: pageSize,
       footerLayoutLabel: directPrint.layout.name || directPrint.layout.id,
+      lut: resolveLut(slot),
     });
 
     const pages = Math.max(1, Math.ceil(images.length / directPrint.layout.spots));
@@ -209,16 +195,27 @@ class PrintWorker {
         const stamp = `${layoutId}-${landscape ? 'L' : 'P'}-${Date.now()}`;
         const htmlOut = path.join(dumpDir, `dump-${stamp}.html`);
         fs.writeFileSync(htmlOut, html, 'utf8');
-        const win = new BrowserWindow({ show: false, webPreferences: { sandbox: false, webSecurity: false } });
-        await win.loadFile(tmpFile);
+        const win = new BrowserWindow({
+          show: false,
+          webPreferences: {
+            sandbox: false,
+            webSecurity: false,
+            nodeIntegration: false,
+            contextIsolation: true,
+            devTools: false,
+          },
+        });
+        hardenPrintWindow(win);
+        await loadPrintHtml(win, html);
         await win.webContents.executeJavaScript(
           "new Promise(r=>{const i=[...document.querySelectorAll('img')];if(!i.length)return r();let n=0;const d=()=>{if(++n>=i.length)r()};i.forEach(m=>{if(m.complete)d();else{m.addEventListener('load',d,{once:true});m.addEventListener('error',d,{once:true});}});setTimeout(r,3000);});"
         );
         const resolvedPageSize = pageSizeOverride || slot.paperSize;
         const pdf = await win.webContents.printToPDF({
           printBackground: true,
-          landscape: isNamedPageSize(resolvedPageSize) ? landscape : false,
-          pageSize: electronPageSize(resolvedPageSize),
+          landscape: isNamedSize(resolvedPageSize) ? landscape : false,
+          pageSize: pdfPageSize(resolvedPageSize, landscape),
+          preferCSSPageSize: true,
           margins: { top: 0, bottom: 0, left: 0, right: 0 },
         });
         fs.writeFileSync(path.join(dumpDir, `dump-${stamp}.pdf`), pdf);
@@ -242,12 +239,14 @@ class PrintWorker {
         nodeIntegration: false,
         contextIsolation: true,
         webSecurity: false,
+        devTools: false,
       },
     });
+    hardenPrintWindow(win);
 
     try {
       const tLoad = Date.now();
-      await win.loadFile(tmpFile);
+      await loadPrintHtml(win, html);
       await win.webContents.executeJavaScript(`
         new Promise(resolve => {
           const imgs = Array.from(document.querySelectorAll('img'));
@@ -267,18 +266,19 @@ class PrintWorker {
       const printerName = slot.windowsPrinterName || '';
       const isPdfPrinter = /print\s*to\s*pdf|pdf\s*printer/i.test(printerName);
       const resolvedPageSize = pageSizeOverride || slot.paperSize;
-      const pageSize = electronPageSize(resolvedPageSize);
+      const pageSize = electronPageSize(resolvedPageSize, landscape);
       // For named sizes (A4, etc.) pass landscape to Electron so the driver
       // rotates the page.  For custom DICOM film sizes the CSS @page already
       // uses explicit rotated mm dimensions, so tell Electron portrait to
       // avoid double-rotation.
-      const electronLandscape = isNamedPageSize(resolvedPageSize) ? landscape : false;
+      const electronLandscape = isNamedSize(resolvedPageSize) ? landscape : false;
 
       if (isPdfPrinter) {
         const pdfBuffer = await win.webContents.printToPDF({
           printBackground: true,
           landscape: electronLandscape,
-          pageSize,
+          pageSize: pdfPageSize(resolvedPageSize, landscape),
+          preferCSSPageSize: true,
           margins: { top: 0, bottom: 0, left: 0, right: 0 },
         });
 

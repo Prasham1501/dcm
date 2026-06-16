@@ -186,7 +186,7 @@ export function ResultEntryPage() {
           ) : (
             <div className="table-wrap mt-3">
               <table className="dt">
-                <thead><tr><th>Reg No</th><th>Patient</th><th>Date / Time</th><th>Doctor</th><th /></tr></thead>
+                <thead><tr><th>Reg No</th><th>Patient</th><th>Date / Time</th><th>Ref. Doctor</th><th /></tr></thead>
                 <tbody>
                   {filteredWorklist.map((r) => (
                     <tr key={r.id} style={{ cursor: 'pointer' }} onClick={() => loadSheet({ visitId: r.id })}>
@@ -208,7 +208,7 @@ export function ResultEntryPage() {
             <div className="grid-3">
               <div><div className="field-label">Patient</div><div className="strong">{[sheet.visit.name_prefix, sheet.visit.full_name].filter(Boolean).join(' ')}</div><div className="field-hint">{sheet.visit.mrn} · {sheet.visit.age_years ?? '-'} / {sheet.visit.sex ?? '-'}</div></div>
               <div><div className="field-label">Reg No</div><div className="strong mono">{sheet.visit.visit_no}</div><div className="field-hint">{formatRisDateTime(sheet.visit.visit_datetime)}</div></div>
-              <div><div className="field-label">Doctor</div><div className="strong">{sheet.visit.doctor_name || 'Self'}</div></div>
+              <div><div className="field-label">Ref. Doctor</div><div className="strong">{sheet.visit.doctor_name || 'Self'}</div></div>
             </div>
           </div>
 

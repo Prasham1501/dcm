@@ -1,13 +1,20 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useWorklistStore } from './worklistStore';
+import { invalidateCache } from '../../../lib/risDataCache';
 
 function mockFetch(json: unknown) {
-  const fn = vi.fn().mockResolvedValue({ json: async () => json });
+  const fn = vi.fn().mockResolvedValue({
+    ok: true,
+    status: 200,
+    text: async () => JSON.stringify(json),
+    json: async () => json,
+  });
   (globalThis as any).fetch = fn;
   return fn;
 }
 
 beforeEach(() => {
+  invalidateCache();
   useWorklistStore.setState({ orders: [], collection: [], loading: false, error: null, lastMatch: null });
 });
 

@@ -1,10 +1,9 @@
-import { useState } from 'react';
-import { Trash2, Power, Save } from 'lucide-react';
-import type { PrinterSlot } from '@/types/bridge';
+import { useMemo, useState } from 'react';
+import { Trash2, Power, Save, Plus } from 'lucide-react';
+import type { PrinterSlot, FilmMapTarget } from '@/types/bridge';
 import { useConfigStore } from '@/stores/configStore';
 import { PrinterPicker } from './PrinterPicker';
-
-const PAPER_OPTIONS = ['A3', 'A4', 'A5', 'Letter', 'Legal'] as const;
+import { PAPER_OPTIONS, FILM_SIZE_ROWS, MAP_TARGET_OPTIONS } from '@/lib/paperSizes';
 
 interface Props {
   slot: PrinterSlot;
@@ -18,14 +17,43 @@ interface Props {
 export function SlotCard({ slot, index, onSaved, onRemoved }: Props) {
   const [draft, setDraft] = useState<PrinterSlot>(slot);
   const [errors, setErrors] = useState<string[]>([]);
+  const [customFilm, setCustomFilm] = useState('');
+  const [customFilms, setCustomFilms] = useState<string[]>([]);
   const upsert = useConfigStore((s) => s.upsertSlot);
   const remove = useConfigStore((s) => s.removeSlot);
   const slotStatus = useConfigStore((s) => s.slotStatus);
+  const brandings = useConfigStore((s) => s.config?.brandings || []);
 
   const status = slotStatus.find((st) => st.slotId === slot.id);
   const dirty = JSON.stringify(draft) !== JSON.stringify(slot);
 
   const update = (patch: Partial<PrinterSlot>) => setDraft({ ...draft, ...patch });
+
+  const filmMap = draft.filmSizeMap || {};
+
+  // Standard film rows (with friendly labels) + any custom/saved ids that
+  // aren't already a standard row (rendered with the raw id as the label).
+  const filmRows = useMemo(() => {
+    const known = new Set(FILM_SIZE_ROWS.map((r) => r.id));
+    const extras = [...new Set([...Object.keys(filmMap), ...customFilms])]
+      .filter((id) => !known.has(id))
+      .map((id) => ({ id, label: id }));
+    return [...FILM_SIZE_ROWS, ...extras];
+  }, [filmMap, customFilms]);
+
+  function setFilmTarget(filmId: string, target: '' | FilmMapTarget) {
+    const next = { ...(draft.filmSizeMap || {}) };
+    if (!target) delete next[filmId];           // '' → no conversion (use default paper)
+    else next[filmId] = target;
+    update({ filmSizeMap: next });
+  }
+
+  function addCustomFilm() {
+    const id = customFilm.trim().toUpperCase().replace(/\s+/g, '');
+    if (!id) return;
+    if (!filmRows.some((r) => r.id === id)) setCustomFilms((prev) => [...prev, id]);
+    setCustomFilm('');
+  }
 
   async function save() {
     const r = await upsert(draft);
@@ -110,15 +138,113 @@ export function SlotCard({ slot, index, onSaved, onRemoved }: Props) {
           <PrinterPicker value={draft.windowsPrinterName} onChange={(name) => update({ windowsPrinterName: name })} />
         </Field>
 
-        <Field label="Paper" full>
+        <Field label="Default Paper">
           <select
             value={draft.paperSize}
-            onChange={(e) => update({ paperSize: e.target.value as any })}
+            onChange={(e) => update({ paperSize: e.target.value as PrinterSlot['paperSize'] })}
             className="w-full rounded border border-app-border bg-app-bg px-2 py-1 text-xs text-app-text"
           >
-            {PAPER_OPTIONS.map((p) => <option key={p} value={p}>{p}</option>)}
+            {PAPER_OPTIONS.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
           </select>
         </Field>
+
+        <Field label="Branding (header / footer)" full>
+          <select
+            value={draft.brandingId ?? ''}
+            onChange={(e) => update({ brandingId: e.target.value || null })}
+            className="w-full rounded border border-app-border bg-app-bg px-2 py-1 text-xs text-app-text"
+          >
+            <option value="">Use default branding</option>
+            {brandings.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+          </select>
+        </Field>
+      </div>
+
+      {/* Paper sizes — one row per incoming DICOM film size, each mapped to a
+          target paper (mirrors the reference printing-bridge layout). */}
+      <div className="border-t border-app-border px-3 py-3 text-xs">
+        <div className="mb-1 text-sm font-bold text-app-accent">Paper sizes</div>
+        <p className="mb-2 text-2xs text-app-text-muted">
+          Convert each incoming DICOM film size to a paper size. Rows left on
+          <em> Default paper</em> use the slot default ({draft.paperSize}); image
+          jobs (no film size) always use the default.
+        </p>
+        <div className="space-y-1.5">
+          {filmRows.map((row) => (
+            <div key={row.id} className="flex items-center gap-2">
+              <span className="flex-1 text-app-text">
+                Print <span className="font-semibold">{row.label}</span> film size print job on this paper size
+              </span>
+              <select
+                value={(filmMap[row.id] as string) || ''}
+                onChange={(e) => setFilmTarget(row.id, e.target.value as '' | FilmMapTarget)}
+                className="w-64 shrink-0 rounded border border-app-border bg-app-bg px-2 py-1 text-2xs text-app-text"
+              >
+                <option value="">Default paper ({draft.paperSize})</option>
+                {MAP_TARGET_OPTIONS.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
+              </select>
+            </div>
+          ))}
+        </div>
+        <div className="mt-2 flex items-center gap-2">
+          <input
+            value={customFilm}
+            onChange={(e) => setCustomFilm(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addCustomFilm(); } }}
+            placeholder="Add another film size ID (e.g. 24CMX30CM)"
+            className="flex-1 rounded border border-app-border bg-app-bg px-2 py-1 font-mono text-2xs text-app-text"
+          />
+          <button
+            onClick={addCustomFilm}
+            className="flex items-center gap-1 rounded border border-app-accent px-2 py-1 text-2xs font-semibold text-app-accent hover:bg-app-accent hover:text-white"
+          >
+            <Plus className="h-3 w-3" /> Add
+          </button>
+        </div>
+      </div>
+
+      {/* Print contrast — per-slot gamma LUT. Deepens (or lightens) the dark
+          tones of the printed image without touching the white paper. */}
+      <div className="border-t border-app-border px-3 py-3 text-xs">
+        <label className="flex items-center gap-2">
+          <input
+            type="checkbox"
+            checked={!!draft.lutEnabled}
+            onChange={(e) => update({ lutEnabled: e.target.checked, lutGamma: draft.lutGamma ?? 1.0 })}
+          />
+          <span className="text-sm font-bold text-app-accent">Print contrast (adjust black level)</span>
+        </label>
+        {draft.lutEnabled && (
+          <div className="mt-2">
+            <div className="flex items-center gap-3">
+              <span className="text-2xs text-app-text-muted">Lighter</span>
+              <input
+                type="range"
+                min={0.3}
+                max={3}
+                step={0.1}
+                value={draft.lutGamma ?? 1.0}
+                onChange={(e) => update({ lutGamma: parseFloat(e.target.value) })}
+                className="flex-1"
+              />
+              <span className="text-2xs text-app-text-muted">Darker</span>
+              <button
+                type="button"
+                onClick={() => update({ lutGamma: 1.0 })}
+                className="rounded border border-app-border px-2 py-0.5 text-2xs text-app-text hover:bg-app-hover"
+              >
+                Reset
+              </button>
+            </div>
+            <p className="mt-1 text-2xs text-app-text-muted">
+              {(() => {
+                const g = draft.lutGamma ?? 1.0;
+                const label = Math.abs(g - 1) < 0.05 ? 'No change' : g > 1 ? 'Darker / denser blacks' : 'Lighter';
+                return <>gamma {g.toFixed(1)} — <span className="font-semibold">{label}</span>. Whites stay white; only the darker tones shift.</>;
+              })()}
+            </p>
+          </div>
+        )}
       </div>
 
       {errors.length > 0 && (

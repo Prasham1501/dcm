@@ -76,9 +76,9 @@ export async function convertImagesToDicom(imageFiles: File[], meta: ConvertMeta
  */
 export async function pickImageFiles(): Promise<File[] | null> {
   const api = (window as any).electronAPI;
-  if (api?.invoke) {
+  if (api?.showOpenDialog && api?.readFileBuffer) {
     try {
-      const result = await api.invoke('show-open-dialog', {
+      const result = await api.showOpenDialog({
         properties: ['openFile', 'multiSelections'],
         filters: [
           { name: 'Images', extensions: ['jpg', 'jpeg', 'png', 'bmp'] },
@@ -91,7 +91,7 @@ export async function pickImageFiles(): Promise<File[] | null> {
       for (const fp of result.filePaths as string[]) {
         if (!IMAGE_EXTS.test(fp)) continue;
         try {
-          const buf: ArrayBuffer = await api.invoke('read-file-buffer', fp);
+          const buf: ArrayBuffer = await api.readFileBuffer(fp);
           const name = fp.split(/[\\/]/).pop() || 'image.png';
           out.push(new File([buf], name, { type: bmpAwareMime(name) }));
         } catch { /* skip unreadable */ }

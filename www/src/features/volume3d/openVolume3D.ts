@@ -79,14 +79,6 @@ export async function openVolume3D(input: OpenVolume3DInput, navigate?: (path: s
       // eslint-disable-next-line no-console
       console.error('[openVolume3D] openVolumeViewer failed, falling back to in-app nav', e);
     }
-  } else if (api?.invoke) {
-    try {
-      await api.invoke('open-volume-viewer', launchParams);
-      return true;
-    } catch (e) {
-      // eslint-disable-next-line no-console
-      console.error('[openVolume3D] electron invoke failed, falling back to in-app nav', e);
-    }
   }
 
   if (navigate) {

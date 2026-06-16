@@ -66,16 +66,18 @@ contextBridge.exposeInMainWorld('bridgeAPI', {
 
   // Central sell-by-print quota (shared with viewer + website)
   getLicenseQuota: () => ipcRenderer.invoke('bridge:get-license-quota'),
-  decrementLicenseQuota: (pages) => ipcRenderer.invoke('bridge:decrement-license-quota', { pages }),
-  setLicenseQuota: (args) => ipcRenderer.invoke('bridge:set-license-quota', args),
+  getOfflineRechargeChallenge: (args) => ipcRenderer.invoke('bridge:get-offline-recharge-challenge', args),
+  applyOfflineRechargeVoucher: (voucher) => ipcRenderer.invoke('bridge:apply-offline-recharge-voucher', { voucher }),
   onQuotaChanged: (cb) => {
     const sub = (_e, q) => cb(q);
     ipcRenderer.on('bridge:quota-changed', sub);
     return () => ipcRenderer.removeListener('bridge:quota-changed', sub);
   },
 
-  // Branding
+  // Branding (multi)
   saveBranding: (branding) => ipcRenderer.invoke('bridge:save-branding', branding),
+  createBranding: (args) => ipcRenderer.invoke('bridge:create-branding', args),
+  deleteBranding: (id) => ipcRenderer.invoke('bridge:delete-branding', { id }),
   pickAndEncodeLogo: () => ipcRenderer.invoke('bridge:pick-and-encode-logo'),
 
   // Auto-update — admin uploads a Bridge release on the website; we poll

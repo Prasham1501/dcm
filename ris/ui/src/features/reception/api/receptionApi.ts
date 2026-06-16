@@ -110,6 +110,8 @@ export interface Visit {
   print_receipt?: number | string | null;
   print_bill_receipt?: number | string | null;
   send_to_printer?: number | string | null;
+  prescription_path?: string | null;
+  prescription_name?: string | null;
   net_amount: string;
   balance: string;
   status: string;
@@ -178,6 +180,8 @@ export interface ReceptionVisitRow {
   home_visit_amount?: string | number | null;
   home_visit_time?: string | null;
   home_visit?: number | string | null;
+  prescription_path?: string | null;
+  prescription_name?: string | null;
   refund_total: string | number | null;
   report_emailed_at: string | null;
   report_printed_at: string | null;
@@ -227,6 +231,24 @@ const MATCH_REPORTS = '/api/worklist/match-studies.php';
 const GENERATE_WORKLIST = '/api/worklist/generate.php';
 const UPDATE_ACCESSION = '/api/worklist/update-accession.php';
 const UPDATE_DESTINATION = '/api/worklist/update-destination.php';
+const UPLOAD_PRESCRIPTION = '/api/reception/upload-prescription.php';
+
+/** Authenticated URL to view/download a visit's prescription attachment. */
+export const prescriptionDownloadUrl = (visitId: number) =>
+  `/api/reception/download-prescription.php?visit_id=${visitId}`;
+
+/** Upload a prescription file (image/PDF) for a just-created visit. */
+export async function apiUploadPrescription(visitId: number, file: File): Promise<{ visit_id: number; prescription_name: string }> {
+  const form = new FormData();
+  form.append('visit_id', String(visitId));
+  form.append('prescription', file);
+  // No Content-Type header — the browser sets the multipart boundary.
+  const res = await fetch(UPLOAD_PRESCRIPTION, { method: 'POST', credentials: 'include', body: form });
+  const data = (await readJson(res)) as { visit_id: number; prescription_name: string };
+  invalidateCache('GET /api/reception/visits.php');
+  invalidateCache('GET /api/reception/patients.php?action=history');
+  return data;
+}
 
 async function readJson(res: Response): Promise<any> {
   const text = await res.text();
@@ -249,6 +271,13 @@ async function readJson(res: Response): Promise<any> {
 
 export async function apiSearchPatients(query: string, limit = 20): Promise<Patient[]> {
   const url = `${PATIENTS}?action=search&q=${encodeURIComponent(query)}&limit=${limit}`;
+  return cachedRequest(`GET ${url}`, async () => (
+    (await readJson(await fetch(url, { credentials: 'include' }))) as Patient[]
+  ), { ttlMs: 30_000 });
+}
+
+export async function apiUnvisitedPatients(query = '', limit = 50): Promise<Patient[]> {
+  const url = `${PATIENTS}?action=unvisited&q=${encodeURIComponent(query)}&limit=${limit}`;
   return cachedRequest(`GET ${url}`, async () => (
     (await readJson(await fetch(url, { credentials: 'include' }))) as Patient[]
   ), { ttlMs: 30_000 });

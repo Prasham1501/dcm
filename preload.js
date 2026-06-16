@@ -62,6 +62,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
     // DICOM File Server
     getDicomPort: () => ipcRenderer.invoke('get-dicom-port'),
+    dicomAccessToken: ipcRenderer.sendSync('get-dicom-access-token'),
+    // Authorize a study's file paths before the renderer loads its images.
+    // Sync so the allow-list is updated before any serve-file request fires.
+    authorizeDicomPaths: (paths) => ipcRenderer.sendSync('authorize-dicom-paths-sync', paths),
 
     // CR Viewer popup
     openCRViewer: (params) => ipcRenderer.invoke('open-cr-viewer', params),
@@ -98,12 +102,44 @@ contextBridge.exposeInMainWorld('electronAPI', {
     dicomSendToDestination: (params) => ipcRenderer.invoke('dicom-send-to-destination', params),
     dicomEcho: (params) => ipcRenderer.invoke('dicom-echo', params),
 
-    // Generic IPC (fallback)
-    invoke: (channel, ...args) => ipcRenderer.invoke(channel, ...args),
-    on: (channel, callback) => {
-        const sub = (_event, ...args) => callback(...args);
-        ipcRenderer.on(channel, sub);
-        return () => ipcRenderer.removeListener(channel, sub);
+    // File/import helpers
+    showOpenDialog: (options) => ipcRenderer.invoke('show-open-dialog', options),
+    readFileBuffer: (filePath) => ipcRenderer.invoke('read-file-buffer', filePath),
+    listImageFiles: (folderPath) => ipcRenderer.invoke('list-image-files', folderPath),
+    listDicomFiles: (folderPath) => ipcRenderer.invoke('list-dicom-files', folderPath),
+    markPatientPrinted: (payload) => ipcRenderer.invoke('mark-patient-printed', payload),
+
+    // OCR / metadata helpers
+    ocrImageBase64: (payload) => ipcRenderer.invoke('ocr-image-base64', payload),
+    extractDicomAllReadings: (payload) => ipcRenderer.invoke('extract-dicom-all-readings', payload),
+    extractDicomText: (payload) => ipcRenderer.invoke('extract-dicom-text', payload),
+    extractDicomMetadata: (payload) => ipcRenderer.invoke('extract-dicom-metadata', payload),
+    ocrDicomFile: (payload) => ipcRenderer.invoke('ocr-dicom-file', payload),
+    ocrDicomBatch: (payload) => ipcRenderer.invoke('ocr-dicom-batch', payload),
+
+    onVolumeViewerReloadLaunch: (callback) => {
+        const sub = () => callback();
+        ipcRenderer.on('volume-viewer:reload-launch', sub);
+        return () => ipcRenderer.removeListener('volume-viewer:reload-launch', sub);
     },
-    off: (channel, callback) => ipcRenderer.removeListener(channel, callback)
+    onViewerReloadLaunch: (callback) => {
+        const sub = () => callback();
+        ipcRenderer.on('viewer:reload-launch', sub);
+        return () => ipcRenderer.removeListener('viewer:reload-launch', sub);
+    },
+    onCRViewerReloadLaunch: (callback) => {
+        const sub = () => callback();
+        ipcRenderer.on('cr-viewer:reload-launch', sub);
+        return () => ipcRenderer.removeListener('cr-viewer:reload-launch', sub);
+    },
+    onDicomFileReceived: (callback) => {
+        const sub = (_event, data) => callback(data);
+        ipcRenderer.on('dicom-file-received', sub);
+        return () => ipcRenderer.removeListener('dicom-file-received', sub);
+    },
+    onPatientPrinted: (callback) => {
+        const sub = (_event, data) => callback(data);
+        ipcRenderer.on('patient-printed', sub);
+        return () => ipcRenderer.removeListener('patient-printed', sub);
+    }
 });

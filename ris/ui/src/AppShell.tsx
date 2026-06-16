@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, ClipboardList, Receipt, Moon, Sun, Network,
-  Settings, FileText,
+  Settings, FileText, CalendarClock,
 } from 'lucide-react';
 import { useAuthStore } from '@/stores/authStore';
 import { useThemeStore } from '@/stores/themeStore';
@@ -11,6 +11,7 @@ import { IconButton } from '@/components/RisUi';
 const NAV = [
   { to: '/dashboard',  label: 'Dashboard',  Icon: LayoutDashboard },
   { to: '/reception',  label: 'Reception',  Icon: ClipboardList  },
+  { to: '/schedule',   label: 'Schedule',   Icon: CalendarClock },
   { to: '/results',    label: 'Result Entry', Icon: FileText },
   { to: '/network',    label: 'Network & DICOM', Icon: Network },
   { to: '/billing',    label: 'Day Book',   Icon: Receipt        },
@@ -22,6 +23,7 @@ const NAV = [
 const ROUTE_META: Record<string, { title: string; crumb: string }> = {
   '/dashboard': { title: 'Dashboard', crumb: 'Operational overview' },
   '/reception': { title: 'Reception', crumb: 'Registration, visit status, report delivery' },
+  '/schedule': { title: 'Schedule', crumb: 'Home-visit collection agenda' },
   '/results': { title: 'Result Entry', crumb: 'Enter, authenticate, and print lab results' },
   '/network': { title: 'Network & DICOM', crumb: 'Machine, worklist, and DICOM transfer setup' },
   '/billing': { title: 'Day Book', crumb: 'Collections and Excel CSV exports' },

@@ -70,6 +70,7 @@ try {
             v.delivery_destination, v.print_barcode, v.print_srs, v.print_receipt,
             v.print_bill_receipt, v.send_to_printer, v.phlebotomy_staff, v.home_visit_area,
             v.home_visit_amount, v.home_visit_time, v.home_visit,
+            v.prescription_path, v.prescription_name,
             p.id AS patient_id, p.mrn, p.full_name, p.phone, p.age_years, p.sex, p.patient_group,
             rd.name AS doctor_name,
             COALESCE(u.full_name, u.username) AS user_name,

@@ -1,176 +1,227 @@
 /**
- * BridgeLicenseQuotaModal — opens on the global Ctrl+Shift+Q binding
- * forwarded from main.js. Asks for the admin password, then lets the
- * operator toggle sell-by-print mode and top up the central counter that
- * the website / viewer / bridge all share via /license/quota.
+ * BridgeLicenseQuotaModal - opens on the global Ctrl+Shift+Q binding.
  *
- *   - Off (default): unlimited prints — sold as a software licence.
- *   - On:  each print decrements the central counter; bridge refuses to
- *          print at 0, warns at 50.
- *
- * This is the central quota — distinct from the per-printer-slot quotas
- * accessible from each slot card's "Coins" button.
+ * Offline recharge flow:
+ *   1. Bridge creates a device/license-bound request code.
+ *   2. Admin signs it outside the bridge app with the private key.
+ *   3. Bridge verifies the voucher with its embedded public key and adds local
+ *      offline print credit.
  */
 import { useEffect, useState } from 'react';
-import { X, Lock, Save, ToggleLeft, ToggleRight, Plus } from 'lucide-react';
+import { CheckCircle, Copy, KeyRound, Plus, RefreshCw, X } from 'lucide-react';
 
-const ADMIN_PIN = 'Prasham123$';
-
-type Q = { enabled: boolean; remaining: number; total: number; valid?: boolean; reason?: string };
+type Q = { enabled: boolean; remaining: number; total: number; offlineCredit?: number };
+type Status = { type?: string; daysLeft?: number | null; expiresAt?: string | null } | null;
+type RequestData = {
+  requestId: string;
+  fingerprint: string;
+  licenseKey: string;
+  requestedPrints: number;
+  requestedDays?: number;
+  currentExpiresAt?: string | null;
+  expiresAt: string;
+};
 
 export function BridgeLicenseQuotaModal() {
-  const [open, setOpen]     = useState(false);
-  const [step, setStep]     = useState<'password' | 'panel'>('password');
-  const [password, setPassword] = useState('');
-  const [pwErr, setPwErr]   = useState('');
-  const [data, setData]     = useState<Q | null>(null);
-  const [enabled, setEnabled] = useState(false);
-  const [remaining, setRemaining] = useState(0);
-  const [topUp, setTopUp]   = useState(0);
-  const [saving, setSaving] = useState(false);
-  const [err, setErr]       = useState('');
+  const [open, setOpen] = useState(false);
+  const [quota, setQuota] = useState<Q | null>(null);
+  const [status, setStatus] = useState<Status>(null);
+  const [requestedPrints, setRequestedPrints] = useState(100);
+  const [requestCode, setRequestCode] = useState('');
+  const [request, setRequest] = useState<RequestData | null>(null);
+  const [voucher, setVoucher] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const [ok, setOk] = useState('');
+  const [copied, setCopied] = useState(false);
 
-  // Subscribe to the global keybinding forwarded by main.js.
   useEffect(() => {
     const off = window.bridgeAPI.onOpenQuotaSettings?.(() => {
       setOpen(true);
-      setStep('password');
-      setPassword('');
-      setPwErr('');
       setErr('');
-      setTopUp(0);
+      setOk('');
+      setVoucher('');
+      setRequestCode('');
+      setRequest(null);
     });
     return () => { try { off && off(); } catch {} };
   }, []);
 
-  // Fetch the current quota state once the password gate clears.
   useEffect(() => {
-    if (!open || step !== 'panel') return;
-    (async () => {
-      try {
-        const q = await window.bridgeAPI.getLicenseQuota();
-        setData(q);
-        setEnabled(!!q.enabled);
-        setRemaining(q.remaining || 0);
-      } catch (e: any) { setErr(e?.message || 'Failed to load quota'); }
-    })();
-  }, [open, step]);
+    if (!open) return;
+    refreshQuota();
+  }, [open]);
 
   if (!open) return null;
 
-  const submitPassword = () => {
-    if (password === ADMIN_PIN) { setStep('panel'); setPassword(''); }
-    else { setPwErr('Incorrect password'); setPassword(''); }
-  };
-
-  const save = async () => {
-    setSaving(true); setErr('');
+  async function refreshQuota() {
     try {
-      const r = await window.bridgeAPI.setLicenseQuota({
-        enabled,
-        remaining: remaining + (topUp || 0),
-        adminPin:  ADMIN_PIN,
-      });
+      const q = await window.bridgeAPI.getLicenseQuota();
+      setQuota(q);
+    } catch (e: any) {
+      setErr(e?.message || 'Failed to load quota');
+    }
+    try {
+      const s = await (window as any).bridgeAPI.getLicenseStatus?.();
+      setStatus(s || null);
+    } catch { /* status is best-effort */ }
+  }
+
+  async function createRequest() {
+    setBusy(true);
+    setErr('');
+    setOk('');
+    try {
+      const r = await window.bridgeAPI.getOfflineRechargeChallenge({ requestedPrints });
+      if (!r?.ok) throw new Error('Could not create request');
+      setRequestCode(r.code);
+      setRequest(r.request);
+    } catch (e: any) {
+      setErr(e?.message || 'Failed to create request');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function applyVoucher() {
+    const trimmed = voucher.trim();
+    if (!trimmed) { setErr('Paste a recharge voucher first.'); return; }
+    setBusy(true);
+    setErr('');
+    setOk('');
+    try {
+      const r = await window.bridgeAPI.applyOfflineRechargeVoucher(trimmed);
       if (!r?.ok) {
-        setErr('Server rejected change: ' + (r?.reason || 'unknown'));
-        setSaving(false);
+        setErr(`Voucher rejected: ${r?.reason || 'unknown'}`);
         return;
       }
-      setOpen(false);
+      const bits: string[] = [];
+      if ((r.added ?? 0) > 0) bits.push(`Added ${r.added} prints (balance ${r.remaining ?? 0})`);
+      if (r.addedExpiry) bits.push(`License extended to ${r.expiresAt ? new Date(r.expiresAt).toLocaleDateString() : ''} (${r.daysLeft ?? 0} days left)`);
+      setOk(bits.length ? bits.join('. ') + '.' : 'Recharge applied.');
+      setVoucher('');
+      setRequestCode('');
+      setRequest(null);
+      await refreshQuota();
     } catch (e: any) {
-      setErr(e?.message || 'Failed to save');
+      setErr(e?.message || 'Failed to apply voucher');
     } finally {
-      setSaving(false);
+      setBusy(false);
     }
-  };
+  }
+
+  function copyRequest() {
+    if (!requestCode) return;
+    navigator.clipboard?.writeText(requestCode).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1200);
+    }).catch(() => {});
+  }
 
   return (
     <div className="fixed inset-0 z-[10001] flex items-center justify-center bg-black/60 p-4" onClick={() => setOpen(false)}>
-      <div className="w-full max-w-md rounded-lg bg-app-bg shadow-2xl" onClick={(e) => e.stopPropagation()}>
+      <div className="w-full max-w-2xl rounded-lg bg-app-bg shadow-2xl" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between border-b border-app-border bg-app-surface px-4 py-2">
           <div className="flex items-center gap-2">
-            <Lock className="h-4 w-4 text-app-accent" />
-            <h3 className="text-sm font-bold text-app-text">{step === 'password' ? 'Admin password required' : 'Print Quota Settings'}</h3>
+            <KeyRound className="h-4 w-4 text-app-accent" />
+            <h3 className="text-sm font-bold text-app-text">Offline Recharge — Prints</h3>
           </div>
           <button onClick={() => setOpen(false)} className="rounded p-1 text-app-text-secondary hover:bg-app-hover">
             <X className="h-4 w-4" />
           </button>
         </div>
 
-        {step === 'password' ? (
-          <div className="space-y-3 p-4">
-            <p className="text-xs text-app-text-secondary">Enter the admin password to change the print-quota mode for this license.</p>
-            <input
-              type="password"
-              autoFocus
-              value={password}
-              onChange={(e) => { setPassword(e.target.value); setPwErr(''); }}
-              onKeyDown={(e) => { if (e.key === 'Enter') submitPassword(); }}
-              className="w-full rounded border border-app-border bg-app-bg px-2 py-1.5 text-sm text-app-text focus:border-app-accent focus:outline-none"
-              placeholder="Password"
-            />
-            {pwErr && <div className="rounded bg-red-500/10 px-2 py-1 text-xs text-red-500">{pwErr}</div>}
-            <div className="flex justify-end gap-2">
-              <button onClick={() => setOpen(false)} className="rounded border border-app-border bg-app-bg px-3 py-1.5 text-xs text-app-text hover:bg-app-hover">Cancel</button>
-              <button onClick={submitPassword} className="rounded bg-app-accent px-3 py-1.5 text-xs font-semibold text-white hover:opacity-90">Unlock</button>
+        <div className="space-y-4 p-4 text-sm">
+          <div className="grid gap-3 md:grid-cols-4">
+            <div className="rounded border border-app-border bg-app-surface p-3">
+              <div className="text-[10px] font-bold uppercase tracking-wide text-app-text-muted">Mode</div>
+              <div className="mt-1 text-lg font-bold text-app-text">{quota?.enabled ? 'Counted' : 'Unlimited'}</div>
+            </div>
+            <div className="rounded border border-app-border bg-app-surface p-3">
+              <div className="text-[10px] font-bold uppercase tracking-wide text-app-text-muted">Prints left</div>
+              <div className="mt-1 font-mono text-lg font-bold text-app-accent">{quota?.remaining ?? '-'}</div>
+            </div>
+            <div className="rounded border border-app-border bg-app-surface p-3">
+              <div className="text-[10px] font-bold uppercase tracking-wide text-app-text-muted">Prints total</div>
+              <div className="mt-1 font-mono text-lg font-bold text-app-text">{quota?.total ?? '-'}</div>
+            </div>
+            <div className="rounded border border-app-border bg-app-surface p-3">
+              <div className="text-[10px] font-bold uppercase tracking-wide text-app-text-muted">Days left</div>
+              <div className="mt-1 font-mono text-lg font-bold text-app-text">
+                {status?.daysLeft ?? (status?.type === 'licensed' ? '∞' : '-')}
+              </div>
             </div>
           </div>
-        ) : (
-          <div className="space-y-4 p-4 text-sm">
-            <div className="rounded border border-app-border p-3">
-              <div className="mb-2 flex items-center justify-between">
-                <div>
-                  <div className="font-semibold text-app-text">Quota mode</div>
-                  <p className="mt-0.5 text-xs text-app-text-secondary">
-                    {enabled
-                      ? 'Sell-by-print: each printed page decrements the central counter (shared with viewer + website).'
-                      : 'Unlimited (software licence): prints are not counted.'}
-                  </p>
-                </div>
-                <button
-                  onClick={() => setEnabled((v) => !v)}
-                  className={`flex items-center gap-1 rounded-full px-2 py-1 text-xs font-semibold transition ${
-                    enabled ? 'bg-app-accent text-white' : 'bg-app-hover text-app-text-secondary'
-                  }`}
-                >
-                  {enabled ? <ToggleRight className="h-4 w-4" /> : <ToggleLeft className="h-4 w-4" />}
-                  {enabled ? 'On' : 'Off'}
-                </button>
-              </div>
+
+          <div className="rounded border border-app-border p-3">
+            <div className="mb-3 flex flex-wrap items-end gap-2">
+              <label className="flex flex-col gap-1">
+                <span className="text-[10px] font-bold uppercase tracking-wide text-app-text-muted">Prints to request</span>
+                <input
+                  type="number"
+                  min={0}
+                  value={requestedPrints}
+                  onChange={(e) => setRequestedPrints(Math.max(0, parseInt(e.target.value, 10) || 0))}
+                  className="w-28 rounded border border-app-border bg-app-bg px-2 py-1.5 text-right font-mono text-sm text-app-text"
+                />
+              </label>
+              <button
+                onClick={createRequest}
+                disabled={busy || requestedPrints < 1}
+                title={requestedPrints < 1 ? 'Enter number of prints to request' : ''}
+                className="flex items-center gap-1.5 rounded bg-app-accent px-3 py-1.5 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50"
+              >
+                <RefreshCw className="h-3.5 w-3.5" />
+                Create Request
+              </button>
+              {request && (
+                <span className="text-xs text-app-text-secondary">
+                  Expires {new Date(request.expiresAt).toLocaleString()}
+                </span>
+              )}
             </div>
 
-            <div className={`space-y-3 rounded border border-app-border p-3 ${enabled ? '' : 'opacity-40'}`}>
-              <div className="flex items-center justify-between gap-3">
-                <label className="text-xs font-bold uppercase text-app-text-secondary">Remaining prints</label>
-                <input type="number" min={0} value={remaining} disabled={!enabled}
-                  onChange={(e) => setRemaining(Math.max(0, parseInt(e.target.value, 10) || 0))}
-                  className="w-28 rounded border border-app-border bg-app-bg px-2 py-1 text-right font-mono text-sm text-app-text" />
-              </div>
-              <div className="flex items-center justify-between gap-3">
-                <label className="flex items-center gap-1 text-xs font-bold uppercase text-app-text-secondary">
-                  <Plus className="h-3 w-3" /> Add top-up
-                </label>
-                <input type="number" min={0} value={topUp || ''} placeholder="0" disabled={!enabled}
-                  onChange={(e) => setTopUp(Math.max(0, parseInt(e.target.value, 10) || 0))}
-                  className="w-28 rounded border border-app-border bg-app-bg px-2 py-1 text-right font-mono text-sm text-app-text" />
-              </div>
-              <div className="border-t border-app-border pt-2 text-xs">
-                After save: <b className="text-app-text">{remaining + (topUp || 0)}</b> prints available.
-                {data?.total ? <span className="ml-1 text-app-text-secondary">(lifetime total: {data.total})</span> : null}
-              </div>
-            </div>
-
-            {err && <div className="rounded bg-red-500/10 px-2 py-1 text-xs text-red-500">{err}</div>}
-
-            <div className="flex justify-end gap-2">
-              <button onClick={() => setOpen(false)} className="rounded border border-app-border bg-app-bg px-3 py-1.5 text-xs text-app-text hover:bg-app-hover">Cancel</button>
-              <button onClick={save} disabled={saving} className="flex items-center gap-1.5 rounded bg-app-accent px-4 py-1.5 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50">
-                <Save className="h-3.5 w-3.5" />
-                {saving ? 'Saving…' : 'Save Quota'}
+            <textarea
+              readOnly
+              value={requestCode}
+              placeholder="Create a request, then send this code to the admin voucher generator."
+              className="h-24 w-full resize-none rounded border border-app-border bg-app-bg p-2 font-mono text-[11px] text-app-text"
+            />
+            <div className="mt-2 flex justify-end">
+              <button
+                onClick={copyRequest}
+                disabled={!requestCode}
+                className="flex items-center gap-1 rounded border border-app-border px-2 py-1 text-xs text-app-text hover:bg-app-hover disabled:opacity-40"
+              >
+                <Copy className="h-3.5 w-3.5" />
+                {copied ? 'Copied' : 'Copy Request'}
               </button>
             </div>
           </div>
-        )}
+
+          <div className="rounded border border-app-border p-3">
+            <label className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-app-text-muted">Recharge voucher</label>
+            <textarea
+              value={voucher}
+              onChange={(e) => { setVoucher(e.target.value); setErr(''); setOk(''); }}
+              placeholder="Paste OCZV1 voucher here"
+              className="h-24 w-full resize-none rounded border border-app-border bg-app-bg p-2 font-mono text-[11px] text-app-text"
+            />
+            <div className="mt-2 flex justify-end">
+              <button
+                onClick={applyVoucher}
+                disabled={busy || !voucher.trim()}
+                className="flex items-center gap-1.5 rounded bg-app-accent px-3 py-1.5 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                Apply Recharge
+              </button>
+            </div>
+          </div>
+
+          {ok && <div className="flex items-center gap-2 rounded bg-green-500/10 px-2 py-1.5 text-xs text-green-500"><CheckCircle className="h-3.5 w-3.5" /> {ok}</div>}
+          {err && <div className="rounded bg-red-500/10 px-2 py-1.5 text-xs text-red-500">{err}</div>}
+        </div>
       </div>
     </div>
   );

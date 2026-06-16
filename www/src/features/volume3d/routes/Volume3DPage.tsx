@@ -49,7 +49,8 @@ export default function Volume3DPage() {
       try {
         const launchFile = new URLSearchParams(window.location.search).get('launchFile');
         if (launchFile) {
-          const url = `${dicomBaseUrl()}/dicom/serve-file.php?path=${encodeURIComponent(launchFile)}`;
+          const token = (window as any).electronAPI?.dicomAccessToken;
+          const url = `${dicomBaseUrl()}/dicom/serve-file.php?path=${encodeURIComponent(launchFile)}${token ? `&token=${encodeURIComponent(token)}` : ''}`;
           const resp = await fetch(url);
           if (resp.ok) {
             const data = JSON.parse(await resp.text());
@@ -66,7 +67,7 @@ export default function Volume3DPage() {
     consume();
 
     const api = (window as any).electronAPI;
-    const unsub = api?.on?.('volume-viewer:reload-launch', () => {
+    const unsub = api?.onVolumeViewerReloadLaunch?.(() => {
       launchConsumed.current = false;
       consume();
     });

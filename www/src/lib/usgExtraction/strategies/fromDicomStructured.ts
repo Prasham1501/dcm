@@ -66,13 +66,13 @@ export async function fromDicomStructured(
   }
 
   const api = (window as any).electronAPI;
-  if (!api?.invoke) {
+  if (!api?.extractDicomAllReadings) {
     warnings.push('Electron IPC not available — skipping structured extraction');
     return { readings: [], warnings };
   }
 
   try {
-    const result = await api.invoke('extract-dicom-all-readings', { filePaths });
+    const result = await api.extractDicomAllReadings({ filePaths });
     const rawStructured: StructuredMeasurement[] = result?.structured ?? [];
     const rawTextFragments: string[] = result?.textFragments ?? [];
 

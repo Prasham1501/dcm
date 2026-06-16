@@ -1,14 +1,21 @@
 /**
  * BridgeConfig schema + defaults.
- * Each PrinterSlot binds an AE title + TCP port to a Windows printer + paper + layout.
+ * Each PrinterSlot binds an AE title + TCP port to a Windows printer + paper +
+ * layout, an optional per-film-size→paper map, and an assigned branding.
  */
 
 const crypto = require('crypto');
 const { DEFAULT_BRANDING } = require('./defaultBranding');
+const { SELECTABLE_PAPER_IDS } = require('../render/paperSizes');
 
-const PAPER_SIZES = ['A3', 'A4', 'A5', 'Letter', 'Legal'];
+// The exact paper sizes a slot may use (default paper + mapping targets).
+const PAPER_SIZES = SELECTABLE_PAPER_IDS;
 
 function newSlotId() {
+  return crypto.randomBytes(8).toString('hex');
+}
+
+function newBrandingId() {
   return crypto.randomBytes(8).toString('hex');
 }
 
@@ -24,7 +31,19 @@ function defaultSlot(index = 1) {
     bindHost: '0.0.0.0',
     port: 7000 + index,
     windowsPrinterName: '',
+    // Default/fallback paper — used for image jobs (no film size) and any
+    // film size with no explicit mapping.
     paperSize: 'A4',
+    // Per-film-size → target paper. Keys are DICOM Film Size IDs (uppercase),
+    // values are a paper id or 'SAME' (keep the literal film size).
+    filmSizeMap: {},
+    // Which branding (header/footer) this slot prints with. null → default.
+    brandingId: null,
+    // Per-slot print contrast (gamma LUT). When lutEnabled, the printed image
+    // tones are remapped output = input^lutGamma: gamma > 1 deepens the
+    // dark/black tones (denser print), gamma < 1 lightens. 1.0 = no change.
+    lutEnabled: false,
+    lutGamma: 1.0,
     // layoutId is auto-selected from image count; UI no longer surfaces it.
     layoutId: 'auto',
     // studyDebounceSeconds + copies kept in schema for backward compat,
@@ -41,12 +60,15 @@ function defaultSlot(index = 1) {
 }
 
 function defaultConfig() {
+  const brandingId = newBrandingId();
   return {
-    version: 6,
+    version: 7,
     slots: [],
     startupBehavior: 'tray',
     logRetentionDays: 30,
-    branding: { ...DEFAULT_BRANDING },
+    // Multi-branding: a named list + the id treated as the default.
+    brandings: [{ ...DEFAULT_BRANDING, id: brandingId, name: 'Default' }],
+    defaultBrandingId: brandingId,
   };
 }
 
@@ -56,6 +78,21 @@ function validateSlot(slot) {
   if (!Number.isInteger(slot.port) || slot.port < 1 || slot.port > 65535) errors.push('port must be 1-65535');
   if (slot.bindHost && !/^(\d{1,3}\.){3}\d{1,3}$/.test(slot.bindHost)) errors.push('bindHost must be a valid IPv4 address (e.g. 192.168.1.50) or 0.0.0.0');
   if (!PAPER_SIZES.includes(slot.paperSize)) errors.push(`paperSize must be one of ${PAPER_SIZES.join(', ')}`);
+  if (slot.filmSizeMap != null) {
+    if (typeof slot.filmSizeMap !== 'object' || Array.isArray(slot.filmSizeMap)) {
+      errors.push('filmSizeMap must be an object');
+    } else {
+      for (const [k, v] of Object.entries(slot.filmSizeMap)) {
+        if (v !== 'SAME' && !PAPER_SIZES.includes(v)) errors.push(`filmSizeMap["${k}"] must be a paper size or SAME`);
+      }
+    }
+  }
+  if (slot.brandingId != null && typeof slot.brandingId !== 'string') errors.push('brandingId must be a string or null');
+  if (slot.lutEnabled) {
+    if (typeof slot.lutGamma !== 'number' || !Number.isFinite(slot.lutGamma) || slot.lutGamma < 0.3 || slot.lutGamma > 3) {
+      errors.push('lutGamma must be a number between 0.3 and 3');
+    }
+  }
   if (!slot.layoutId) errors.push('layoutId required');
   // 'auto' is a valid special value (auto-select best layout based on image count)
   if (!Number.isInteger(slot.studyDebounceSeconds) || slot.studyDebounceSeconds < 1) errors.push('studyDebounceSeconds must be >=1');
@@ -120,10 +157,44 @@ function migrateConfig(cfg) {
     }
     cfg.version = 6;
   }
-  if (cfg.branding) {
-    cfg.branding = { ...DEFAULT_BRANDING, ...cfg.branding };
+  // v6 → v7: multi-branding + per-slot film→paper map + branding assignment.
+  // The legacy single `branding` becomes the first ("Default") entry in
+  // `brandings[]`; every existing slot is pointed at it.
+  if (cfg.version < 7) {
+    if (cfg.branding && typeof cfg.branding === 'object') {
+      const id = newBrandingId();
+      cfg.brandings = [{ ...DEFAULT_BRANDING, ...cfg.branding, id, name: 'Default' }];
+      cfg.defaultBrandingId = id;
+    } else if (!Array.isArray(cfg.brandings) || cfg.brandings.length === 0) {
+      const id = newBrandingId();
+      cfg.brandings = [{ ...DEFAULT_BRANDING, id, name: 'Default' }];
+      cfg.defaultBrandingId = id;
+    }
+    if (!cfg.defaultBrandingId && cfg.brandings[0]) cfg.defaultBrandingId = cfg.brandings[0].id;
+    for (const s of (cfg.slots || [])) {
+      if (typeof s.brandingId === 'undefined') s.brandingId = null;
+      if (!s.filmSizeMap || typeof s.filmSizeMap !== 'object' || Array.isArray(s.filmSizeMap)) s.filmSizeMap = {};
+      // Slots set to a now-unsupported paper size fall back to A4.
+      if (!PAPER_SIZES.includes(s.paperSize)) s.paperSize = 'A4';
+    }
+    delete cfg.branding;
+    cfg.version = 7;
+  }
+  // Normalise every branding so missing keys pick up current defaults
+  // (id + name are preserved because they spread after DEFAULT_BRANDING).
+  if (Array.isArray(cfg.brandings)) {
+    cfg.brandings = cfg.brandings.map((b) => ({ ...DEFAULT_BRANDING, ...b }));
   }
   return cfg;
 }
 
-module.exports = { PAPER_SIZES, newSlotId, defaultSlot, defaultConfig, validateSlot, migrateConfig };
+module.exports = {
+  PAPER_SIZES,
+  SELECTABLE_PAPER_IDS,
+  newSlotId,
+  newBrandingId,
+  defaultSlot,
+  defaultConfig,
+  validateSlot,
+  migrateConfig,
+};

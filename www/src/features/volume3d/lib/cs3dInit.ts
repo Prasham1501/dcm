@@ -9,7 +9,7 @@
 import * as cornerstone3D from '@cornerstonejs/core';
 import * as cornerstone3DTools from '@cornerstonejs/tools';
 import * as cornerstoneDICOMImageLoader from '@cornerstonejs/dicom-image-loader';
-import { dicomBaseUrl } from '@/lib/dicomLoader';
+import { dicomBaseUrl, dicomRequestUrl } from '@/lib/dicomLoader';
 
 let initialized: Promise<void> | null = null;
 
@@ -81,5 +81,5 @@ export async function initCornerstone3D(): Promise<void> {
 export function localFileToCs3dImageId(filePath: string): string {
   const normalized = filePath.replace(/\\/g, '/');
   const encodedPath = encodeURIComponent(normalized);
-  return `wadouri:${dicomBaseUrl()}/dicom/serve-file.php?path=${encodedPath}`;
+  return `wadouri:${dicomRequestUrl(`/dicom/serve-file.php?path=${encodedPath}`)}`;
 }

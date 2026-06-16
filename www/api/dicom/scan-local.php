@@ -6,8 +6,56 @@
  * GET ?dir=<absolute-directory-path>&limit=100
  */
 
+define('DICOM_VIEWER', true);
+require_once __DIR__ . '/../../includes/config.php';
+
+function same_origin_or_localhost(): bool {
+    $origin = $_SERVER['HTTP_ORIGIN'] ?? '';
+    if ($origin === '') return true;
+    $host = parse_url($origin, PHP_URL_HOST);
+    return in_array($host, ['localhost', '127.0.0.1', '::1'], true);
+}
+
+function dicom_allowed_roots(): array {
+    $roots = [APP_ROOT, dirname(APP_ROOT), ORTHANC_STORAGE_PATH, getenv('DICOM_STORAGE_PATH') ?: ''];
+    $extra = getenv('DICOM_ALLOWED_ROOTS') ?: '';
+    foreach (preg_split('/[;|]/', $extra) as $root) {
+        $root = trim($root);
+        if ($root !== '') $roots[] = $root;
+    }
+    $out = [];
+    foreach ($roots as $root) {
+        if (!$root) continue;
+        $real = realpath($root);
+        if ($real !== false) $out[] = rtrim(str_replace('\\', '/', $real), '/');
+    }
+    return array_values(array_unique($out));
+}
+
+function path_is_under_root(string $path, string $root): bool {
+    $path = rtrim(str_replace('\\', '/', $path), '/');
+    return $path === $root || str_starts_with($path . '/', $root . '/');
+}
+
+function resolve_allowed_dir(string $path): ?string {
+    $real = realpath($path);
+    if ($real === false || !is_dir($real)) return null;
+    $normalized = str_replace('\\', '/', $real);
+    foreach (dicom_allowed_roots() as $root) {
+        if (path_is_under_root($normalized, $root)) return $real;
+    }
+    return null;
+}
+
 header('Content-Type: application/json');
-header('Access-Control-Allow-Origin: *');
+if (!same_origin_or_localhost()) {
+    http_response_code(403);
+    echo json_encode(['success' => false, 'error' => 'Forbidden origin']);
+    exit;
+}
+$origin = $_SERVER['HTTP_ORIGIN'] ?? '';
+if ($origin !== '') header('Access-Control-Allow-Origin: ' . $origin);
+header('Vary: Origin');
 
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     http_response_code(200);
@@ -23,9 +71,16 @@ if (empty($dir) || !is_dir($dir)) {
     exit;
 }
 
+$safeDir = resolve_allowed_dir($dir);
+if ($safeDir === null) {
+    http_response_code(403);
+    echo json_encode(['success' => false, 'error' => 'Directory is outside allowed DICOM roots']);
+    exit;
+}
+
 $files = [];
 $iterator = new RecursiveIteratorIterator(
-    new RecursiveDirectoryIterator($dir, RecursiveDirectoryIterator::SKIP_DOTS),
+    new RecursiveDirectoryIterator($safeDir, RecursiveDirectoryIterator::SKIP_DOTS),
     RecursiveIteratorIterator::LEAVES_ONLY
 );
 
@@ -64,7 +119,7 @@ usort($files, function($a, $b) {
 
 echo json_encode([
     'success' => true,
-    'directory' => str_replace('\\', '/', $dir),
+    'directory' => str_replace('\\', '/', $safeDir),
     'count' => count($files),
     'files' => $files,
 ]);

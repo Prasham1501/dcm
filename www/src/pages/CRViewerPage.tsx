@@ -43,9 +43,9 @@ async function autoExtract(filePaths: string[], patientId: string) {
   const api = (window as any).electronAPI;
 
   // Extract DICOM metadata (fast — no OCR)
-  if (api?.invoke && filePaths.length > 0) {
+  if (api?.extractDicomMetadata && filePaths.length > 0) {
     try {
-      const meta = await api.invoke('extract-dicom-metadata', { filePaths });
+      const meta = await api.extractDicomMetadata({ filePaths });
       if (meta && Object.keys(meta).length > 0) {
         useReportStore.getState().setDicomMetadata(meta);
       }
@@ -93,6 +93,9 @@ export function CRViewerPage() {
         const data = JSON.parse(launchData);
         // Only use if fresh (within 10 seconds)
         if (Date.now() - data.timestamp < 10000) {
+          // Authorize these paths with the host so the token-gated DICOM file
+          // server will serve them (otherwise serve-file 403s → no images).
+          (window as any).electronAPI?.authorizeDicomPaths?.(data.filePaths || []);
           loadStudy({
             patientName: data.patientName,
             patientId: data.patientId,
@@ -115,7 +118,7 @@ export function CRViewerPage() {
     }
 
     const api = (window as any).electronAPI;
-    const unsub = api?.on?.('cr-viewer:reload-launch', () => consumeLaunch());
+    const unsub = api?.onCRViewerReloadLaunch?.(() => consumeLaunch());
     return () => { if (typeof unsub === 'function') unsub(); };
   }, [loadStudy]);
 

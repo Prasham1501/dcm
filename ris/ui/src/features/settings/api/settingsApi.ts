@@ -271,7 +271,25 @@ export interface Lookup {
   is_active: number;
 }
 
-export type MasterEntity = 'centers' | 'pros' | 'lookups';
+export interface Staff {
+  id: number;
+  user_id: number | null;
+  staff_code: string | null;
+  full_name: string;
+  value?: string;
+  designation: string | null;
+  department: string | null;
+  phone: string | null;
+  email: string | null;
+  address: string | null;
+  username: string | null;
+  user_role: 'admin' | 'doctor' | 'receptionist' | 'viewer';
+  can_login: number;
+  is_active: number;
+  login_active?: number;
+}
+
+export type MasterEntity = 'centers' | 'pros' | 'staff' | 'lookups';
 
 export async function apiMasters<T = any>(entity: MasterEntity, params: Record<string, string> = {}): Promise<T[]> {
   const qs = new URLSearchParams({ entity, ...params });

@@ -13,11 +13,12 @@
 const { app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, Notification, shell, dialog, globalShortcut } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 
 const { Logger } = require('./src/log/logger');
 const { SlotHistory } = require('./src/log/slotHistory');
 const { ConfigStore } = require('./src/config/store');
-const { defaultSlot, validateSlot } = require('./src/config/schema');
+const { defaultSlot, validateSlot, newBrandingId } = require('./src/config/schema');
 const { SlotManager } = require('./src/scp/slotManager');
 const { JobQueue } = require('./src/print/jobQueue');
 const { PrintWorker } = require('./src/print/printWorker');
@@ -25,6 +26,7 @@ const { ensureFirewallRules } = require('./src/firewall/addFirewallRule');
 const { registerStartup, getStartupStatus } = require('./src/autostart/registerStartup');
 const { parseStudyUid } = require('./src/render/dicomRender');
 const { DEFAULT_BRANDING } = require('./src/config/defaultBranding');
+const { encodeRequest, verifyVoucher, validateRechargePayload } = require('./src/license/offlineRecharge');
 
 // --- Single instance lock ---
 const gotLock = app.requestSingleInstanceLock();
@@ -43,6 +45,7 @@ const printedRoot = path.join(userDataRoot, 'printed');
 const failedRoot = path.join(userDataRoot, 'failed');
 const licenseFile = path.join(userDataRoot, '.license');
 const trialFile = path.join(userDataRoot, '.trial');
+const offlineRechargeFile = path.join(userDataRoot, 'offline-recharge-redemptions.json');
 for (const d of [userDataRoot, logDir, historyDir, incomingRoot, printedRoot, failedRoot]) {
   if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true });
 }
@@ -56,7 +59,6 @@ const TRIAL_DAYS = 7;
 const TRIAL_PRINTS = 100;
 
 function getFingerprint() {
-  const crypto = require('crypto');
   const os = require('os');
   const raw = [
     os.hostname(), os.platform(), os.arch(),
@@ -69,7 +71,9 @@ function getFingerprint() {
 
 function getLicenseData() {
   try {
-    if (fs.existsSync(licenseFile)) return JSON.parse(fs.readFileSync(licenseFile, 'utf8'));
+    // Strip a leading BOM defensively — a BOM would otherwise make JSON.parse
+    // throw and silently drop the user to "trial expired".
+    if (fs.existsSync(licenseFile)) return JSON.parse(fs.readFileSync(licenseFile, 'utf8').replace(/^\uFEFF/, ''));
   } catch {}
   return null;
 }
@@ -83,32 +87,35 @@ function clearLicenseData() {
 }
 
 function getTrialInfo() {
-  let installDate, printsRemaining = TRIAL_PRINTS;
+  let installDate, printsRemaining = TRIAL_PRINTS, printsTotal = TRIAL_PRINTS;
   try {
     if (fs.existsSync(trialFile)) {
       const data = JSON.parse(fs.readFileSync(trialFile, 'utf8'));
       installDate = new Date(data.installDate);
       if (Number.isFinite(data.printsRemaining)) printsRemaining = Math.max(0, data.printsRemaining);
+      if (Number.isFinite(data.printsTotal)) printsTotal = Math.max(TRIAL_PRINTS, data.printsTotal);
     }
   } catch {}
   if (!installDate || isNaN(installDate.getTime())) {
     installDate = new Date();
     printsRemaining = TRIAL_PRINTS;
-    saveTrialInfo({ installDate, printsRemaining });
+    printsTotal = TRIAL_PRINTS;
+    saveTrialInfo({ installDate, printsRemaining, printsTotal });
   }
   const elapsed = Math.floor((Date.now() - installDate.getTime()) / (1000 * 60 * 60 * 24));
   const remaining = Math.max(0, TRIAL_DAYS - elapsed);
   return {
     remaining, expired: remaining <= 0, totalDays: TRIAL_DAYS,
-    printsRemaining, printsTotal: TRIAL_PRINTS, installDate,
+    printsRemaining, printsTotal, installDate,
   };
 }
 
-function saveTrialInfo({ installDate, printsRemaining }) {
+function saveTrialInfo({ installDate, printsRemaining, printsTotal = TRIAL_PRINTS }) {
   try {
     fs.writeFileSync(trialFile, JSON.stringify({
       installDate: installDate.toISOString(),
       printsRemaining,
+      printsTotal,
     }), 'utf8');
   } catch {}
 }
@@ -116,8 +123,150 @@ function saveTrialInfo({ installDate, printsRemaining }) {
 function decrementTrialPrints(pages) {
   const t = getTrialInfo();
   const next = Math.max(0, t.printsRemaining - Math.max(1, parseInt(pages, 10) || 1));
-  saveTrialInfo({ installDate: t.installDate, printsRemaining: next });
+  saveTrialInfo({ installDate: t.installDate, printsRemaining: next, printsTotal: t.printsTotal });
   return next;
+}
+
+const offlineRechargeChallenges = new Map();
+
+function readOfflineRechargeRedemptions() {
+  try {
+    if (fs.existsSync(offlineRechargeFile)) {
+      const parsed = JSON.parse(fs.readFileSync(offlineRechargeFile, 'utf8'));
+      return {
+        usedVoucherIds: Array.isArray(parsed.usedVoucherIds) ? parsed.usedVoucherIds : [],
+      };
+    }
+  } catch {}
+  return { usedVoucherIds: [] };
+}
+
+function saveOfflineRechargeRedemptions(data) {
+  try {
+    fs.writeFileSync(offlineRechargeFile, JSON.stringify(data, null, 2), 'utf8');
+  } catch {}
+}
+
+function currentRechargeIdentity() {
+  const lic = getLicenseData();
+  return {
+    fingerprint: getFingerprint(),
+    licenseKey: lic?.licenseKey || 'TRIAL',
+  };
+}
+
+// The expiry the bridge actually honours: the later of the server-issued
+// expiry and any locally applied offline-recharge extension. Stored separately
+// (offlineExpiresAt) so an online /license/validate can't erase a local top-up.
+function effectiveExpiresAt(lic = getLicenseData()) {
+  if (!lic) return null;
+  const a = lic.expiresAt ? new Date(lic.expiresAt).getTime() : 0;
+  const b = lic.offlineExpiresAt ? new Date(lic.offlineExpiresAt).getTime() : 0;
+  const t = Math.max(a, b);
+  return t > 0 ? new Date(t).toISOString() : null;
+}
+
+function createOfflineRechargeChallenge({ requestedPrints = 100, requestedDays = 0 } = {}) {
+  const prints = Math.max(0, Math.floor(parseInt(requestedPrints, 10) || 0));
+  const days = Math.max(0, Math.floor(parseInt(requestedDays, 10) || 0));
+  const now = Date.now();
+  const requestId = crypto.randomBytes(12).toString('hex');
+  const identity = currentRechargeIdentity();
+  const payload = {
+    type: 'bridge-recharge-request',
+    requestId,
+    fingerprint: identity.fingerprint,
+    licenseKey: identity.licenseKey,
+    requestedPrints: prints,
+    requestedDays: days,
+    // Lets the admin tool compute an absolute new expiry from the current one.
+    currentExpiresAt: effectiveExpiresAt(),
+    createdAt: new Date(now).toISOString(),
+    expiresAt: new Date(now + 30 * 60 * 1000).toISOString(),
+  };
+  offlineRechargeChallenges.set(requestId, payload);
+  return { ok: true, request: payload, code: encodeRequest(payload) };
+}
+
+function addOfflineRechargeCredit(prints) {
+  const amount = Math.max(1, Math.floor(parseInt(prints, 10) || 0));
+  const lic = getLicenseData();
+  if (lic) {
+    lic.quotaEnabled = true;
+    lic.offlineQuotaCredit = Math.max(0, parseInt(lic.offlineQuotaCredit || 0, 10)) + amount;
+    lic.offlineQuotaTotal = Math.max(0, parseInt(lic.offlineQuotaTotal || 0, 10)) + amount;
+    saveLicenseData(lic);
+    return {
+      enabled: true,
+      remaining: Math.max(0, parseInt(lic.quotaRemaining || 0, 10)) + lic.offlineQuotaCredit,
+      total: Math.max(0, parseInt(lic.quotaTotal || 0, 10)) + lic.offlineQuotaTotal,
+    };
+  }
+
+  const trial = getTrialInfo();
+  const nextRemaining = trial.printsRemaining + amount;
+  const nextTotal = trial.printsTotal + amount;
+  saveTrialInfo({ installDate: trial.installDate, printsRemaining: nextRemaining, printsTotal: nextTotal });
+  return { enabled: true, remaining: nextRemaining, total: nextTotal };
+}
+
+// Extend the license expiry the bridge honours, offline. Stored as a separate
+// offlineExpiresAt so an online /license/validate sync can't shorten it; it
+// only ever moves forward (monotonic).
+function applyOfflineExpiry(newExpiresAt) {
+  const lic = getLicenseData();
+  const target = new Date(newExpiresAt).getTime();
+  if (lic) {
+    const current = lic.offlineExpiresAt ? new Date(lic.offlineExpiresAt).getTime() : 0;
+    if (target > current) {
+      lic.offlineExpiresAt = new Date(target).toISOString();
+      lic.status = 'active';
+      saveLicenseData(lic);
+    }
+  }
+  return effectiveExpiresAt();
+}
+
+async function applyOfflineRechargeVoucher(voucher) {
+  const verified = verifyVoucher(voucher);
+  if (!verified.ok) return { ok: false, reason: verified.reason };
+
+  const identity = currentRechargeIdentity();
+  const v = validateRechargePayload(verified.payload, identity);
+  if (!v.ok) return { ok: false, reason: v.reason };
+
+  const p = verified.payload;
+  const challenge = offlineRechargeChallenges.get(p.requestId);
+  if (!challenge) return { ok: false, reason: 'request_not_found' };
+  if (new Date(challenge.expiresAt).getTime() < Date.now()) {
+    offlineRechargeChallenges.delete(p.requestId);
+    return { ok: false, reason: 'request_expired' };
+  }
+
+  const redemptions = readOfflineRechargeRedemptions();
+  if (redemptions.usedVoucherIds.includes(p.voucherId)) return { ok: false, reason: 'already_used' };
+  redemptions.usedVoucherIds.push(p.voucherId);
+  redemptions.usedVoucherIds = redemptions.usedVoucherIds.slice(-5000);
+  saveOfflineRechargeRedemptions(redemptions);
+  offlineRechargeChallenges.delete(p.requestId);
+
+  // Apply whatever the voucher grants — prints, extra days, or both.
+  let quota = { enabled: !!getLicenseData()?.quotaEnabled };
+  if (v.prints > 0) quota = addOfflineRechargeCredit(v.prints);
+  const expiresAt = v.newExpiresAt ? applyOfflineExpiry(v.newExpiresAt) : effectiveExpiresAt();
+
+  const daysLeft = expiresAt
+    ? Math.max(0, Math.ceil((new Date(expiresAt).getTime() - Date.now()) / 86400000))
+    : null;
+
+  return {
+    ok: true,
+    ...quota,
+    added: v.prints,
+    addedExpiry: !!v.newExpiresAt,
+    expiresAt,
+    daysLeft,
+  };
 }
 
 function bridgeApiRequest(endpoint, body) {
@@ -214,15 +363,17 @@ async function sendBridgeHeartbeat() {
 function getLicenseStatus() {
   const lic = getLicenseData();
   if (lic) {
+    // Honour the later of server expiry and any offline-recharge extension.
+    const expiresAt = effectiveExpiresAt(lic);
     let daysLeft = null;
-    if (lic.expiresAt) {
-      daysLeft = Math.max(0, Math.ceil((new Date(lic.expiresAt).getTime() - Date.now()) / (1000 * 60 * 60 * 24)));
+    if (expiresAt) {
+      daysLeft = Math.max(0, Math.ceil((new Date(expiresAt).getTime() - Date.now()) / (1000 * 60 * 60 * 24)));
     }
     return {
       type: 'licensed',
       licenseKey: lic.licenseKey,
       plan: lic.plan,
-      expiresAt: lic.expiresAt,
+      expiresAt,
       lastValidated: lic.lastValidated,
       daysLeft,
       expired: daysLeft !== null && daysLeft <= 0,
@@ -256,6 +407,8 @@ async function getCentralQuota() {
       reason:    'local_trial',
     };
   }
+  const offlineCredit = Math.max(0, parseInt(lic.offlineQuotaCredit || 0, 10));
+  const offlineTotal = Math.max(0, parseInt(lic.offlineQuotaTotal || 0, 10));
   try {
     const r = await bridgeApiRequest('/license/quota', {
       license_key: lic.licenseKey, fingerprint: lic.fingerprint, app: 'bridge',
@@ -265,7 +418,13 @@ async function getCentralQuota() {
       lic.quotaRemaining = parseInt(r.data.remaining || 0, 10);
       lic.quotaTotal     = parseInt(r.data.total     || 0, 10);
       saveLicenseData(lic);
-      return { enabled: lic.quotaEnabled, remaining: lic.quotaRemaining, total: lic.quotaTotal, valid: true };
+      return {
+        enabled: lic.quotaEnabled || offlineCredit > 0,
+        remaining: lic.quotaRemaining + offlineCredit,
+        total: lic.quotaTotal + offlineTotal,
+        valid: true,
+        offlineCredit,
+      };
     }
     // Hard server reject (key deleted on the server, revoked, or wrong product)
     // — purge the local cache so we don't keep showing a phantom "X prints left".
@@ -274,9 +433,23 @@ async function getCentralQuota() {
       clearLicenseData();
       return { enabled: false, remaining: 0, total: 0, valid: false, reason: r.data.reason, invalidated: true };
     }
-    return { enabled: !!lic.quotaEnabled, remaining: lic.quotaRemaining || 0, total: lic.quotaTotal || 0, valid: false, reason: r.data?.reason };
+    return {
+      enabled: !!lic.quotaEnabled || offlineCredit > 0,
+      remaining: (lic.quotaRemaining || 0) + offlineCredit,
+      total: (lic.quotaTotal || 0) + offlineTotal,
+      valid: false,
+      reason: r.data?.reason,
+      offlineCredit,
+    };
   } catch (e) {
-    return { enabled: !!lic.quotaEnabled, remaining: lic.quotaRemaining || 0, total: lic.quotaTotal || 0, valid: true, offline: true };
+    return {
+      enabled: !!lic.quotaEnabled || offlineCredit > 0,
+      remaining: (lic.quotaRemaining || 0) + offlineCredit,
+      total: (lic.quotaTotal || 0) + offlineTotal,
+      valid: true,
+      offline: true,
+      offlineCredit,
+    };
   }
 }
 
@@ -286,50 +459,45 @@ async function decrementCentralQuota(pages) {
     // Local trial — decrement the on-disk counter so the header reflects
     // the new value within the next poll tick.
     const remaining = decrementTrialPrints(pages);
-    return { ok: true, enabled: true, remaining, total: TRIAL_PRINTS, source: 'local_trial' };
+    return { ok: true, enabled: true, remaining, total: getTrialInfo().printsTotal, source: 'local_trial' };
+  }
+  let remainingPages = Math.max(1, parseInt(pages, 10) || 1);
+  const offlineCredit = Math.max(0, parseInt(lic.offlineQuotaCredit || 0, 10));
+  if (offlineCredit > 0) {
+    const usedOffline = Math.min(offlineCredit, remainingPages);
+    lic.offlineQuotaCredit = offlineCredit - usedOffline;
+    remainingPages -= usedOffline;
+    saveLicenseData(lic);
+    if (remainingPages <= 0) {
+      return {
+        ok: true,
+        enabled: true,
+        remaining: Math.max(0, parseInt(lic.quotaRemaining || 0, 10)) + lic.offlineQuotaCredit,
+        total: Math.max(0, parseInt(lic.quotaTotal || 0, 10)) + Math.max(0, parseInt(lic.offlineQuotaTotal || 0, 10)),
+        source: 'offline_recharge',
+      };
+    }
   }
   try {
     const r = await bridgeApiRequest('/license/quota', {
       license_key: lic.licenseKey, fingerprint: lic.fingerprint, app: 'bridge',
-      decrement: Math.max(1, parseInt(pages, 10)),
+      decrement: remainingPages,
     });
     if (r.status >= 200 && r.status < 300) {
       lic.quotaEnabled   = !!r.data.enabled;
       lic.quotaRemaining = parseInt(r.data.remaining || 0, 10);
       lic.quotaTotal     = parseInt(r.data.total     || 0, 10);
       saveLicenseData(lic);
-      return { ok: true, enabled: lic.quotaEnabled, remaining: lic.quotaRemaining, total: lic.quotaTotal };
+      const localCredit = Math.max(0, parseInt(lic.offlineQuotaCredit || 0, 10));
+      const localTotal = Math.max(0, parseInt(lic.offlineQuotaTotal || 0, 10));
+      return {
+        ok: true,
+        enabled: lic.quotaEnabled || localCredit > 0,
+        remaining: lic.quotaRemaining + localCredit,
+        total: lic.quotaTotal + localTotal,
+      };
     }
     return { ok: false, reason: r.data?.error || 'rejected', status: r.status };
-  } catch (e) {
-    return { ok: false, reason: 'network', message: e.message };
-  }
-}
-
-// Server-side toggle of sell-by-print mode (or direct counter set).
-// Mirrors the viewer's `set-license-quota` IPC so any number the operator
-// types in Ctrl+Shift+Q is the same number the website immediately shows.
-async function setCentralQuota({ enabled, remaining, adminPin } = {}) {
-  const lic = getLicenseData();
-  if (!lic) return { ok: false, reason: 'no_license' };
-  const body = {
-    license_key: lic.licenseKey,
-    fingerprint: lic.fingerprint,
-    app:         'bridge',
-    admin_pin:   adminPin || '',
-  };
-  if (typeof enabled === 'boolean') body.set_enabled = enabled;
-  if (Number.isFinite(remaining))   body.set_remaining = Math.max(0, parseInt(remaining, 10));
-  try {
-    const r = await bridgeApiRequest('/license/quota', body);
-    if (r.status >= 200 && r.status < 300 && r.data && (r.data.ok || r.data.enabled !== undefined)) {
-      lic.quotaEnabled   = !!r.data.enabled;
-      lic.quotaRemaining = parseInt(r.data.remaining || 0, 10);
-      lic.quotaTotal     = parseInt(r.data.total     || 0, 10);
-      saveLicenseData(lic);
-      return { ok: true, enabled: lic.quotaEnabled, remaining: lic.quotaRemaining, total: lic.quotaTotal };
-    }
-    return { ok: false, reason: r.data?.error || r.data?.reason || 'rejected', status: r.status };
   } catch (e) {
     return { ok: false, reason: 'network', message: e.message };
   }
@@ -399,6 +567,31 @@ function loadConfigUI(win) {
   }
 }
 
+function isDevMode() {
+  return process.argv.includes('--dev');
+}
+
+function hardenWindow(win, { allowDevTools = isDevMode(), allowFileNavigation = false } = {}) {
+  win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  win.webContents.on('will-navigate', (event, url) => {
+    if (allowFileNavigation && String(url).startsWith('file://')) return;
+    if (isDevMode() && /^https?:\/\/(localhost|127\.0\.0\.1):5174\//i.test(url)) return;
+    event.preventDefault();
+  });
+  if (!allowDevTools) {
+    win.webContents.on('devtools-opened', () => {
+      try { win.webContents.closeDevTools(); } catch {}
+    });
+    win.webContents.on('before-input-event', (event, input) => {
+      const key = String(input.key || '').toUpperCase();
+      const blocked =
+        key === 'F12' ||
+        ((input.control || input.meta) && input.shift && ['I', 'J', 'C'].includes(key));
+      if (blocked) event.preventDefault();
+    });
+  }
+}
+
 function openConfigWindow() {
   if (configWindow && !configWindow.isDestroyed()) {
     // Recover from a white screen: if the renderer crashed or never mounted
@@ -433,9 +626,11 @@ function openConfigWindow() {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      devTools: isDevMode(),
       sandbox: false,
     },
   });
+  hardenWindow(configWindow, { allowDevTools: isDevMode(), allowFileNavigation: true });
 
   // Surface preload + console failures to the log so a blank window is
   // never a mystery.
@@ -615,10 +810,60 @@ function setupIpc() {
   });
 
   // --- Branding IPC ---
+  // Notify any open config window so other views refresh after a change.
+  const broadcastConfig = () => {
+    if (configWindow && !configWindow.isDestroyed()) {
+      configWindow.webContents.send('bridge:config-changed', config.get());
+    }
+  };
+
+  // Save (update or insert) a single branding, identified by `branding.id`.
+  // With no id it falls back to the default branding.
   ipcMain.handle('bridge:save-branding', async (_e, branding) => {
-    const merged = { ...DEFAULT_BRANDING, ...branding };
-    config.update({ branding: merged });
-    return config.get().branding;
+    const cfg = config.get();
+    const list = Array.isArray(cfg.brandings) ? [...cfg.brandings] : [];
+    const id = (branding && branding.id) || cfg.defaultBrandingId;
+    const idx = list.findIndex((b) => b.id === id);
+    const name = (branding && branding.name) || (idx >= 0 ? list[idx].name : 'Default');
+    const merged = { ...DEFAULT_BRANDING, ...branding, id, name };
+    if (idx >= 0) list[idx] = merged; else list.push(merged);
+    config.update({ brandings: list });
+    broadcastConfig();
+    return merged;
+  });
+
+  // Create a new branding, optionally duplicating an existing one.
+  ipcMain.handle('bridge:create-branding', async (_e, { name, copyFromId } = {}) => {
+    const cfg = config.get();
+    const list = Array.isArray(cfg.brandings) ? [...cfg.brandings] : [];
+    const src = copyFromId ? list.find((b) => b.id === copyFromId) : null;
+    const base = src ? { ...src } : { ...DEFAULT_BRANDING };
+    delete base.id; delete base.name;
+    const id = newBrandingId();
+    const entry = { ...DEFAULT_BRANDING, ...base, id, name: (name && String(name).trim()) || `Branding ${list.length + 1}` };
+    list.push(entry);
+    const patch = { brandings: list };
+    if (!cfg.defaultBrandingId) patch.defaultBrandingId = id;
+    config.update(patch);
+    broadcastConfig();
+    return entry;
+  });
+
+  // Delete a branding. The last remaining one can't be deleted. The default
+  // pointer and any slots using it fall back to the first remaining branding.
+  ipcMain.handle('bridge:delete-branding', async (_e, { id } = {}) => {
+    const cfg = config.get();
+    const list = Array.isArray(cfg.brandings) ? [...cfg.brandings] : [];
+    if (list.length <= 1) return { ok: false, error: 'At least one branding is required', config: cfg };
+    const idx = list.findIndex((b) => b.id === id);
+    if (idx < 0) return { ok: false, error: 'Branding not found', config: cfg };
+    list.splice(idx, 1);
+    const patch = { brandings: list };
+    if (cfg.defaultBrandingId === id) patch.defaultBrandingId = list[0].id;
+    patch.slots = (cfg.slots || []).map((s) => (s.brandingId === id ? { ...s, brandingId: null } : s));
+    config.update(patch);
+    broadcastConfig();
+    return { ok: true, config: config.get() };
   });
 
   ipcMain.handle('bridge:pick-and-encode-logo', async () => {
@@ -646,10 +891,20 @@ function setupIpc() {
   // Central sell-by-print quota — same endpoint the viewer uses, so the
   // header count stays in sync across viewer, website, and bridge.
   ipcMain.handle('bridge:get-license-quota', async () => getCentralQuota());
-  ipcMain.handle('bridge:decrement-license-quota', async (_e, { pages = 1 } = {}) =>
-    decrementCentralQuota(pages)
+  ipcMain.handle('bridge:get-offline-recharge-challenge', async (_e, args = {}) =>
+    createOfflineRechargeChallenge(args)
   );
-  ipcMain.handle('bridge:set-license-quota', async (_e, args = {}) => setCentralQuota(args));
+  ipcMain.handle('bridge:apply-offline-recharge-voucher', async (_e, { voucher } = {}) => {
+    const result = await applyOfflineRechargeVoucher(voucher);
+    if (result.ok && configWindow && !configWindow.isDestroyed()) {
+      configWindow.webContents.send('bridge:quota-changed', {
+        enabled: result.enabled,
+        remaining: result.remaining,
+        total: result.total,
+      });
+    }
+    return result;
+  });
 
   ipcMain.handle('bridge:activate-license', async (_e, licenseKey) => {
     return await activateBridgeLicense(licenseKey);
@@ -806,6 +1061,28 @@ app.whenReady().then(async () => {
     printedRoot,
     failedRoot,
   });
+
+  // Block print jobs before they start when the central quota is exhausted.
+  // Uses the on-disk cached value so no network round-trip delays the decision.
+  jobQueue.setPreflightCheck(async () => {
+    const lic = getLicenseData();
+    if (!lic) {
+      const trial = getTrialInfo();
+      if (trial.printsRemaining <= 0) {
+        return { block: true, reason: 'Trial print budget exhausted. Purchase a license to continue.' };
+      }
+      return { block: false };
+    }
+    const offlineCredit = Math.max(0, parseInt(lic.offlineQuotaCredit || 0, 10));
+    const centralQuotaOn = !!lic.quotaEnabled || offlineCredit > 0;
+    if (!centralQuotaOn) return { block: false };
+    const remaining = (lic.quotaRemaining || 0) + offlineCredit;
+    if (remaining <= 0) {
+      return { block: true, reason: 'Central print quota exhausted (0 prints remaining). Top up to resume printing.' };
+    }
+    return { block: false };
+  });
+
   jobQueue.on('printed', (job) => {
     logger.info(`[Job] printed slot=${job.slot.name} pages=${job.result.pages}`);
     notifySlotEvent('printed', { slotId: job.slot.id, pages: job.result.pages, layoutId: job.result.layoutId });
@@ -824,36 +1101,13 @@ app.whenReady().then(async () => {
       studyUid:    job.studyUid || (job.result && job.result.studyUid) || '',
     });
 
-    // Decrement the slot's print quota when it's enabled. Each page counts.
-    const cur = config.get().slots.find((s) => s.id === job.slot.id);
-    if (cur && cur.quotaEnabled) {
-      const pages = Math.max(1, parseInt(job.result.pages || 1, 10));
-      const before = cur.quotaRemaining || 0;
-      const after  = Math.max(0, before - pages);
-      config.patchSlot(job.slot.id, { quotaRemaining: after });
-      // Fire warning at <= 50, separate notice at 0.
-      if (Notification.isSupported() && after === 0) {
-        new Notification({
-          title: 'One Clickz Bridge — quota exhausted',
-          body: `${job.slot.name}: print quota is 0. Printing is now paused for this slot.`,
-        }).show();
-      } else if (Notification.isSupported() && before > 50 && after <= 50) {
-        new Notification({
-          title: 'One Clickz Bridge — low quota',
-          body: `${job.slot.name}: only ${after} prints remaining. Top up soon.`,
-        }).show();
-      }
-      // Push the updated slot to renderer so the card UI refreshes.
-      if (configWindow && !configWindow.isDestroyed()) {
-        configWindow.webContents.send('bridge:config-changed', config.get());
-      }
-    }
-
     // Central sell-by-print quota — only decrement when quota mode is ON.
     // When quota is off, printing is unlimited — no server call needed.
     const pagesPrinted = Math.max(1, parseInt(job.result.pages || 1, 10));
     const licData = getLicenseData();
-    const centralQuotaOn = licData ? !!licData.quotaEnabled : true; // trial = always on
+    const centralQuotaOn = licData
+      ? (!!licData.quotaEnabled || Math.max(0, parseInt(licData.offlineQuotaCredit || 0, 10)) > 0)
+      : true; // trial = always on
     if (centralQuotaOn) {
       decrementCentralQuota(pagesPrinted).then((q) => {
       if (q && q.ok && configWindow && !configWindow.isDestroyed()) {

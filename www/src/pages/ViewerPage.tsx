@@ -39,6 +39,9 @@ export function ViewerPage() {
         if (!launchData) return;
         const data = JSON.parse(launchData);
         if (Date.now() - data.timestamp < 10000) {
+          // Authorize these paths with the host so the token-gated DICOM file
+          // server will serve them (otherwise serve-file 403s → no images).
+          (window as any).electronAPI?.authorizeDicomPaths?.(data.filePaths || []);
           loadStudyFiles({
             patientName: data.patientName,
             patientId: data.patientId,
@@ -58,7 +61,7 @@ export function ViewerPage() {
     }
 
     const api = (window as any).electronAPI;
-    const unsub = api?.on?.('viewer:reload-launch', () => consumeLaunch());
+    const unsub = api?.onViewerReloadLaunch?.(() => consumeLaunch());
     return () => { if (typeof unsub === 'function') unsub(); };
   }, [loadStudyFiles]);
 

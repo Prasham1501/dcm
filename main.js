@@ -10,12 +10,13 @@
  * - React SPA served via PHP
  */
 
-const { app, BrowserWindow, dialog, Menu, shell, ipcMain, globalShortcut } = require('electron');
+const { app, BrowserWindow, dialog, Menu, shell, ipcMain, globalShortcut, safeStorage, session } = require('electron');
 const path = require('path');
 const { spawn, execSync } = require('child_process');
 const http = require('http');
 const url = require('url');
 const fs = require('fs');
+const crypto = require('crypto');
 
 // ---------------------------------------------------------------------------
 // GPU / WebGL acceleration (MUST run before app 'ready').
@@ -23,7 +24,7 @@ const fs = require('fs');
 // Electron's bundled Chromium is far more conservative than desktop Chrome and
 // frequently BLOCKLISTS common integrated GPUs (e.g. Intel Iris Xe). When that
 // happens it silently falls back to software GL (SwiftShader), which makes the
-// 3D volume viewer slow and low-quality — even though the exact same page is
+// 3D volume viewer slow and low-quality - even though the exact same page is
 // smooth in Chrome on the same machine. These switches force Electron to use
 // the hardware GPU like Chrome does.
 // ---------------------------------------------------------------------------
@@ -31,7 +32,7 @@ app.commandLine.appendSwitch('ignore-gpu-blocklist');
 app.commandLine.appendSwitch('enable-gpu-rasterization');
 app.commandLine.appendSwitch('enable-zero-copy');
 app.commandLine.appendSwitch('enable-accelerated-2d-canvas');
-// Match Chrome's Windows default backend (the browser reports "ANGLE … D3D11"),
+// Match Chrome's Windows default backend (the browser reports "ANGLE ... D3D11"),
 // which is what renders the volume smoothly.
 app.commandLine.appendSwitch('use-angle', 'd3d11');
 // On dual-GPU laptops, prefer the high-performance GPU for our windows.
@@ -63,20 +64,54 @@ const mysqlDir = isDev ? path.join(__dirname, 'mysql') : path.join(appPath, 'mys
 const mysqldPath = path.join(mysqlDir, 'bin', 'mysqld.exe');
 const mysqlClientPath = path.join(mysqlDir, 'bin', 'mysql.exe');
 const userDataPath = app.getPath('userData');
+const DICOM_ACCESS_TOKEN = crypto.randomBytes(32).toString('hex');
+const UPDATE_DOWNLOAD_HOSTS = new Set(['mehrgrewal.com', 'www.mehrgrewal.com']);
+
+function readOrCreateSecret(fileName, bytes = 24) {
+    const filePath = path.join(userDataPath, fileName);
+    try {
+        if (!fs.existsSync(userDataPath)) fs.mkdirSync(userDataPath, { recursive: true });
+        if (fs.existsSync(filePath)) {
+            const existing = fs.readFileSync(filePath, 'utf8').trim();
+            if (existing) return existing;
+        }
+        const secret = crypto.randomBytes(bytes).toString('base64url');
+        fs.writeFileSync(filePath, secret, { encoding: 'utf8', mode: 0o600 });
+        return secret;
+    } catch (e) {
+        console.error('[Security] Failed to read/create secret:', e.message);
+        return crypto.randomBytes(bytes).toString('base64url');
+    }
+}
+
+const ORTHANC_USERNAME = 'oneclickz';
+const ORTHANC_PASSWORD = readOrCreateSecret('.orthanc-password', 24);
+
+function orthancAuthHeader() {
+    return 'Basic ' + Buffer.from(`${ORTHANC_USERNAME}:${ORTHANC_PASSWORD}`).toString('base64');
+}
 
 // ===== License & Trial System =====
 const LICENSE_API_BASE = 'https://mehrgrewal.com/mediview/api';
 const TRIAL_DAYS = 7;
+const OFFLINE_LEASE_DAYS = 90;
+const LEASE_WARN_DAYS = 14;
+// Ed25519 PUBLIC key for verifying server-signed offline license leases.
+// Embedded (not env-only) so verification works on packaged customer machines
+// where env vars aren't set. The matching PRIVATE key lives ONLY in the server
+// env (LICENSE_LEASE_PRIVATE_KEY_B64) and never ships with the app.
+const LICENSE_LEASE_PUBLIC_KEY_B64 = process.env.ONECLICKZ_LICENSE_PUBLIC_KEY || 'tQ7De6EVOD5XagDAyP1YJVhxLhcy8iKQL1sJQIM0TT4=';
 /** Local install-trial print budget. Used when no server license is
- *  activated yet — gives the operator something to test with so the
+ *  activated yet - gives the operator something to test with so the
  *  header isn't stuck at "Prints Left: 0". Persisted alongside
  *  installDate in the .trial file. */
 const TRIAL_PRINTS = 100;
 const trialFile = path.join(userDataPath, '.trial');
 const licenseFile = path.join(userDataPath, '.license');
+const clockMarkFile = path.join(userDataPath, '.license-clock');
+const clockMarkRegValue = 'LicenseClockMark';
 
 function getFingerprint() {
-    const crypto = require('crypto');
     const os = require('os');
     const raw = [
         os.hostname(),
@@ -92,16 +127,23 @@ function getFingerprint() {
 
 function getLicenseData() {
     try {
-        if (fs.existsSync(licenseFile)) {
-            return JSON.parse(fs.readFileSync(licenseFile, 'utf8'));
+        if (!fs.existsSync(licenseFile)) return null;
+        const parsed = JSON.parse(fs.readFileSync(licenseFile, 'utf8'));
+        // Encrypted envelope written by saveLicenseData ({ encrypted, data }).
+        if (parsed && typeof parsed === 'object' && typeof parsed.data === 'string' && 'encrypted' in parsed) {
+            try { return decryptJsonFromDisk(parsed); } catch { return null; }
         }
+        // Legacy plaintext license — returned as-is; migrated to encrypted on next save.
+        return parsed;
     } catch { /* corrupt */ }
     return null;
 }
 
 function saveLicenseData(data) {
     try {
-        fs.writeFileSync(licenseFile, JSON.stringify(data, null, 2), 'utf8');
+        // Encrypt at rest (DPAPI via safeStorage) so license fields — especially
+        // leaseToken and lastValidated — can't be hand-edited to forge validity.
+        fs.writeFileSync(licenseFile, JSON.stringify(encryptJsonForDisk(data)), 'utf8');
     } catch (e) { console.error('[License] Failed to save:', e.message); }
 }
 
@@ -117,7 +159,7 @@ function getTrialInfo() {
             installDate = new Date(data.installDate);
             if (Number.isFinite(data.printsRemaining)) printsRemaining = Math.max(0, data.printsRemaining);
         }
-    } catch { /* corrupt file — treat as new install */ }
+    } catch { /* corrupt file - treat as new install */ }
 
     if (!installDate || isNaN(installDate.getTime())) {
         installDate = new Date();
@@ -191,12 +233,15 @@ async function activateLicense(licenseKey) {
             app_version: app.getVersion ? app.getVersion() : '1.0.0',
         });
         if (res.status >= 200 && res.status < 300) {
+            const leaseToken = res.data.license_token || res.data.lease_token || null;
             saveLicenseData({
                 licenseKey,
                 fingerprint,
                 deviceId: res.data.device_id,
                 plan: res.data.plan || 'unknown',
                 expiresAt: res.data.expires_at,
+                leaseToken,
+                leaseWarn: leaseToken ? verifyLeaseToken(leaseToken).warn === true : false,
                 activatedAt: new Date().toISOString(),
                 lastValidated: new Date().toISOString(),
             });
@@ -222,6 +267,12 @@ async function validateLicense() {
             lic.lastValidated = new Date().toISOString();
             lic.plan = res.data.plan || lic.plan;
             lic.expiresAt = res.data.expires_at || lic.expiresAt;
+            lic.leaseToken = res.data.license_token || res.data.lease_token || lic.leaseToken || null;
+            const lease = lic.leaseToken ? verifyLeaseToken(lic.leaseToken) : null;
+            if (lease && !lease.valid && lease.reason !== 'lease_public_key_missing') {
+                return { valid: false, reason: lease.reason };
+            }
+            lic.leaseWarn = lease?.warn === true;
             // Mirror quota fields so the UI can show them without an extra round-trip.
             lic.quotaEnabled   = !!res.data.quota_enabled;
             lic.quotaRemaining = parseInt(res.data.quota_remaining || 0, 10);
@@ -229,6 +280,8 @@ async function validateLicense() {
             saveLicenseData(lic);
             return {
                 valid: true, plan: lic.plan, expiresAt: lic.expiresAt,
+                leaseWarn: lic.leaseWarn,
+                daysUntilCheck: lease?.daysUntilCheck,
                 quotaEnabled:   lic.quotaEnabled,
                 quotaRemaining: lic.quotaRemaining,
                 quotaTotal:     lic.quotaTotal,
@@ -236,15 +289,41 @@ async function validateLicense() {
         }
         return { valid: false, reason: res.data?.reason || 'invalid' };
     } catch {
-        // Offline grace: if validated within last 7 days, allow
+        // Offline path. If this license carries a server-signed lease, that
+        // lease is the SOLE authority — we must NOT fall back to the editable
+        // lastValidated grace, because stripping the token to force that
+        // downgrade is exactly how the file-edit crack worked.
+        if (lic.leaseToken) {
+            const lease = verifyLeaseToken(lic.leaseToken);
+            if (lease.valid) {
+                return {
+                    valid: true,
+                    plan: lease.payload.plan || lic.plan,
+                    expiresAt: lease.payload.licenseExpiresAt || lic.expiresAt,
+                    offline: true,
+                    leaseWarn: lease.warn,
+                    daysUntilCheck: lease.daysUntilCheck,
+                };
+            }
+            return { valid: false, reason: lease.reason || 'lease_invalid' };
+        }
+        // Legacy license issued before signed leases existed: fall back to the
+        // time-based grace, anchored to the anti-rollback clock.
         if (lic.lastValidated) {
             const lastCheck = new Date(lic.lastValidated);
-            const daysSince = (Date.now() - lastCheck.getTime()) / (1000 * 60 * 60 * 24);
-            if (daysSince < 7) {
-                return { valid: true, plan: lic.plan, expiresAt: lic.expiresAt, offline: true };
+            const daysSince = (effectiveNowMs() - lastCheck.getTime()) / (1000 * 60 * 60 * 24);
+            if (daysSince < OFFLINE_LEASE_DAYS) {
+                return {
+                    valid: true,
+                    plan: lic.plan,
+                    expiresAt: lic.expiresAt,
+                    offline: true,
+                    daysUntilCheck: Math.ceil(OFFLINE_LEASE_DAYS - daysSince),
+                    leaseWarn: (OFFLINE_LEASE_DAYS - daysSince) <= LEASE_WARN_DAYS,
+                };
             }
         }
-        return { valid: false, reason: 'network_error' };
+        return { valid: false, reason: 'offline_lease_expired' };
     }
 }
 
@@ -291,6 +370,8 @@ function getLicenseStatus() {
             fingerprint: lic.fingerprint,
             machineName: os.hostname(),
             daysLeft,
+            leaseWarn: lic.leaseWarn === true,
+            daysUntilCheck: Number.isFinite(lic.daysUntilCheck) ? lic.daysUntilCheck : undefined,
             expired: daysLeft !== null && daysLeft <= 0,
         };
     }
@@ -309,6 +390,69 @@ const orthancExePath = path.join(orthancDir, 'Orthanc.exe');
 const orthancStorageDir = path.join(userDataPath, 'orthanc-storage');
 const orthancDbDir = path.join(userDataPath, 'orthanc-db');
 const logsDir = path.join(userDataPath, 'logs');
+const sessionAllowedDicomRoots = new Set();
+
+function normalizeFsPath(inputPath) {
+    if (!inputPath || typeof inputPath !== 'string') return null;
+    try {
+        const resolved = path.resolve(inputPath);
+        return fs.existsSync(resolved) ? fs.realpathSync(resolved) : resolved;
+    } catch {
+        return null;
+    }
+}
+
+function authorizeDicomPath(inputPath) {
+    const resolved = normalizeFsPath(inputPath);
+    if (!resolved) return;
+    try {
+        const stat = fs.existsSync(resolved) ? fs.statSync(resolved) : null;
+        sessionAllowedDicomRoots.add((stat && stat.isFile()) ? path.dirname(resolved) : resolved);
+    } catch {
+        sessionAllowedDicomRoots.add(resolved);
+    }
+}
+
+function isUnderRoot(candidate, root) {
+    const rel = path.relative(root, candidate);
+    return rel === '' || (!!rel && !rel.startsWith('..') && !path.isAbsolute(rel));
+}
+
+function allowedDicomRoots() {
+    const envRoots = (process.env.DICOM_ALLOWED_ROOTS || '')
+        .split(/[;|]/)
+        .map(s => s.trim())
+        .filter(Boolean);
+    const roots = [
+        userDataPath,
+        wwwPath,
+        path.join(appPath, 'uploads'),
+        path.join(appPath, 'dicom-storage'),
+        path.join(appPath, 'storage'),
+        path.join(wwwPath, 'uploads'),
+        path.join(appPath, 'data'),
+        orthancStorageDir,
+        typeof networkDicomStorage === 'string' ? networkDicomStorage : null,
+        ...sessionAllowedDicomRoots,
+        ...envRoots,
+    ];
+    return roots.map(normalizeFsPath).filter(Boolean);
+}
+
+function isAllowedDicomPath(inputPath, expectedType = 'any') {
+    const resolved = normalizeFsPath(inputPath);
+    if (!resolved || !fs.existsSync(resolved)) return false;
+    const stat = fs.statSync(resolved);
+    if (expectedType === 'file' && !stat.isFile()) return false;
+    if (expectedType === 'directory' && !stat.isDirectory()) return false;
+    return allowedDicomRoots().some(root => isUnderRoot(resolved, root));
+}
+
+function isPlausibleDicomPath(inputPath) {
+    const base = path.basename(inputPath).toLowerCase();
+    if (base === 'dicomdir' || base.endsWith('.dcm') || base.endsWith('.dicom') || !base.includes('.')) return true;
+    return !/\.(php|exe|bat|cmd|sh|ps1|vbs|js|html?|json|xml|ini|env|sql|pem|key|txt|csv|xlsx?|docx?|pdf|zip|dll)$/i.test(base);
+}
 
 console.log('[Electron] Starting One Clickz...');
 console.log('[Electron] isDev:', isDev);
@@ -334,7 +478,7 @@ async function ensureFrontendBuild() {
     const distIndex = path.join(wwwPath, 'dist', 'index.html');
     if (fs.existsSync(distIndex)) return; // already built
 
-    console.log('[Frontend] www/dist missing — building React app...');
+    console.log('[Frontend] www/dist missing - building React app...');
     const wwwNodeModules = path.join(wwwPath, 'node_modules');
     if (!fs.existsSync(wwwNodeModules)) {
         console.log('[Frontend] Installing www dependencies...');
@@ -371,12 +515,104 @@ function updateSplashStatus(message) {
     console.log(`[Startup] ${message}`);
 }
 
+function viewerWebPreferences(extra = {}) {
+    return {
+        nodeIntegration: false,
+        contextIsolation: true,
+        sandbox: false,
+        webSecurity: true,
+        allowRunningInsecureContent: false,
+        // Fully disable DevTools in the packaged build so F12 / Ctrl+Shift+I /
+        // programmatic openDevTools() simply cannot open it (stronger than the
+        // after-the-fact 'devtools-opened' auto-close). Kept on in dev.
+        devTools: isDev,
+        preload: path.join(__dirname, 'preload.js'),
+        ...extra,
+    };
+}
+
+function registerWindowSecurity(win) {
+    if (!win || !win.webContents) return;
+    win.webContents.setWindowOpenHandler(({ url: targetUrl }) => {
+        if (isAllowedAppUrl(targetUrl)) return { action: 'allow', overrideBrowserWindowOptions: { webPreferences: viewerWebPreferences() } };
+        shell.openExternal(targetUrl).catch(() => {});
+        return { action: 'deny' };
+    });
+    win.webContents.on('will-navigate', (event, targetUrl) => {
+        if (!isAllowedAppUrl(targetUrl)) {
+            event.preventDefault();
+            shell.openExternal(targetUrl).catch(() => {});
+        }
+    });
+    win.webContents.on('will-redirect', (event, targetUrl) => {
+        if (!isAllowedAppUrl(targetUrl)) event.preventDefault();
+    });
+    if (!isDev) {
+        win.webContents.on('devtools-opened', () => {
+            try { win.webContents.closeDevTools(); } catch {}
+        });
+    }
+}
+
+function isAllowedAppUrl(targetUrl) {
+    try {
+        if (targetUrl.startsWith('about:') || targetUrl.startsWith('blob:')) return true;
+        const target = new URL(targetUrl);
+        const appOrigin = new URL(APP_URL).origin;
+        return target.origin === appOrigin
+            || target.origin === `http://localhost:${DICOM_PORT}`
+            || target.origin === `http://127.0.0.1:${DICOM_PORT}`;
+    } catch {
+        return false;
+    }
+}
+
+function buildViewMenu() {
+    const submenu = [
+        { role: 'reload' },
+        { role: 'forceReload' },
+        { type: 'separator' },
+        { role: 'resetZoom' },
+        { role: 'zoomIn' },
+        { role: 'zoomOut' },
+        { type: 'separator' },
+        { role: 'togglefullscreen' },
+    ];
+    if (isDev) {
+        submenu.push({ type: 'separator' }, { role: 'toggleDevTools', label: 'Developer Tools', accelerator: 'F12' });
+    }
+    return { label: 'View', submenu };
+}
+
+function configureSessionSecurity() {
+    const csp = [
+        "default-src 'self'",
+        "script-src 'self' 'unsafe-inline'",
+        "style-src 'self' 'unsafe-inline'",
+        "img-src 'self' data: blob: http://localhost:* http://127.0.0.1:*",
+        "media-src 'self' data: blob: http://localhost:* http://127.0.0.1:*",
+        "font-src 'self' data:",
+        "connect-src 'self' https://mehrgrewal.com http://localhost:* http://127.0.0.1:* blob: data:",
+        "worker-src 'self' blob:",
+        "frame-src 'self'",
+        "object-src 'none'",
+        "base-uri 'self'",
+    ].join('; ');
+    session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+        callback({
+            responseHeaders: {
+                ...details.responseHeaders,
+                'Content-Security-Policy': [csp],
+                'X-Content-Type-Options': ['nosniff'],
+            },
+        });
+    });
+}
+
 // =====================================================
 // Main Window
 // =====================================================
 function createMainWindow() {
-    const preloadPath = path.join(__dirname, 'preload.js');
-
     mainWindow = new BrowserWindow({
         width: 1400,
         height: 900,
@@ -385,16 +621,12 @@ function createMainWindow() {
         show: false,
         title: (() => {
             const lic = getLicenseData();
-            if (lic) return `One Clickz — ${lic.plan.charAt(0).toUpperCase() + lic.plan.slice(1)} License`;
+            if (lic) return `One Clickz - ${lic.plan.charAt(0).toUpperCase() + lic.plan.slice(1)} License`;
             const trial = getTrialInfo();
-            return `One Clickz — Trial (${trial.remaining} days remaining)`;
+            return `One Clickz - Trial (${trial.remaining} days remaining)`;
         })(),
         icon: path.join(__dirname, 'icon.ico'),
-        webPreferences: {
-            nodeIntegration: false,
-            contextIsolation: true,
-            preload: preloadPath
-        }
+        webPreferences: viewerWebPreferences()
     });
 
     // Application menu
@@ -407,24 +639,10 @@ function createMainWindow() {
                 { role: 'quit', label: 'Exit' }
             ]
         },
-        {
-            label: 'View',
-            submenu: [
-                { role: 'reload' },
-                { role: 'forceReload' },
-                { type: 'separator' },
-                { role: 'resetZoom' },
-                { role: 'zoomIn' },
-                { role: 'zoomOut' },
-                { type: 'separator' },
-                { role: 'togglefullscreen' }
-            ]
-        },
+        buildViewMenu(),
         {
             label: 'Tools',
             submenu: [
-                { role: 'toggleDevTools', label: 'Developer Tools', accelerator: 'F12' },
-                { type: 'separator' },
                 { label: 'Open Orthanc', click: () => shell.openExternal(`http://localhost:${ORTHANC_PORT}`) },
                 { label: 'View Logs', click: () => shell.openPath(logsDir) }
             ]
@@ -438,7 +656,7 @@ function createMainWindow() {
                         type: 'info',
                         title: 'About One Clickz',
                         message: 'One Clickz',
-                        detail: 'Version 1.0.0 - Modern Desktop Edition\n\nProfessional DICOM viewing and analysis for healthcare professionals.\n\nFeatures:\n• Multi-format DICOM viewing\n• Network file receiving from USG/medical devices\n• Advanced image analysis tools\n• Offline operation\n• Secure file management'
+                        detail: 'Version 1.0.0 - Modern Desktop Edition\n\nProfessional DICOM viewing and analysis for healthcare professionals.\n\nFeatures:\n* Multi-format DICOM viewing\n* Network file receiving from USG/medical devices\n* Advanced image analysis tools\n* Offline operation\n* Secure file management'
                     })
                 }
             ]
@@ -458,22 +676,7 @@ function createMainWindow() {
         if (mainWindow && mainWindow.webContents) mainWindow.webContents.focus();
     });
 
-    mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-        if (url.startsWith('http://localhost') || url.startsWith('about:') || url.startsWith('blob:')) {
-            return {
-                action: 'allow',
-                overrideBrowserWindowOptions: {
-                    webPreferences: {
-                        nodeIntegration: false,
-                        contextIsolation: true,
-                        preload: path.join(__dirname, 'preload.js')
-                    }
-                }
-            };
-        }
-        shell.openExternal(url);
-        return { action: 'deny' };
-    });
+    registerWindowSecurity(mainWindow);
 }
 
 // =====================================================
@@ -712,7 +915,7 @@ function generateOrthancConfig() {
         DicomAet: 'ONECLICKZ',
         DicomCheckCalledAet: false,
         AuthenticationEnabled: true,
-        RegisteredUsers: { orthanc: 'orthanc', admin: 'admin123' },
+        RegisteredUsers: { [ORTHANC_USERNAME]: ORTHANC_PASSWORD },
         StorageDirectory: orthancStorageDir.replace(/\\/g, '/'),
         IndexDirectory: orthancDbDir.replace(/\\/g, '/'),
         HttpHeaders: {
@@ -765,7 +968,7 @@ async function waitForOrthanc(maxAttempts = 15) {
             await new Promise((resolve, reject) => {
                 const req = http.request({
                     host: '127.0.0.1', port: ORTHANC_PORT, path: '/system', timeout: 2000,
-                    headers: { Authorization: 'Basic ' + Buffer.from('orthanc:orthanc').toString('base64') }
+                    headers: { Authorization: orthancAuthHeader() }
                 }, res => { res.statusCode === 200 ? resolve(true) : reject(new Error(`Status ${res.statusCode}`)); });
                 req.on('error', reject);
                 req.on('timeout', () => { req.destroy(); reject(new Error('Timeout')); });
@@ -779,7 +982,7 @@ async function waitForOrthanc(maxAttempts = 15) {
 }
 
 // =====================================================
-// Static File Server (replaces PHP — serves Vite dist)
+// Static File Server (replaces PHP - serves Vite dist)
 // =====================================================
 const mime = {
     '.html': 'text/html',
@@ -805,7 +1008,7 @@ function startStaticServer() {
     return new Promise((resolve) => {
         ensurePortFree(PHP_PORT);
         const distPath = path.join(wwwPath, 'dist');
-        console.log('[StaticServer] Starting on port', PHP_PORT, '→', distPath);
+        console.log('[StaticServer] Starting on port', PHP_PORT, '->', distPath);
 
         staticServer = http.createServer((req, res) => {
             const parsed = url.parse(req.url);
@@ -825,7 +1028,7 @@ function startStaticServer() {
                     res.writeHead(proxyRes.statusCode, proxyRes.headers);
                     proxyRes.pipe(res, { end: true });
                 });
-                // 5 min timeout — image conversion / multi-file uploads can be slow
+                // 5 min timeout - image conversion / multi-file uploads can be slow
                 proxyReq.setTimeout(300000, () => {
                     proxyReq.destroy(new Error('Apache request timed out'));
                 });
@@ -851,7 +1054,7 @@ function startStaticServer() {
             let filePath = path.join(distPath, reqPath);
             const ext = path.extname(filePath).toLowerCase();
 
-            // SPA fallback: any non-file request → index.html
+            // SPA fallback: any non-file request -> index.html
             const serveFile = (fp) => {
                 fs.readFile(fp, (err, data) => {
                     if (err) {
@@ -865,13 +1068,13 @@ function startStaticServer() {
             };
 
             if (ext && mime[ext]) {
-                // Known asset — serve directly, fallback to 404
+                // Known asset - serve directly, fallback to 404
                 fs.access(filePath, fs.constants.F_OK, (err) => {
                     if (err) { res.writeHead(404); res.end('Not found'); }
                     else serveFile(filePath);
                 });
             } else {
-                // SPA route — always serve index.html
+                // SPA route - always serve index.html
                 serveFile(path.join(distPath, 'index.html'));
             }
         });
@@ -896,7 +1099,7 @@ const startPhpServer = startStaticServer;
 function stopPhpServer() { stopStaticServer(); }
 
 async function waitForServer(maxAttempts = 10) {
-    // Static server resolves synchronously — just do a quick health check
+    // Static server resolves synchronously - just do a quick health check
     for (let i = 0; i < maxAttempts; i++) {
         try {
             await new Promise((resolve, reject) => {
@@ -908,7 +1111,7 @@ async function waitForServer(maxAttempts = 10) {
             return true;
         } catch { await new Promise(r => setTimeout(r, 200)); }
     }
-    return true; // Static server is reliable — don't block startup
+    return true; // Static server is reliable - don't block startup
 }
 
 async function checkViteRunning() {
@@ -998,7 +1201,7 @@ async function startApp() {
         updateSplashStatus('Building frontend...');
         await ensureFrontendBuild();
 
-        // Configure firewall rules (non-blocking — warn on failure)
+        // Configure firewall rules (non-blocking - warn on failure)
         updateSplashStatus('Configuring firewall...');
         try { configureFirewall(); } catch (e) {
             console.warn('[Startup] Firewall config skipped:', e.message);
@@ -1051,9 +1254,9 @@ async function startApp() {
                 dialog.showErrorBox('Database Error',
                     'Could not start MySQL database.\n\n' +
                     'Please ensure one of the following:\n' +
-                    '• The mysql/ folder exists in the application directory\n' +
-                    '• XAMPP MySQL is running on port 3306\n' +
-                    '• MySQL/MariaDB is installed and running on the system\n\n' +
+                    '* The mysql/ folder exists in the application directory\n' +
+                    '* XAMPP MySQL is running on port 3306\n' +
+                    '* MySQL/MariaDB is installed and running on the system\n\n' +
                     'The application will continue without database features.'
                 );
             }
@@ -1068,7 +1271,7 @@ async function startApp() {
         const [orthancReady, phpReady] = await Promise.all([orthancPromise, phpPromise]);
         console.log(`[Startup] Orthanc: ${orthancReady ? 'running' : 'not available'}`);
         console.log(`[Startup] Static server: ${phpReady ? 'running' : 'retrying...'}`);
-        // Static server is always reliable — no hard failure needed
+        // Static server is always reliable - no hard failure needed
 
         // 4. Final dev-only checks
         if (isDev) {
@@ -1102,12 +1305,21 @@ let dicomServer = null;
 function startDicomServer() {
     dicomServer = http.createServer(async (req, res) => {
         const parsedUrl = url.parse(req.url, true);
-
-        // CORS headers
-        res.setHeader('Access-Control-Allow-Origin', '*');
+        const origin = req.headers.origin || '';
+        const allowedOrigins = new Set([APP_URL, `http://localhost:${VITE_PORT}`, `http://127.0.0.1:${VITE_PORT}`].map(v => {
+            try { return new URL(v).origin; } catch { return v; }
+        }));
+        if (origin && allowedOrigins.has(origin)) res.setHeader('Access-Control-Allow-Origin', origin);
         res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-        res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-OneClickz-Token');
+        res.setHeader('Vary', 'Origin');
         if (req.method === 'OPTIONS') { res.statusCode = 204; res.end(); return; }
+        const requestToken = parsedUrl.query.token || req.headers['x-oneclickz-token'];
+        if (requestToken !== DICOM_ACCESS_TOKEN) {
+            res.statusCode = 403;
+            res.end('Forbidden');
+            return;
+        }
 
         // Serve a DICOM file by path
         if (parsedUrl.pathname === '/api/dicom/serve-file.php') {
@@ -1116,6 +1328,11 @@ function startDicomServer() {
 
             try {
                 const resolved = path.resolve(filePath);
+                if (!isAllowedDicomPath(resolved, 'file') || !isPlausibleDicomPath(resolved)) {
+                    res.statusCode = 403;
+                    res.end('Forbidden');
+                    return;
+                }
                 if (!fs.existsSync(resolved)) { res.statusCode = 404; res.end('Not found'); return; }
                 const stat = fs.statSync(resolved);
                 res.setHeader('Content-Type', 'application/dicom');
@@ -1140,7 +1357,7 @@ function startDicomServer() {
             const limit = parseInt(parsedUrl.query.limit || '10000', 10);
             const streamMode = parsedUrl.query.stream === '1';
 
-            // Support POST too — multi-file selections can exceed URL length.
+            // Support POST too - multi-file selections can exceed URL length.
             let postBody = null;
             if (req.method === 'POST') {
                 postBody = await new Promise((resolve) => {
@@ -1166,6 +1383,12 @@ function startDicomServer() {
                 const dicomFiles = [];
                 let resolved = '';
 
+                // The caller is token-authenticated and explicitly asked to scan
+                // these paths, so authorize them before the allowed-roots checks
+                // below — otherwise a legitimately-opened study's files get dropped.
+                if (explicitFiles && explicitFiles.length) explicitFiles.forEach(authorizeDicomPath);
+                if (dirPath) authorizeDicomPath(dirPath);
+
                 if (explicitFiles && explicitFiles.length) {
                     // Use the files the user explicitly picked. Filter for
                     // plausible DICOM filenames AND verify each exists.
@@ -1174,9 +1397,10 @@ function startDicomServer() {
                         try {
                             const abs = path.resolve(fp);
                             if (!fs.existsSync(abs) || !fs.statSync(abs).isFile()) continue;
+                            if (!isAllowedDicomPath(abs, 'file') || !isPlausibleDicomPath(abs)) continue;
                             const lower = path.basename(abs).toLowerCase();
                             // Allow .dcm / .dicom / extensionless / unknown
-                            // extensions — let the parser decide. We do skip
+                            // extensions - let the parser decide. We do skip
                             // common non-DICOM file types.
                             if (/\.(png|jpe?g|gif|bmp|webp|pdf|txt|json|xml|zip|exe|dll|csv|xlsx?|docx?)$/i.test(lower)) continue;
                             dicomFiles.push(abs);
@@ -1185,6 +1409,12 @@ function startDicomServer() {
                     resolved = explicitFiles[0] ? path.dirname(path.resolve(explicitFiles[0])) : '';
                 } else {
                     resolved = path.resolve(dirPath);
+                    if (!isAllowedDicomPath(resolved, 'directory')) {
+                        res.statusCode = 403;
+                        res.setHeader('Content-Type', 'application/json');
+                        res.end(JSON.stringify({ success: false, error: 'Directory is outside allowed DICOM roots' }));
+                        return;
+                    }
                     if (!fs.existsSync(resolved) || !fs.statSync(resolved).isDirectory()) {
                         res.statusCode = 404;
                         res.setHeader('Content-Type', 'application/json');
@@ -1194,7 +1424,7 @@ function startDicomServer() {
 
                     // Collect files (non-blocking via setImmediate batches)
                     // Use exclusion-based filter: skip known non-DICOM types, include everything else.
-                    // The parser will validate — non-DICOM files silently fail.
+                    // The parser will validate - non-DICOM files silently fail.
                     const NON_DICOM_RE = /\.(png|jpe?g|gif|bmp|webp|tiff?|pdf|txt|json|xml|html?|css|zip|rar|7z|gz|tar|exe|dll|msi|bat|sh|py|js|ts|csv|xlsx?|docx?|pptx?|ini|log|cfg|yaml|yml|md|sql|db|sqlite|mp[34]|avi|mov|mkv|wav|flac)$/i;
                     const collectFilesAsync = (dirs) => {
                         return new Promise((resolve) => {
@@ -1351,7 +1581,7 @@ function startDicomServer() {
                                 }
                             }
                         }
-                    } catch { /* DICOMDIR parse failed — skip */ }
+                    } catch { /* DICOMDIR parse failed - skip */ }
                     return results;
                 }
 
@@ -1419,7 +1649,7 @@ function startDicomServer() {
 
                 /** Same as extractAndAddStudy but works with the partial
                  *  DataSet that dicom-parser throws when the buffer is
-                 *  truncated (no readTag helper — call .string() directly). */
+                 *  truncated (no readTag helper - call .string() directly). */
                 function extractAndAddStudyFromPartial(ds, studies, filePath) {
                     const uid  = (ds.string('x0020000d') || '').trim();
                     const name = (ds.string('x00100010') || '').replace(/\^/g, ' ').trim();
@@ -1518,7 +1748,7 @@ function startDicomServer() {
                                 }
                                 // 2) Full-file fallback: handles DICOMDIRs AND normal
                                 //    DICOM files that need more than 64 KB to parse.
-                                try { fullFileFallback(filePath, studies); } catch { /* truly unparseable — skip */ }
+                                try { fullFileFallback(filePath, studies); } catch { /* truly unparseable - skip */ }
                             }
                         }
 
@@ -1598,7 +1828,7 @@ function startDicomServer() {
                                     }
                                     // 2) Full-file fallback: handles DICOMDIRs AND normal
                                     //    DICOM files that need more than 64 KB to parse.
-                                    try { fullFileFallback(filePath, studies); } catch { /* truly unparseable — skip */ }
+                                    try { fullFileFallback(filePath, studies); } catch { /* truly unparseable - skip */ }
                                 }
                             }
                             idx = endIdx;
@@ -1700,6 +1930,12 @@ function startDicomServer() {
 
             try {
                 const resolved = path.resolve(dirPath);
+                if (!isAllowedDicomPath(resolved, 'directory')) {
+                    res.statusCode = 403;
+                    res.setHeader('Content-Type', 'application/json');
+                    res.end(JSON.stringify({ success: false, error: 'Directory is outside allowed DICOM roots' }));
+                    return;
+                }
                 if (!fs.existsSync(resolved) || !fs.statSync(resolved).isDirectory()) {
                     res.statusCode = 404;
                     res.setHeader('Content-Type', 'application/json');
@@ -1764,7 +2000,7 @@ function stopDicomServer() {
 // App Lifecycle
 // =====================================================
 // =====================================================
-// Auto-update — polls the One Clickz website on launch + every 30 min and
+// Auto-update - polls the One Clickz website on launch + every 30 min and
 // notifies the renderer. If the latest release for `viewer` has
 // force_update=1, the renderer shows a non-dismissible modal that points
 // the user at the new installer.
@@ -1812,32 +2048,61 @@ ipcMain.handle('download-and-install-update', async (_evt, { downloadUrl } = {})
     if (!downloadUrl) return { ok: false, error: 'No download URL' };
     const https = require('https');
     const dest  = path.join(app.getPath('temp'), `oneclickz-update-${Date.now()}.exe`);
+    const validateDownloadUrl = (candidate, previous = null) => {
+        let parsed;
+        try { parsed = new URL(candidate, previous || undefined); } catch { return { ok: false, error: 'Invalid download URL' }; }
+        if (parsed.protocol !== 'https:') return { ok: false, error: 'Update downloads must use HTTPS' };
+        if (!UPDATE_DOWNLOAD_HOSTS.has(parsed.hostname.toLowerCase())) return { ok: false, error: 'Update host is not allowed' };
+        const releaseUrl = LAST_KNOWN_RELEASE?.download_url || LAST_KNOWN_RELEASE?.downloadUrl || '';
+        if (!previous && releaseUrl) {
+            try {
+                const expected = new URL(releaseUrl);
+                if (parsed.href !== expected.href) return { ok: false, error: 'Update URL does not match the checked release' };
+            } catch {}
+        }
+        if (!/\.exe($|\?)/i.test(parsed.pathname + parsed.search)) return { ok: false, error: 'Update must be a Windows installer' };
+        return { ok: true, url: parsed };
+    };
+    const initial = validateDownloadUrl(downloadUrl);
+    if (!initial.ok) return initial;
+
     return await new Promise((resolve) => {
         const file = fs.createWriteStream(dest);
-        const u    = new URL(downloadUrl);
-        const get  = (link) => https.get(link, (res) => {
-            // Follow one level of redirect (GoDaddy sometimes 301/302 to /index.php).
+        const get  = (link, redirects = 0) => {
+            const req = https.get(link, (res) => {
             if ([301,302,303,307,308].includes(res.statusCode) && res.headers.location) {
-                return get(res.headers.location);
+                if (redirects >= 5) { file.close(); fs.unlink(dest, () => {}); return resolve({ ok: false, error: 'Too many redirects' }); }
+                const next = validateDownloadUrl(res.headers.location, link);
+                if (!next.ok) { file.close(); fs.unlink(dest, () => {}); return resolve(next); }
+                return get(next.url.toString(), redirects + 1);
             }
             if (res.statusCode !== 200) { file.close(); fs.unlink(dest, () => {}); return resolve({ ok: false, error: 'HTTP ' + res.statusCode }); }
             res.pipe(file);
             file.on('finish', () => {
                 file.close(() => {
-                    // Hand off to the OS — the .exe is signed by you, Windows opens UAC.
+                    // Hand off to the OS - the .exe is signed by you, Windows opens UAC.
                     shell.openPath(dest).then((err) => {
                         if (err) resolve({ ok: false, error: err });
                         else { resolve({ ok: true, path: dest }); setTimeout(() => app.quit(), 1500); }
                     });
                 });
             });
-        });
-        get(u.toString());
+            });
+            req.on('error', (err) => {
+                file.close();
+                fs.unlink(dest, () => {});
+                resolve({ ok: false, error: err.message });
+            });
+            req.setTimeout(30000, () => req.destroy(new Error('Update download timed out')));
+        };
+        get(initial.url.toString());
     });
 });
 
 app.whenReady().then(async () => {
-    // GPU diagnostic — confirms whether hardware WebGL is active (needed for
+    configureSessionSecurity();
+
+    // GPU diagnostic - confirms whether hardware WebGL is active (needed for
     // smooth 3D volume rendering). Look for "gl: enabled" / "webgl2: enabled".
     // If these say "disabled_software" the 3D viewer will be slow/low quality.
     try {
@@ -1851,15 +2116,24 @@ app.whenReady().then(async () => {
 
     const lic = getLicenseData();
     if (lic) {
-        // Has license key — validate it
+        // Has license key - validate it
         const result = await validateLicense();
         if (!result.valid) {
             if (result.reason === 'expired') {
-                // Don't quit — let the UI show the activation page
+                // Don't quit - let the UI show the activation page
                 clearLicenseData();
             } else if (result.reason === 'revoked') {
                 clearLicenseData();
             } else if (result.reason === 'deactivated') {
+                clearLicenseData();
+            } else if ([
+                'offline_lease_expired',
+                'lease_expired',
+                'bad_signature',
+                'fingerprint_mismatch',
+                'malformed_lease',
+                'lease_verify_failed',
+            ].includes(result.reason)) {
                 clearLicenseData();
             }
             // For network_error with valid grace period, validateLicense already returns valid
@@ -1873,7 +2147,7 @@ app.whenReady().then(async () => {
     setTimeout(checkForUpdate, 4000);                                // first check 4s after window
     setInterval(checkForUpdate, 30 * 60 * 1000);                     // every 30 min
 
-    // Always start app — UI (LicenseGate) handles showing activation page if no license
+    // Always start app - UI (LicenseGate) handles showing activation page if no license
     startApp();
 
     // Global keybinding: Ctrl+Shift+Q opens the password-gated quota panel
@@ -1934,7 +2208,7 @@ ipcMain.handle('get-fingerprint', () => {
 ipcMain.handle('get-license-quota', async () => {
     const lic = getLicenseData();
     if (!lic) {
-        // No server license activated — fall back to the local install
+        // No server license activated - fall back to the local install
         // trial print budget so the operator can still test printing
         // without first acquiring a key.
         const t = getTrialInfo();
@@ -1957,7 +2231,7 @@ ipcMain.handle('get-license-quota', async () => {
             saveLicenseData(lic);
             return { enabled: lic.quotaEnabled, remaining: lic.quotaRemaining, total: lic.quotaTotal, valid: true };
         }
-        // Hard server reject — key deleted / revoked / wrong product. Purge
+        // Hard server reject - key deleted / revoked / wrong product. Purge
         // the local cache so we stop showing a phantom "X prints left".
         const hardReasons = ['not_found', 'revoked', 'deactivated', 'wrong_product', 'expired'];
         if (r.status >= 200 && r.status < 300 && r.data?.reason && hardReasons.includes(r.data.reason)) {
@@ -2025,7 +2299,7 @@ ipcMain.handle('decrement-license-quota', async (_e, { pages = 1 } = {}) => {
 // ===== Print Wallet (synced with website backend) ====================
 // These talk to the same wallet the dashboard at mehrgrewal.com reads,
 // so the balance is always in sync. If no key is active, the desktop
-// is in free mode — printing is disabled.
+// is in free mode - printing is disabled.
 
 async function walletApiGet(path) {
     const https = require('https');
@@ -2198,6 +2472,8 @@ ipcMain.handle('print-report-dialog', async (event, options) => {
             webPreferences: {
                 nodeIntegration: false,
                 contextIsolation: true,
+                webSecurity: true,
+                allowRunningInsecureContent: false,
                 zoomFactor: 1.0,
                 backgroundThrottling: false,
             }
@@ -2263,6 +2539,8 @@ ipcMain.handle('print-to-printer', async (event, options) => {
             webPreferences: {
                 nodeIntegration: false,
                 contextIsolation: true,
+                webSecurity: true,
+                allowRunningInsecureContent: false,
                 zoomFactor: 1.0,
                 backgroundThrottling: false,
             }
@@ -2271,7 +2549,7 @@ ipcMain.handle('print-to-printer', async (event, options) => {
         await printWindow.loadFile(tempFile);
         await waitForPrintableContent(printWindow);
 
-        // Detect "Print to PDF" virtual printers — they can't work in silent mode
+        // Detect "Print to PDF" virtual printers - they can't work in silent mode
         const isPdfPrinter = printerName && /pdf/i.test(printerName);
 
         if (isPdfPrinter) {
@@ -2302,7 +2580,7 @@ ipcMain.handle('print-to-printer', async (event, options) => {
 
         // If silent print failed, retry with native OS print dialog
         if (!result.success) {
-            console.warn('[Print] Silent print failed:', result.error, '— opening native print dialog');
+            console.warn('[Print] Silent print failed:', result.error, '- opening native print dialog');
             const dialogOpts = { ...opts, silent: false };
             printWindow.show();
             result = await runElectronPrint(printWindow.webContents, dialogOpts, 120000);
@@ -2338,7 +2616,7 @@ ipcMain.handle('focus-main-window', async () => {
     catch (e) { return { success: false, error: e.message }; }
 });
 
-// Mark patient as printed — broadcast to ALL windows so main window store is updated
+// Mark patient as printed - broadcast to ALL windows so main window store is updated
 ipcMain.handle('mark-patient-printed', async (event, { patientId, patientName }) => {
     try {
         const { BrowserWindow } = require('electron');
@@ -2355,31 +2633,83 @@ ipcMain.handle('mark-patient-printed', async (event, { patientId, patientName })
 
 // Credential management for auto-login
 const credentialsPath = path.join(userDataPath, 'credentials.json');
+const encryptedCredentialsPath = path.join(userDataPath, 'credentials.enc');
+
+function encryptJsonForDisk(value) {
+    const json = JSON.stringify(value);
+    if (safeStorage.isEncryptionAvailable()) {
+        return { encrypted: true, data: safeStorage.encryptString(json).toString('base64') };
+    }
+    return {
+        encrypted: false,
+        data: Buffer.from(json, 'utf8').toString('base64'),
+        warning: 'safeStorage unavailable on this OS session',
+    };
+}
+
+function decryptJsonFromDisk(payload) {
+    if (!payload || typeof payload !== 'object') return null;
+    const raw = Buffer.from(String(payload.data || ''), 'base64');
+    const json = payload.encrypted ? safeStorage.decryptString(raw) : raw.toString('utf8');
+    return JSON.parse(json);
+}
 
 ipcMain.handle('save-credentials', async (event, credentials) => {
-    try { fs.writeFileSync(credentialsPath, JSON.stringify(credentials), 'utf8'); return { success: true }; }
+    try {
+        fs.writeFileSync(encryptedCredentialsPath, JSON.stringify(encryptJsonForDisk(credentials)), 'utf8');
+        if (fs.existsSync(credentialsPath)) fs.unlinkSync(credentialsPath);
+        return { success: true };
+    }
     catch (e) { return { success: false, error: e.message }; }
 });
 
 ipcMain.handle('get-credentials', async () => {
     try {
+        if (fs.existsSync(encryptedCredentialsPath)) {
+            return { success: true, credentials: decryptJsonFromDisk(JSON.parse(fs.readFileSync(encryptedCredentialsPath, 'utf8'))) };
+        }
         if (!fs.existsSync(credentialsPath)) return { success: true, credentials: null };
-        return { success: true, credentials: JSON.parse(fs.readFileSync(credentialsPath, 'utf8')) };
+        const credentials = JSON.parse(fs.readFileSync(credentialsPath, 'utf8'));
+        fs.writeFileSync(encryptedCredentialsPath, JSON.stringify(encryptJsonForDisk(credentials)), 'utf8');
+        fs.unlinkSync(credentialsPath);
+        return { success: true, credentials };
     } catch (e) { return { success: false, error: e.message }; }
 });
 
 ipcMain.handle('clear-credentials', async () => {
-    try { if (fs.existsSync(credentialsPath)) fs.unlinkSync(credentialsPath); return { success: true }; }
+    try {
+        if (fs.existsSync(credentialsPath)) fs.unlinkSync(credentialsPath);
+        if (fs.existsSync(encryptedCredentialsPath)) fs.unlinkSync(encryptedCredentialsPath);
+        return { success: true };
+    }
     catch (e) { return { success: false, error: e.message }; }
 });
 
 ipcMain.handle('has-credentials', async () => {
-    return { success: true, hasCredentials: fs.existsSync(credentialsPath) };
+    return { success: true, hasCredentials: fs.existsSync(encryptedCredentialsPath) || fs.existsSync(credentialsPath) };
 });
 
 // Get DICOM server port
 ipcMain.handle('get-dicom-port', () => {
     return { port: DICOM_PORT };
+});
+
+ipcMain.on('get-dicom-access-token', (event) => {
+    event.returnValue = DICOM_ACCESS_TOKEN;
+});
+
+// Authorize the file paths of a study the user is explicitly opening so the
+// DICOM file server (which is gated by DICOM_ACCESS_TOKEN + realpath + the
+// allowed-roots check) will serve them. Studies opened from the patient list
+// or a viewer popup carry absolute paths outside the fixed roots; without this
+// the serve-file requests 403 and no images render. Sync so authorization is
+// in place before the renderer starts requesting images.
+ipcMain.on('authorize-dicom-paths-sync', (event, paths) => {
+    try {
+        if (Array.isArray(paths)) paths.forEach(authorizeDicomPath);
+        else if (typeof paths === 'string') authorizeDicomPath(paths);
+    } catch (e) { console.warn('[Security] authorize-dicom-paths failed:', e.message); }
+    event.returnValue = { ok: true };
 });
 
 // =====================================================
@@ -2405,7 +2735,7 @@ ipcMain.handle('open-cr-viewer', (event, { isPortrait, imageCount, cols, rows })
     const gridW = cellW * (cols || 1);
     const winW = Math.round(Math.min(Math.max(gridW + sidebarPx, 500), screenW * 0.95));
 
-    // Reuse the existing CR viewer window if it's already open — this keeps
+    // Reuse the existing CR viewer window if it's already open - this keeps
     // the cornerstone image cache warm, so reopening the same (or a related)
     // study is essentially instant. Just resize/focus and notify the renderer
     // to pick up the new launch payload from localStorage.
@@ -2423,39 +2753,16 @@ ipcMain.handle('open-cr-viewer', (event, { isPortrait, imageCount, cols, rows })
         minHeight: 400,
         title: `One Clickz - Viewer (${imageCount} images)`,
         icon: path.join(__dirname, 'icon.ico'),
-        webPreferences: {
-            nodeIntegration: false,
-            contextIsolation: true,
-            preload: path.join(__dirname, 'preload.js')
-        }
+        webPreferences: viewerWebPreferences()
     });
 
     crViewerWindow.center();
     crViewerWindow.loadURL(`${APP_URL}/cr-viewer`);
 
     // Menu for CR viewer window
-    const crMenu = Menu.buildFromTemplate([
-        {
-            label: 'View',
-            submenu: [
-                { role: 'reload' },
-                { role: 'forceReload' },
-                { type: 'separator' },
-                { role: 'resetZoom' },
-                { role: 'zoomIn' },
-                { role: 'zoomOut' },
-                { type: 'separator' },
-                { role: 'togglefullscreen' }
-            ]
-        },
-        {
-            label: 'Tools',
-            submenu: [
-                { role: 'toggleDevTools', label: 'Developer Tools', accelerator: 'F12' }
-            ]
-        }
-    ]);
+    const crMenu = Menu.buildFromTemplate([buildViewMenu()]);
     crViewerWindow.setMenu(crMenu);
+    registerWindowSecurity(crViewerWindow);
 
     crViewerWindow.on('closed', () => { crViewerWindow = null; });
 
@@ -2503,39 +2810,16 @@ ipcMain.handle('open-viewer', (event, { isPortrait, imageCount, cols, rows }) =>
         minHeight: 400,
         title: `One Clickz - CR Viewer (${imageCount} images)`,
         icon: path.join(__dirname, 'icon.ico'),
-        webPreferences: {
-            nodeIntegration: false,
-            contextIsolation: true,
-            preload: path.join(__dirname, 'preload.js')
-        }
+        webPreferences: viewerWebPreferences()
     });
 
     viewerWindow.center();
     viewerWindow.loadURL(`${APP_URL}/viewer`);
 
     // Menu for viewer window
-    const viewerMenu = Menu.buildFromTemplate([
-        {
-            label: 'View',
-            submenu: [
-                { role: 'reload' },
-                { role: 'forceReload' },
-                { type: 'separator' },
-                { role: 'resetZoom' },
-                { role: 'zoomIn' },
-                { role: 'zoomOut' },
-                { type: 'separator' },
-                { role: 'togglefullscreen' }
-            ]
-        },
-        {
-            label: 'Tools',
-            submenu: [
-                { role: 'toggleDevTools', label: 'Developer Tools', accelerator: 'F12' }
-            ]
-        }
-    ]);
+    const viewerMenu = Menu.buildFromTemplate([buildViewMenu()]);
     viewerWindow.setMenu(viewerMenu);
+    registerWindowSecurity(viewerWindow);
 
     viewerWindow.on('closed', () => { viewerWindow = null; });
 
@@ -2564,7 +2848,7 @@ ipcMain.handle('open-volume-viewer', (event, { imageCount, payload } = {}) => {
     const winW = Math.round(screenW * 0.85);
     const winH = Math.round(screenH * 0.92);
 
-    // Reuse the existing window if it's already open — destroying the
+    // Reuse the existing window if it's already open - destroying the
     // BrowserWindow tears down the WebGL2 context, and rebuilding the
     // cs3d engine is expensive (~hundreds of ms).
     if (volumeViewerWindow && !volumeViewerWindow.isDestroyed()) {
@@ -2584,44 +2868,15 @@ ipcMain.handle('open-volume-viewer', (event, { imageCount, payload } = {}) => {
         minHeight: 600,
         title: `One Clickz - 3D Volume Viewer${imageCount ? ` (${imageCount} slices)` : ''}`,
         icon: path.join(__dirname, 'icon.ico'),
-        webPreferences: {
-            nodeIntegration: false,
-            contextIsolation: true,
-            preload: path.join(__dirname, 'preload.js'),
-            // Cornerstone3D / vtk.js needs WebGL2 + hardware acceleration.
-            // These are on by default in Electron — listed here as a
-            // reminder, not as overrides.
-        }
+        webPreferences: viewerWebPreferences()
     });
 
     volumeViewerWindow.center();
     volumeViewerWindow.loadURL(volumeUrl);
 
-    // NOTE: DevTools no longer auto-opens. It can still be opened manually
-    // via the Tools → Developer Tools menu (F12) below if needed.
-
-    const volumeMenu = Menu.buildFromTemplate([
-        {
-            label: 'View',
-            submenu: [
-                { role: 'reload' },
-                { role: 'forceReload' },
-                { type: 'separator' },
-                { role: 'resetZoom' },
-                { role: 'zoomIn' },
-                { role: 'zoomOut' },
-                { type: 'separator' },
-                { role: 'togglefullscreen' }
-            ]
-        },
-        {
-            label: 'Tools',
-            submenu: [
-                { role: 'toggleDevTools', label: 'Developer Tools', accelerator: 'F12' }
-            ]
-        }
-    ]);
+    const volumeMenu = Menu.buildFromTemplate([buildViewMenu()]);
     volumeViewerWindow.setMenu(volumeMenu);
+    registerWindowSecurity(volumeViewerWindow);
 
     volumeViewerWindow.on('closed', () => { volumeViewerWindow = null; });
 
@@ -2630,7 +2885,7 @@ ipcMain.handle('open-volume-viewer', (event, { imageCount, payload } = {}) => {
 
 // Open the 3D volume viewer in the system default browser. The viewer page
 // reads its study payload from a temp JSON file (handed off via ?launchFile),
-// fetched over localhost — so this works fully offline. The browser uses its
+// fetched over localhost - so this works fully offline. The browser uses its
 // own GPU pipeline, which on some machines renders the volume more cleanly
 // than the bundled Electron Chromium.
 function loadDicomParserForVolumeLaunch() {
@@ -2643,6 +2898,98 @@ function loadDicomParserForVolumeLaunch() {
             return null;
         }
     }
+}
+
+function readClockMarkFile() {
+    try {
+        if (!fs.existsSync(clockMarkFile)) return 0;
+        const data = JSON.parse(fs.readFileSync(clockMarkFile, 'utf8'));
+        return Number.isFinite(data.maxSeenMs) ? data.maxSeenMs : 0;
+    } catch { return 0; }
+}
+
+function readClockMarkRegistry() {
+    if (process.platform !== 'win32') return 0;
+    try {
+        const output = execSync(
+            'reg query HKCU\\Software\\OneClickz\\Viewer /v LicenseClockMark',
+            { stdio: 'pipe', windowsHide: true }
+        ).toString();
+        const match = output.match(/LicenseClockMark\s+REG_SZ\s+(\d+)/i);
+        return match ? parseInt(match[1], 10) || 0 : 0;
+    } catch { return 0; }
+}
+
+function writeClockMark(ms) {
+    const mark = Math.max(ms, readClockMarkFile(), readClockMarkRegistry());
+    try {
+        fs.writeFileSync(clockMarkFile, JSON.stringify({ maxSeenMs: mark }), 'utf8');
+    } catch {}
+    if (process.platform === 'win32') {
+        try {
+            execSync(
+                `reg add HKCU\\Software\\OneClickz\\Viewer /v ${clockMarkRegValue} /t REG_SZ /d ${mark} /f`,
+                { stdio: 'ignore', windowsHide: true }
+            );
+        } catch {}
+    }
+    return mark;
+}
+
+function effectiveNowMs() {
+    return writeClockMark(Date.now());
+}
+
+function parseLeaseToken(token) {
+    if (!token || typeof token !== 'string') return null;
+    const parts = token.split('.');
+    if (parts.length !== 2) return null;
+    try {
+        const payloadJson = Buffer.from(parts[0], 'base64url').toString('utf8');
+        return { payload: JSON.parse(payloadJson), signature: parts[1], signedPayload: parts[0] };
+    } catch { return null; }
+}
+
+function verifyLeaseToken(token) {
+    const parsed = parseLeaseToken(token);
+    if (!parsed) return { valid: false, reason: 'malformed_lease' };
+    if (!LICENSE_LEASE_PUBLIC_KEY_B64 || LICENSE_LEASE_PUBLIC_KEY_B64.includes('REPLACE_')) {
+        return { valid: false, reason: 'lease_public_key_missing' };
+    }
+    try {
+        const keyBytes = Buffer.from(LICENSE_LEASE_PUBLIC_KEY_B64, 'base64');
+        const spki = keyBytes.length === 32
+            ? Buffer.concat([Buffer.from('302a300506032b6570032100', 'hex'), keyBytes])
+            : keyBytes;
+        const publicKey = crypto.createPublicKey({
+            key: spki,
+            format: 'der',
+            type: 'spki',
+        });
+        const ok = crypto.verify(
+            null,
+            Buffer.from(parsed.signedPayload),
+            publicKey,
+            Buffer.from(parsed.signature, 'base64url')
+        );
+        if (!ok) return { valid: false, reason: 'bad_signature' };
+    } catch (e) {
+        return { valid: false, reason: 'lease_verify_failed' };
+    }
+
+    const payload = parsed.payload || {};
+    if (payload.fingerprint !== getFingerprint()) return { valid: false, reason: 'fingerprint_mismatch' };
+    const now = effectiveNowMs();
+    const licenseExpiresAt = Date.parse(payload.licenseExpiresAt || payload.expiresAt || '');
+    const nextCheckBy = Date.parse(payload.nextCheckBy || '');
+    const leaseEnd = Math.min(
+        Number.isFinite(licenseExpiresAt) ? licenseExpiresAt : Number.MAX_SAFE_INTEGER,
+        Number.isFinite(nextCheckBy) ? nextCheckBy : Number.MAX_SAFE_INTEGER
+    );
+    if (!Number.isFinite(leaseEnd) || leaseEnd === Number.MAX_SAFE_INTEGER) return { valid: false, reason: 'lease_missing_expiry' };
+    if (now > leaseEnd) return { valid: false, reason: 'lease_expired' };
+    const daysUntilCheck = Math.ceil((leaseEnd - now) / (1000 * 60 * 60 * 24));
+    return { valid: true, payload, daysUntilCheck, warn: daysUntilCheck <= LEASE_WARN_DAYS };
 }
 
 function normalizeVolumeLaunchPayloadForBrowser(payload = {}) {
@@ -2963,22 +3310,16 @@ ipcMain.handle('open-viewer-with-report', (event, { isPortrait, imageCount, cols
         minHeight: 400,
         title: `One Clickz - Viewer (${imageCount} images)`,
         icon: path.join(__dirname, 'icon.ico'),
-        webPreferences: {
-            nodeIntegration: false,
-            contextIsolation: true,
-            preload: path.join(__dirname, 'preload.js')
-        }
+        webPreferences: viewerWebPreferences()
     });
     viewerWindow.loadURL(`${APP_URL}/viewer`);
 
-    const viewerMenu = Menu.buildFromTemplate([
-        { label: 'View', submenu: [{ role: 'reload' }, { role: 'forceReload' }, { type: 'separator' }, { role: 'resetZoom' }, { role: 'zoomIn' }, { role: 'zoomOut' }, { type: 'separator' }, { role: 'togglefullscreen' }] },
-        { label: 'Tools', submenu: [{ role: 'toggleDevTools', label: 'Developer Tools', accelerator: 'F12' }] }
-    ]);
+    const viewerMenu = Menu.buildFromTemplate([buildViewMenu()]);
     viewerWindow.setMenu(viewerMenu);
+    registerWindowSecurity(viewerWindow);
     viewerWindow.on('closed', () => { viewerWindow = null; });
 
-    // Create report editor window (right side) — alwaysOnTop so it stays visible
+    // Create report editor window (right side) - alwaysOnTop so it stays visible
     reportWindow = new BrowserWindow({
         width: reportW,
         height: winH,
@@ -2989,19 +3330,13 @@ ipcMain.handle('open-viewer-with-report', (event, { isPortrait, imageCount, cols
         alwaysOnTop: true,
         title: 'One Clickz - Report Editor',
         icon: path.join(__dirname, 'icon.ico'),
-        webPreferences: {
-            nodeIntegration: false,
-            contextIsolation: true,
-            preload: path.join(__dirname, 'preload.js')
-        }
+        webPreferences: viewerWebPreferences()
     });
     reportWindow.loadURL(`${APP_URL}/report-editor`);
 
-    const reportMenu = Menu.buildFromTemplate([
-        { label: 'View', submenu: [{ role: 'reload' }, { role: 'forceReload' }, { type: 'separator' }, { role: 'resetZoom' }, { role: 'zoomIn' }, { role: 'zoomOut' }, { type: 'separator' }, { role: 'togglefullscreen' }] },
-        { label: 'Tools', submenu: [{ role: 'toggleDevTools', label: 'Developer Tools', accelerator: 'F12' }] }
-    ]);
+    const reportMenu = Menu.buildFromTemplate([buildViewMenu()]);
     reportWindow.setMenu(reportMenu);
+    registerWindowSecurity(reportWindow);
     reportWindow.on('closed', () => { reportWindow = null; });
 
     return { success: true };
@@ -3026,18 +3361,12 @@ ipcMain.handle('open-report-editor', async () => {
         minHeight: 400,
         title: 'One Clickz - Report Editor',
         icon: path.join(__dirname, 'icon.ico'),
-        webPreferences: {
-            nodeIntegration: false,
-            contextIsolation: true,
-            preload: path.join(__dirname, 'preload.js')
-        }
+        webPreferences: viewerWebPreferences()
     });
     win.loadURL(`${APP_URL}/report-editor`);
-    const menu = Menu.buildFromTemplate([
-        { label: 'View', submenu: [{ role: 'reload' }, { role: 'forceReload' }, { type: 'separator' }, { role: 'resetZoom' }, { role: 'zoomIn' }, { role: 'zoomOut' }, { type: 'separator' }, { role: 'togglefullscreen' }] },
-        { label: 'Tools', submenu: [{ role: 'toggleDevTools', label: 'Developer Tools', accelerator: 'F12' }] }
-    ]);
+    const menu = Menu.buildFromTemplate([buildViewMenu()]);
     win.setMenu(menu);
+    registerWindowSecurity(win);
     return { success: true };
 });
 
@@ -3047,6 +3376,9 @@ ipcMain.handle('open-report-editor', async () => {
 ipcMain.handle('show-open-dialog', async (event, options) => {
     try {
         const result = await dialog.showOpenDialog(mainWindow, options);
+        if (!result.canceled && Array.isArray(result.filePaths)) {
+            result.filePaths.forEach(authorizeDicomPath);
+        }
         return result; // { canceled, filePaths }
     } catch (e) {
         return { canceled: true, filePaths: [], error: e.message };
@@ -3056,6 +3388,7 @@ ipcMain.handle('show-open-dialog', async (event, options) => {
 // Read a file as ArrayBuffer (for passing image data to the renderer)
 ipcMain.handle('read-file-buffer', async (_event, filePath) => {
     const resolved = path.resolve(filePath);
+    if (!isAllowedDicomPath(resolved, 'file')) throw new Error('File is outside allowed roots');
     if (!fs.existsSync(resolved)) throw new Error('File not found: ' + filePath);
     const buf = fs.readFileSync(resolved);
     return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
@@ -3065,6 +3398,9 @@ ipcMain.handle('read-file-buffer', async (_event, filePath) => {
 ipcMain.handle('list-image-files', async (_event, folderPath) => {
     try {
         const resolved = path.resolve(folderPath);
+        if (!isAllowedDicomPath(resolved, 'directory')) {
+            return { success: false, files: [], error: 'Directory is outside allowed roots' };
+        }
         if (!fs.existsSync(resolved) || !fs.statSync(resolved).isDirectory()) {
             return { success: false, files: [], error: 'Not a valid directory' };
         }
@@ -3099,6 +3435,9 @@ ipcMain.handle('list-image-files', async (_event, folderPath) => {
 ipcMain.handle('list-dicom-files', async (event, folderPath) => {
     try {
         const resolved = path.resolve(folderPath);
+        if (!isAllowedDicomPath(resolved, 'directory')) {
+            return { success: false, files: [], error: 'Directory is outside allowed roots' };
+        }
         if (!fs.existsSync(resolved) || !fs.statSync(resolved).isDirectory()) {
             return { success: false, files: [], error: 'Not a valid directory' };
         }
@@ -3147,7 +3486,7 @@ ipcMain.handle('dicom-send-to-modality', async (event, { modalityName, filePaths
                     headers: {
                         'Content-Type': 'application/dicom',
                         'Content-Length': data.length,
-                        Authorization: 'Basic ' + Buffer.from('orthanc:orthanc').toString('base64'),
+                        Authorization: orthancAuthHeader(),
                     }
                 }, (res) => {
                     let body = '';
@@ -3172,7 +3511,7 @@ ipcMain.handle('dicom-send-to-modality', async (event, { modalityName, filePaths
                 headers: {
                     'Content-Type': 'application/json',
                     'Content-Length': Buffer.byteLength(sendPayload),
-                    Authorization: 'Basic ' + Buffer.from('orthanc:orthanc').toString('base64'),
+                    Authorization: orthancAuthHeader(),
                 }
             }, (res) => {
                 let body = '';
@@ -3207,7 +3546,7 @@ ipcMain.handle('dicom-send-to-destination', async (event, { host, port, aeTitle,
                 headers: {
                     'Content-Type': 'application/json',
                     'Content-Length': Buffer.byteLength(modalityConfig),
-                    Authorization: 'Basic ' + Buffer.from('orthanc:orthanc').toString('base64'),
+                    Authorization: orthancAuthHeader(),
                 }
             }, (res) => {
                 let body = '';
@@ -3231,7 +3570,7 @@ ipcMain.handle('dicom-send-to-destination', async (event, { host, port, aeTitle,
                         headers: {
                             'Content-Type': 'application/dicom',
                             'Content-Length': data.length,
-                            Authorization: 'Basic ' + Buffer.from('orthanc:orthanc').toString('base64'),
+                            Authorization: orthancAuthHeader(),
                         }
                     }, (res) => {
                         let body = '';
@@ -3264,7 +3603,7 @@ ipcMain.handle('dicom-send-to-destination', async (event, { host, port, aeTitle,
                 headers: {
                     'Content-Type': 'application/json',
                     'Content-Length': Buffer.byteLength(sendPayload),
-                    Authorization: 'Basic ' + Buffer.from('orthanc:orthanc').toString('base64'),
+                    Authorization: orthancAuthHeader(),
                 }
             }, (res) => {
                 let body = '';
@@ -3302,7 +3641,7 @@ ipcMain.handle('dicom-echo', async (event, { host, port, aeTitle }) => {
                 headers: {
                     'Content-Type': 'application/json',
                     'Content-Length': Buffer.byteLength(modalityConfig),
-                    Authorization: 'Basic ' + Buffer.from('orthanc:orthanc').toString('base64'),
+                    Authorization: orthancAuthHeader(),
                 }
             }, (res) => {
                 let body = '';
@@ -3322,7 +3661,7 @@ ipcMain.handle('dicom-echo', async (event, { host, port, aeTitle }) => {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    Authorization: 'Basic ' + Buffer.from('orthanc:orthanc').toString('base64'),
+                    Authorization: orthancAuthHeader(),
                 }
             }, (res) => {
                 let body = '';
@@ -3334,7 +3673,7 @@ ipcMain.handle('dicom-echo', async (event, { host, port, aeTitle }) => {
         });
 
         return echoResult.statusCode === 200
-            ? { success: true, message: 'C-ECHO successful — destination is reachable' }
+            ? { success: true, message: 'C-ECHO successful - destination is reachable' }
             : { success: false, error: `C-ECHO failed (HTTP ${echoResult.statusCode}): ${echoResult.body}` };
     } catch (e) {
         return { success: false, error: e.message };
@@ -3347,7 +3686,7 @@ ipcMain.handle('get-dicom-modalities', async () => {
         const result = await new Promise((resolve, reject) => {
             const req = http.request({
                 host: '127.0.0.1', port: ORTHANC_PORT, path: '/modalities',
-                headers: { Authorization: 'Basic ' + Buffer.from('orthanc:orthanc').toString('base64') }
+                headers: { Authorization: orthancAuthHeader() }
             }, (res) => {
                 let body = '';
                 res.on('data', d => body += d);
@@ -3370,7 +3709,7 @@ ipcMain.handle('get-dicom-modalities', async () => {
 // =====================================================
 const DICOM_LISTEN_PORT = 10104;
 const DICOM_AE_TITLE = 'ONECLICKZ';
-const DICOM_MAX_PDU = 131072; // 128KB — compatible with most devices
+const DICOM_MAX_PDU = 131072; // 128KB - compatible with most devices
 let dicomNetworkServer = null;
 const dicomSettingsPath = path.join(userDataPath, 'dicom-scp-settings.json');
 let networkDicomStorage = loadDicomSettings().storagePath || path.join(userDataPath, 'network-dicom');
@@ -3399,7 +3738,7 @@ function ensureNetworkDicomStorage() {
     }
 }
 
-// ── DICOM Upper Layer PDU helpers ──
+// - DICOM Upper Layer PDU helpers -
 
 function padAE(str) {
     return (str + '                ').slice(0, 16);
@@ -3451,7 +3790,7 @@ function buildAssociateAC(rqBuffer) {
         offset += 4 + itemLen;
     }
 
-    // Build AC presentation context results — accept all
+    // Build AC presentation context results - accept all
     const pcResults = [];
     for (const pc of items) {
         // Prefer Explicit VR Little Endian, then first offered
@@ -3536,7 +3875,7 @@ function buildReleaseRP() {
 }
 
 function buildCStoreRSP(pcId, messageId, sopClassUid, sopInstanceUid) {
-    // Command set is ALWAYS Implicit VR Little Endian (DICOM PS3.7 §6.3.1)
+    // Command set is ALWAYS Implicit VR Little Endian (DICOM PS3.7 -6.3.1)
     const elements = [];
 
     function addUint16Elem(group, elem, val) {
@@ -3671,7 +4010,7 @@ function parseCommandSet(cmdBuffer) {
 function buildFileMetaHeader(sopClassUid, sopInstanceUid, transferSyntax) {
     const parts = [];
 
-    // Helper: Explicit VR LE element with short VR (UI, UL, SH, etc. — 2-byte length)
+    // Helper: Explicit VR LE element with short VR (UI, UL, SH, etc. - 2-byte length)
     function addShortVR(group, elem, vr, value) {
         const valBuf = Buffer.isBuffer(value) ? value : Buffer.from(padUID(value), 'ascii');
         const hdr = Buffer.alloc(8);
@@ -3683,7 +4022,7 @@ function buildFileMetaHeader(sopClassUid, sopInstanceUid, transferSyntax) {
         return Buffer.concat([hdr, valBuf]);
     }
 
-    // Helper: Explicit VR LE element with long VR (OB, OW, UN, etc. — 4-byte length)
+    // Helper: Explicit VR LE element with long VR (OB, OW, UN, etc. - 4-byte length)
     function addLongVR(group, elem, vr, value) {
         const valBuf = Buffer.isBuffer(value) ? value : Buffer.from(value, 'ascii');
         const hdr = Buffer.alloc(12);
@@ -3696,23 +4035,23 @@ function buildFileMetaHeader(sopClassUid, sopInstanceUid, transferSyntax) {
         return Buffer.concat([hdr, valBuf]);
     }
 
-    // (0002,0001) File Meta Information Version — OB, uses long VR format
+    // (0002,0001) File Meta Information Version - OB, uses long VR format
     parts.push(addLongVR(0x0002, 0x0001, 'OB', Buffer.from([0x00, 0x01])));
-    // (0002,0002) Media Storage SOP Class UID — UI
+    // (0002,0002) Media Storage SOP Class UID - UI
     parts.push(addShortVR(0x0002, 0x0002, 'UI', sopClassUid));
-    // (0002,0003) Media Storage SOP Instance UID — UI
+    // (0002,0003) Media Storage SOP Instance UID - UI
     parts.push(addShortVR(0x0002, 0x0003, 'UI', sopInstanceUid));
-    // (0002,0010) Transfer Syntax UID — UI
+    // (0002,0010) Transfer Syntax UID - UI
     parts.push(addShortVR(0x0002, 0x0010, 'UI', transferSyntax));
-    // (0002,0012) Implementation Class UID — UI
+    // (0002,0012) Implementation Class UID - UI
     parts.push(addShortVR(0x0002, 0x0012, 'UI', '1.2.826.0.1.3680043.8.498.1'));
-    // (0002,0013) Implementation Version Name — SH
+    // (0002,0013) Implementation Version Name - SH
     const verName = 'ONECLICKZ_SCP ';
     parts.push(addShortVR(0x0002, 0x0013, 'SH', Buffer.from(verName.length % 2 !== 0 ? verName + ' ' : verName, 'ascii')));
 
     const metaContent = Buffer.concat(parts);
 
-    // (0002,0000) File Meta Information Group Length — UL (short VR)
+    // (0002,0000) File Meta Information Group Length - UL (short VR)
     const grpLen = addShortVR(0x0002, 0x0000, 'UL', Buffer.alloc(0));
     // Fix: UL is 4 bytes
     const grpLenBuf = Buffer.alloc(12);
@@ -3748,7 +4087,7 @@ function addFirewallRule() {
             return;
         } catch (e) { /* needs elevation */ }
 
-        // Request elevation via PowerShell — shows UAC prompt
+        // Request elevation via PowerShell - shows UAC prompt
         console.log('[DICOM SCP] Requesting admin elevation for firewall rule...');
         const cmd = `Start-Process -FilePath 'netsh' -ArgumentList 'advfirewall firewall add rule name=\\"One Clickz SCP\\" dir=in action=allow protocol=TCP localport=${DICOM_LISTEN_PORT} profile=any' -Verb RunAs -WindowStyle Hidden -Wait`;
         exec(`powershell -NoProfile -Command "${cmd}"`, { timeout: 30000, windowsHide: true }, (err) => {
@@ -3794,7 +4133,7 @@ function startDicomNetworkReceiver() {
                     const pduLen = recvBuffer.readUInt32BE(2);
                     const totalLen = 6 + pduLen;
 
-                    // Sanity check — reject absurdly large PDUs (>16MB)
+                    // Sanity check - reject absurdly large PDUs (>16MB)
                     if (pduLen > 16 * 1024 * 1024) {
                         console.error(`[DICOM SCP] PDU length too large (${pduLen}), closing connection`);
                         socket.destroy();
@@ -3908,7 +4247,7 @@ function startDicomNetworkReceiver() {
                 const sopInstanceUid = cmd['0000,1000'] || `1.2.${Date.now()}.${fileCount}`;
 
                 if (commandField === 0x0030) {
-                    // C-ECHO-RQ — respond with C-ECHO-RSP
+                    // C-ECHO-RQ - respond with C-ECHO-RSP
                     console.log(`[DICOM SCP] C-ECHO from association`);
                     safeWrite(buildCEchoRSP(pcId, messageId));
                 } else if (commandField === 0x0001) {
@@ -4031,7 +4370,7 @@ function stopDicomNetworkReceiver() {
 
 // IPC Handler: Get network DICOM storage path
 ipcMain.handle('get-network-dicom-path', () => {
-    // Get local network IP — skip virtual adapters (WSL, Hyper-V, VPN, Bluetooth, loopback-like)
+    // Get local network IP - skip virtual adapters (WSL, Hyper-V, VPN, Bluetooth, loopback-like)
     const os = require('os');
     const nets = os.networkInterfaces();
     let localIp = '127.0.0.1';
@@ -4068,6 +4407,7 @@ ipcMain.handle('set-network-dicom-path', (event, newPath) => {
             fs.mkdirSync(newPath, { recursive: true });
         }
         networkDicomStorage = newPath;
+        authorizeDicomPath(networkDicomStorage);
         saveDicomSettings({ storagePath: newPath });
         console.log(`[DICOM Network] Storage path updated to: ${newPath}`);
         return { success: true, path: networkDicomStorage };
@@ -4113,7 +4453,7 @@ ipcMain.handle('get-received-dicom-files', async () => {
     }
 });
 
-// ── Node.js Tesseract OCR (reliable, uses local WASM not CDN) ──
+// - Node.js Tesseract OCR (reliable, uses local WASM not CDN) -
 ipcMain.handle('ocr-image-base64', async (event, { base64, langPath }) => {
     try {
         const os = require('os');
@@ -4152,7 +4492,7 @@ ipcMain.handle('ocr-image-base64', async (event, { base64, langPath }) => {
     }
 });
 
-// ── Comprehensive DICOM reading extraction (ALL tag sources in one call) ──
+// - Comprehensive DICOM reading extraction (ALL tag sources in one call) -
 // Reads: SR sequences, graphic annotations, overlay text, private tags, all text-bearing tags.
 // Returns structured measurements (100% confidence) + text fragments (need regex parsing).
 ipcMain.handle('extract-dicom-all-readings', async (event, { filePaths }) => {
@@ -4271,13 +4611,13 @@ ipcMain.handle('extract-dicom-all-readings', async (event, { filePaths }) => {
         try {
             const buffer = fs.readFileSync(filePath);
             const byteArray = new Uint8Array(buffer);
-            // Parse FULL file — don't stop at pixel data (tags can follow pixels)
+            // Parse FULL file - don't stop at pixel data (tags can follow pixels)
             const dataset = dicomParserLib.parseDicom(byteArray);
 
-            // ── 1. DICOM SR Content Sequence (0040,A730) — the gold standard ──
+            // - 1. DICOM SR Content Sequence (0040,A730) - the gold standard -
             walkSRContent(dataset);
 
-            // ── 2. Graphic Annotation Sequence (0070,0001) — text overlays ──
+            // - 2. Graphic Annotation Sequence (0070,0001) - text overlays -
             const graphicAnnotSeq = dataset.elements['x00700001'];
             if (graphicAnnotSeq && graphicAnnotSeq.items) {
                 for (const item of graphicAnnotSeq.items) {
@@ -4299,7 +4639,7 @@ ipcMain.handle('extract-dicom-all-readings', async (event, { filePaths }) => {
                 }
             }
 
-            // ── 3. Overlay text (60xx groups) — up to 16 overlay planes ──
+            // - 3. Overlay text (60xx groups) - up to 16 overlay planes -
             for (let g = 0x6000; g <= 0x601E; g += 2) {
                 const prefix = g.toString(16).padStart(4, '0');
                 const overlayDesc = safeString(dataset, 'x' + prefix + '0022');
@@ -4308,7 +4648,7 @@ ipcMain.handle('extract-dicom-all-readings', async (event, { filePaths }) => {
                 if (overlayLabel && overlayLabel.trim().length > 1) textFragments.push(overlayLabel.trim());
             }
 
-            // ── 4. Known text tags with measurement summaries ──
+            // - 4. Known text tags with measurement summaries -
             const knownTextTags = [
                 'x00204000', // Image Comments
                 'x00402400', // Imaging Service Request Comments
@@ -4326,7 +4666,7 @@ ipcMain.handle('extract-dicom-all-readings', async (event, { filePaths }) => {
                 if (val && val.trim().length > 2) textFragments.push(val.trim());
             }
 
-            // ── 5. Recursive text from ALL sequences (vendor private data) ──
+            // - 5. Recursive text from ALL sequences (vendor private data) -
             walkSequenceForText(dataset, TEXT_VRS);
 
         } catch (err) {
@@ -4341,7 +4681,7 @@ ipcMain.handle('extract-dicom-all-readings', async (event, { filePaths }) => {
     return { structured, textFragments: uniqueText };
 });
 
-// ── DICOM measurement text extraction (Node.js side — no browser OCR needed) ──
+// - DICOM measurement text extraction (Node.js side - no browser OCR needed) -
 ipcMain.handle('extract-dicom-text', async (event, { filePaths }) => {
     const dicomParserLib = require('dicom-parser');
     const textStrings = [];
@@ -4383,7 +4723,7 @@ ipcMain.handle('extract-dicom-text', async (event, { filePaths }) => {
     return { textStrings: [...new Set(textStrings)] };
 });
 
-// ── DICOM metadata extraction (patient/study/machine info) ──
+// - DICOM metadata extraction (patient/study/machine info) -
 ipcMain.handle('extract-dicom-metadata', async (event, { filePaths }) => {
     const dicomParserLib = require('dicom-parser');
     const metadata = {};
@@ -4432,7 +4772,7 @@ ipcMain.handle('extract-dicom-metadata', async (event, { filePaths }) => {
     return metadata;
 });
 
-// ── Helper: write a 24-bit BMP from an RGB Uint8Array ──
+// - Helper: write a 24-bit BMP from an RGB Uint8Array -
 function makeBmp24(rgbBuf, cols, rows) {
     const rowBytes = cols * 3;
     const paddedRowBytes = Math.ceil(rowBytes / 4) * 4;
@@ -4468,7 +4808,7 @@ function makeBmp24(rgbBuf, cols, rows) {
     return bmp;
 }
 
-// ── Full-resolution DICOM pixel OCR (reads file → extracts pixels → BMP → Tesseract) ──
+// - Full-resolution DICOM pixel OCR (reads file -> extracts pixels -> BMP -> Tesseract) -
 // Multi-pass approach: full grayscale (PSM 11) + right-crop (PSM 6) for universal coverage
 ipcMain.handle('ocr-dicom-file', async (event, { filePath }) => {
     try {
@@ -4507,7 +4847,7 @@ ipcMain.handle('ocr-dicom-file', async (event, { filePath }) => {
         const rgbPixels = new Uint8Array(rows * cols * 3);
 
         if (samplesPerPixel === 3) {
-            // RGB or YBR — direct copy (most USG color images)
+            // RGB or YBR - direct copy (most USG color images)
             const isYBR = photometric.startsWith('YBR');
             for (let i = 0; i < rows * cols; i++) {
                 let r, g, b;
@@ -4535,7 +4875,7 @@ ipcMain.handle('ocr-dicom-file', async (event, { filePath }) => {
                 rgbPixels[i * 3 + 2] = b;
             }
         } else {
-            // Monochrome — apply window level
+            // Monochrome - apply window level
             const isInverted = photometric === 'MONOCHROME1';
             const wLow = windowCenter - windowWidth / 2;
             const wHigh = windowCenter + windowWidth / 2;
@@ -4563,7 +4903,7 @@ ipcMain.handle('ocr-dicom-file', async (event, { filePath }) => {
             }
         }
 
-        // ── Preprocessing: grayscale + contrast stretch ──
+        // - Preprocessing: grayscale + contrast stretch -
         // Produces cleaner text separation from background (critical for Doppler images)
         const grayBuf = new Uint8Array(rows * cols);
         let gMin = 255, gMax = 0;
@@ -4580,7 +4920,7 @@ ipcMain.handle('ocr-dicom-file', async (event, { filePath }) => {
             grayRgb[i * 3] = s; grayRgb[i * 3 + 1] = s; grayRgb[i * 3 + 2] = s;
         }
 
-        // Right 45% crop — where Mindray/GE/Philips put measurement panels on Doppler images
+        // Right 45% crop - where Mindray/GE/Philips put measurement panels on Doppler images
         const cropX = Math.floor(cols * 0.55);
         const cropW = cols - cropX;
         const cropRgb = new Uint8Array(rows * cropW * 3);
@@ -4592,7 +4932,7 @@ ipcMain.handle('ocr-dicom-file', async (event, { filePath }) => {
             }
         }
 
-        // Bottom 25% crop — for machines that put measurements at the bottom
+        // Bottom 25% crop - for machines that put measurements at the bottom
         const cropTopY = Math.floor(rows * 0.75);
         const cropH = rows - cropTopY;
         const btmRgb = new Uint8Array(cropH * cols * 3);
@@ -4604,7 +4944,7 @@ ipcMain.handle('ocr-dicom-file', async (event, { filePath }) => {
             }
         }
 
-        // ── Binary threshold image — isolates bright text from dark ultrasound background ──
+        // - Binary threshold image - isolates bright text from dark ultrasound background -
         // This dramatically improves OCR accuracy for measurement overlays on Doppler images.
         // Uses adaptive threshold based on image brightness distribution.
         const histogram = new Uint32Array(256);
@@ -4635,13 +4975,13 @@ ipcMain.handle('ocr-dicom-file', async (event, { filePath }) => {
         fs.writeFileSync(cropFile, makeBmp24(cropRgb, cropW, rows));
         fs.writeFileSync(btmFile, makeBmp24(btmRgb, cols, cropH));
         fs.writeFileSync(threshFile, makeBmp24(threshRgb, cols, rows));
-        console.log(`[OCR-file] BMPs: full ${cols}×${rows}, right ${cropW}×${rows}, bottom ${cols}×${cropH}, thresh(${threshVal})`);
+        console.log(`[OCR-file] BMPs: full ${cols}x${rows}, right ${cropW}x${rows}, bottom ${cols}x${cropH}, thresh(${threshVal})`);
 
         // Single Tesseract worker, 4 passes:
-        //   PSM 11 on full grayscale   — sparse text, catches scattered labels
-        //   PSM 6  on right crop       — block mode for structured measurement panels
-        //   PSM 6  on bottom crop      — block mode for bottom measurement strips
-        //   PSM 11 on thresholded full — isolates bright text overlays from dark bg
+        //   PSM 11 on full grayscale   - sparse text, catches scattered labels
+        //   PSM 6  on right crop       - block mode for structured measurement panels
+        //   PSM 6  on bottom crop      - block mode for bottom measurement strips
+        //   PSM 11 on thresholded full - isolates bright text overlays from dark bg
         const worker = await createWorker('eng', 1, { logger: () => { } });
 
         await worker.setParameters({ tessedit_pageseg_mode: '11' });
@@ -4668,7 +5008,7 @@ ipcMain.handle('ocr-dicom-file', async (event, { filePath }) => {
     }
 });
 
-// ── Batch OCR: parallel Tesseract worker pool with persistent disk cache ──
+// - Batch OCR: parallel Tesseract worker pool with persistent disk cache -
 //
 // Speed: 3-4 workers in parallel + per-file disk cache keyed by
 // (path|size|mtime). Re-opening a study is INSTANT (cache hit).
@@ -4718,7 +5058,7 @@ function scheduleOcrCacheSave() {
 }
 
 let currentOcrGeneration = 0;
-let currentOcrWorkers = []; // pool of active workers — terminated on next batch
+let currentOcrWorkers = []; // pool of active workers - terminated on next batch
 ipcMain.handle('ocr-dicom-batch', async (event, { filePaths }) => {
     const myGen = ++currentOcrGeneration;
     // Abort any in-flight batch by terminating its workers; the queue loop
@@ -4736,7 +5076,7 @@ ipcMain.handle('ocr-dicom-batch', async (event, { filePaths }) => {
         const batchStart = Date.now();
         const cache = loadOcrCache();
 
-        // ── Phase 0: cache lookup ──
+        // - Phase 0: cache lookup -
         // Pre-compute cache key and prepared result slot per file. Indices
         // missing from the cache go onto the work queue.
         const results = new Array(filePaths.length);
@@ -4758,7 +5098,7 @@ ipcMain.handle('ocr-dicom-batch', async (event, { filePaths }) => {
         }
         console.log(`[OCR-batch] Cache: ${filePaths.length - queue.length}/${filePaths.length} hit, ${queue.length} to OCR`);
 
-        // ── Phase 1: spin up worker pool ──
+        // - Phase 1: spin up worker pool -
         const poolSize = Math.min(OCR_WORKER_COUNT, queue.length);
         const workerStart = Date.now();
         const workers = await Promise.all(
@@ -4771,7 +5111,7 @@ ipcMain.handle('ocr-dicom-batch', async (event, { filePaths }) => {
         }
         console.log(`[OCR-batch] ${poolSize} worker(s) ready in ${Date.now() - workerStart}ms`);
 
-        // ── Phase 2: consume queue with shared cursor ──
+        // - Phase 2: consume queue with shared cursor -
         let cursor = 0;
         const processOne = async (worker) => {
             while (true) {
@@ -4797,7 +5137,7 @@ ipcMain.handle('ocr-dicom-batch', async (event, { filePaths }) => {
         };
         await Promise.all(workers.map(processOne));
 
-        // ── Phase 3: cleanup ──
+        // - Phase 3: cleanup -
         for (const w of workers) { try { await w.terminate(); } catch {} }
         if (currentOcrWorkers === workers) currentOcrWorkers = [];
         scheduleOcrCacheSave();
@@ -4839,10 +5179,10 @@ async function ocrOneDicom(worker, filePath, dicomParserLib, slotIdx) {
     const pixelDataElement = dataset.elements['x7fe00010'];
     if (!pixelDataElement) return { text: '' };
 
-    // ── Decode pixel data ──
+    // - Decode pixel data -
     // Uncompressed transfer syntaxes give us raw bytes at dataOffset.
     // Encapsulated (JPEG/RLE) syntaxes wrap fragments in (FFFE,E000) item
-    // delimiters — we need to extract + decompress.
+    // delimiters - we need to extract + decompress.
     const UNCOMPRESSED_TS = new Set([
         '1.2.840.10008.1.2',     // Implicit VR LE
         '1.2.840.10008.1.2.1',   // Explicit VR LE
@@ -4857,7 +5197,7 @@ async function ocrOneDicom(worker, filePath, dicomParserLib, slotIdx) {
     if (UNCOMPRESSED_TS.has(transferSyntax)) {
         pixelData = new Uint8Array(buffer.buffer, pixelDataElement.dataOffset, pixelDataElement.length);
     } else if (JPEG_BASELINE_TS.has(transferSyntax) && pixelDataElement.fragments?.length) {
-        // Encapsulated — use dicom-parser helper to assemble frame 0 from
+        // Encapsulated - use dicom-parser helper to assemble frame 0 from
         // ALL its fragments (Philips often splits a single frame across
         // multiple fragments; taking only fragments[0] truncates the JPEG).
         try {
@@ -4888,7 +5228,7 @@ async function ocrOneDicom(worker, filePath, dicomParserLib, slotIdx) {
             return { text: '' };
         }
     } else {
-        // Other compressed syntaxes (JPEG-LS, JPEG 2000, RLE) — would need
+        // Other compressed syntaxes (JPEG-LS, JPEG 2000, RLE) - would need
         // heavier decoders. For now skip OCR and let parser handle DICOM tags.
         console.warn(`[OCR] Unsupported transfer syntax for OCR: ${transferSyntax} (${path.basename(filePath)})`);
         return { text: '' };
@@ -4932,37 +5272,37 @@ async function ocrOneDicom(worker, filePath, dicomParserLib, slotIdx) {
         }
     }
 
-    // Adaptive thresholds — TWO levels (HIGH + MID) to catch both bright Mindray-style
+    // Adaptive thresholds - TWO levels (HIGH + MID) to catch both bright Mindray-style
     // text and softer GE/Voluson colored text. Plus a raw grayscale pass for Philips/Samsung
     // anti-aliased text. The MID + raw passes only fire when HIGH+crop yielded no labels,
     // so Mindray/SonoScape stay at 2 passes per file.
     const histogram = new Uint32Array(256);
     for (let i = 0; i < rows * cols; i++) histogram[grayBuf[i]]++;
     const total = rows * cols;
-    // HIGH: top 15% (Mindray, SonoScape, Siemens — pure white text)
+    // HIGH: top 15% (Mindray, SonoScape, Siemens - pure white text)
     let cumul = 0, threshHigh = 160;
     for (let i = 255; i >= 0; i--) {
         cumul += histogram[i];
         if (cumul / total > 0.15) { threshHigh = Math.max(i, 120); break; }
     }
-    // MID: top 30% (GE Voluson colored text → gray ~100-140, Canon Aplio)
+    // MID: top 30% (GE Voluson colored text -> gray ~100-140, Canon Aplio)
     cumul = 0;
     let threshMid = 90;
     for (let i = 255; i >= 0; i--) {
         cumul += histogram[i];
         if (cumul / total > 0.30) { threshMid = Math.max(i, 80); break; }
     }
-    // If MID and HIGH are too close, MID won't help — skip it
+    // If MID and HIGH are too close, MID won't help - skip it
     const useMid = (threshHigh - threshMid) >= 25;
 
-    // Pass 1: Thresholded full image (PSM 11 sparse text) — HIGH threshold
+    // Pass 1: Thresholded full image (PSM 11 sparse text) - HIGH threshold
     const threshRgb = new Uint8Array(rows * cols * 3);
     for (let i = 0; i < rows * cols; i++) {
         const v = grayBuf[i] >= threshHigh ? 255 : 0;
         threshRgb[i * 3] = v; threshRgb[i * 3 + 1] = v; threshRgb[i * 3 + 2] = v;
     }
 
-    // Pass 2: Right 45% crop thresholded (PSM 6 block — measurement panels)
+    // Pass 2: Right 45% crop thresholded (PSM 6 block - measurement panels)
     const cropX = Math.floor(cols * 0.55);
     const cropW = cols - cropX;
     const cropRgb = new Uint8Array(rows * cropW * 3);
@@ -4995,7 +5335,7 @@ async function ocrOneDicom(worker, filePath, dicomParserLib, slotIdx) {
         collected.push(d2.text || '');
 
         // Rescue passes only if HIGH-threshold passes found no labels/units.
-        // Costs ~1-3s extra but unlocks Philips/GE/Samsung — and is cached afterwards.
+        // Costs ~1-3s extra but unlocks Philips/GE/Samsung - and is cached afterwards.
         const needsRescue = !LABEL_HIT.test(collected.join('\n'));
 
         if (needsRescue && useMid) {
@@ -5038,3 +5378,4 @@ function startNetworkReceiverOnAppReady() {
     startDicomNetworkReceiver();
     console.log(`[DICOM Network] Custom TCP receiver started on port ${DICOM_LISTEN_PORT}`);
 }
+

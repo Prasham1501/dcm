@@ -56,7 +56,12 @@ if (file_exists($envFile)) {
 // =====================================================
 // Database Configuration
 // =====================================================
-define('DB_HOST', getenv('DB_HOST') ?: '127.0.0.1');
+// Use 127.0.0.1 instead of 'localhost': on Windows, mysqli('localhost') resolves to
+// IPv6 ::1 first and stalls ~2s per connection before falling back to IPv4 (the bundled
+// MariaDB binds IPv4 only). Forcing 127.0.0.1 keeps every request fast and offline-safe.
+$risDbHost = getenv('DB_HOST') ?: '127.0.0.1';
+if (strcasecmp($risDbHost, 'localhost') === 0) { $risDbHost = '127.0.0.1'; }
+define('DB_HOST', $risDbHost);
 define('DB_PORT', getenv('DB_PORT') ?: '3306');
 define('DB_USER', getenv('DB_USER') ?: 'root');
 define('DB_PASSWORD', getenv('DB_PASSWORD') ?: '');
@@ -65,9 +70,22 @@ define('DB_NAME', getenv('DB_NAME') ?: 'dicom_viewer_pro');
 // =====================================================
 // Orthanc Configuration
 // =====================================================
-define('ORTHANC_URL', getenv('ORTHANC_URL') ?: 'http://localhost:8042');
-define('ORTHANC_USERNAME', getenv('ORTHANC_USERNAME') ?: 'orthanc');
-define('ORTHANC_PASSWORD', getenv('ORTHANC_PASSWORD') ?: 'orthanc');
+// Force 127.0.0.1 over 'localhost' for the same IPv6-stall reason as DB_HOST:
+// Orthanc binds IPv4, so 'localhost' (->::1) wastes ~2s per call before falling back.
+$orthancPassword = getenv('ORTHANC_PASSWORD') ?: '';
+if ($orthancPassword === '') {
+    $appData = getenv('APPDATA') ?: '';
+    foreach (['One Clickz', 'one-clickz', 'one-clickz-viewer'] as $dirName) {
+        $candidate = $appData ? $appData . DIRECTORY_SEPARATOR . $dirName . DIRECTORY_SEPARATOR . '.orthanc-password' : '';
+        if ($candidate && is_file($candidate)) {
+            $orthancPassword = trim((string)@file_get_contents($candidate));
+            if ($orthancPassword !== '') break;
+        }
+    }
+}
+define('ORTHANC_URL', str_ireplace('//localhost:', '//127.0.0.1:', getenv('ORTHANC_URL') ?: 'http://127.0.0.1:8042'));
+define('ORTHANC_USERNAME', getenv('ORTHANC_USERNAME') ?: 'oneclickz');
+define('ORTHANC_PASSWORD', $orthancPassword);
 define('ORTHANC_DICOMWEB_ROOT', getenv('ORTHANC_DICOMWEB_ROOT') ?: '/dicom-web');
 define('ORTHANC_STORAGE_PATH', getenv('ORTHANC_STORAGE_PATH') ?: $dataDir . '/orthanc/storage');
 

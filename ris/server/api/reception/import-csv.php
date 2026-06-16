@@ -33,6 +33,38 @@ function val(array $row, array $names): string {
     return '';
 }
 
+function staffRole(string $value): string {
+    $role = strtolower(trim($value));
+    return in_array($role, ['admin', 'doctor', 'receptionist', 'viewer'], true) ? $role : 'receptionist';
+}
+
+function ensureStaffSchema(mysqli $db): void {
+    $db->query(
+        "CREATE TABLE IF NOT EXISTS ris_staff (
+          id INT(11) UNSIGNED NOT NULL AUTO_INCREMENT,
+          user_id INT(11) UNSIGNED DEFAULT NULL,
+          staff_code VARCHAR(32) DEFAULT NULL,
+          full_name VARCHAR(160) NOT NULL,
+          designation VARCHAR(120) DEFAULT NULL,
+          department VARCHAR(120) DEFAULT NULL,
+          phone VARCHAR(30) DEFAULT NULL,
+          email VARCHAR(160) DEFAULT NULL,
+          address VARCHAR(255) DEFAULT NULL,
+          username VARCHAR(80) DEFAULT NULL,
+          user_role VARCHAR(40) NOT NULL DEFAULT 'receptionist',
+          can_login TINYINT(1) NOT NULL DEFAULT 0,
+          is_active TINYINT(1) NOT NULL DEFAULT 1,
+          created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+          PRIMARY KEY (id),
+          UNIQUE KEY uq_ris_staff_code (staff_code),
+          UNIQUE KEY uq_ris_staff_user (user_id),
+          KEY idx_ris_staff_active (is_active),
+          KEY idx_ris_staff_name (full_name)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+    );
+}
+
 try {
     $type = $_POST['type'] ?? 'patients';
     if (!isset($_FILES['file']) || !is_uploaded_file($_FILES['file']['tmp_name'])) {
@@ -95,12 +127,44 @@ try {
                 $stmt->bind_param('sssd', $name, $phone, $ctype, $cval);
                 $stmt->execute();
                 $stmt->close();
-            } elseif (in_array($type, ['staff', 'areas', 'patient_groups', 'dispatch_modes', 'lookups'], true)) {
-                $category = $type === 'staff' ? 'phlebotomy_staff'
-                    : ($type === 'areas' ? 'home_visit_area'
+            } elseif ($type === 'staff') {
+                ensureStaffSchema($db);
+                $name = val($row, ['full_name', 'name', 'staff']);
+                if ($name === '') { $skipped++; continue; }
+                $code = strtoupper(val($row, ['staff_code', 'code'])) ?: ('STF' . strtoupper(substr(preg_replace('/[^A-Za-z0-9]/', '', $name) ?: 'USER', 0, 4)) . rand(10, 99));
+                $designation = val($row, ['designation']);
+                $department = val($row, ['department']);
+                $phone = val($row, ['phone', 'mobile']);
+                $email = val($row, ['email']);
+                $address = val($row, ['address']);
+                $username = val($row, ['username', 'login']);
+                $password = val($row, ['password', 'pass']);
+                $role = staffRole(val($row, ['user_role', 'role']));
+                $canLogin = in_array(strtolower(val($row, ['can_login', 'login_enabled'])), ['1','yes','y','true'], true) ? 1 : 0;
+                $activeVal = strtolower(val($row, ['is_active', 'active']));
+                $active = $activeVal === '' || in_array($activeVal, ['1','yes','y','true'], true) ? 1 : 0;
+                $userId = null;
+                if ($canLogin && $username !== '' && $password !== '') {
+                    $hash = password_hash($password, PASSWORD_DEFAULT);
+                    $usr = $db->prepare('INSERT INTO users (username, password_hash, full_name, email, role, is_active) VALUES (?, ?, ?, ?, ?, 1)');
+                    $usr->bind_param('sssss', $username, $hash, $name, $email, $role);
+                    $usr->execute();
+                    $userId = (int)$usr->insert_id;
+                    $usr->close();
+                }
+                $stmt = $db->prepare('INSERT INTO ris_staff (user_id, staff_code, full_name, designation, department, phone, email, address, username, user_role, can_login, is_active) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)');
+                $stmt->bind_param('isssssssssii', $userId, $code, $name, $designation, $department, $phone, $email, $address, $username, $role, $canLogin, $active);
+                $stmt->execute();
+                $stmt->close();
+                $legacy = $db->prepare("INSERT INTO ris_lookups (category, value, sort_order, is_active) VALUES ('phlebotomy_staff', ?, 0, 1) ON DUPLICATE KEY UPDATE is_active = 1");
+                $legacy->bind_param('s', $name);
+                $legacy->execute();
+                $legacy->close();
+            } elseif (in_array($type, ['areas', 'patient_groups', 'dispatch_modes', 'lookups'], true)) {
+                $category = $type === 'areas' ? 'home_visit_area'
                     : ($type === 'patient_groups' ? 'patient_group'
                     : ($type === 'dispatch_modes' ? 'dispatch_mode'
-                    : val($row, ['category']))));
+                    : val($row, ['category'])));
                 $value = val($row, ['value', 'name', 'staff', 'area', 'group']);
                 if ($category === '' || $value === '') { $skipped++; continue; }
                 $sort = (int)val($row, ['sort_order', 'sort']);

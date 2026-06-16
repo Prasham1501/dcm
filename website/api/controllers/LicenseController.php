@@ -55,6 +55,39 @@ class LicenseController {
         ][$plan] ?? 0;
     }
 
+    private function b64url(string $bytes): string {
+        return rtrim(strtr(base64_encode($bytes), '+/', '-_'), '=');
+    }
+
+    private function signedLeaseToken(array $license, string $fingerprint): ?string {
+        $privateKey = getenv('LICENSE_LEASE_PRIVATE_KEY_B64') ?: '';
+        if ($privateKey === '' || !function_exists('sodium_crypto_sign_detached')) return null;
+        $secret = base64_decode($privateKey, true);
+        if ($secret === false || strlen($secret) !== SODIUM_CRYPTO_SIGN_SECRETKEYBYTES) return null;
+
+        $now = time();
+        $licenseExpiresAt = $license['expires_at']
+            ? gmdate('c', (int)strtotime($license['expires_at']))
+            : gmdate('c', $now + 365 * 86400);
+        $payload = [
+            'licenseKey'       => $license['key_code'],
+            'fingerprint'      => $fingerprint,
+            'product'          => $license['product'] ?? 'viewer',
+            'plan'             => $license['plan'],
+            'issuedAt'         => gmdate('c', $now),
+            'licenseExpiresAt' => $licenseExpiresAt,
+            'nextCheckBy'      => gmdate('c', $now + 90 * 86400),
+        ];
+        $payload64 = $this->b64url(json_encode($payload, JSON_UNESCAPED_SLASHES));
+        $sig64 = $this->b64url(sodium_crypto_sign_detached($payload64, $secret));
+        return $payload64 . '.' . $sig64;
+    }
+
+    private function leaseFields(array $license, string $fingerprint): array {
+        $token = $this->signedLeaseToken($license, $fingerprint);
+        return $token ? ['license_token' => $token, 'offline_window_days' => 90] : [];
+    }
+
     public function order(Request $req): void {
         $this->ensureProductColumn();
         $body    = $req->body();
@@ -293,11 +326,11 @@ class LicenseController {
             if ($existing['status'] === 'active') {
                 db()->prepare("UPDATE devices SET last_heartbeat_at=?,last_ip=?,app_version=?,machine_name=? WHERE id=?")
                     ->execute([nowDb(), $req->clientIp(), $ver, $name, $existing['id']]);
-                Response::ok(['message' => 'Already activated', 'device_id' => $existing['id'], 'expires_at' => $lic['expires_at'], 'plan' => $lic['plan'], 'wallet_balances' => $this->walletBalances($lic['account_id'])]);
+                Response::ok(['message' => 'Already activated', 'device_id' => $existing['id'], 'expires_at' => $lic['expires_at'], 'plan' => $lic['plan'], 'wallet_balances' => $this->walletBalances($lic['account_id'])] + $this->leaseFields($lic, $fp));
             }
             db()->prepare("UPDATE devices SET status='active', deactivated_at=NULL, last_heartbeat_at=?, last_ip=?, app_version=? WHERE id=?")
                 ->execute([nowDb(), $req->clientIp(), $ver, $existing['id']]);
-            Response::ok(['message' => 'Device reactivated', 'device_id' => $existing['id'], 'expires_at' => $lic['expires_at'], 'plan' => $lic['plan'], 'wallet_balances' => $this->walletBalances($lic['account_id'])]);
+            Response::ok(['message' => 'Device reactivated', 'device_id' => $existing['id'], 'expires_at' => $lic['expires_at'], 'plan' => $lic['plan'], 'wallet_balances' => $this->walletBalances($lic['account_id'])] + $this->leaseFields($lic, $fp));
         }
 
         // Check seat count
@@ -314,7 +347,7 @@ class LicenseController {
         )->execute([$devId, $lic['id'], $lic['account_id'], $fp, $name, $os, $ver, 'active', nowDb(), nowDb(), $req->clientIp()]);
 
         AuditLog::log('device.activate', $name, ['fp' => substr($fp,0,8).'...'], $lic['account_id'], null, 'desktop', $req->clientIp());
-        Response::ok(['device_id' => $devId, 'expires_at' => $lic['expires_at'], 'plan' => $lic['plan'], 'seats' => $lic['seats'], 'wallet_balances' => $this->walletBalances($lic['account_id'])]);
+        Response::ok(['device_id' => $devId, 'expires_at' => $lic['expires_at'], 'plan' => $lic['plan'], 'seats' => $lic['seats'], 'wallet_balances' => $this->walletBalances($lic['account_id'])] + $this->leaseFields($lic, $fp));
     }
 
     public function validate(Request $req): void {
@@ -358,7 +391,7 @@ class LicenseController {
             'quota_remaining' => $quotaRemaining,
             'quota_total'     => $quotaTotal,
             'wallet_balances' => $this->walletBalances($row['account_id']),
-        ]);
+        ] + $this->leaseFields($row, $fp));
     }
 
     /** POST /license/quota — desktop apps read/decrement their print quota.
@@ -374,7 +407,7 @@ class LicenseController {
         $dec  = max(0, (int)($body['decrement'] ?? 0));
         // Desktop apps may flip the quota mode after the user clears the
         // local password gate. We require the same admin_pin defined in
-        // settings (`admin.device_pin`, defaults to "Prasham123$") so a
+        // settings (`admin.device_pin`) so a
         // device can't toggle without operator consent.
         $devicePin   = trim((string)($body['admin_pin']  ?? ''));
         $setEnabled  = isset($body['set_enabled']) ? (int)!!$body['set_enabled'] : null;
@@ -419,7 +452,8 @@ class LicenseController {
         // Device-side toggle (requires admin_pin). Lets the user flip
         // sell-by-print mode straight from the desktop app's quota modal.
         if ($setEnabled !== null || $setRemaining !== null) {
-            $expectedPin = \Settings::get('admin.device_pin', 'Prasham123$');
+            $expectedPin = trim((string)\Settings::get('admin.device_pin', ''));
+            if ($expectedPin === '') Response::error('Admin device PIN is not configured', 500);
             if ($devicePin !== $expectedPin) Response::error('Invalid admin pin', 403);
             $updates = []; $params = [];
             if ($setEnabled   !== null) { $updates[] = 'quota_enabled = ?';   $params[] = $setEnabled; }

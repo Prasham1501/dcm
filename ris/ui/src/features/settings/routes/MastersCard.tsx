@@ -5,7 +5,7 @@ import {
   apiMasters, apiSaveMaster, apiDeleteMaster, apiImportCsv,
   apiListDoctors, apiSaveDoctor, apiDeleteDoctor,
   apiListPatients, apiSavePatientMaster,
-  type Center, type Pro, type Lookup, type RisDoctor, type PatientMaster, type ImportType,
+  type Center, type Pro, type Staff, type Lookup, type RisDoctor, type PatientMaster, type ImportType,
 } from '../api/settingsApi';
 
 type TabKey = 'patients' | 'centers' | 'doctors' | 'pros' | 'staff' | 'patient_groups' | 'dispatch_modes';
@@ -22,7 +22,6 @@ const TABS: Array<{ key: TabKey; label: string }> = [
 
 // Lookup tabs map to a ris_lookups category.
 const LOOKUP_CATEGORY: Partial<Record<TabKey, string>> = {
-  staff: 'phlebotomy_staff',
   patient_groups: 'patient_group',
   dispatch_modes: 'dispatch_mode',
 };
@@ -33,7 +32,7 @@ const IMPORT: Record<TabKey, { type: ImportType; headers: string[] }> = {
   centers: { type: 'centers', headers: ['code', 'name', 'billing_type', 'contact_person', 'phone', 'email', 'address', 'discount_percent'] },
   doctors: { type: 'referring_doctors', headers: ['name', 'doctor_type', 'phone', 'email', 'registration_no', 'clinic_name', 'address'] },
   pros: { type: 'pros', headers: ['name', 'phone', 'commission_type', 'commission_value'] },
-  staff: { type: 'staff', headers: ['value', 'sort_order'] },
+  staff: { type: 'staff', headers: ['staff_code', 'full_name', 'designation', 'department', 'phone', 'email', 'username', 'user_role', 'can_login', 'is_active'] },
   patient_groups: { type: 'patient_groups', headers: ['value', 'sort_order'] },
   dispatch_modes: { type: 'dispatch_modes', headers: ['value', 'sort_order'] },
 };
@@ -55,6 +54,7 @@ const EXPORT_COLUMNS: {
   centers: Array<CsvColumn<Center>>;
   doctors: Array<CsvColumn<RisDoctor>>;
   pros: Array<CsvColumn<Pro>>;
+  staff: Array<CsvColumn<Staff>>;
   lookups: Array<CsvColumn<Lookup>>;
 } = {
   patients: [
@@ -107,6 +107,18 @@ const EXPORT_COLUMNS: {
     { header: 'commission_value', value: (p) => p.commission_value },
     { header: 'is_active', value: (p) => p.is_active },
   ],
+  staff: [
+    { header: 'staff_code', value: (s) => s.staff_code },
+    { header: 'full_name', value: (s) => s.full_name },
+    { header: 'designation', value: (s) => s.designation },
+    { header: 'department', value: (s) => s.department },
+    { header: 'phone', value: (s) => s.phone },
+    { header: 'email', value: (s) => s.email },
+    { header: 'username', value: (s) => s.username },
+    { header: 'user_role', value: (s) => s.user_role },
+    { header: 'can_login', value: (s) => s.can_login },
+    { header: 'is_active', value: (s) => s.is_active },
+  ],
   lookups: [
     { header: 'category', value: (l) => l.category },
     { header: 'value', value: (l) => l.value },
@@ -139,6 +151,7 @@ export function MastersCard() {
   const [tab, setTab] = useState<TabKey>('patients');
   const [centers, setCenters] = useState<Center[]>([]);
   const [pros, setPros] = useState<Pro[]>([]);
+  const [staff, setStaff] = useState<Staff[]>([]);
   const [doctors, setDoctors] = useState<RisDoctor[]>([]);
   const [lookups, setLookups] = useState<Lookup[]>([]);
   const [patients, setPatients] = useState<PatientMaster[]>([]);
@@ -151,6 +164,7 @@ export function MastersCard() {
   // Edit forms (one object per entity kind).
   const [centerForm, setCenterForm] = useState<Partial<Center>>({ billing_type: 'debit', is_active: 1 });
   const [proForm, setProForm] = useState<Partial<Pro>>({ commission_type: 'none', is_active: 1 });
+  const [staffForm, setStaffForm] = useState<Partial<Staff> & { password?: string }>({ user_role: 'receptionist', can_login: 0, is_active: 1 });
   const [doctorForm, setDoctorForm] = useState<Partial<RisDoctor>>({ doctor_type: 'gp' });
   const [lookupValue, setLookupValue] = useState('');
 
@@ -162,6 +176,7 @@ export function MastersCard() {
       if (which === 'patients') setPatients(await apiListPatients(patientQuery));
       else if (which === 'centers') setCenters(await apiMasters<Center>('centers'));
       else if (which === 'pros') setPros(await apiMasters<Pro>('pros'));
+      else if (which === 'staff') setStaff(await apiMasters<Staff>('staff'));
       else if (which === 'doctors') setDoctors(await apiListDoctors());
       else setLookups(await apiMasters<Lookup>('lookups', { category: LOOKUP_CATEGORY[which]! }));
     } catch (err: any) {
@@ -200,6 +215,14 @@ export function MastersCard() {
     await load('pros');
   }, 'PRO saved');
 
+  const saveStaff = () => wrap(async () => {
+    if (!staffForm.full_name?.trim()) throw new Error('Staff name is required');
+    if (Number(staffForm.can_login || 0) === 1 && !staffForm.username?.trim()) throw new Error('Username is required when login is enabled');
+    await apiSaveMaster('staff', staffForm as Record<string, unknown>);
+    setStaffForm({ user_role: 'receptionist', can_login: 0, is_active: 1 });
+    await load('staff');
+  }, 'Staff saved');
+
   const saveDoctor = () => wrap(async () => {
     if (!doctorForm.name?.trim()) throw new Error('Doctor name is required');
     await apiSaveDoctor(doctorForm);
@@ -216,6 +239,7 @@ export function MastersCard() {
 
   const removeCenter = (c: Center) => wrap(async () => { await apiDeleteMaster('centers', c.id); await load('centers'); }, 'Center removed');
   const removePro = (p: Pro) => wrap(async () => { await apiDeleteMaster('pros', p.id); await load('pros'); }, 'PRO removed');
+  const removeStaff = (s: Staff) => wrap(async () => { await apiDeleteMaster('staff', s.id); await load('staff'); }, 'Staff removed');
   const removeDoctor = (d: RisDoctor) => wrap(async () => { await apiDeleteDoctor(d.id); await load('doctors'); }, 'Doctor removed');
   const removeLookup = (l: Lookup) => wrap(async () => { await apiDeleteMaster('lookups', l.id); await load(tab); }, 'Removed');
 
@@ -248,6 +272,11 @@ export function MastersCard() {
     if (tab === 'pros') {
       const rows = await apiMasters<Pro>('pros');
       downloadCsv(`pros_master_${stamp}.csv`, EXPORT_COLUMNS.pros, rows);
+      return;
+    }
+    if (tab === 'staff') {
+      const rows = await apiMasters<Staff>('staff');
+      downloadCsv(`staff_master_${stamp}.csv`, EXPORT_COLUMNS.staff, rows);
       return;
     }
     const rows = await apiMasters<Lookup>('lookups', { category: LOOKUP_CATEGORY[tab]! });
@@ -468,6 +497,69 @@ export function MastersCard() {
                         <div className="actions">
                           <Button size="sm" variant="secondary" icon={Pencil} onClick={() => setProForm({ ...p })}>Edit</Button>
                           <Button size="sm" variant="danger" icon={Trash2} disabled={busy} onClick={() => removePro(p)}>Remove</Button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* ---------- Staff ---------- */}
+      {tab === 'staff' && (
+        <>
+          <div className="grid-2 mt-4">
+            <TextInput label="Staff code" value={staffForm.staff_code || ''} onChange={(e) => setStaffForm({ ...staffForm, staff_code: e.target.value })} hint="Optional, auto if blank" />
+            <TextInput label="Full name" value={staffForm.full_name || ''} onChange={(e) => setStaffForm({ ...staffForm, full_name: e.target.value })} />
+            <TextInput label="Designation" value={staffForm.designation || ''} onChange={(e) => setStaffForm({ ...staffForm, designation: e.target.value })} placeholder="Receptionist, technician, doctor..." />
+            <TextInput label="Department" value={staffForm.department || ''} onChange={(e) => setStaffForm({ ...staffForm, department: e.target.value })} placeholder="Reception, lab, radiology..." />
+            <TextInput label="Mobile" value={staffForm.phone || ''} onChange={(e) => setStaffForm({ ...staffForm, phone: e.target.value })} />
+            <TextInput label="Email" type="email" value={staffForm.email || ''} onChange={(e) => setStaffForm({ ...staffForm, email: e.target.value })} />
+            <TextInput label="Address" value={staffForm.address || ''} onChange={(e) => setStaffForm({ ...staffForm, address: e.target.value })} />
+            <SelectInput label="Software role" value={staffForm.user_role || 'receptionist'} onChange={(e) => setStaffForm({ ...staffForm, user_role: e.target.value as Staff['user_role'] })}>
+              <option value="receptionist">Receptionist</option>
+              <option value="doctor">Doctor</option>
+              <option value="admin">Admin</option>
+              <option value="viewer">Viewer</option>
+            </SelectInput>
+          </div>
+          <div className="grid-3 mt-3">
+            <TextInput label="Login username" value={staffForm.username || ''} onChange={(e) => setStaffForm({ ...staffForm, username: e.target.value })} placeholder="Used when login is enabled" />
+            <TextInput label={staffForm.id ? 'New password' : 'Password'} type="password" value={staffForm.password || ''} onChange={(e) => setStaffForm({ ...staffForm, password: e.target.value })} hint={staffForm.id ? 'Leave blank to keep current password' : 'Required if login is enabled'} />
+            <label className="checkrow" style={{ alignSelf: 'end' }}>
+              <input type="checkbox" checked={Number(staffForm.can_login || 0) === 1} onChange={(e) => setStaffForm({ ...staffForm, can_login: e.target.checked ? 1 : 0 })} />
+              <span>Can login to software</span>
+            </label>
+          </div>
+          <div className="actions mt-3">
+            <label className="checkrow">
+              <input type="checkbox" checked={Number(staffForm.is_active ?? 1) === 1} onChange={(e) => setStaffForm({ ...staffForm, is_active: e.target.checked ? 1 : 0 })} />
+              <span>Active staff</span>
+            </label>
+            <Button variant="primary" icon={Save} disabled={busy || !staffForm.full_name} onClick={saveStaff}>{staffForm.id ? 'Update staff' : 'Add staff'}</Button>
+            {staffForm.id ? <Button variant="secondary" onClick={() => setStaffForm({ user_role: 'receptionist', can_login: 0, is_active: 1 })}>Cancel edit</Button> : null}
+          </div>
+          <div className="divider" />
+          {staff.length === 0 ? <EmptyState title="No staff" sub="Add staff details and login credentials above." /> : (
+            <div className="table-wrap">
+              <table className="dt">
+                <thead><tr><th>Code</th><th>Name</th><th>Role</th><th>Contact</th><th>Login</th><th>Status</th><th /></tr></thead>
+                <tbody>
+                  {staff.map((s) => (
+                    <tr key={s.id}>
+                      <td className="mono">{s.staff_code || '-'}</td>
+                      <td><span className="strong">{s.full_name}</span><div className="field-hint">{[s.designation, s.department].filter(Boolean).join(' | ') || '-'}</div></td>
+                      <td><StatusChip status={s.user_role === 'doctor' ? 'pending' : 'online'} label={s.user_role} /></td>
+                      <td>{s.phone || '-'}<div className="field-hint">{s.email || '-'}</div></td>
+                      <td>{Number(s.can_login || 0) === 1 ? <span className="mono">{s.username || '-'}</span> : <span className="field-hint">No login</span>}</td>
+                      <td><StatusChip status={s.is_active ? 'online' : 'offline'} label={s.is_active ? 'Active' : 'Inactive'} /></td>
+                      <td>
+                        <div className="actions">
+                          <Button size="sm" variant="secondary" icon={Pencil} onClick={() => setStaffForm({ ...s, password: '' })}>Edit</Button>
+                          <Button size="sm" variant="danger" icon={Trash2} disabled={busy} onClick={() => removeStaff(s)}>Remove</Button>
                         </div>
                       </td>
                     </tr>

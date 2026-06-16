@@ -4,8 +4,8 @@
  *  - quotaEnabled OFF (default): slot prints unlimited (software licence).
  *  - quotaEnabled ON: each print decrements quotaRemaining; alert <=50; stop at 0.
  *
- * Opened either from a slot card or from the global Ctrl+Shift+Q
- * keybinding. Already wrapped in a PasswordModal upstream.
+ * Opened from a slot card. The central Ctrl+Shift+Q recharge path uses
+ * signed offline vouchers instead of this legacy per-slot counter.
  */
 import { useEffect, useState } from 'react';
 import { X, Save, ToggleLeft, ToggleRight, Plus } from 'lucide-react';

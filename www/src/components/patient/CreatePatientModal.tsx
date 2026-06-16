@@ -56,9 +56,9 @@ export function CreatePatientModal({ onSave, onClose }: CreatePatientModalProps)
   /** Pick DCM or image files via Electron dialog (if available) or browser file input */
   const handleBrowseFiles = async () => {
     const api = (window as any).electronAPI;
-    if (api?.invoke) {
+    if (api?.showOpenDialog && api?.readFileBuffer) {
       try {
-        const result = await api.invoke('show-open-dialog', {
+        const result = await api.showOpenDialog({
           properties: ['openFile', 'multiSelections'],
           filters: [
             { name: 'Images', extensions: ['jpg', 'jpeg', 'png', 'bmp'] },
@@ -79,7 +79,7 @@ export function CreatePatientModal({ onSave, onClose }: CreatePatientModalProps)
             const files: File[] = [];
             for (const fp of imgs) {
               try {
-                const buf: ArrayBuffer = await api.invoke('read-file-buffer', fp);
+                const buf: ArrayBuffer = await api.readFileBuffer(fp);
                 const name = fp.split(/[\\/]/).pop() || 'image.png';
                 files.push(new File([buf], name, { type: bmpAwareMime(name) }));
               } catch { /* skip unreadable */ }
@@ -97,9 +97,9 @@ export function CreatePatientModal({ onSave, onClose }: CreatePatientModalProps)
 
   const handleBrowseFolder = async () => {
     const api = (window as any).electronAPI;
-    if (api?.invoke) {
+    if (api?.showOpenDialog && api?.listDicomFiles && api?.listImageFiles && api?.readFileBuffer) {
       try {
-        const result = await api.invoke('show-open-dialog', {
+        const result = await api.showOpenDialog({
           properties: ['openDirectory'],
           title: 'Select Image Folder',
         });
@@ -107,13 +107,13 @@ export function CreatePatientModal({ onSave, onClose }: CreatePatientModalProps)
           const folderPath = result.filePaths[0];
 
           // Scan for DICOM files
-          const scanResult = await api.invoke('list-dicom-files', folderPath);
+          const scanResult = await api.listDicomFiles(folderPath);
           const dcmFiles: string[] = scanResult?.success ? scanResult.files : [];
 
           // Scan for image files (PNG/JPEG) in the same folder
           let imgFilePaths: string[] = [];
           try {
-            const imgResult = await api.invoke('list-image-files', folderPath);
+            const imgResult = await api.listImageFiles(folderPath);
             if (imgResult?.success) imgFilePaths = imgResult.files;
           } catch { /* IPC not available, skip */ }
 
@@ -125,7 +125,7 @@ export function CreatePatientModal({ onSave, onClose }: CreatePatientModalProps)
             const files: File[] = [];
             for (const fp of imgFilePaths) {
               try {
-                const buf: ArrayBuffer = await api.invoke('read-file-buffer', fp);
+                const buf: ArrayBuffer = await api.readFileBuffer(fp);
                 const name = fp.split(/[\\/]/).pop() || 'image.png';
                 files.push(new File([buf], name, { type: bmpAwareMime(name) }));
               } catch { /* skip unreadable */ }

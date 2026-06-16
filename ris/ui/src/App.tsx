@@ -7,6 +7,7 @@ import { ReceptionPage } from './features/reception/routes/ReceptionPage';
 import { ResultEntryPage } from './features/results/routes/ResultEntryPage';
 import { NetworkPage } from './features/network/routes/NetworkPage';
 import { DayBookPage } from './features/billing/routes/DayBookPage';
+import { SchedulePage } from './features/schedule/routes/SchedulePage';
 import { CommissionPage } from './features/commission/routes/CommissionPage';
 import { PcpndtPage } from './features/pcpndt/routes/PcpndtPage';
 import { SettingsPage } from './features/settings/routes/SettingsPage';
@@ -32,6 +33,7 @@ export function App() {
           <Route path="/results" element={<ResultEntryPage />} />
           <Route path="/network" element={<NetworkPage />} />
           <Route path="/billing" element={<DayBookPage />} />
+          <Route path="/schedule" element={<SchedulePage />} />
           <Route path="/commission" element={<CommissionPage />} />
           <Route path="/pcpndt" element={<PcpndtPage />} />
           <Route path="/settings" element={<SettingsPage />} />
