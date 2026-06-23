@@ -61,7 +61,7 @@ const PageOverview = () => {
   const pendingInvites= (team.invites || []).length;
   // Show the headline license card for ANY active license — including
   // trials — so the operator can see their key + remaining prints at a
-  // glance. Trial licenses are auto-seeded with 100 prints on the server.
+  // glance. Trial licenses are auto-seeded with 10 prints on the server.
   const paidLicense  = licenses.find(l => l.status === 'active' && l.plan !== 'trial');
   const trialLicense = licenses.find(l => l.status === 'active' && l.plan === 'trial');
   const activeLicense = paidLicense || trialLicense;

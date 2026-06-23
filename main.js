@@ -105,7 +105,7 @@ const LICENSE_LEASE_PUBLIC_KEY_B64 = process.env.ONECLICKZ_LICENSE_PUBLIC_KEY ||
  *  activated yet - gives the operator something to test with so the
  *  header isn't stuck at "Prints Left: 0". Persisted alongside
  *  installDate in the .trial file. */
-const TRIAL_PRINTS = 100;
+const TRIAL_PRINTS = 10;
 const trialFile = path.join(userDataPath, '.trial');
 const licenseFile = path.join(userDataPath, '.license');
 const clockMarkFile = path.join(userDataPath, '.license-clock');
@@ -149,6 +149,10 @@ function saveLicenseData(data) {
 
 function clearLicenseData() {
     try { if (fs.existsSync(licenseFile)) fs.unlinkSync(licenseFile); } catch {}
+    // Removing a license drops the operator back to a fresh TRIAL_PRINTS
+    // budget — not the in-progress counter from before they activated.
+    // The trial file is recreated on next read.
+    try { if (fs.existsSync(trialFile)) fs.unlinkSync(trialFile); } catch {}
 }
 
 function getTrialInfo() {
@@ -185,6 +189,48 @@ function saveTrialInfo({ installDate, printsRemaining }) {
     } catch { /* ignore */ }
 }
 
+/** Reset the free-trial print budget to TRIAL_PRINTS. Called whenever the
+ *  license file is wiped (deactivate or hard server reject) so the operator
+ *  always lands back on a fresh 10-print trial instead of inheriting the
+ *  in-progress counter from before activation. */
+function resetTrialInfo() {
+    try { if (fs.existsSync(trialFile)) fs.unlinkSync(trialFile); } catch {}
+}
+
+/** Push the current effective quota to every open renderer so the header /
+ *  Recharge tab / print management page update without waiting for the
+ *  next 5-second poll. Used after voucher redeem, deactivation, etc. */
+function broadcastQuotaChanged() {
+    try {
+        const q = computeEffectiveQuota();
+        BrowserWindow.getAllWindows().forEach(w => {
+            try { w.webContents.send('mv:quota-changed', q); } catch {}
+        });
+    } catch {}
+}
+
+/** Returns the quota the UI should display — server numbers PLUS the local
+ *  offlineQuotaCredit so voucher recharges aren't wiped by the next poll. */
+function computeEffectiveQuota() {
+    const lic = getLicenseData();
+    if (!lic) {
+        const t = getTrialInfo();
+        return { enabled: true, remaining: t.printsRemaining, total: t.printsTotal, source: 'trial' };
+    }
+    const offlineCredit = Math.max(0, parseInt(lic.offlineQuotaCredit || 0, 10));
+    const offlineTotal  = Math.max(0, parseInt(lic.offlineQuotaTotal  || 0, 10));
+    return {
+        // Sell-by-print is "on" once ANY prints were ever granted (server quota
+        // or an offline recharge). We key off offlineTotal — NOT live credit —
+        // so a recharge that's been spent down to 0 reads as "blocked", not
+        // "unlimited". Unlimited = never granted any prints at all.
+        enabled:   !!lic.quotaEnabled || offlineTotal > 0,
+        remaining: Math.max(0, parseInt(lic.quotaRemaining || 0, 10)) + offlineCredit,
+        total:     Math.max(0, parseInt(lic.quotaTotal     || 0, 10)) + offlineTotal,
+        source:    'license',
+    };
+}
+
 /** Decrement the local trial print counter when no server license is
  *  activated. Returns the updated remaining count. */
 function decrementTrialPrints(pages) {
@@ -194,7 +240,13 @@ function decrementTrialPrints(pages) {
     return next;
 }
 
-async function apiRequest(endpoint, body) {
+function apiSleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+/** One POST attempt. Resolves for ANY HTTP response (incl. 4xx/5xx) and
+ *  rejects only on a transport-level failure (connect timeout, reset, DNS).
+ *  That split lets the retry wrapper retry flaky links without re-sending
+ *  on a legitimate "invalid key" rejection from the server. */
+function apiRequestOnce(endpoint, body) {
     const https = require('https');
     return new Promise((resolve, reject) => {
         const data = JSON.stringify(body);
@@ -215,10 +267,27 @@ async function apiRequest(endpoint, body) {
             });
         });
         req.on('error', reject);
-        req.setTimeout(15000, () => { req.destroy(); reject(new Error('Timeout')); });
+        req.setTimeout(12000, () => { req.destroy(); reject(new Error('Timeout')); });
         req.write(data);
         req.end();
     });
+}
+
+/** Retrying POST. The route to mehrgrewal.com drops a large share of TCP
+ *  connections on some networks (lossy ISP path / busy shared host), so a
+ *  single attempt fails often even though the server is up. Retrying a few
+ *  times with backoff turns ~40% per-attempt success into ~95%+. Only
+ *  transport failures are retried — HTTP error statuses pass straight back. */
+async function apiRequest(endpoint, body, { attempts = 4 } = {}) {
+    let lastErr;
+    for (let i = 0; i < attempts; i++) {
+        try { return await apiRequestOnce(endpoint, body); }
+        catch (e) {
+            lastErr = e;
+            if (i < attempts - 1) await apiSleep(800 * (i + 1));
+        }
+    }
+    throw lastErr;
 }
 
 async function activateLicense(licenseKey) {
@@ -249,13 +318,25 @@ async function activateLicense(licenseKey) {
         }
         return { success: false, error: res.data?.error || res.data?.message || 'Activation failed' };
     } catch (e) {
-        return { success: false, error: 'Network error: ' + e.message };
+        return { success: false, error: 'Could not reach the licence server after several tries — your network looks unstable. Please try again, or switch to a mobile hotspot. (' + e.message + ')' };
     }
 }
 
 async function validateLicense() {
     const lic = getLicenseData();
     if (!lic) return { valid: false, reason: 'no_license' };
+
+    // Offline-activated licences are server-less: authority is the baked-in term
+    // (offlineExpiresAt) written at redeem time. Resolve locally and skip the
+    // network — otherwise every poll would hang through the apiRequest retry
+    // budget on a permanently-offline machine.
+    if (lic.offlineActivated) {
+        const expMs = lic.offlineExpiresAt ? new Date(lic.offlineExpiresAt).getTime() : 0;
+        const valid = expMs > Date.now();
+        return { valid, expired: !valid, plan: lic.plan || 'offline',
+                 expiresAt: lic.offlineExpiresAt || null, offline: true,
+                 reason: valid ? undefined : 'expired' };
+    }
 
     try {
         const res = await apiRequest('/license/validate', {
@@ -349,6 +430,8 @@ async function deactivateLicense() {
         });
     } catch { /* silent */ }
     clearLicenseData();
+    resetTrialInfo();
+    broadcastQuotaChanged();
 }
 
 function getLicenseStatus() {
@@ -383,6 +466,119 @@ function getLicenseStatus() {
         totalDays: TRIAL_DAYS,
     };
 }
+// ===== Offline voucher recharge (Recharge tab) =====
+// Same short-code scheme + secret as the Bridge, so the one website generator
+// (bridge-voucher.php) serves both. Codes are device-bound by fingerprint.
+const { shortRequestCode: vShortRequestCode, verifyShortVoucher: vVerifyVoucher } = require('./voucherShort');
+// Secret is reconstructed at runtime from XOR-masked chunks so it isn't a
+// greppable literal in the packaged .asar. Env override stays first so a
+// production deployment can inject a fresh value without rebuilding.
+const VIEWER_VOUCHER_SECRET = process.env.ONECLICKZ_VOUCHER_SECRET || require('./secureSecret')();
+const voucherCounterFile = path.join(userDataPath, '.voucher-counter');
+
+function readVoucherCounterFile() { try { const n = parseInt(String(fs.readFileSync(voucherCounterFile, 'utf8')).trim(), 10); return Number.isFinite(n) ? n : 0; } catch { return 0; } }
+function readVoucherCounterRegistry() {
+    if (process.platform !== 'win32') return 0;
+    try {
+        const out = require('child_process').execSync('reg query HKCU\\Software\\OneClickz\\Viewer /v VoucherCounter', { stdio: 'pipe', windowsHide: true }).toString();
+        const m = out.match(/VoucherCounter\s+REG_SZ\s+(\d+)/i);
+        return m ? (parseInt(m[1], 10) || 0) : 0;
+    } catch { return 0; }
+}
+// Counter persisted in file + registry; max() of the two so wiping one store
+// can't roll it back and replay a spent voucher.
+function getVoucherCounter() { return Math.max(readVoucherCounterFile(), readVoucherCounterRegistry()); }
+function setVoucherCounter(n) {
+    try { fs.writeFileSync(voucherCounterFile, String(n), 'utf8'); } catch {}
+    if (process.platform === 'win32') { try { require('child_process').execSync(`reg add HKCU\\Software\\OneClickz\\Viewer /v VoucherCounter /t REG_SZ /d ${n} /f`, { stdio: 'ignore', windowsHide: true }); } catch {} }
+}
+
+function getViewerRequestCode() { return vShortRequestCode(VIEWER_VOUCHER_SECRET, getFingerprint(), getVoucherCounter()); }
+
+function viewerEffectiveExpiry(lic) {
+    if (!lic) return null;
+    const a = lic.expiresAt ? new Date(lic.expiresAt).getTime() : 0;
+    const b = lic.offlineExpiresAt ? new Date(lic.offlineExpiresAt).getTime() : 0;
+    const t = Math.max(a, b);
+    return t > 0 ? new Date(t).toISOString() : null;
+}
+
+function viewerVoucherStatus() {
+    const lic = getLicenseData();
+    let prints = null, daysLeft = null;
+    if (lic) {
+        const offlineCredit = Math.max(0, parseInt(lic.offlineQuotaCredit || 0, 10));
+        const offlineTotal  = Math.max(0, parseInt(lic.offlineQuotaTotal  || 0, 10));
+        const serverRemaining = Math.max(0, parseInt(lic.quotaRemaining || 0, 10));
+        // Show prints whenever quota mode is on OR prints were ever granted via
+        // an offline recharge (offlineTotal). Keyed off the granted total — not
+        // live credit — so a spent-to-0 recharge still shows "0" (blocked),
+        // not null (which the UI reads as unlimited). null = never limited.
+        prints = (lic.quotaEnabled || offlineTotal > 0 || serverRemaining > 0)
+            ? serverRemaining + offlineCredit
+            : null;
+        const exp = viewerEffectiveExpiry(lic);
+        daysLeft = exp ? Math.max(0, Math.ceil((new Date(exp).getTime() - Date.now()) / 86400000)) : null;
+    } else {
+        const t = getTrialInfo();
+        prints = t.printsRemaining;
+        daysLeft = t.remaining;
+    }
+    return { requestCode: getViewerRequestCode(), prints, daysLeft };
+}
+
+function redeemViewerVoucher(code, licenseKey) {
+    const counter = getVoucherCounter();
+    const requestCode = vShortRequestCode(VIEWER_VOUCHER_SECRET, getFingerprint(), counter);
+    const res = vVerifyVoucher(VIEWER_VOUCHER_SECRET, requestCode, code);
+    if (!res.ok) return { ok: false, reason: res.reason };
+
+    const lic = getLicenseData();
+    // No server licence + the code carries a term => OFFLINE ACTIVATION. Create
+    // a server-less licence; validateLicense() and get-license-quota resolve it
+    // purely from offlineExpiresAt + offlineQuotaCredit (no network), so a
+    // permanently-offline PC runs entirely on the baked-in term + quota.
+    const activating = !lic && res.days > 0;
+
+    if (lic) {
+        if (res.prints > 0) {
+            // Bank vouchered prints in a SEPARATE field so the next
+            // /license/quota poll (which overwrites quotaRemaining with the
+            // server's value) can't silently erase the recharge. Both fields
+            // are summed when computing the displayed/decrementable balance.
+            lic.quotaEnabled = true;
+            lic.offlineQuotaCredit = Math.max(0, parseInt(lic.offlineQuotaCredit || 0, 10)) + res.prints;
+            lic.offlineQuotaTotal  = Math.max(0, parseInt(lic.offlineQuotaTotal  || 0, 10)) + res.prints;
+        }
+        if (res.days > 0) {
+            const base = Math.max(Date.now(), lic.offlineExpiresAt ? new Date(lic.offlineExpiresAt).getTime() : 0, lic.expiresAt ? new Date(lic.expiresAt).getTime() : 0);
+            lic.offlineExpiresAt = new Date(base + res.days * 86400000).toISOString();
+        }
+        saveLicenseData(lic);
+    } else if (activating) {
+        saveLicenseData({
+            licenseKey: (licenseKey && String(licenseKey).trim().toUpperCase()) || 'OFFLINE',
+            fingerprint: getFingerprint(),
+            plan: 'offline',
+            offlineActivated: true,
+            quotaEnabled: true,
+            offlineQuotaCredit: res.prints,
+            offlineQuotaTotal:  res.prints,
+            offlineExpiresAt: new Date(Date.now() + res.days * 86400000).toISOString(),
+            activatedAt:   new Date().toISOString(),
+            lastValidated: new Date().toISOString(),
+        });
+    } else if (res.prints > 0) {
+        const t = getTrialInfo();
+        saveTrialInfo({ installDate: t.installDate, printsRemaining: t.printsRemaining + res.prints });
+    }
+    setVoucherCounter(counter + 1); // rotate request code → single-use
+
+    broadcastQuotaChanged();
+    const st = viewerVoucherStatus();
+    return { ok: true, activated: activating, addedPrints: res.prints, addedDays: res.days, prints: st.prints, daysLeft: st.daysLeft };
+}
+
 const mysqlDataDir = path.join(userDataPath, 'mysql-data');
 const mysqlDataSubDir = path.join(mysqlDataDir, 'data');
 const orthancDir = isDev ? path.join(__dirname, 'orthanc') : path.join(appPath, 'orthanc');
@@ -1001,8 +1197,44 @@ const mime = {
 };
 
 let staticServer = null;
-const APACHE_PORT = 80;
-const APACHE_BASE_PATH = '/dcm';
+// Local PHP backend. Rather than depend on a manually-started XAMPP Apache,
+// we spawn PHP's built-in server against the app root (which contains api/)
+// and proxy /api + *.php to it. php.exe is bundled in production (phpPath).
+const PHP_API_PORT = Number(process.env.ONECLICKZ_PHP_PORT || 8091);
+const PHP_API_ROOT = appPath; // contains api/, www/, includes/ …
+let phpApiProcess = null;
+
+function startPhpApiServer() {
+    return new Promise((resolve) => {
+        if (!fs.existsSync(phpPath)) {
+            console.warn('[PHP] php.exe not found at', phpPath, '- /api calls will fail until a PHP backend is reachable.');
+            return resolve(false);
+        }
+        try {
+            ensurePortFree(PHP_API_PORT);
+            phpApiProcess = spawn(phpPath, ['-S', `127.0.0.1:${PHP_API_PORT}`, '-t', PHP_API_ROOT], {
+                cwd: PHP_API_ROOT,
+                windowsHide: true,
+            });
+            console.log(`[PHP] built-in server on 127.0.0.1:${PHP_API_PORT} (root: ${PHP_API_ROOT})`);
+            phpApiProcess.stderr?.on('data', (d) => {
+                const s = d.toString().trim();
+                if (s) console.log('[PHP]', s);
+            });
+            phpApiProcess.on('exit', (code) => { if (code) console.warn('[PHP] server exited code', code); phpApiProcess = null; });
+            phpApiProcess.on('error', (e) => { console.error('[PHP] failed to start:', e.message); phpApiProcess = null; });
+            resolve(true);
+        } catch (e) {
+            console.error('[PHP] spawn error:', e.message);
+            resolve(false);
+        }
+    });
+}
+
+function stopPhpApiServer() {
+    if (phpApiProcess && !phpApiProcess.killed) { try { phpApiProcess.kill(); } catch {} }
+    phpApiProcess = null;
+}
 
 function startStaticServer() {
     return new Promise((resolve) => {
@@ -1014,15 +1246,16 @@ function startStaticServer() {
             const parsed = url.parse(req.url);
             let reqPath = parsed.pathname;
 
-            // Proxy /api/ requests to Apache (PHP)
+            // Proxy /api/ + *.php requests to the local PHP built-in server.
+            // The PHP root IS the app dir (contains api/), so no path prefix is
+            // needed — /api/pcpndt/prefill.php maps straight to api/pcpndt/...
             if (reqPath.startsWith('/api/') || reqPath.endsWith('.php')) {
-                const proxyPath = `${APACHE_BASE_PATH}${parsed.path}`;
                 const proxyOpts = {
                     hostname: '127.0.0.1',
-                    port: APACHE_PORT,
-                    path: proxyPath,
+                    port: PHP_API_PORT,
+                    path: parsed.path,
                     method: req.method,
-                    headers: { ...req.headers, host: `127.0.0.1:${APACHE_PORT}` },
+                    headers: { ...req.headers, host: `127.0.0.1:${PHP_API_PORT}` },
                 };
                 const proxyReq = http.request(proxyOpts, (proxyRes) => {
                     res.writeHead(proxyRes.statusCode, proxyRes.headers);
@@ -1030,19 +1263,19 @@ function startStaticServer() {
                 });
                 // 5 min timeout - image conversion / multi-file uploads can be slow
                 proxyReq.setTimeout(300000, () => {
-                    proxyReq.destroy(new Error('Apache request timed out'));
+                    proxyReq.destroy(new Error('PHP request timed out'));
                 });
                 proxyReq.on('error', (err) => {
                     const isDown = err.code === 'ECONNREFUSED' || err.code === 'ECONNRESET';
-                    console.error('[StaticServer] Proxy error:', err.code || err.message);
+                    console.error('[StaticServer] PHP proxy error:', err.code || err.message);
                     if (res.headersSent) { try { res.end(); } catch {} return; }
                     res.writeHead(502, { 'Content-Type': 'application/json' });
                     res.end(JSON.stringify({
                         success: false,
                         ok: false,
-                        code: isDown ? 'APACHE_DOWN' : 'PROXY_ERROR',
+                        code: isDown ? 'PHP_DOWN' : 'PROXY_ERROR',
                         error: isDown
-                            ? 'Cannot reach the local PHP server. Please start XAMPP (Apache) and try again.'
+                            ? 'Local PHP server is not running. Please restart the application.'
                             : 'API proxy error: ' + err.message,
                     }));
                 });
@@ -1235,7 +1468,8 @@ async function startApp() {
 
         const phpPromise = (async () => {
             updateSplashStatus('Starting web server...');
-            await startPhpServer();
+            await startPhpApiServer();   // local PHP backend for /api + *.php
+            await startPhpServer();      // static SPA server (proxies /api → PHP)
             return await waitForServer();
         })();
 
@@ -2168,9 +2402,9 @@ app.whenReady().then(async () => {
 app.on('will-quit', () => {
     try { globalShortcut.unregisterAll(); } catch {}
 });
-app.on('window-all-closed', () => { stopDicomServer(); stopDicomNetworkReceiver(); stopPhpServer(); stopOrthanc(); stopMySQL(); app.quit(); });
+app.on('window-all-closed', () => { stopDicomServer(); stopDicomNetworkReceiver(); stopPhpServer(); stopPhpApiServer(); stopOrthanc(); stopMySQL(); app.quit(); });
 app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) startApp(); });
-app.on('before-quit', () => { stopDicomServer(); stopDicomNetworkReceiver(); stopPhpServer(); stopOrthanc(); stopMySQL(); });
+app.on('before-quit', () => { stopDicomServer(); stopDicomNetworkReceiver(); stopPhpServer(); stopPhpApiServer(); stopOrthanc(); stopMySQL(); });
 
 // =====================================================
 // IPC Handlers
@@ -2187,7 +2421,29 @@ ipcMain.handle('get-license-status', () => {
 });
 
 ipcMain.handle('activate-license', async (_event, licenseKey) => {
-    return await activateLicense(licenseKey);
+    const result = await activateLicense(licenseKey);
+    if (result?.success) {
+        // The activation endpoint doesn't return quota fields, so pull them
+        // straight away — otherwise the Recharge tab tile would stay blank
+        // until the next minute's poll. broadcastQuotaChanged() then pushes
+        // the freshly-cached numbers to every open renderer.
+        try {
+            const lic = getLicenseData();
+            if (lic) {
+                const r = await apiRequest('/license/quota', {
+                    license_key: lic.licenseKey, fingerprint: lic.fingerprint, app: 'viewer',
+                });
+                if (r.status >= 200 && r.status < 300 && r.data && (r.data.ok || r.data.enabled !== undefined)) {
+                    lic.quotaEnabled   = !!r.data.enabled;
+                    lic.quotaRemaining = parseInt(r.data.remaining || 0, 10);
+                    lic.quotaTotal     = parseInt(r.data.total     || 0, 10);
+                    saveLicenseData(lic);
+                }
+            }
+        } catch {}
+        broadcastQuotaChanged();
+    }
+    return result;
 });
 
 ipcMain.handle('validate-license', async () => {
@@ -2201,6 +2457,158 @@ ipcMain.handle('deactivate-license', async () => {
 
 ipcMain.handle('get-fingerprint', () => {
     return getFingerprint();
+});
+
+// ── PCPNDT government portal — embedded window + autofill injection ──────────
+// Opens the Maharashtra PCPNDT portal in its own persistent window and injects
+// a floating "Autofill Form F" button. The doctor logs in, navigates to the
+// Form F page, then clicks the button to fill it from the app's values.
+// Field matching is heuristic (label / name / id / placeholder keywords) since
+// the portal's exact field ids are not published; it reports how many fields
+// it filled so the mapping can be tuned against the live form.
+const PCPNDT_PORTAL_URL = 'https://pcpndt.maharashtra.gov.in/';
+let pcpndtPortalWindow = null;
+
+// Keyword map: app field key → substrings likely to appear in the portal's
+// label / name / id / placeholder. Order matters (more specific first) so a
+// generic word like "name" doesn't grab the wrong box.
+const PCPNDT_KEYWORDS = {
+    clinic_registration_no: ['clinic registration', 'centre registration', 'center registration', 'registration no', 'regn no', 'reg. no', 'reg no'],
+    clinic_name: ['clinic name', 'centre name', 'center name', 'name of clinic', 'name of centre', 'name of the genetic', 'institution name', 'institution'],
+    clinic_address: ['clinic address', 'centre address', 'address of clinic', 'address of the clinic'],
+    ref_no: ['ref no', 'ref. no', 'reference no', 'form no', 'serial no'],
+    husband_or_father_name: ['husband', 'father'],
+    patient_name: ['name of pregnant', 'pregnant woman', 'name of patient', 'patient name', 'woman name', 'name of the woman'],
+    patient_age: ['age'],
+    phone: ['mobile', 'telephone', 'phone', 'contact no', 'contact number'],
+    full_address: ['full address', 'residential address', 'postal address', 'address'],
+    id_proof_type: ['id proof type', 'type of id', 'proof type', 'id type'],
+    id_proof_number: ['id proof', 'id number', 'proof number', 'aadhaar', 'aadhar'],
+    num_living_children: ['living children', 'no. of children', 'number of children', 'no of children'],
+    children_details: ['children details', 'details of children', 'sex of children'],
+    lmp_date: ['lmp', 'last menstrual'],
+    gestational_age: ['gestational', 'period of gestation', 'gestation'],
+    edd: ['edd', 'expected date of delivery', 'expected date'],
+    family_history: ['family history', 'genetic history', 'medical history'],
+    basis_of_diagnosis: ['basis of diagnosis', 'basis'],
+    procedure_date: ['date of procedure', 'procedure date', 'date of test', 'date of examination'],
+    complications: ['complication'],
+    result: ['result of', 'result', 'finding'],
+    referring_doctor_reg_no: ['referring doctor registration', 'referring registration', 'referred by reg'],
+    referring_doctor_address: ['referring doctor address', 'address of referring'],
+    referring_doctor: ['referring doctor', 'referred by', 'name of referring'],
+    performing_doctor_qualification: ['qualification'],
+    performing_doctor_reg_no: ['performing registration', 'performer registration', 'conducted by reg', 'doctor registration'],
+    performing_doctor: ['conducted by', 'performed by', 'performing doctor', 'sonologist', 'name of doctor'],
+};
+
+function buildPcpndtAutofillScript(fields) {
+    const payload = JSON.stringify({ fields, keywords: PCPNDT_KEYWORDS });
+    // The script runs in the portal page's context (executeJavaScript bypasses
+    // the page CSP). It is idempotent — re-running just re-adds the button.
+    return `(function(){
+      try {
+        var DATA = ${payload};
+        if (document.getElementById('__formf_btn__')) return 'exists';
+        function labelText(el){
+          var t = '';
+          if (el.id){ var l = document.querySelector('label[for="'+CSS.escape(el.id)+'"]'); if(l) t += ' '+l.innerText; }
+          var w = el.closest('label'); if(w) t += ' '+w.innerText;
+          var p = el.previousElementSibling; if(p) t += ' '+(p.innerText||'');
+          var td = el.closest('td'); if(td && td.previousElementSibling) t += ' '+(td.previousElementSibling.innerText||'');
+          t += ' '+(el.name||'')+' '+(el.id||'')+' '+(el.placeholder||'')+' '+(el.getAttribute('aria-label')||'');
+          return t.toLowerCase();
+        }
+        function setVal(el, value){
+          var proto = el.tagName==='SELECT'?window.HTMLSelectElement.prototype:(el.tagName==='TEXTAREA'?window.HTMLTextAreaElement.prototype:window.HTMLInputElement.prototype);
+          var setter = Object.getOwnPropertyDescriptor(proto,'value').set;
+          setter.call(el, value);
+          el.dispatchEvent(new Event('input',{bubbles:true}));
+          el.dispatchEvent(new Event('change',{bubbles:true}));
+        }
+        function fillSelect(el, value){
+          var v = String(value).toLowerCase();
+          var opts = Array.prototype.slice.call(el.options);
+          var m = opts.find(function(o){ return o.value.toLowerCase()===v || o.text.toLowerCase()===v; })
+               || opts.find(function(o){ return o.text.toLowerCase().indexOf(v)>=0 || v.indexOf(o.text.toLowerCase())>=0; });
+          if(m){ el.value = m.value; el.dispatchEvent(new Event('change',{bubbles:true})); return true; }
+          return false;
+        }
+        function toDMY(s){ var m=/^(\\d{4})-(\\d{2})-(\\d{2})$/.exec(s); return m? m[3]+'/'+m[2]+'/'+m[1] : s; }
+        function run(){
+          var inputs = Array.prototype.slice.call(document.querySelectorAll('input, select, textarea'))
+            .filter(function(el){ return el.type!=='hidden' && el.type!=='submit' && el.type!=='button' && !el.disabled && el.offsetParent!==null; });
+          var used = new Set(), filled = 0;
+          // 1) scalar text/select fields by keyword
+          Object.keys(DATA.keywords).forEach(function(key){
+            var val = DATA.fields[key];
+            if(val==null || val==='' || Array.isArray(val)) return;
+            var kws = DATA.keywords[key];
+            var el = inputs.find(function(e){ return !used.has(e) && e.type!=='checkbox' && e.type!=='radio' && kws.some(function(k){ return labelText(e).indexOf(k)>=0; }); });
+            if(!el) return;
+            used.add(el);
+            if(el.tagName==='SELECT'){ if(fillSelect(el, val)) filled++; }
+            else if(el.type==='date'){ setVal(el, String(val)); filled++; }
+            else {
+              var out = String(val);
+              // date-like value into a plain text box → dd/mm/yyyy (common on govt forms)
+              if(/^\\d{4}-\\d{2}-\\d{2}$/.test(out) && (labelText(el).indexOf('date')>=0 || ['lmp_date','edd','procedure_date'].indexOf(key)>=0)) out = toDMY(out);
+              setVal(el, out); filled++;
+            }
+          });
+          // 2) array fields (indications, procedures) → tick matching checkboxes
+          ['indications','procedures'].forEach(function(key){
+            var arr = DATA.fields[key]; if(!Array.isArray(arr)) return;
+            arr.forEach(function(opt){
+              var o = String(opt).toLowerCase().slice(0, 24);
+              var cb = inputs.find(function(e){ return (e.type==='checkbox'||e.type==='radio') && !used.has(e) && labelText(e).indexOf(o)>=0; });
+              if(cb){ used.add(cb); if(!cb.checked){ cb.click(); } filled++; }
+            });
+          });
+          return filled;
+        }
+        var btn = document.createElement('button');
+        btn.id = '__formf_btn__';
+        btn.textContent = '⚡ Autofill Form F';
+        btn.style.cssText = 'position:fixed;z-index:2147483647;right:18px;bottom:18px;padding:12px 18px;background:#16a34a;color:#fff;border:0;border-radius:8px;font:600 14px system-ui;box-shadow:0 4px 14px rgba(0,0,0,.3);cursor:pointer';
+        btn.onclick = function(){
+          var n = run();
+          btn.textContent = n>0 ? ('✓ Filled '+n+' fields — review & submit') : 'No matching fields found on this page';
+          btn.style.background = n>0 ? '#15803d' : '#b91c1c';
+          setTimeout(function(){ btn.textContent='⚡ Autofill Form F'; btn.style.background='#16a34a'; }, 4000);
+        };
+        document.body.appendChild(btn);
+        return 'added';
+      } catch(e){ return 'error: '+(e && e.message); }
+    })();`;
+}
+
+ipcMain.handle('pcpndt:open-portal', (_e, { fields } = {}) => {
+    const data = fields || {};
+    if (pcpndtPortalWindow && !pcpndtPortalWindow.isDestroyed()) {
+        pcpndtPortalWindow.focus();
+        try { pcpndtPortalWindow.webContents.executeJavaScript(buildPcpndtAutofillScript(data)); } catch {}
+        return { ok: true, reused: true };
+    }
+    pcpndtPortalWindow = new BrowserWindow({
+        width: 1200, height: 860, show: true, autoHideMenuBar: true,
+        title: 'PCPNDT Portal — Maharashtra',
+        webPreferences: {
+            partition: 'persist:pcpndt',   // keep the portal login across sessions
+            contextIsolation: true,
+            nodeIntegration: false,
+            sandbox: true,
+        },
+    });
+    const inject = () => {
+        pcpndtPortalWindow?.webContents.executeJavaScript(buildPcpndtAutofillScript(data)).catch(() => {});
+    };
+    // Re-add the button after each navigation (login → form page → etc.).
+    pcpndtPortalWindow.webContents.on('did-finish-load', inject);
+    pcpndtPortalWindow.webContents.on('did-navigate-in-page', inject);
+    pcpndtPortalWindow.on('closed', () => { pcpndtPortalWindow = null; });
+    pcpndtPortalWindow.loadURL(PCPNDT_PORTAL_URL);
+    return { ok: true };
 });
 
 // Read the latest print quota straight from the website (so super-admin
@@ -2220,27 +2628,74 @@ ipcMain.handle('get-license-quota', async () => {
             reason:    'local_trial',
         };
     }
+    const offlineCredit = Math.max(0, parseInt(lic.offlineQuotaCredit || 0, 10));
+    const offlineTotal  = Math.max(0, parseInt(lic.offlineQuotaTotal  || 0, 10));
+    // Offline-activated licence: serve purely from the local grant. No server
+    // exists to ask, and the apiRequest retry budget would otherwise hang the
+    // header refresh on a permanently-offline machine.
+    if (lic.offlineActivated) {
+        const expMs = lic.offlineExpiresAt ? new Date(lic.offlineExpiresAt).getTime() : 0;
+        const valid = expMs > Date.now();
+        return { enabled: true, remaining: valid ? offlineCredit : 0, total: offlineTotal,
+                 valid, offline: true, offlineCredit, reason: valid ? undefined : 'expired' };
+    }
     try {
         const r = await apiRequest('/license/quota', {
             license_key: lic.licenseKey, fingerprint: lic.fingerprint, app: 'viewer',
         });
         if (r.status >= 200 && r.status < 300 && r.data && (r.data.ok || r.data.enabled !== undefined)) {
+            const prevEnabled   = !!lic.quotaEnabled;
+            const prevRemaining = parseInt(lic.quotaRemaining || 0, 10);
+            const prevTotal     = parseInt(lic.quotaTotal     || 0, 10);
             lic.quotaEnabled   = !!(r.data.enabled);
             lic.quotaRemaining = parseInt(r.data.remaining || 0, 10);
             lic.quotaTotal     = parseInt(r.data.total     || 0, 10);
             saveLicenseData(lic);
-            return { enabled: lic.quotaEnabled, remaining: lic.quotaRemaining, total: lic.quotaTotal, valid: true };
+            // Whenever the server pushes new numbers, notify renderers so
+            // the Recharge tab / header refresh immediately — fixes the
+            // "blank prints left after re-activation" symptom where the
+            // periodic poll updated the cache but no one was listening.
+            if (prevEnabled   !== lic.quotaEnabled
+             || prevRemaining !== lic.quotaRemaining
+             || prevTotal     !== lic.quotaTotal) {
+                broadcastQuotaChanged();
+            }
+            return {
+                // offlineTotal (not live credit): a spent-down recharge stays
+                // "on" so 0 reads as blocked, not unlimited.
+                enabled:   lic.quotaEnabled || offlineTotal > 0,
+                remaining: lic.quotaRemaining + offlineCredit,
+                total:     lic.quotaTotal     + offlineTotal,
+                valid:     true,
+                offlineCredit,
+            };
         }
         // Hard server reject - key deleted / revoked / wrong product. Purge
         // the local cache so we stop showing a phantom "X prints left".
         const hardReasons = ['not_found', 'revoked', 'deactivated', 'wrong_product', 'expired'];
         if (r.status >= 200 && r.status < 300 && r.data?.reason && hardReasons.includes(r.data.reason)) {
             clearLicenseData();
+            resetTrialInfo();
+            broadcastQuotaChanged();
             return { enabled: false, remaining: 0, total: 0, valid: false, reason: r.data.reason, invalidated: true };
         }
-        return { enabled: !!lic.quotaEnabled, remaining: lic.quotaRemaining || 0, total: lic.quotaTotal || 0, valid: false, reason: r.data?.reason };
+        return {
+            enabled:   !!lic.quotaEnabled || offlineTotal > 0,
+            remaining: (lic.quotaRemaining || 0) + offlineCredit,
+            total:     (lic.quotaTotal     || 0) + offlineTotal,
+            valid:     false,
+            reason:    r.data?.reason,
+            offlineCredit,
+        };
     } catch (e) {
-        return { enabled: !!lic.quotaEnabled, remaining: lic.quotaRemaining || 0, total: lic.quotaTotal || 0, valid: true, offline: true };
+        return {
+            enabled:   !!lic.quotaEnabled || offlineTotal > 0,
+            remaining: (lic.quotaRemaining || 0) + offlineCredit,
+            total:     (lic.quotaTotal     || 0) + offlineTotal,
+            valid:     true,
+            offline:   true,
+            offlineCredit,
+        };
     }
 });
 
@@ -2276,19 +2731,48 @@ ipcMain.handle('decrement-license-quota', async (_e, { pages = 1 } = {}) => {
         // it. When the user activates a license, future calls hit the
         // server quota instead.
         const remaining = decrementTrialPrints(pages);
+        broadcastQuotaChanged();
         return { ok: true, enabled: true, remaining, total: TRIAL_PRINTS, source: 'local_trial' };
+    }
+    // Eat vouchered prints first so the offline credit isn't wasted when the
+    // server still has balance — mirrors the Bridge's behaviour.
+    let remainingPages = Math.max(1, parseInt(pages, 10) || 1);
+    const offlineCredit = Math.max(0, parseInt(lic.offlineQuotaCredit || 0, 10));
+    if (offlineCredit > 0) {
+        const usedOffline = Math.min(offlineCredit, remainingPages);
+        lic.offlineQuotaCredit = offlineCredit - usedOffline;
+        remainingPages -= usedOffline;
+        saveLicenseData(lic);
+        if (remainingPages <= 0) {
+            broadcastQuotaChanged();
+            const offlineTotal = Math.max(0, parseInt(lic.offlineQuotaTotal || 0, 10));
+            return {
+                ok: true,
+                enabled: true,
+                remaining: Math.max(0, parseInt(lic.quotaRemaining || 0, 10)) + lic.offlineQuotaCredit,
+                total:     Math.max(0, parseInt(lic.quotaTotal     || 0, 10)) + offlineTotal,
+                source: 'offline_recharge',
+            };
+        }
     }
     try {
         const r = await apiRequest('/license/quota', {
             license_key: lic.licenseKey, fingerprint: lic.fingerprint, app: 'viewer',
-            decrement: Math.max(1, parseInt(pages, 10)),
+            decrement: remainingPages,
         });
         if (r.status >= 200 && r.status < 300) {
             lic.quotaRemaining = parseInt(r.data.remaining || 0, 10);
             lic.quotaTotal     = parseInt(r.data.total     || 0, 10);
             lic.quotaEnabled   = !!(r.data.enabled);
             saveLicenseData(lic);
-            return { ok: true, remaining: lic.quotaRemaining, enabled: lic.quotaEnabled };
+            broadcastQuotaChanged();
+            const localCredit = Math.max(0, parseInt(lic.offlineQuotaCredit || 0, 10));
+            const localTotal  = Math.max(0, parseInt(lic.offlineQuotaTotal  || 0, 10));
+            return {
+                ok: true,
+                enabled: lic.quotaEnabled || localTotal > 0,
+                remaining: lic.quotaRemaining + localCredit,
+            };
         }
         return { ok: false, reason: r.data?.reason || 'unknown' };
     } catch (e) {
@@ -2296,12 +2780,19 @@ ipcMain.handle('decrement-license-quota', async (_e, { pages = 1 } = {}) => {
     }
 });
 
+// Offline voucher recharge (Recharge tab) — short codes, works without internet.
+ipcMain.handle('get-voucher-status', () => viewerVoucherStatus());
+ipcMain.handle('redeem-voucher', (_e, { code } = {}) => redeemViewerVoucher(code));
+// Same redeem path, but also accepts an optional licenseKey so a fresh install
+// with no internet can create a server-less licence and leave trial.
+ipcMain.handle('activate-offline', (_e, { licenseKey, code } = {}) => redeemViewerVoucher(code, licenseKey));
+
 // ===== Print Wallet (synced with website backend) ====================
 // These talk to the same wallet the dashboard at mehrgrewal.com reads,
 // so the balance is always in sync. If no key is active, the desktop
 // is in free mode - printing is disabled.
 
-async function walletApiGet(path) {
+function walletApiGetOnce(path) {
     const https = require('https');
     return new Promise((resolve, reject) => {
         const urlObj = new URL(LICENSE_API_BASE + path);
@@ -2320,6 +2811,20 @@ async function walletApiGet(path) {
         req.setTimeout(10000, () => { req.destroy(); reject(new Error('Timeout')); });
         req.end();
     });
+}
+
+/** Retrying GET — same flaky-link rationale as apiRequest, but fewer tries
+ *  since this runs on a periodic background poll and shouldn't pile up. */
+async function walletApiGet(path, { attempts = 3 } = {}) {
+    let lastErr;
+    for (let i = 0; i < attempts; i++) {
+        try { return await walletApiGetOnce(path); }
+        catch (e) {
+            lastErr = e;
+            if (i < attempts - 1) await apiSleep(700 * (i + 1));
+        }
+    }
+    throw lastErr;
 }
 
 ipcMain.handle('wallet-balance', async (_event, { type = 'print' } = {}) => {

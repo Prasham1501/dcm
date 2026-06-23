@@ -1,9 +1,14 @@
 import { useRef, useState } from 'react';
 import { useHospitalConfigStore, type PrinterConfig } from '@/stores/hospitalConfigStore';
+import { usePrintStore } from '@/stores/printStore';
 import { Trash2, Star, Power, Plus } from 'lucide-react';
 
 export function PrinterTab() {
   const config = useHospitalConfigStore();
+  // When sell-by-print quota is ON the print pipeline is centrally metered, so
+  // the clinic can't add its own printers — hide the Add control. Quota OFF =
+  // unlimited (their own licence) → they manage printers freely.
+  const quotaEnabled = usePrintStore((s) => s.quotaEnabled);
   const [showAddPrinter, setShowAddPrinter] = useState(false);
   const [newPrinter, setNewPrinter] = useState({ name: '', displayName: '', type: 'Laser' });
 
@@ -31,15 +36,17 @@ export function PrinterTab() {
       <div>
         <h3 className="text-sm font-bold text-app-accent mb-3 pb-1 border-b border-app-border flex items-center justify-between">
           <span>Configured Printers</span>
-          <button
-            onClick={() => setShowAddPrinter(!showAddPrinter)}
-            className="flex items-center gap-1 px-2 py-0.5 text-[10px] font-semibold border border-app-accent text-app-accent rounded hover:bg-app-accent hover:text-white transition-colors"
-          >
-            <Plus className="w-3 h-3" /> Add
-          </button>
+          {!quotaEnabled && (
+            <button
+              onClick={() => setShowAddPrinter(!showAddPrinter)}
+              className="flex items-center gap-1 px-2 py-0.5 text-[10px] font-semibold border border-app-accent text-app-accent rounded hover:bg-app-accent hover:text-white transition-colors"
+            >
+              <Plus className="w-3 h-3" /> Add
+            </button>
+          )}
         </h3>
 
-        {showAddPrinter && (
+        {!quotaEnabled && showAddPrinter && (
           <div className="mb-3 p-3 border border-app-border rounded bg-app-surface space-y-2">
             <div className="grid grid-cols-3 gap-2">
               <div>

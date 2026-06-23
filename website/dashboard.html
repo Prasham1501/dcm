@@ -72,13 +72,21 @@
   })();
 </script>
 
-<link rel="stylesheet" href="styles.css?v=20260521a" />
+<link rel="stylesheet" href="styles.css?v=20260621a" />
 <style>
   :root { --line: rgb(226 232 240); --muted: rgb(100 116 139); }
   .dark { --line: rgb(255 255 255 / 0.08); --muted: rgb(148 163 184); }
   body { background: rgb(248 250 252); }
   .dark body { background: #0B1220; }
   #root:empty::before { content: ''; position: fixed; inset: 0; background: inherit; }
+
+  /* Responsive net: on phones/tablets, wide data tables scroll horizontally
+     inside their card instead of stretching (and breaking) the page. */
+  @media (max-width: 1023px) {
+    :has(> table) { overflow-x: auto !important; -webkit-overflow-scrolling: touch; }
+    table { min-width: 100%; }
+    table th, table td { white-space: nowrap; }
+  }
 </style>
 
 <!-- Razorpay -->
@@ -95,33 +103,33 @@
 <div id="root"></div>
 
 <!-- Shared icons & primitives from main site -->
-<script type="text/babel" data-presets="env,react" src="components/icons.jsx?v=20260521a"></script>
+<script type="text/babel" data-presets="env,react" src="components/icons.jsx?v=20260621a"></script>
 
 <!-- API + payments -->
-<script src="dashboard/api.js?v=20260521a"></script>
-<script src="dashboard/razorpay.js?v=20260521a"></script>
+<script src="dashboard/api.js?v=20260621a"></script>
+<script src="dashboard/razorpay.js?v=20260621a"></script>
 
 <!-- Auth context + pages -->
-<script type="text/babel" data-presets="env,react" src="dashboard/auth-context.jsx?v=20260521a"></script>
-<script type="text/babel" data-presets="env,react" src="dashboard/auth-pages.jsx?v=20260521a"></script>
+<script type="text/babel" data-presets="env,react" src="dashboard/auth-context.jsx?v=20260621a"></script>
+<script type="text/babel" data-presets="env,react" src="dashboard/auth-pages.jsx?v=20260621a"></script>
 
 <!-- UI primitives + shell -->
-<script type="text/babel" data-presets="env,react" src="dashboard/dash-ui.jsx?v=20260521a"></script>
-<script type="text/babel" data-presets="env,react" src="dashboard/dash-shell.jsx?v=20260521a"></script>
+<script type="text/babel" data-presets="env,react" src="dashboard/dash-ui.jsx?v=20260621a"></script>
+<script type="text/babel" data-presets="env,react" src="dashboard/dash-shell.jsx?v=20260621a"></script>
 
 <!-- Recharge flows -->
-<script type="text/babel" data-presets="env,react" src="dashboard/print-recharge.jsx?v=20260521a"></script>
-<script type="text/babel" data-presets="env,react" src="dashboard/ai-recharge.jsx?v=20260521a"></script>
+<script type="text/babel" data-presets="env,react" src="dashboard/print-recharge.jsx?v=20260621a"></script>
+<script type="text/babel" data-presets="env,react" src="dashboard/ai-recharge.jsx?v=20260621a"></script>
 
 <!-- Pages -->
-<script type="text/babel" data-presets="env,react" src="dashboard/pages-overview.jsx?v=20260521a"></script>
-<script type="text/babel" data-presets="env,react" src="dashboard/pages-rest.jsx?v=20260521a"></script>
+<script type="text/babel" data-presets="env,react" src="dashboard/pages-overview.jsx?v=20260621a"></script>
+<script type="text/babel" data-presets="env,react" src="dashboard/pages-rest.jsx?v=20260621a"></script>
 
 <!-- Chat widget -->
-<script type="text/babel" data-presets="env,react" src="dashboard/chat-widget.jsx?v=20260521a"></script>
+<script type="text/babel" data-presets="env,react" src="dashboard/chat-widget.jsx?v=20260621a"></script>
 
 <!-- Admin shell (super_admin only) -->
-<script type="text/babel" data-presets="env,react" src="dashboard/admin-shell.jsx?v=20260521a"></script>
+<script type="text/babel" data-presets="env,react" src="dashboard/admin-shell.jsx?v=20260621a"></script>
 
 <!-- App router -->
 <script type="text/babel" data-presets="env,react">

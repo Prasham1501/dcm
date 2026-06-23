@@ -34,14 +34,33 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getTrialInfo: () => ipcRenderer.invoke('get-trial-info'),
     getFingerprint: () => ipcRenderer.invoke('get-fingerprint'),
 
+    // PCPNDT — open the government portal in an embedded window and inject a
+    // floating "Autofill Form F" button that fills the portal form from the
+    // values prepared in the app.
+    openPcpndtPortal: (payload) => ipcRenderer.invoke('pcpndt:open-portal', payload),
+
     // Print-quota (sell-by-print). Backed by /license/quota on the website.
     getLicenseQuota: () => ipcRenderer.invoke('get-license-quota'),
     decrementLicenseQuota: (pages) => ipcRenderer.invoke('decrement-license-quota', { pages }),
     setLicenseQuota: (opts) => ipcRenderer.invoke('set-license-quota', opts),
+    // Offline voucher recharge (Recharge tab)
+    voucherStatus: () => ipcRenderer.invoke('get-voucher-status'),
+    redeemVoucher: (code) => ipcRenderer.invoke('redeem-voucher', { code }),
+    // Offline activation — same voucher codec, but mints a server-less licence
+    // when the redeeming machine has no licence yet (no internet path).
+    activateOffline: ({ licenseKey, code }) => ipcRenderer.invoke('activate-offline', { licenseKey, code }),
     onOpenQuotaSettings: (cb) => {
       const sub = () => cb();
       ipcRenderer.on('mv:open-quota-settings', sub);
       return () => ipcRenderer.removeListener('mv:open-quota-settings', sub);
+    },
+    // Push notification from main.js whenever the effective print quota
+    // changes (voucher redeemed, license removed, print decremented). Lets
+    // the header / Recharge tab refresh without waiting for the next poll.
+    onQuotaChanged: (cb) => {
+      const sub = (_e, q) => cb(q);
+      ipcRenderer.on('mv:quota-changed', sub);
+      return () => ipcRenderer.removeListener('mv:quota-changed', sub);
     },
 
     // Print/AI wallet — same wallet the dashboard reads, so the two stay in sync.

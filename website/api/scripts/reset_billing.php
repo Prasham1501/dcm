@@ -229,5 +229,5 @@ echo json_encode([
         ? 'Dry-run only. Re-run without dry_run=1 to actually delete.'
         : ($wipeAll
             ? 'Total wipe + super-admin re-seeded. Log in as prashamk15@gmail.com using the password you set previously (the hash in this script matches the original 002_seed.sql).'
-            : 'Done. New trial keys issued from admin will start with 100 prints.'),
+            : 'Done. New trial keys issued from admin will start with 10 prints.'),
 ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);

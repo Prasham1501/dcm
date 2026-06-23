@@ -18,10 +18,10 @@ require_once __DIR__ . '/config/settings.php';
 require_once __DIR__ . '/lib/LicenseKey.php';
 
 // Config — override via query string for ad-hoc testing.
-$plan        = $_GET['plan']   ?? 'testing';   // pass plan=trial to seed 100 prints
+$plan        = $_GET['plan']   ?? 'testing';   // pass plan=trial to seed 10 prints
 $seats       = (int)($_GET['seats'] ?? 100);
 $days        = (int)($_GET['days']  ?? 30);
-$trialPrints = (int)($_GET['prints'] ?? 100);
+$trialPrints = (int)($_GET['prints'] ?? 10);
 
 // Make sure the quota columns exist before we try to seed them — the
 // columns are added lazily by AdminController, so a fresh DB might not
@@ -66,7 +66,7 @@ db()->prepare(
      VALUES (?,?,?,?,?,?,?,?,?,?)"
 )->execute([$licId, $accountId, $keyCode, $plan, $seats, 'active', $now, $expires, $hmac, $now]);
 
-// Free-trial seeding: a trial-plan key starts with 100 prints (or whatever
+// Free-trial seeding: a trial-plan key starts with 10 prints (or whatever
 // the operator passed via ?prints=N) and quota mode ON.
 if ($plan === 'trial') {
     db()->prepare(

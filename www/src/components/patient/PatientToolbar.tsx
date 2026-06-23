@@ -6,7 +6,7 @@ import { useReportStore } from '@/stores/reportStore';
 export function PatientToolbar() {
   const navigate = useNavigate();
   const { filteredPatients, selectedPatient, loadPatients } = usePatientStore();
-  const { printCountRemaining } = usePrintStore();
+  const { printCountRemaining, licenseDaysLeft, quotaEnabled } = usePrintStore();
   const openReportEditor = useReportStore((s) => s.openReportEditor);
   const printedCount = filteredPatients.filter((p) => p.printed).length;
 
@@ -59,9 +59,14 @@ export function PatientToolbar() {
 
       {/* Center section */}
       <div className="flex items-center gap-4">
-        <span className="text-xs 2xl:text-sm font-semibold text-app-accent">
-          Print count left- A4: {printCountRemaining}
-        </span>
+        {/* Quota OFF = unlimited prints → hide the count. Days-left still shows. */}
+        {(quotaEnabled || licenseDaysLeft != null) && (
+          <span className="text-xs 2xl:text-sm font-semibold text-app-accent">
+            {quotaEnabled ? `Print count left- A4: ${printCountRemaining}` : ''}
+            {quotaEnabled && licenseDaysLeft != null ? ' · ' : ''}
+            {licenseDaysLeft != null ? `${licenseDaysLeft} days left` : ''}
+          </span>
+        )}
         <span className="text-xs 2xl:text-sm text-app-text-secondary">
           Displayed Records {filteredPatients.length}
         </span>

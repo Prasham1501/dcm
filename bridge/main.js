@@ -26,7 +26,7 @@ const { ensureFirewallRules } = require('./src/firewall/addFirewallRule');
 const { registerStartup, getStartupStatus } = require('./src/autostart/registerStartup');
 const { parseStudyUid } = require('./src/render/dicomRender');
 const { DEFAULT_BRANDING } = require('./src/config/defaultBranding');
-const { encodeRequest, verifyVoucher, validateRechargePayload } = require('./src/license/offlineRecharge');
+const { encodeRequest, verifyVoucher, validateRechargePayload, shortRequestCode, verifyShortVoucher } = require('./src/license/offlineRecharge');
 
 // --- Single instance lock ---
 const gotLock = app.requestSingleInstanceLock();
@@ -56,7 +56,7 @@ const TRIAL_DAYS = 7;
 /** Local install-trial print budget. Mirrors the viewer's TRIAL_PRINTS so
  *  an unactivated bridge has something to print with — the header shows
  *  "X prints left" out of the box, decrementing as jobs are processed. */
-const TRIAL_PRINTS = 100;
+const TRIAL_PRINTS = 10;
 
 function getFingerprint() {
   const os = require('os');
@@ -84,6 +84,9 @@ function saveLicenseData(data) {
 
 function clearLicenseData() {
   try { if (fs.existsSync(licenseFile)) fs.unlinkSync(licenseFile); } catch {}
+  // Removing a license drops the operator back to a fresh TRIAL_PRINTS
+  // budget — not the in-progress counter from before they activated.
+  try { if (fs.existsSync(trialFile)) fs.unlinkSync(trialFile); } catch {}
 }
 
 function getTrialInfo() {
@@ -269,7 +272,102 @@ async function applyOfflineRechargeVoucher(voucher) {
   };
 }
 
-function bridgeApiRequest(endpoint, body) {
+// ---- Short, phone-friendly offline voucher recharge ----
+// 256-bit secret shared with the website generator (bridge-voucher.php). Embedded
+// here only to VERIFY codes; the generator holds it server-side to mint them.
+// Reconstructed at runtime from XOR-masked chunks so it isn't a greppable literal
+// in the packaged .asar. Env override stays first so production can inject a
+// fresh value without rebuilding.
+const VOUCHER_SECRET = process.env.BRIDGE_VOUCHER_SECRET || require('./src/license/secureSecret')();
+const voucherCounterFile = path.join(userDataRoot, '.voucher-counter');
+
+function readVoucherCounterFile() {
+  try { const n = parseInt(String(fs.readFileSync(voucherCounterFile, 'utf8')).trim(), 10); return Number.isFinite(n) ? n : 0; } catch { return 0; }
+}
+function readVoucherCounterRegistry() {
+  if (process.platform !== 'win32') return 0;
+  try {
+    const out = require('child_process').execSync('reg query HKCU\\Software\\OneClickz\\Bridge /v VoucherCounter', { stdio: 'pipe', windowsHide: true }).toString();
+    const m = out.match(/VoucherCounter\s+REG_SZ\s+(\d+)/i);
+    return m ? (parseInt(m[1], 10) || 0) : 0;
+  } catch { return 0; }
+}
+// The counter lives in BOTH a file and the registry; we take the max so wiping
+// one store can't roll it back and let a spent voucher be replayed.
+function getVoucherCounter() { return Math.max(readVoucherCounterFile(), readVoucherCounterRegistry()); }
+function setVoucherCounter(n) {
+  try { fs.writeFileSync(voucherCounterFile, String(n), 'utf8'); } catch {}
+  if (process.platform === 'win32') {
+    try { require('child_process').execSync(`reg add HKCU\\Software\\OneClickz\\Bridge /v VoucherCounter /t REG_SZ /d ${n} /f`, { stdio: 'ignore', windowsHide: true }); } catch {}
+  }
+}
+
+function getVoucherRequestCode() {
+  return shortRequestCode(VOUCHER_SECRET, getFingerprint(), getVoucherCounter());
+}
+
+// Current prints + days-left the bridge honours locally (works offline).
+function voucherStatus() {
+  const lic = getLicenseData();
+  const expiresAt = effectiveExpiresAt();
+  const daysLeft = expiresAt ? Math.max(0, Math.ceil((new Date(expiresAt).getTime() - Date.now()) / 86400000)) : null;
+  let prints = null;
+  if (lic && (lic.quotaEnabled || parseInt(lic.offlineQuotaTotal || 0, 10) > 0)) {
+    // Keyed off offlineTotal so a recharge spent to 0 still reports "0"
+    // (blocked), not null (which the UI reads as unlimited).
+    prints = Math.max(0, parseInt(lic.quotaRemaining || 0, 10)) + Math.max(0, parseInt(lic.offlineQuotaCredit || 0, 10));
+  } else if (!lic) {
+    prints = getTrialInfo().printsRemaining;
+  }
+  return { requestCode: getVoucherRequestCode(), prints, daysLeft, expiresAt };
+}
+
+function redeemShortVoucher(code, licenseKey) {
+  const counter = getVoucherCounter();
+  const requestCode = shortRequestCode(VOUCHER_SECRET, getFingerprint(), counter);
+  const res = verifyShortVoucher(VOUCHER_SECRET, requestCode, code);
+  if (!res.ok) return { ok: false, reason: res.reason };
+
+  // OFFLINE ACTIVATION: no server licence + the code carries a term => create
+  // a local, server-less licence so the machine leaves trial. The credit/expiry
+  // helpers below then treat it like a recharge.
+  const activating = !getLicenseData() && res.days > 0;
+  if (activating) {
+    saveLicenseData({
+      licenseKey: (licenseKey && String(licenseKey).trim().toUpperCase()) || 'OFFLINE',
+      fingerprint: getFingerprint(),
+      plan: 'offline',
+      offlineActivated: true,
+      quotaEnabled: true,
+      offlineQuotaCredit: 0,
+      offlineQuotaTotal: 0,
+      activatedAt:   new Date().toISOString(),
+      lastValidated: new Date().toISOString(),
+    });
+  }
+
+  let quota = { enabled: !!getLicenseData()?.quotaEnabled };
+  if (res.prints > 0) quota = addOfflineRechargeCredit(res.prints);
+
+  let expiresAt = effectiveExpiresAt();
+  if (res.days > 0) {
+    const base = Math.max(Date.now(), expiresAt ? new Date(expiresAt).getTime() : 0);
+    expiresAt = applyOfflineExpiry(new Date(base + res.days * 86400000).toISOString());
+  }
+
+  // Rotate the request code so this voucher cannot be redeemed again.
+  setVoucherCounter(counter + 1);
+
+  const daysLeft = expiresAt ? Math.max(0, Math.ceil((new Date(expiresAt).getTime() - Date.now()) / 86400000)) : null;
+  return { ok: true, activated: activating, enabled: quota.enabled, remaining: quota.remaining, total: quota.total, addedPrints: res.prints, addedDays: res.days, expiresAt, daysLeft };
+}
+
+function bridgeSleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+/** One POST attempt. Resolves for ANY HTTP response and rejects only on a
+ *  transport failure, so the retry wrapper can retry a flaky link without
+ *  re-sending on a legitimate server rejection (e.g. invalid key). */
+function bridgeApiRequestOnce(endpoint, body) {
   const https = require('https');
   return new Promise((resolve, reject) => {
     const data = JSON.stringify(body);
@@ -287,10 +385,26 @@ function bridgeApiRequest(endpoint, body) {
       });
     });
     req.on('error', reject);
-    req.setTimeout(15000, () => { req.destroy(); reject(new Error('Timeout')); });
+    req.setTimeout(12000, () => { req.destroy(); reject(new Error('Timeout')); });
     req.write(data);
     req.end();
   });
+}
+
+/** Retrying POST. The route to mehrgrewal.com drops a large share of TCP
+ *  connections on some networks, so a single attempt fails often even when
+ *  the server is up. A few backed-off retries turn ~40% per-attempt success
+ *  into ~95%+. Only transport failures retry; HTTP statuses pass straight back. */
+async function bridgeApiRequest(endpoint, body, { attempts = 4 } = {}) {
+  let lastErr;
+  for (let i = 0; i < attempts; i++) {
+    try { return await bridgeApiRequestOnce(endpoint, body); }
+    catch (e) {
+      lastErr = e;
+      if (i < attempts - 1) await bridgeSleep(800 * (i + 1));
+    }
+  }
+  throw lastErr;
 }
 
 async function activateBridgeLicense(licenseKey) {
@@ -314,13 +428,23 @@ async function activateBridgeLicense(licenseKey) {
     }
     return { success: false, error: res.data?.error || res.data?.message || 'Activation failed' };
   } catch (e) {
-    return { success: false, error: 'Network error: ' + e.message };
+    return { success: false, error: 'Could not reach the licence server after several tries — your network looks unstable. Please try again, or switch to a mobile hotspot. (' + e.message + ')' };
   }
 }
 
 async function validateBridgeLicense() {
   const lic = getLicenseData();
   if (!lic) return { valid: false, reason: 'no_license' };
+  // Offline-activated licences are server-less: authority is the baked-in term
+  // (offlineExpiresAt) written at redeem time. Skip the network — otherwise the
+  // bridgeApiRequest retry budget would hang every poll on a permanently-offline
+  // bridge.
+  if (lic.offlineActivated) {
+    const expMs = lic.offlineExpiresAt ? new Date(lic.offlineExpiresAt).getTime() : 0;
+    const valid = expMs > Date.now();
+    return { valid, expired: !valid, plan: lic.plan || 'offline',
+             expiresAt: effectiveExpiresAt(lic), offline: true, reason: valid ? undefined : 'expired' };
+  }
   try {
     const res = await bridgeApiRequest('/license/validate', {
       license_key: lic.licenseKey, fingerprint: lic.fingerprint, app: 'bridge',
@@ -409,6 +533,15 @@ async function getCentralQuota() {
   }
   const offlineCredit = Math.max(0, parseInt(lic.offlineQuotaCredit || 0, 10));
   const offlineTotal = Math.max(0, parseInt(lic.offlineQuotaTotal || 0, 10));
+  // Offline-activated licence: serve purely from the local grant. No server
+  // exists to ask, and the apiRequest retry budget would otherwise hang the
+  // header refresh on a permanently-offline bridge.
+  if (lic.offlineActivated) {
+    const expMs = lic.offlineExpiresAt ? new Date(lic.offlineExpiresAt).getTime() : 0;
+    const valid = expMs > Date.now();
+    return { enabled: true, remaining: valid ? offlineCredit : 0, total: offlineTotal,
+             valid, offline: true, offlineCredit, reason: valid ? undefined : 'expired' };
+  }
   try {
     const r = await bridgeApiRequest('/license/quota', {
       license_key: lic.licenseKey, fingerprint: lic.fingerprint, app: 'bridge',
@@ -419,7 +552,9 @@ async function getCentralQuota() {
       lic.quotaTotal     = parseInt(r.data.total     || 0, 10);
       saveLicenseData(lic);
       return {
-        enabled: lic.quotaEnabled || offlineCredit > 0,
+        // offlineTotal (not live credit): a spent-down recharge stays "on" so
+        // 0 reads as blocked, not unlimited. Unlimited = never granted any.
+        enabled: lic.quotaEnabled || offlineTotal > 0,
         remaining: lic.quotaRemaining + offlineCredit,
         total: lic.quotaTotal + offlineTotal,
         valid: true,
@@ -434,7 +569,7 @@ async function getCentralQuota() {
       return { enabled: false, remaining: 0, total: 0, valid: false, reason: r.data.reason, invalidated: true };
     }
     return {
-      enabled: !!lic.quotaEnabled || offlineCredit > 0,
+      enabled: !!lic.quotaEnabled || offlineTotal > 0,
       remaining: (lic.quotaRemaining || 0) + offlineCredit,
       total: (lic.quotaTotal || 0) + offlineTotal,
       valid: false,
@@ -443,7 +578,7 @@ async function getCentralQuota() {
     };
   } catch (e) {
     return {
-      enabled: !!lic.quotaEnabled || offlineCredit > 0,
+      enabled: !!lic.quotaEnabled || offlineTotal > 0,
       remaining: (lic.quotaRemaining || 0) + offlineCredit,
       total: (lic.quotaTotal || 0) + offlineTotal,
       valid: true,
@@ -492,7 +627,7 @@ async function decrementCentralQuota(pages) {
       const localTotal = Math.max(0, parseInt(lic.offlineQuotaTotal || 0, 10));
       return {
         ok: true,
-        enabled: lic.quotaEnabled || localCredit > 0,
+        enabled: lic.quotaEnabled || localTotal > 0,
         remaining: lic.quotaRemaining + localCredit,
         total: lic.quotaTotal + localTotal,
       };
@@ -906,6 +1041,29 @@ function setupIpc() {
     return result;
   });
 
+  // Short, phone-friendly offline voucher recharge (Recharge tab).
+  ipcMain.handle('bridge:voucher-status', () => voucherStatus());
+  ipcMain.handle('bridge:redeem-voucher', async (_e, { code } = {}) => {
+    const result = redeemShortVoucher(code);
+    if (result.ok && configWindow && !configWindow.isDestroyed()) {
+      configWindow.webContents.send('bridge:quota-changed', {
+        enabled: result.enabled, remaining: result.remaining, total: result.total,
+      });
+    }
+    return result;
+  });
+  // Same redeem path, but also accepts an optional licenseKey so a fresh install
+  // with no internet can create a server-less licence and leave trial.
+  ipcMain.handle('bridge:activate-offline', async (_e, { licenseKey, code } = {}) => {
+    const result = redeemShortVoucher(code, licenseKey);
+    if (result.ok && configWindow && !configWindow.isDestroyed()) {
+      configWindow.webContents.send('bridge:quota-changed', {
+        enabled: result.enabled, remaining: result.remaining, total: result.total,
+      });
+    }
+    return result;
+  });
+
   ipcMain.handle('bridge:activate-license', async (_e, licenseKey) => {
     return await activateBridgeLicense(licenseKey);
   });
@@ -923,6 +1081,14 @@ function setupIpc() {
         });
       } catch {}
       clearLicenseData();
+      // Push the reset trial quota to the header immediately so the user
+      // doesn't see a stale "X prints left" until the next 5s poll.
+      if (configWindow && !configWindow.isDestroyed()) {
+        const t = getTrialInfo();
+        configWindow.webContents.send('bridge:quota-changed', {
+          enabled: true, remaining: t.printsRemaining, total: t.printsTotal,
+        });
+      }
     }
     return { success: true };
   });
@@ -1074,7 +1240,10 @@ app.whenReady().then(async () => {
       return { block: false };
     }
     const offlineCredit = Math.max(0, parseInt(lic.offlineQuotaCredit || 0, 10));
-    const centralQuotaOn = !!lic.quotaEnabled || offlineCredit > 0;
+    const offlineTotal = Math.max(0, parseInt(lic.offlineQuotaTotal || 0, 10));
+    // Sell-by-print is on once any prints were ever granted (offlineTotal),
+    // so a recharge spent to 0 blocks instead of reverting to unlimited.
+    const centralQuotaOn = !!lic.quotaEnabled || offlineTotal > 0;
     if (!centralQuotaOn) return { block: false };
     const remaining = (lic.quotaRemaining || 0) + offlineCredit;
     if (remaining <= 0) {
@@ -1106,7 +1275,7 @@ app.whenReady().then(async () => {
     const pagesPrinted = Math.max(1, parseInt(job.result.pages || 1, 10));
     const licData = getLicenseData();
     const centralQuotaOn = licData
-      ? (!!licData.quotaEnabled || Math.max(0, parseInt(licData.offlineQuotaCredit || 0, 10)) > 0)
+      ? (!!licData.quotaEnabled || Math.max(0, parseInt(licData.offlineQuotaTotal || 0, 10)) > 0)
       : true; // trial = always on
     if (centralQuotaOn) {
       decrementCentralQuota(pagesPrinted).then((q) => {

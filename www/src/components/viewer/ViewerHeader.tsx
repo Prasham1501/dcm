@@ -26,7 +26,7 @@ export function ViewerHeader({ showThumbnails = true, onToggleThumbnails }: { sh
     selectAllViewports, selectedViewportIndices, selectedViewport,
     deleteImageFromViewport, insertAllViewports,
   } = useViewerStore();
-  const { setShowPrintPreview, printCountRemaining } = usePrintStore();
+  const { setShowPrintPreview, printCountRemaining, licenseDaysLeft, quotaEnabled } = usePrintStore();
   const { mode, toggleTheme } = useThemeStore();
   const showInlineReport = useReportStore((s) => s.showInlineReport);
   const setShowInlineReport = useReportStore((s) => s.setShowInlineReport);
@@ -179,12 +179,19 @@ export function ViewerHeader({ showThumbnails = true, onToggleThumbnails }: { sh
 
         <div className="w-px h-5 bg-app-border mx-0.5" />
 
-        {/* Print count */}
-        <span className="hidden lg:inline text-[10px] 2xl:text-sm text-app-text-secondary whitespace-nowrap">
-          <span className={`font-bold ${printCountRemaining < 50 ? 'text-red-500' : 'text-green-500'}`}>
-            {printCountRemaining}
+        {/* Print count — only meaningful when sell-by-print quota is ON.
+            Quota OFF = unlimited prints, so the number is hidden. Days-left
+            is independent of quota (the licence term), so it still shows. */}
+        {(quotaEnabled || licenseDaysLeft != null) && (
+          <span className="hidden lg:inline text-[10px] 2xl:text-sm text-app-text-secondary whitespace-nowrap">
+            {quotaEnabled && (
+              <span className={`font-bold ${printCountRemaining < 50 ? 'text-red-500' : 'text-green-500'}`}>
+                {printCountRemaining}
+              </span>
+            )}
+            {licenseDaysLeft != null && <span className="text-app-text-muted">{quotaEnabled ? ' · ' : ''}{licenseDaysLeft}d left</span>}
           </span>
-        </span>
+        )}
 
         {/* Print */}
         <button

@@ -286,6 +286,9 @@ class LicenseController {
     public function activate(Request $req): void {
         RateLimiter::hit('activate:ip:' . $req->clientIp(), 30, 60);
         $this->ensureProductColumn();
+        if (!db()->query("SHOW COLUMNS FROM licenses LIKE 'term_days'")->fetch()) {
+            db()->exec("ALTER TABLE licenses ADD COLUMN term_days INT NULL AFTER expires_at");
+        }
 
         $body = $req->body();
         $key  = trim($body['license_key'] ?? '');
@@ -315,6 +318,15 @@ class LicenseController {
         if ($lic['expires_at'] && strtotime($lic['expires_at']) < time()) {
             db()->prepare("UPDATE licenses SET status='expired' WHERE id=?")->execute([$lic['id']]);
             Response::error('License has expired', 402);
+        }
+
+        // Activation-based term: a key issued without an expiry starts its
+        // countdown HERE, on first activation. Re-activations keep the date.
+        if (empty($lic['expires_at']) && !empty($lic['term_days'])) {
+            $newExpiry = gmdate('Y-m-d H:i:s', time() + ((int)$lic['term_days']) * 86400);
+            db()->prepare("UPDATE licenses SET expires_at = ? WHERE id = ? AND expires_at IS NULL")
+                ->execute([$newExpiry, $lic['id']]);
+            $lic['expires_at'] = $newExpiry;
         }
 
         // Existing device?
@@ -431,7 +443,7 @@ class LicenseController {
 
         // Defensive lazy-seed: any plan='trial' license that was issued
         // before the seeding patch landed (or had its quota wiped by the
-        // reset script) gets 100 prints + quota mode ON on first read.
+        // reset script) gets 10 prints + quota mode ON on first read.
         // Idempotent — only fires once per license.
         if ($row['plan'] === 'trial'
             && (int)$row['quota_enabled']   === 0
@@ -439,7 +451,7 @@ class LicenseController {
             && (int)$row['quota_total']     === 0) {
             db()->prepare(
                 "UPDATE licenses
-                    SET quota_enabled = 1, quota_remaining = 100, quota_total = 100
+                    SET quota_enabled = 1, quota_remaining = 10, quota_total = 10
                   WHERE id = ?"
             )->execute([$row['id']]);
         }

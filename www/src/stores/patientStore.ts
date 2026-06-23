@@ -774,9 +774,9 @@ export const usePatientStore = create<PatientState>()(
     // a failure here only means the on-disk .dcm files keep their old tag
     // values — surfaced as a non-blocking toast.
     if (filesToPatch && patchPayload) {
-      const isElectron = !!(window as any).electronAPI?.isElectron;
-      const base = isElectron ? 'http://localhost:3457' : '';
-      fetch(`${base}/api/dicom/patch-tags.php`, {
+      // patch-tags.php is PHP (top-level api/), served by the PHP/Apache backend
+      // via the normal proxy — not the Node DICOM file server on :3457.
+      fetch(`/api/dicom/patch-tags.php`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ files: filesToPatch, tags: patchPayload }),

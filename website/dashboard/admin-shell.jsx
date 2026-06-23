@@ -9,13 +9,23 @@ const AdminShell = ({ route }) => {
     return (m && m[1]) || 'overview';
   };
   const [section, setSection] = React.useState(() => deriveSection(route));
+  // Mobile sidebar drawer: hidden by default, slides in over the content.
+  const [navOpen, setNavOpen] = React.useState(false);
 
   React.useEffect(() => { setSection(deriveSection(route)); }, [route]);
   React.useEffect(() => {
-    const onHash = () => setSection(deriveSection(window.location.hash));
+    const onHash = () => { setSection(deriveSection(window.location.hash)); setNavOpen(false); };
     window.addEventListener('hashchange', onHash);
     return () => window.removeEventListener('hashchange', onHash);
   }, []);
+  // Lock body scroll while the mobile drawer is open.
+  React.useEffect(() => {
+    if (!navOpen) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = prev; };
+  }, [navOpen]);
+  const goSection = (id) => { setSection(id); window.location.hash = '#/dashboard/admin/' + id; setNavOpen(false); };
 
   // ── Operator-focused nav. No user-mirror sections. ──────────────────────
   // Settings + Audit live behind the gear icon to keep the sidebar focused
@@ -25,6 +35,7 @@ const AdminShell = ({ route }) => {
     { id: 'devices',   label: 'Fleet',         icon: 'M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z' },
     { id: 'accounts',  label: 'Accounts',      icon: 'M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4' },
     { id: 'licenses',  label: 'License keys',  icon: 'M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z' },
+    { id: 'dealers',   label: 'Dealers',       icon: 'M17 20h5v-2a4 4 0 00-3-3.87M9 20H4v-2a4 4 0 013-3.87m6-1.13a4 4 0 10-4-4 4 4 0 004 4z' },
     { id: 'wallets',   label: 'Wallets',       icon: 'M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z' },
     { id: 'revenue',   label: 'Revenue',       icon: 'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z' },
     { id: 'tickets',   label: 'Support inbox', icon: 'M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z' },
@@ -44,10 +55,31 @@ const AdminShell = ({ route }) => {
   );
 
   return (
-    <div className="flex min-h-screen bg-[#0a0f1a]">
-      {/* Sidebar */}
-      <aside className="w-60 shrink-0 border-r border-white/[0.06] flex flex-col bg-[#0d1321]">
-        <div className="px-5 py-5 border-b border-white/[0.06]">
+    <div className="lg:flex min-h-screen bg-[#0a0f1a]">
+      {/* Mobile top bar — hosts the hamburger that opens the drawer. */}
+      <div className="lg:hidden sticky top-0 z-30 flex items-center gap-3 px-4 h-14 bg-[#0d1321]/95 backdrop-blur border-b border-white/[0.06]">
+        <button onClick={() => setNavOpen(true)} aria-label="Open menu"
+          className="h-9 w-9 grid place-items-center rounded-lg border border-white/[0.08] text-slate-300 hover:text-white hover:bg-white/[0.06]">
+          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16"/></svg>
+        </button>
+        <div className="flex items-center gap-2">
+          <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-rose-500 to-rose-700 flex items-center justify-center">
+            <svg className="w-3.5 h-3.5 text-white" fill="currentColor" viewBox="0 0 20 20"><path d="M10.394 2.08a1 1 0 00-.788 0l-7 3a1 1 0 000 1.84L5.25 8.051a.999.999 0 01.356-.257l4-1.714a1 1 0 11.788 1.838L7.667 9.088l1.94.831a1 1 0 00.787 0l7-3a1 1 0 000-1.838l-7-3zM3.31 9.397L5 10.12v4.102a8.969 8.969 0 00-1.05-.174 1 1 0 01-.89-.89 11.115 11.115 0 01.25-3.762zM9.3 16.573A9.026 9.026 0 007 14.935v-3.957l1.818.78a3 3 0 002.364 0l5.508-2.361a11.026 11.026 0 01.25 3.762 1 1 0 01-.89.89 8.968 8.968 0 00-5.35 2.524 1 1 0 01-1.4 0z"/></svg>
+          </div>
+          <span className="text-white font-bold text-sm tracking-tight">One Clickz <span className="text-slate-500 font-medium">Admin</span></span>
+        </div>
+      </div>
+
+      {/* Backdrop behind the open drawer (mobile only). */}
+      {navOpen && <div onClick={() => setNavOpen(false)} className="lg:hidden fixed inset-0 z-40 bg-black/60 backdrop-blur-sm" />}
+
+      {/* Sidebar — static column on desktop, slide-in drawer on mobile. */}
+      <aside className={`fixed lg:static inset-y-0 left-0 z-50 w-60 shrink-0 border-r border-white/[0.06] flex flex-col bg-[#0d1321] transform transition-transform duration-200 ${navOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}>
+        <div className="px-5 py-5 border-b border-white/[0.06] flex items-center justify-between">
+          <button onClick={() => setNavOpen(false)} aria-label="Close menu"
+            className="lg:hidden absolute top-4 right-4 h-8 w-8 grid place-items-center rounded-lg text-slate-400 hover:text-white hover:bg-white/[0.06]">
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+          </button>
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-rose-500 to-rose-700 flex items-center justify-center">
               <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 20 20"><path d="M10.394 2.08a1 1 0 00-.788 0l-7 3a1 1 0 000 1.84L5.25 8.051a.999.999 0 01.356-.257l4-1.714a1 1 0 11.788 1.838L7.667 9.088l1.94.831a1 1 0 00.787 0l7-3a1 1 0 000-1.838l-7-3zM3.31 9.397L5 10.12v4.102a8.969 8.969 0 00-1.05-.174 1 1 0 01-.89-.89 11.115 11.115 0 01.25-3.762zM9.3 16.573A9.026 9.026 0 007 14.935v-3.957l1.818.78a3 3 0 002.364 0l5.508-2.361a11.026 11.026 0 01.25 3.762 1 1 0 01-.89.89 8.968 8.968 0 00-5.35 2.524 1 1 0 01-1.4 0z"/></svg>
@@ -62,7 +94,7 @@ const AdminShell = ({ route }) => {
           {nav.map(n => (
             <button
               key={n.id}
-              onClick={() => { setSection(n.id); window.location.hash = '#/dashboard/admin/' + n.id; }}
+              onClick={() => goSection(n.id)}
               className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-[13px] font-medium transition-all text-left ${
                 section === n.id
                   ? 'bg-rose-500/15 text-rose-400 shadow-sm shadow-rose-500/5'
@@ -79,7 +111,7 @@ const AdminShell = ({ route }) => {
             {navSecondary.map(n => (
               <button
                 key={n.id}
-                onClick={() => { setSection(n.id); window.location.hash = '#/dashboard/admin/' + n.id; }}
+                onClick={() => goSection(n.id)}
                 className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-[13px] font-medium transition-all text-left ${
                   section === n.id
                     ? 'bg-rose-500/15 text-rose-400'
@@ -110,11 +142,12 @@ const AdminShell = ({ route }) => {
       </aside>
 
       {/* Main */}
-      <main className="flex-1 overflow-auto">
+      <main className="flex-1 min-w-0 overflow-auto">
         {section === 'overview'  && <AdminOverview />}
         {section === 'devices'   && <AdminDevices />}
         {section === 'accounts'  && <AdminAccounts />}
         {section === 'licenses'  && <AdminLicenses />}
+        {section === 'dealers'   && <AdminDealers />}
         {section === 'wallets'   && <AdminWallets />}
         {section === 'revenue'   && <AdminRevenue />}
         {section === 'tickets'   && <AdminTickets />}
@@ -129,13 +162,13 @@ const AdminShell = ({ route }) => {
 // ── Shared admin components ──────────────────────────────────────────────────
 
 const AdminPage = ({ title, subtitle, actions, children }) => (
-  <div className="p-8 max-w-[1400px]">
-    <div className="flex items-center justify-between mb-6">
-      <div>
-        <h1 className="text-xl font-bold text-white">{title}</h1>
+  <div className="p-4 sm:p-6 lg:p-8 max-w-[1400px]">
+    <div className="flex items-start justify-between gap-3 flex-wrap mb-6">
+      <div className="min-w-0">
+        <h1 className="text-lg sm:text-xl font-bold text-white">{title}</h1>
         {subtitle && <p className="text-sm text-slate-400 mt-0.5">{subtitle}</p>}
       </div>
-      {actions && <div className="flex items-center gap-2">{actions}</div>}
+      {actions && <div className="flex items-center gap-2 shrink-0">{actions}</div>}
     </div>
     {children}
   </div>
@@ -900,6 +933,9 @@ const IssueLicenseModal = ({ onClose }) => {
   const [plan, setPlan] = React.useState('monthly');
   const [seats, setSeats] = React.useState(1);
   const [days, setDays] = React.useState(30);
+  const [quantity, setQuantity] = React.useState(1);
+  const [dealers, setDealers] = React.useState([]);
+  const [dealerId, setDealerId] = React.useState('');
   const [accountId, setAccountId] = React.useState('');
   // Manual revenue capture — operator logs the actual amount + method so it
   // flows into the dashboard alongside Razorpay payments.
@@ -910,19 +946,36 @@ const IssueLicenseModal = ({ onClose }) => {
   const [result, setResult] = React.useState(null);
   const { showToast } = useToast();
 
+  React.useEffect(() => { mvApi.adminDealers().then(d => setDealers(d || [])).catch(() => {}); }, []);
+
+  const dealerPriceFor = (id, prod) => {
+    const d = dealers.find(x => x.id === id);
+    return d ? (parseInt(d[prod + '_price'], 10) || 0) : 0;
+  };
+  const onDealerChange = (id) => {
+    setDealerId(id);
+    if (id) { const p = dealerPriceFor(id, product); if (p) setPayAmount(String(p)); }
+  };
+
   const issue = async () => {
     if (!accountId.trim()) { showToast('Account ID is required', 'error'); return; }
     setIssuing(true);
     try {
-      const r = await mvApi.adminIssueLicense({
-        product, plan, seats, days,
-        account_id: accountId.trim(),
-        payment_amount: Math.max(0, parseInt(payAmount, 10) || 0),
-        payment_method: payMethod,
-        payment_note:   payNote.trim(),
-      });
-      setResult(r);
-      showToast('License issued' + (r.payment_amount ? ` · ₹${r.payment_amount} recorded` : '') + '!', 'success');
+      const qty = Math.max(1, Math.min(100, parseInt(quantity, 10) || 1));
+      const keys = [];
+      for (let i = 0; i < qty; i++) {
+        const r = await mvApi.adminIssueLicense({
+          product, plan, seats, days,
+          account_id: accountId.trim(),
+          dealer_id: dealerId || undefined,
+          payment_amount: Math.max(0, parseInt(payAmount, 10) || 0),
+          payment_method: payMethod,
+          payment_note:   payNote.trim(),
+        });
+        keys.push(r.key_code);
+      }
+      setResult({ keys, plan, term_days: days });
+      showToast(`${qty} license${qty > 1 ? 's' : ''} issued`, 'success');
     }
     catch (e) { showToast(e.message, 'error'); }
     finally { setIssuing(false); }
@@ -931,15 +984,18 @@ const IssueLicenseModal = ({ onClose }) => {
   return (
     <Modal open={true} onClose={onClose} title="Issue New License">
       {result ? (
-        <div className="text-center py-4">
-          <div className="text-emerald-400 text-lg font-bold mb-2">License Created!</div>
-          <div className="font-mono text-xl text-rose-400 bg-white/[0.04] rounded-lg px-4 py-3 mb-3 select-all">{result.key_code}</div>
-          <div className="text-sm text-slate-400 space-y-1">
-            <div>Plan: <span className="text-white capitalize">{result.plan}</span></div>
-            <div>Seats: <span className="text-white">{result.seats}</span></div>
-            <div>Expires: <span className="text-white">{fmtDate(result.expires_at)}</span></div>
+        <div className="py-4">
+          <div className="text-emerald-400 text-lg font-bold mb-3 text-center">{result.keys.length} License{result.keys.length > 1 ? 's' : ''} Created!</div>
+          <div className="space-y-1.5 max-h-64 overflow-y-auto mb-3">
+            {result.keys.map(k => (
+              <div key={k} className="font-mono text-base text-rose-400 bg-white/[0.04] rounded-lg px-4 py-2 select-all text-center">{k}</div>
+            ))}
           </div>
-          <div className="mt-4"><AdminBtn variant="primary" size="md" onClick={onClose}>Done</AdminBtn></div>
+          <div className="text-sm text-slate-400 text-center space-y-1">
+            <div>Plan: <span className="text-white capitalize">{result.plan}</span></div>
+            <div>Term: <span className="text-white">{result.term_days} days</span> · <span className="text-emerald-300">starts on first activation</span></div>
+          </div>
+          <div className="mt-4 text-center"><AdminBtn variant="primary" size="md" onClick={onClose}>Done</AdminBtn></div>
         </div>
       ) : (
         <div className="space-y-4">
@@ -953,11 +1009,27 @@ const IssueLicenseModal = ({ onClose }) => {
             <label className="block text-xs text-slate-400 mb-1.5">Product</label>
             <div className="grid grid-cols-3 gap-2">
               {['viewer','bridge','ris'].map(p => (
-                <button key={p} type="button" onClick={() => setProduct(p)}
+                <button key={p} type="button" onClick={() => { setProduct(p); if (dealerId) { const pr = dealerPriceFor(dealerId, p); if (pr) setPayAmount(String(pr)); } }}
                   className={`px-3 py-2 rounded-lg text-sm font-semibold border ${product === p ? 'bg-rose-500/20 text-rose-300 border-rose-500/40' : 'bg-white/[0.04] text-slate-300 border-white/[0.08]'}`}>
                   {p === 'viewer' ? 'Viewer (DICOM viewer)' : p === 'bridge' ? 'Bridge (auto-print tray)' : 'RIS (reception)'}
                 </button>
               ))}
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs text-slate-400 mb-1.5">Dealer (optional)</label>
+              <select value={dealerId} onChange={e => onDealerChange(e.target.value)}
+                className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-white">
+                <option value="">— Direct sale —</option>
+                {dealers.filter(d => d.status !== 'inactive').map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+              </select>
+              {dealerId && <p className="mt-1 text-[10px] text-emerald-400">Dealer price for {product}: ₹{dealerPriceFor(dealerId, product)} / key</p>}
+            </div>
+            <div>
+              <label className="block text-xs text-slate-400 mb-1.5">Quantity (keys to issue)</label>
+              <input type="number" value={quantity} onChange={e => setQuantity(Math.max(1, Math.min(100, +e.target.value)))} min="1" max="100"
+                className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-rose-500/50" />
             </div>
           </div>
           <div className="grid grid-cols-3 gap-3">
@@ -1018,6 +1090,117 @@ const IssueLicenseModal = ({ onClose }) => {
           </div>
         </div>
       )}
+    </Modal>
+  );
+};
+
+// ── Dealers ─────────────────────────────────────────────────────────────────
+
+const AdminDealers = () => {
+  const [list, setList] = React.useState([]);
+  const [loading, setLoading] = React.useState(true);
+  const [editing, setEditing] = React.useState(null);
+  const { showToast } = useToast();
+
+  const load = () => { setLoading(true); mvApi.adminDealers().then(d => setList(d || [])).catch(e => showToast(e.message, 'error')).finally(() => setLoading(false)); };
+  React.useEffect(load, []);
+
+  const del = async (d) => {
+    if (!confirm(`Delete dealer "${d.name}"?`)) return;
+    try { await mvApi.adminDeleteDealer(d.id); showToast('Dealer deleted', 'success'); load(); }
+    catch (e) { showToast(e.message, 'error'); }
+  };
+
+  return (
+    <AdminPage title="Dealers" subtitle="Bulk-buyers with negotiated fixed per-product pricing"
+      actions={<AdminBtn variant="primary" size="sm" onClick={() => setEditing({})}>+ Add Dealer</AdminBtn>}>
+      {loading ? <div className="text-slate-500 py-8">Loading…</div> : (
+        <div className="bg-white/[0.03] border border-white/[0.06] rounded-xl overflow-hidden">
+          <table className="w-full text-sm">
+            <thead><tr className="border-b border-white/[0.06]">
+              <th className="text-left px-4 py-3 text-[11px] text-slate-500 font-medium uppercase tracking-wider">Dealer</th>
+              <th className="text-left px-4 py-3 text-[11px] text-slate-500 font-medium uppercase tracking-wider">Contact</th>
+              <th className="text-right px-4 py-3 text-[11px] text-slate-500 font-medium uppercase tracking-wider">Viewer ₹</th>
+              <th className="text-right px-4 py-3 text-[11px] text-slate-500 font-medium uppercase tracking-wider">Bridge ₹</th>
+              <th className="text-right px-4 py-3 text-[11px] text-slate-500 font-medium uppercase tracking-wider">RIS ₹</th>
+              <th className="text-left px-4 py-3 text-[11px] text-slate-500 font-medium uppercase tracking-wider">Status</th>
+              <th className="text-right px-4 py-3 text-[11px] text-slate-500 font-medium uppercase tracking-wider">Actions</th>
+            </tr></thead>
+            <tbody>
+              {list.length === 0 && <TableEmpty cols={7} />}
+              {list.map(d => (
+                <tr key={d.id} className="border-b border-white/[0.04] last:border-0 hover:bg-white/[0.02]">
+                  <td className="px-4 py-3 text-slate-200">{d.name}</td>
+                  <td className="px-4 py-3 text-slate-400 text-xs">{d.phone || '—'}{d.email ? ` · ${d.email}` : ''}</td>
+                  <td className="px-4 py-3 text-right text-slate-300">{d.viewer_price}</td>
+                  <td className="px-4 py-3 text-right text-slate-300">{d.bridge_price}</td>
+                  <td className="px-4 py-3 text-right text-slate-300">{d.ris_price}</td>
+                  <td className="px-4 py-3"><Badge color={d.status === 'inactive' ? 'yellow' : 'green'}>{d.status}</Badge></td>
+                  <td className="px-4 py-3 text-right space-x-2">
+                    <AdminBtn variant="ghost" size="xs" onClick={() => setEditing(d)}>Edit</AdminBtn>
+                    <AdminBtn variant="danger" size="xs" onClick={() => del(d)}>Delete</AdminBtn>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {editing && <DealerModal dealer={editing} onClose={() => { setEditing(null); load(); }} />}
+    </AdminPage>
+  );
+};
+
+const DealerModal = ({ dealer, onClose }) => {
+  const [name, setName] = React.useState(dealer.name || '');
+  const [phone, setPhone] = React.useState(dealer.phone || '');
+  const [email, setEmail] = React.useState(dealer.email || '');
+  const [status, setStatus] = React.useState(dealer.status || 'active');
+  const [vp, setVp] = React.useState(dealer.viewer_price ?? 0);
+  const [bp, setBp] = React.useState(dealer.bridge_price ?? 0);
+  const [rp, setRp] = React.useState(dealer.ris_price ?? 0);
+  const [note, setNote] = React.useState(dealer.note || '');
+  const [saving, setSaving] = React.useState(false);
+  const { showToast } = useToast();
+
+  const save = async () => {
+    if (!name.trim()) { showToast('Dealer name is required', 'error'); return; }
+    setSaving(true);
+    try {
+      await mvApi.adminSaveDealer({ id: dealer.id, name: name.trim(), phone, email, status, viewer_price: +vp || 0, bridge_price: +bp || 0, ris_price: +rp || 0, note });
+      showToast('Dealer saved', 'success'); onClose();
+    } catch (e) { showToast(e.message, 'error'); }
+    finally { setSaving(false); }
+  };
+
+  const fld = "w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-rose-500/50";
+  return (
+    <Modal open={true} onClose={onClose} title={dealer.id ? 'Edit Dealer' : 'Add Dealer'}>
+      <div className="space-y-4">
+        <div><label className="block text-xs text-slate-400 mb-1.5">Name</label><input className={fld} value={name} onChange={e => setName(e.target.value)} /></div>
+        <div className="grid grid-cols-2 gap-3">
+          <div><label className="block text-xs text-slate-400 mb-1.5">Phone</label><input className={fld} value={phone} onChange={e => setPhone(e.target.value)} /></div>
+          <div><label className="block text-xs text-slate-400 mb-1.5">Email</label><input className={fld} value={email} onChange={e => setEmail(e.target.value)} /></div>
+        </div>
+        <div>
+          <label className="block text-xs text-slate-400 mb-1.5">Fixed price per product (₹ / key)</label>
+          <div className="grid grid-cols-3 gap-3">
+            <div><span className="text-[10px] text-slate-500">Viewer</span><input type="number" min="0" className={fld} value={vp} onChange={e => setVp(e.target.value)} /></div>
+            <div><span className="text-[10px] text-slate-500">Bridge</span><input type="number" min="0" className={fld} value={bp} onChange={e => setBp(e.target.value)} /></div>
+            <div><span className="text-[10px] text-slate-500">RIS</span><input type="number" min="0" className={fld} value={rp} onChange={e => setRp(e.target.value)} /></div>
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div><label className="block text-xs text-slate-400 mb-1.5">Status</label>
+            <select className={fld} value={status} onChange={e => setStatus(e.target.value)}><option value="active">Active</option><option value="inactive">Inactive</option></select>
+          </div>
+          <div><label className="block text-xs text-slate-400 mb-1.5">Note</label><input className={fld} value={note} onChange={e => setNote(e.target.value)} /></div>
+        </div>
+        <div className="flex justify-end gap-2 pt-2">
+          <AdminBtn variant="ghost" onClick={onClose}>Cancel</AdminBtn>
+          <AdminBtn variant="primary" onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save Dealer'}</AdminBtn>
+        </div>
+      </div>
     </Modal>
   );
 };

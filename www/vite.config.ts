@@ -3,8 +3,48 @@ import react from '@vitejs/plugin-react';
 import { viteCommonjs } from '@originjs/vite-plugin-commonjs';
 import path from 'path';
 import fs from 'fs';
+import { spawn, type ChildProcess } from 'child_process';
 import { createRequire } from 'module';
 const _require = createRequire(import.meta.url);
+
+// Local PHP backend for dev. The SPA calls same-origin /api/*.php; instead of
+// requiring the developer to start XAMPP's Apache, we spawn PHP's own built-in
+// server against the XAMPP htdocs root and point the /api proxy at it. This is
+// the same php.exe the packaged app bundles, so dev and prod behave the same.
+const PHP_BIN  = process.env.VITE_PHP_BIN  || 'C:\\xampp\\php\\php.exe';
+const PHP_ROOT = process.env.VITE_PHP_ROOT || 'C:\\xampp\\htdocs';
+const PHP_PORT = Number(process.env.VITE_PHP_PORT || 8091);
+const PHP_TARGET = process.env.VITE_API_PROXY || `http://127.0.0.1:${PHP_PORT}`;
+
+function phpBackendPlugin() {
+  let php: ChildProcess | null = null;
+  const stop = () => { if (php && !php.killed) { try { php.kill(); } catch { /* noop */ } } php = null; };
+  const start = () => {
+    // Only auto-spawn when the proxy points at our managed port AND php exists.
+    if (process.env.VITE_API_PROXY) return; // dev explicitly chose an external backend
+    if (!fs.existsSync(PHP_BIN)) {
+      // eslint-disable-next-line no-console
+      console.warn(`\n[php] ${PHP_BIN} not found — /api calls will fail.\n  → Install PHP or set VITE_PHP_BIN / VITE_API_PROXY.\n`);
+      return;
+    }
+    if (php) return;
+    php = spawn(PHP_BIN, ['-S', `127.0.0.1:${PHP_PORT}`, '-t', PHP_ROOT], {
+      cwd: PHP_ROOT,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      windowsHide: true,
+    });
+    // eslint-disable-next-line no-console
+    console.log(`\n[php] built-in server on http://127.0.0.1:${PHP_PORT} (root: ${PHP_ROOT})\n`);
+    php.on('exit', (code) => { if (code) console.warn(`[php] server exited (code ${code})`); php = null; });
+    php.on('error', (e: any) => console.warn(`[php] failed to start: ${e?.message || e}`));
+  };
+  return {
+    name: 'php-backend',
+    configureServer() { start(); },
+    closeBundle() { stop(); },
+    buildEnd() { /* keep running through HMR */ },
+  };
+}
 
 /**
  * Vite plugin to serve local DICOM files for development/testing.
@@ -517,6 +557,7 @@ export default defineConfig({
     }),
     dicomServerPlugin(),
     cornerstoneHideTextPatchPlugin(),
+    phpBackendPlugin(),
   ],
   resolve: {
     alias: {
@@ -591,7 +632,9 @@ export default defineConfig({
       // the console with ECONNREFUSED — usually means XAMPP's Apache
       // simply isn't started.
       '/api': {
-        target: process.env.VITE_API_PROXY || 'http://127.0.0.1',
+        // Default → our auto-spawned PHP built-in server (phpBackendPlugin).
+        // Override with VITE_API_PROXY to point at XAMPP Apache or elsewhere.
+        target: PHP_TARGET,
         changeOrigin: true,
         // Apache's docroot is C:\xampp\htdocs\ — the project lives at
         // C:\xampp\htdocs\dcm\, so a request to /api/cloud/x.php needs
@@ -611,14 +654,15 @@ export default defineConfig({
               warned = true;
               // eslint-disable-next-line no-console
               console.warn(
-                `\n[vite proxy] /api → ${process.env.VITE_API_PROXY || 'http://localhost'} is not reachable.\n` +
-                `  → Start XAMPP's Apache, or set VITE_API_PROXY to wherever your PHP lives.\n`,
+                `\n[vite proxy] /api → ${PHP_TARGET} is not reachable yet.\n` +
+                `  → The bundled PHP server may still be starting; retry in a moment.\n` +
+                `  → Or set VITE_API_PROXY to point at your own PHP/Apache.\n`,
               );
             }
             if (res && !res.headersSent) {
               res.statusCode = 502;
               res.setHeader('Content-Type', 'application/json');
-              res.end(JSON.stringify({ ok: false, error: 'PHP backend unreachable — start XAMPP Apache or set VITE_API_PROXY env var.' }));
+              res.end(JSON.stringify({ ok: false, error: 'PHP backend not ready yet — the local PHP server is starting; please retry.' }));
             }
           });
         },

@@ -39,6 +39,15 @@
   .dark { --line: rgb(255 255 255 / 0.08); --muted: rgb(148 163 184); }
   body { background: rgb(15 23 42); color: #f1f5f9; }
   #root:empty::before { content: ''; position: fixed; inset: 0; background: inherit; }
+
+  /* Responsive net: on phones/tablets, wide data tables scroll horizontally
+     inside their card instead of stretching (and breaking) the page. The
+     :has() rule turns each table's immediate wrapper into a scroll area. */
+  @media (max-width: 1023px) {
+    :has(> table) { overflow-x: auto !important; -webkit-overflow-scrolling: touch; }
+    table { min-width: 100%; }
+    table th, table td { white-space: nowrap; }
+  }
 </style>
 
 <script>

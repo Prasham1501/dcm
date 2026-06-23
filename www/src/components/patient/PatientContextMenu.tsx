@@ -68,9 +68,11 @@ function formatAgeForDicom(age: string): string {
 
 async function patchPatientFilesBeforeSend(patient: Patient): Promise<void> {
   if (!patient.filePaths || patient.filePaths.length === 0) return;
-  const api = (window as any).electronAPI;
-  const base = api?.isElectron ? 'http://localhost:3457' : '';
-  const response = await fetch(`${base}/api/dicom/patch-tags.php`, {
+  // patch-tags.php is a PHP endpoint (top-level api/) served by the PHP/Apache
+  // backend — NOT the Node DICOM file server on :3457 (which only serves
+  // serve-file/scan and rejects everything else). Use a relative URL so it
+  // routes through the same proxy as every other PHP call.
+  const response = await fetch(`/api/dicom/patch-tags.php`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -306,7 +308,9 @@ export function PatientContextMenu({ x, y, patient, onClose, onMerge, canMerge =
     try {
       const api = (window as any).electronAPI;
       if (api?.dicomSendToDestination) {
-        await patchPatientFilesBeforeSend(patient);
+        // Best-effort metadata patch — must never block the actual send.
+        try { await patchPatientFilesBeforeSend(patient); }
+        catch (patchErr: any) { console.warn('[Send] tag patch skipped:', patchErr?.message || patchErr); }
         const result = await api.dicomSendToDestination({
           host: dest.host,
           port: dest.port,

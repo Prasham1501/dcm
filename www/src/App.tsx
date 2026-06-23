@@ -110,9 +110,15 @@ export default function App() {
     const onFocus = () => fetchPrintCount();
     window.addEventListener('focus', onFocus);
     const id = window.setInterval(fetchPrintCount, 60_000);
+    // Main process pushes this whenever the effective quota changes
+    // (voucher redeemed, license removed, print decremented) so the header
+    // count refreshes immediately instead of waiting for the next minute.
+    let offQuota: (() => void) | undefined;
+    try { offQuota = (window as any).electronAPI?.onQuotaChanged?.(() => { fetchPrintCount(); }); } catch {}
     return () => {
       window.removeEventListener('focus', onFocus);
       window.clearInterval(id);
+      try { offQuota && offQuota(); } catch {}
     };
   }, [fetchPrintCount]);
 

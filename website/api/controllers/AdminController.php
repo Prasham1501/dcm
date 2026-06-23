@@ -636,6 +636,90 @@ class AdminController {
      *  - else auto-create a new account using the typed string as its name.
      *  This lets the operator issue keys to walk-ins / phone orders without
      *  needing the client to sign up first. */
+    // ── Dealers ──────────────────────────────────────────────────────────────
+    // Bulk-buyers with negotiated FIXED per-product pricing. Issued licenses can
+    // record which dealer they were sold through and at what price.
+    private function ensureDealersSchema(): void {
+        static $done = false;
+        if ($done) return;
+        $done = true;
+        try {
+            db()->exec("CREATE TABLE IF NOT EXISTS dealers (
+                id VARCHAR(32) NOT NULL,
+                name VARCHAR(160) NOT NULL,
+                phone VARCHAR(40) DEFAULT NULL,
+                email VARCHAR(160) DEFAULT NULL,
+                status VARCHAR(12) NOT NULL DEFAULT 'active',
+                viewer_price INT NOT NULL DEFAULT 0,
+                bridge_price INT NOT NULL DEFAULT 0,
+                ris_price INT NOT NULL DEFAULT 0,
+                note VARCHAR(255) DEFAULT NULL,
+                created_at DATETIME NOT NULL,
+                PRIMARY KEY (id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+            if (!db()->query("SHOW COLUMNS FROM licenses LIKE 'dealer_id'")->fetch()) {
+                db()->exec("ALTER TABLE licenses ADD COLUMN dealer_id VARCHAR(32) NULL AFTER account_id");
+            }
+            if (!db()->query("SHOW COLUMNS FROM licenses LIKE 'dealer_price'")->fetch()) {
+                db()->exec("ALTER TABLE licenses ADD COLUMN dealer_price INT NULL AFTER dealer_id");
+            }
+        } catch (\Throwable $e) { error_log('[ensureDealersSchema] ' . $e->getMessage()); }
+    }
+
+    private function dealerPriceFor(?array $dealer, string $product): ?int {
+        if (!$dealer) return null;
+        $col = $product . '_price';
+        return isset($dealer[$col]) ? (int)$dealer[$col] : null;
+    }
+
+    public function dealers(Request $req): void {
+        $this->ensureDealersSchema();
+        Response::json(db()->query("SELECT * FROM dealers ORDER BY name ASC")->fetchAll());
+    }
+
+    public function saveDealer(Request $req): void {
+        $this->ensureDealersSchema();
+        $b = $req->body();
+        $name = trim((string)($b['name'] ?? ''));
+        if ($name === '') Response::error('Dealer name is required', 400);
+        $id     = trim((string)($b['id'] ?? ''));
+        $phone  = trim((string)($b['phone'] ?? '')) ?: null;
+        $email  = trim((string)($b['email'] ?? '')) ?: null;
+        $status = (($b['status'] ?? 'active') === 'inactive') ? 'inactive' : 'active';
+        $vp = max(0, (int)round((float)($b['viewer_price'] ?? 0)));
+        $bp = max(0, (int)round((float)($b['bridge_price'] ?? 0)));
+        $rp = max(0, (int)round((float)($b['ris_price'] ?? 0)));
+        $note = trim((string)($b['note'] ?? '')) ?: null;
+
+        $exists = false;
+        if ($id !== '') {
+            $chk = db()->prepare("SELECT id FROM dealers WHERE id = ?");
+            $chk->execute([$id]);
+            $exists = (bool)$chk->fetch();
+        }
+        if ($exists) {
+            db()->prepare("UPDATE dealers SET name=?, phone=?, email=?, status=?, viewer_price=?, bridge_price=?, ris_price=?, note=? WHERE id=?")
+                ->execute([$name, $phone, $email, $status, $vp, $bp, $rp, $note, $id]);
+            AuditLog::fromRequest($req, 'admin.dealer.update', $id, ['name' => $name]);
+        } else {
+            $id = generateId();
+            db()->prepare("INSERT INTO dealers (id, name, phone, email, status, viewer_price, bridge_price, ris_price, note, created_at) VALUES (?,?,?,?,?,?,?,?,?,?)")
+                ->execute([$id, $name, $phone, $email, $status, $vp, $bp, $rp, $note, nowDb()]);
+            AuditLog::fromRequest($req, 'admin.dealer.create', $id, ['name' => $name]);
+        }
+        $row = db()->prepare("SELECT * FROM dealers WHERE id = ?");
+        $row->execute([$id]);
+        Response::json($row->fetch());
+    }
+
+    public function deleteDealer(Request $req): void {
+        $this->ensureDealersSchema();
+        $id = $req->param('id');
+        db()->prepare("DELETE FROM dealers WHERE id = ?")->execute([$id]);
+        AuditLog::fromRequest($req, 'admin.dealer.delete', $id);
+        Response::ok();
+    }
+
     public function issueLicense(Request $req): void {
         $body    = $req->body();
         $plan    = $body['plan'] ?? 'trial';
@@ -680,24 +764,45 @@ class AdminController {
         $this->ensureLicenseProductColumn();
         // Quota columns (sell-by-print model) — same lazy migration.
         $this->ensureLicenseQuotaColumns();
+        // Activation-based term: store the duration; the clock starts on first
+        // activation, not at issuance, so dealers can hold keys in a batch.
+        if (!db()->query("SHOW COLUMNS FROM licenses LIKE 'term_days'")->fetch()) {
+            db()->exec("ALTER TABLE licenses ADD COLUMN term_days INT NULL AFTER expires_at");
+        }
+        // Optional dealer: record which dealer this key was sold through and
+        // their negotiated fixed price for this product.
+        $this->ensureDealersSchema();
+        $dealerId = trim((string)($body['dealer_id'] ?? ''));
+        $dealer = null;
+        if ($dealerId !== '') {
+            $ds = db()->prepare("SELECT * FROM dealers WHERE id = ?");
+            $ds->execute([$dealerId]);
+            $dealer = $ds->fetch() ?: null;
+            if (!$dealer) $dealerId = '';
+        }
+        $dealerPrice = $this->dealerPriceFor($dealer, $product);
+        // Default the logged revenue to the dealer's fixed price when not given.
+        if ($dealer && $dealerPrice !== null && $paymentAmount === 0) $paymentAmount = $dealerPrice;
 
         $keyCode = LicenseKey::generate();
         $now     = nowDb();
-        $expires = gmdate('Y-m-d H:i:s', time() + $days * 86400);
+        // Activation-based: do NOT bake an expiry at issuance. Store the term
+        // in days; the countdown begins when the key is first activated.
+        $expires = null;
         $hmac    = LicenseKey::sign($keyCode, ['plan' => $plan, 'seats' => $seats, 'account' => $accountId, 'product' => $product]);
         $licId   = generateId();
 
         db()->prepare(
-            "INSERT INTO licenses (id, account_id, key_code, plan, product, seats, status, starts_at, expires_at, hmac_signature, created_at)
-             VALUES (?,?,?,?,?,?,?,?,?,?,?)"
-        )->execute([$licId, $accountId, $keyCode, $plan, $product, $seats, 'active', $now, $expires, $hmac, $now]);
+            "INSERT INTO licenses (id, account_id, dealer_id, dealer_price, key_code, plan, product, seats, status, starts_at, expires_at, term_days, hmac_signature, created_at)
+             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
+        )->execute([$licId, $accountId, ($dealerId ?: null), $dealerPrice, $keyCode, $plan, $product, $seats, 'active', $now, null, $days, $hmac, $now]);
 
-        // Free-trial seeding: every trial key starts with 100 prints and
+        // Free-trial seeding: every trial key starts with 10 prints and
         // quota mode ON so the bridge/viewer header immediately shows
-        // "100 prints left" and the counter decrements as prints happen.
+        // "10 prints left" and the counter decrements as prints happen.
         // Admins can still override later via /license/quota.
         if ($plan === 'trial') {
-            $seedPrints = (int)($body['quota_remaining'] ?? 100);
+            $seedPrints = (int)($body['quota_remaining'] ?? 10);
             db()->prepare(
                 "UPDATE licenses
                     SET quota_enabled   = 1,
@@ -746,6 +851,10 @@ class AdminController {
             'status'         => 'active',
             'starts_at'      => $now,
             'expires_at'     => $expires,
+            'term_days'      => $days,
+            'term_starts'    => 'on_activation',
+            'dealer_id'      => $dealerId ?: null,
+            'dealer_price'   => $dealerPrice,
             'account_id'     => $accountId,
             'account_name'   => $account['name'],
             'payment_amount' => $paymentAmount,

@@ -21,7 +21,6 @@ export const FILM_SIZE_ROWS: { id: string; label: string }[] = [
   { id: '14INX17IN', label: '14 × 17' },
   { id: '11INX14IN', label: '11 × 14' },
   { id: '10INX14IN', label: '10 × 14' },
-  { id: '10INX12IN', label: '10 × 12' },
   { id: '8INX10IN',  label: '8 × 10' },
 ];
 

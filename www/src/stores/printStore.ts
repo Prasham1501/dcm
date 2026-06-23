@@ -38,6 +38,9 @@ interface PrintStore {
    *  false, prints are unlimited and the count UI should be hidden — the
    *  number in `printCountRemaining` is meaningless in that state. */
   quotaEnabled: boolean;
+  /** Days left on the active license (or local trial), shown next to the
+   *  print count in the header — mirrors the Bridge top bar. */
+  licenseDaysLeft: number | null;
 
   // Print settings
   settings: PrintSettings;
@@ -80,6 +83,7 @@ export const usePrintStore = create<PrintStore>()(
       printCountUsed: 0,
       printCountRemaining: 0,
       quotaEnabled: false,
+      licenseDaysLeft: null,
 
       settings: {
         defaultPrinter: 'HP LaserJet Pro M404dn',
@@ -166,6 +170,14 @@ export const usePrintStore = create<PrintStore>()(
       fetchPrintCount: async () => {
         const api = walletBridge();
         if (api) {
+          // Days left for the active license — shown next to the print count
+          // in the header (mirrors the Bridge top bar).
+          try {
+            if (api.voucherStatus) {
+              const vs = await api.voucherStatus();
+              set({ licenseDaysLeft: (vs && vs.daysLeft != null) ? vs.daysLeft : null });
+            }
+          } catch { /* ignore */ }
           // Prefer the central license-quota counter (the sell-by-print
           // model used by bridge + viewer headers and the website's
           // /license/quota endpoint). Trial keys are auto-seeded with 100

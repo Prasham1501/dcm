@@ -1,20 +1,22 @@
 import { useEffect, useState } from 'react';
-import { Settings, Info, Moon, Sun, Minus, Palette, Shield, Key, AlertTriangle, CheckCircle, Loader2, Clock } from 'lucide-react';
+import { Settings, Info, Moon, Sun, Minus, Palette, Shield, Key, AlertTriangle, CheckCircle, Loader2, Clock, Ticket } from 'lucide-react';
 import { useConfigStore } from './stores/configStore';
 import { SlotsPage } from './pages/SlotsPage';
 import { AboutPage } from './pages/AboutPage';
 import { BrandingPage } from './pages/BrandingPage';
 import { LicensePage } from './pages/LicensePage';
+import { RechargePage } from './pages/RechargePage';
 import { StatusBar } from './components/StatusBar';
 import { UpdateModal } from './components/UpdateModal';
 import { BridgeLicenseQuotaModal } from './components/BridgeLicenseQuotaModal';
 
-type Tab = 'slots' | 'branding' | 'license' | 'about';
+type Tab = 'slots' | 'branding' | 'license' | 'recharge' | 'about';
 
 const TABS: { id: Tab; label: string; icon: typeof Settings }[] = [
   { id: 'slots', label: 'Printer Slots', icon: Settings },
   { id: 'branding', label: 'Branding', icon: Palette },
   { id: 'license', label: 'License', icon: Shield },
+  { id: 'recharge', label: 'Recharge', icon: Ticket },
   { id: 'about', label: 'About', icon: Info },
 ];
 
@@ -41,7 +43,13 @@ export function App() {
   const fetchQuota = async () => {
     try {
       const q = await window.bridgeAPI.getLicenseQuota();
-      if (q) setQuota({ enabled: !!q.enabled, remaining: q.remaining || 0, total: q.total || 0 });
+      if (q && (q.enabled || q.remaining)) { setQuota({ enabled: !!q.enabled, remaining: q.remaining || 0, total: q.total || 0 }); return; }
+    } catch {}
+    // Offline fallback: show locally-tracked prints (incl. voucher recharges)
+    // so the top bar still reflects a recharge when the server is unreachable.
+    try {
+      const v = await (window as any).bridgeAPI.voucherStatus?.();
+      if (v && v.prints != null) setQuota({ enabled: true, remaining: v.prints, total: v.prints });
     } catch {}
   };
 
@@ -53,7 +61,10 @@ export function App() {
     const id = setInterval(refresh, 3000);
     const licInterval = setInterval(fetchLicense, 10 * 60 * 1000);
     const quotaInterval = setInterval(fetchQuota, 5 * 1000);
-    const off = window.bridgeAPI.onQuotaChanged?.((q) => setQuota(q));
+    const off = window.bridgeAPI.onQuotaChanged?.((q: any) => {
+      if (q && typeof q.remaining === 'number') setQuota({ enabled: !!q.enabled, remaining: q.remaining, total: q.total || q.remaining });
+      void fetchLicense(); // refresh days-left after a recharge
+    });
     return () => {
       clearInterval(id);
       clearInterval(licInterval);
@@ -104,7 +115,7 @@ export function App() {
           <span className="text-sm font-semibold tracking-wide text-app-text">Bridge</span>
           <span className="ml-2 hidden text-xs font-normal text-app-text-secondary md:inline">
             {quota?.enabled
-              ? `${quota.remaining} prints left`
+              ? `${quota.remaining} prints left · ${licenseStatus?.daysLeft ?? licenseStatus?.remaining ?? '—'} days left`
               : licenseStatus?.type === 'licensed'
                 ? `License ${licenseStatus.licenseKey?.split('-').pop() || ''} · ${licenseStatus.daysLeft ?? '—'} days left`
                 : 'Printing bridge for DICOM modalities'}
@@ -160,6 +171,7 @@ export function App() {
         {tab === 'slots' && <SlotsPage />}
         {tab === 'branding' && <BrandingPage />}
         {tab === 'license' && <LicensePage />}
+        {tab === 'recharge' && <RechargePage />}
         {tab === 'about' && <AboutPage />}
       </main>
 

@@ -2195,6 +2195,24 @@ function HistoryPanel({
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const pendingActionRef = useRef<string | null>(null);
   const [printVisit, setPrintVisit] = useState<PatientHistoryVisit | null>(null);
+
+  // Attach (or replace) a prescription on an already-saved visit — works for
+  // any visit, not just new registrations or home visits.
+  const uploadPrescription = async (visitId: number, file: File | null) => {
+    if (!file || pendingActionRef.current) return;
+    pendingActionRef.current = `presc-${visitId}`;
+    setPendingAction(`presc-${visitId}`);
+    try {
+      await apiUploadPrescription(visitId, file);
+      onMessage('Prescription attached');
+      await onRefresh();
+    } catch (err: any) {
+      onMessage(err?.message || 'Could not upload prescription');
+    } finally {
+      pendingActionRef.current = null;
+      setPendingAction(null);
+    }
+  };
   const [paymentEditor, setPaymentEditor] = useState<{ visitId: number; isRefund: boolean } | null>(null);
   const [paymentForm, setPaymentForm] = useState({
     amount: '',
@@ -2391,6 +2409,16 @@ function HistoryPanel({
                                 View prescription
                               </a>
                             ) : null}
+                            <label className="btn btn-secondary btn-sm" style={{ cursor: pendingAction ? 'default' : 'pointer' }} title="Attach a prescription image/PDF to this visit">
+                              {visit.prescription_path ? 'Replace prescription' : 'Add prescription'}
+                              <input
+                                type="file"
+                                accept="image/jpeg,image/png,image/webp,application/pdf"
+                                style={{ display: 'none' }}
+                                disabled={!!pendingAction}
+                                onChange={(event) => { uploadPrescription(visit.id, event.target.files?.[0] || null); event.target.value = ''; }}
+                              />
+                            </label>
                             <Button size="sm" disabled={!!pendingAction} variant={visit.dispatch_mode === 'report_received' ? 'success' : 'secondary'} onClick={() => markVisitDelivery(visit, 'report_received', 'patient', 'Report received by reception')}>Report received</Button>
                             <Button size="sm" disabled={!!pendingAction} variant={visit.dispatch_mode === 'images_print_received' ? 'success' : 'secondary'} onClick={() => markVisitDelivery(visit, 'images_print_received', 'patient', 'Images print received by reception')}>Images print received</Button>
                             <Button size="sm" disabled={!!pendingAction} variant={visit.dispatch_mode === 'email' ? 'success' : 'secondary'} onClick={() => markVisitDelivery(visit, 'email', 'patient', 'Report emailed to patient')}>Email</Button>

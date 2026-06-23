@@ -1,5 +1,13 @@
 import { useState, useEffect } from 'react';
-import { Shield, Key, AlertTriangle, CheckCircle, Loader2, Clock, LogOut } from 'lucide-react';
+import { Shield, Key, AlertTriangle, CheckCircle, Loader2, Clock, LogOut, WifiOff } from 'lucide-react';
+import { QRCodeSVG } from 'qrcode.react';
+
+// Same REASONS map RechargePage uses, so error wording stays consistent.
+const OFFLINE_REASONS: Record<string, string> = {
+  bad_format: 'That does not look like a valid unlock code.',
+  invalid_code: 'Invalid or already-used unlock code. Confirm your provider used the exact Request code shown below, then re-type the unlock code.',
+  empty_voucher: 'This unlock code grants nothing.',
+};
 
 interface LicenseStatus {
   type: 'licensed' | 'trial';
@@ -168,6 +176,7 @@ export function LicensePage() {
             >
               {activating ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Activate'}
             </button>
+            <OfflineActivationPanel onActivated={fetchStatus} />
           </div>
         )}
       </div>
@@ -179,6 +188,161 @@ export function LicensePage() {
           Purchase here
         </a>
       </p>
+    </div>
+  );
+}
+
+/**
+ * Collapsible "No internet? Activate offline" panel for the Bridge.
+ *
+ * The bridge reads a 7-char Request code (HMAC-bound to the machine fingerprint)
+ * to the dealer; the dealer mints a short Unlock code on the password-gated
+ * bridge-voucher.php and the operator types it back in here. Verifies locally —
+ * no network call — and creates a server-less licence with the granted prints +
+ * days when redeemed on a trial/no-licence machine.
+ */
+function OfflineActivationPanel({ onActivated }: { onActivated: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [requestCode, setRequestCode] = useState<string>('');
+  const [licenseKey, setLicenseKey] = useState('');
+  const [code, setCode] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    if (!open || !api?.voucherStatus) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const s = await api.voucherStatus();
+        if (!cancelled) setRequestCode(s?.requestCode || '');
+      } catch { /* ignore */ }
+    })();
+    return () => { cancelled = true; };
+  }, [open]);
+
+  const copyRequest = async () => {
+    if (!requestCode) return;
+    try { await navigator.clipboard.writeText(requestCode); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch { /* ignore */ }
+  };
+
+  const submit = async () => {
+    setErr('');
+    const k = licenseKey.trim().toUpperCase();
+    const c = code.trim().toUpperCase();
+    if (!/^MV-[A-Z2-9]{4}-[A-Z2-9]{4}-[A-Z2-9]{4}-[A-Z2-9]{4}$/.test(k)) {
+      setErr('Invalid licence key. Expected: MV-XXXX-XXXX-XXXX-XXXX');
+      return;
+    }
+    if (!c) { setErr('Enter the unlock code your provider sent.'); return; }
+    if (!api?.activateOffline) { setErr('Offline activation is only available in the desktop app.'); return; }
+    setBusy(true);
+    try {
+      const r = await api.activateOffline({ licenseKey: k, code: c });
+      if (r?.ok) {
+        onActivated();
+      } else {
+        setErr(OFFLINE_REASONS[r?.reason] || `Could not activate (${r?.reason || 'error'}).`);
+      }
+    } catch (e: any) {
+      setErr(e?.message || 'Activation failed');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!api?.activateOffline) return null;
+
+  return (
+    <div className="mt-3 rounded-lg border border-app-border bg-app-bg">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center justify-between gap-2 px-3 py-2 text-xs font-semibold text-app-text-secondary hover:text-app-text"
+      >
+        <span className="flex items-center gap-2">
+          <WifiOff className="h-3.5 w-3.5 text-amber-500" />
+          No internet? Activate offline
+        </span>
+        <span className="text-app-text-secondary">{open ? '▲' : '▼'}</span>
+      </button>
+      {open && (
+        <div className="space-y-3 border-t border-app-border px-3 py-3">
+          <p className="text-[11px] text-app-text-secondary">
+            Read your Request code to the provider (or send a photo of the QR). They send back an
+            Unlock code that works only on this PC.
+          </p>
+
+          <div>
+            <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-app-text-muted">
+              1. Request code (from this PC)
+            </label>
+            <div className="flex items-center gap-2">
+              <code className="flex-1 truncate rounded border border-app-border bg-app-surface px-2 py-1.5 text-base font-bold tracking-widest text-app-accent">
+                {requestCode || '…'}
+              </code>
+              <button
+                type="button"
+                onClick={copyRequest}
+                className="rounded border border-app-border bg-app-surface px-2 py-1.5 text-[11px] text-app-text-secondary hover:bg-app-hover"
+              >
+                {copied ? 'Copied' : 'Copy'}
+              </button>
+            </div>
+            {requestCode && (
+              <div className="mt-2 flex items-center gap-3">
+                <div className="rounded bg-white p-1.5"><QRCodeSVG value={requestCode} size={80} /></div>
+                <p className="text-[10px] text-app-text-muted">…or send a photo of this QR — the provider can upload it instead of typing.</p>
+              </div>
+            )}
+          </div>
+
+          <div>
+            <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-app-text-muted">
+              2. Licence key
+            </label>
+            <input
+              type="text"
+              value={licenseKey}
+              onChange={(e) => setLicenseKey(e.target.value.toUpperCase())}
+              placeholder="MV-XXXX-XXXX-XXXX-XXXX"
+              maxLength={23}
+              spellCheck={false}
+              className="w-full rounded border border-app-border bg-app-surface px-2 py-1.5 font-mono text-xs text-app-text placeholder:text-app-text-muted focus:border-app-accent focus:outline-none"
+            />
+          </div>
+
+          <div>
+            <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-app-text-muted">
+              3. Unlock code (from the provider)
+            </label>
+            <input
+              type="text"
+              value={code}
+              onChange={(e) => setCode(e.target.value.toUpperCase())}
+              onKeyDown={(e) => { if (e.key === 'Enter') void submit(); }}
+              placeholder="e.g. 07T0-2VE0-HXP0"
+              className="w-full rounded border border-app-border bg-app-surface px-2 py-1.5 font-mono text-xs uppercase tracking-widest text-app-text placeholder:text-app-text-muted focus:border-app-accent focus:outline-none"
+            />
+          </div>
+
+          {err && (
+            <div className="rounded border border-red-500/40 bg-red-500/10 px-2 py-1.5 text-[11px] text-red-400">
+              {err}
+            </div>
+          )}
+
+          <button
+            type="button"
+            onClick={submit}
+            disabled={busy || !licenseKey.trim() || !code.trim()}
+            className="flex w-full items-center justify-center gap-2 rounded-lg bg-amber-600 px-3 py-2 text-xs font-semibold text-white hover:bg-amber-700 disabled:opacity-40"
+          >
+            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Activate Offline'}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

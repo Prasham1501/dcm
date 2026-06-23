@@ -124,7 +124,15 @@ export function FormFModal({ patientId, patientName, studyUid, onClose }: Props)
   const onPrint = async () => { if (await save()) window.open(pcpndtFormHtmlUrl(formKey), '_blank'); };
   const onUpload = async () => {
     if (!(await save())) return;
-    window.open(PCPNDT_PORTAL_URL, '_blank');
+    // Prefer the embedded portal window with the injected "Autofill Form F"
+    // button (Electron). Falls back to a plain new tab in browser preview.
+    const api = (window as any).electronAPI;
+    if (api?.openPcpndtPortal) {
+      try { await api.openPcpndtPortal({ fields }); }
+      catch { window.open(PCPNDT_PORTAL_URL, '_blank'); }
+    } else {
+      window.open(PCPNDT_PORTAL_URL, '_blank');
+    }
     setShowAck(true);
   };
   const recordAck = async () => {

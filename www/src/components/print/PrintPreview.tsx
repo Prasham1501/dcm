@@ -484,7 +484,9 @@ export function PrintPreview() {
             {activePrinters.length > 0 ? (
               <select value={selectedPrinter} onChange={e => { e.stopPropagation(); setSelectedPrinter(e.target.value); }} onClick={e => e.stopPropagation()} className="h-7 px-1 text-xs border border-app-border bg-app-bg text-app-text rounded max-w-[130px]">{activePrinters.map(p => <option key={p.name} value={p.name}>{p.displayName || p.name}</option>)}</select>
             ) : <span className="text-[10px] text-red-400 italic">No printers configured</span>}
-            <button type="button" onClick={e => { e.stopPropagation(); setShowPrinterMgr(v => !v); }} className={`h-7 px-2 text-[10px] border rounded transition-colors ${showPrinterMgr ? 'border-app-accent bg-app-accent/10 text-app-accent' : 'border-app-border text-app-text-secondary hover:bg-app-hover'}`} title="Manage printers">⚙</button>
+            {!quotaEnabled && (
+              <button type="button" onClick={e => { e.stopPropagation(); setShowPrinterMgr(v => !v); }} className={`h-7 px-2 text-[10px] border rounded transition-colors ${showPrinterMgr ? 'border-app-accent bg-app-accent/10 text-app-accent' : 'border-app-border text-app-text-secondary hover:bg-app-hover'}`} title="Manage printers">⚙</button>
+            )}
           </div>
           <div className="flex rounded overflow-hidden border border-app-border">
             <button type="button" onClick={e => { e.stopPropagation(); setPrintType('image'); }} className={`px-2 py-1 text-[10px] font-semibold transition-colors ${printType === 'image' ? 'bg-app-accent text-white' : 'bg-app-bg text-app-text-secondary hover:bg-app-hover'}`}>DICOM</button>

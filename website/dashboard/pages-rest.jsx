@@ -1126,7 +1126,7 @@ const SettingsTabProfile = () => {
                 {/* Sell-by-print balance — shown when this license has quota
                     mode enabled (bridge + viewer share the same counter
                     via /license/quota). Trial keys are auto-seeded with
-                    100 prints so the operator can see what's left. */}
+                    10 prints so the operator can see what's left. */}
                 {!!lic.quota_enabled && (
                   <div className={`mt-2 inline-flex items-center gap-1.5 text-xs font-semibold rounded-full px-2.5 py-1 ${
                     (lic.quota_remaining ?? 0) === 0

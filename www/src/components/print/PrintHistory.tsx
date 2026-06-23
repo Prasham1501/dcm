@@ -2,7 +2,7 @@ import { Printer, RotateCcw } from 'lucide-react';
 import { usePrintStore } from '@/stores/printStore';
 
 export function PrintHistory() {
-  const { printJobs, printCountTotal, printCountUsed, printCountRemaining } = usePrintStore();
+  const { printJobs, printCountTotal, printCountUsed, printCountRemaining, quotaEnabled } = usePrintStore();
 
   const statusColors: Record<string, string> = {
     completed: 'bg-green-600 text-white',
@@ -13,23 +13,31 @@ export function PrintHistory() {
 
   return (
     <div className="space-y-4">
-      {/* Print counter summary */}
-      <div className="grid grid-cols-3 gap-3">
-        <div className="p-3 bg-app-surface border border-app-border rounded text-center">
-          <div className="text-2xl font-bold text-app-accent">{printCountTotal}</div>
-          <div className="text-[10px] text-app-text-secondary">Total Prints</div>
-        </div>
-        <div className="p-3 bg-app-surface border border-app-border rounded text-center">
-          <div className="text-2xl font-bold text-app-text">{printCountUsed}</div>
-          <div className="text-[10px] text-app-text-secondary">Used</div>
-        </div>
-        <div className="p-3 bg-app-surface border border-app-border rounded text-center">
-          <div className={`text-2xl font-bold ${printCountRemaining < 10 ? 'text-red-500' : 'text-green-600'}`}>
-            {printCountRemaining}
+      {/* Print counter summary — only when sell-by-print quota is ON.
+          Quota OFF = unlimited prints, so a count is meaningless. */}
+      {quotaEnabled ? (
+        <div className="grid grid-cols-3 gap-3">
+          <div className="p-3 bg-app-surface border border-app-border rounded text-center">
+            <div className="text-2xl font-bold text-app-accent">{printCountTotal}</div>
+            <div className="text-[10px] text-app-text-secondary">Total Prints</div>
           </div>
-          <div className="text-[10px] text-app-text-secondary">Remaining</div>
+          <div className="p-3 bg-app-surface border border-app-border rounded text-center">
+            <div className="text-2xl font-bold text-app-text">{printCountUsed}</div>
+            <div className="text-[10px] text-app-text-secondary">Used</div>
+          </div>
+          <div className="p-3 bg-app-surface border border-app-border rounded text-center">
+            <div className={`text-2xl font-bold ${printCountRemaining < 10 ? 'text-red-500' : 'text-green-600'}`}>
+              {printCountRemaining}
+            </div>
+            <div className="text-[10px] text-app-text-secondary">Remaining</div>
+          </div>
         </div>
-      </div>
+      ) : (
+        <div className="p-3 bg-app-surface border border-app-border rounded text-center">
+          <div className="text-2xl font-bold text-green-600">Unlimited</div>
+          <div className="text-[10px] text-app-text-secondary">This licence has no print limit</div>
+        </div>
+      )}
 
       {/* Print jobs list */}
       <div>

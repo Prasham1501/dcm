@@ -68,6 +68,12 @@ contextBridge.exposeInMainWorld('bridgeAPI', {
   getLicenseQuota: () => ipcRenderer.invoke('bridge:get-license-quota'),
   getOfflineRechargeChallenge: (args) => ipcRenderer.invoke('bridge:get-offline-recharge-challenge', args),
   applyOfflineRechargeVoucher: (voucher) => ipcRenderer.invoke('bridge:apply-offline-recharge-voucher', { voucher }),
+  // Short offline voucher recharge (Recharge tab)
+  voucherStatus: () => ipcRenderer.invoke('bridge:voucher-status'),
+  redeemVoucher: (code) => ipcRenderer.invoke('bridge:redeem-voucher', { code }),
+  // Offline activation — same voucher codec, mints a server-less licence when
+  // the redeeming bridge has no licence yet (no internet path).
+  activateOffline: ({ licenseKey, code }) => ipcRenderer.invoke('bridge:activate-offline', { licenseKey, code }),
   onQuotaChanged: (cb) => {
     const sub = (_e, q) => cb(q);
     ipcRenderer.on('bridge:quota-changed', sub);

@@ -197,3 +197,8 @@ $router->post('/admin/licenses/{id}/quota',        fn($r) => $admin->setLicenseQ
 $router->get( '/admin/wallets',                    fn($r) => $admin->wallets($r),                  ['auth','admin']);
 $router->post('/admin/wallets/adjust',             fn($r) => $admin->adjustWallet($r),             ['auth','admin']);
 $router->get( '/admin/revenue-chart',              fn($r) => $admin->revenueChart($r),             ['auth','admin']);
+
+// Dealers — bulk-buyers with negotiated fixed per-product pricing.
+$router->get(   '/admin/dealers',        fn($r) => $admin->dealers($r),      ['auth','admin']);
+$router->post(  '/admin/dealers',        fn($r) => $admin->saveDealer($r),   ['auth','admin']);
+$router->delete('/admin/dealers/{id}',   fn($r) => $admin->deleteDealer($r), ['auth','admin']);
