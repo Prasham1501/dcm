@@ -173,6 +173,14 @@ export function ThumbnailStrip() {
     const fileCount = selectedPatient?.filePaths?.length ?? 0;
     if (fileCount === 0) return;
 
+    // Authorize this study's paths with the local DICOM file server (token +
+    // allowed-roots gated). The patient list can be populated from cache / the
+    // dev scan middleware without registering the folder in the main process,
+    // in which case every thumbnail's serve-file request 403s and shows "err".
+    // The viewer pages already do this on open; the strip must too. sendSync,
+    // so authorization is in place before any thumbnail starts loading.
+    try { (window as any).electronAPI?.authorizeDicomPaths?.(selectedPatient!.filePaths); } catch { /* browser preview */ }
+
     const max = Math.min(fileCount, 20);
 
     // Use requestAnimationFrame for the first batch so the row highlight

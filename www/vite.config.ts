@@ -636,6 +636,12 @@ export default defineConfig({
         // Override with VITE_API_PROXY to point at XAMPP Apache or elsewhere.
         target: PHP_TARGET,
         changeOrigin: true,
+        // PHP's built-in server (php -S) is single-threaded and mishandles the
+        // keep-alive sockets http-proxy pools by default — the connection is
+        // held open and subsequent /api requests hang forever. Forcing a fresh,
+        // non-keep-alive connection per request (agent:false + Connection:close)
+        // makes every call complete. Without this, Form F / examinations spin.
+        agent: false,
         // Apache's docroot is C:\xampp\htdocs\ — the project lives at
         // C:\xampp\htdocs\dcm\, so a request to /api/cloud/x.php needs
         // to be rewritten to /dcm/api/cloud/x.php before it leaves Vite.
@@ -648,6 +654,11 @@ export default defineConfig({
           return undefined;
         },
         configure: (proxy: any) => {
+          // Force a non-keep-alive connection so php -S frees the socket after
+          // each response instead of leaving the proxy waiting on it.
+          proxy.on('proxyReq', (proxyReq: any) => {
+            try { proxyReq.setHeader('Connection', 'close'); } catch { /* headers already sent */ }
+          });
           let warned = false;
           proxy.on('error', (err: any, _req: any, res: any) => {
             if (err?.code === 'ECONNREFUSED' && !warned) {

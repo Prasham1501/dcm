@@ -149,9 +149,14 @@ export function InlineReportPanel() {
   const viewerPatientId   = useViewerStore((s) => s.patientId);
   const viewerPatientName = useViewerStore((s) => s.patientName);
   const viewerStudyDate   = useViewerStore((s) => s.studyDate);
-  const patientId   = viewerPatientId   || editingPatientId   || '';
-  const patientName = viewerPatientName || editingPatientName || '';
-  const studyDate   = viewerStudyDate   || editingStudyDate   || '';
+  // Prefer the patient the report was explicitly opened for (set by the report
+  // router on every open) over the main viewer's loaded study. In the CR /
+  // dual viewers the main viewerStore holds a different (or stale) patient, so
+  // using it first saved + looked up reports under mismatched keys → a saved
+  // report wouldn't reappear under Open Report.
+  const patientId   = editingPatientId   || viewerPatientId   || '';
+  const patientName = editingPatientName || viewerPatientName || '';
+  const studyDate   = editingStudyDate   || viewerStudyDate   || '';
 
   // Extraction state
   const readingSet   = useReportStore((s) => s.activeReadingSet) as ReadingSet | null;

@@ -62,9 +62,24 @@ const opts = (extra: RequestInit = {}): RequestInit => ({
   ...extra,
 });
 
+/** fetch with a hard timeout so a wedged PHP request can't leave the Form F
+ *  modal stuck on its loading spinner forever — it surfaces an error instead. */
+async function fetchWithTimeout(url: string, options: RequestInit = {}, ms = 15000): Promise<Response> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), ms);
+  try {
+    return await fetch(url, { ...options, signal: ctrl.signal });
+  } catch (e: any) {
+    if (e?.name === 'AbortError') throw new Error('The PCPNDT backend did not respond in time. Is the local PHP server running?');
+    throw e;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function ensureDesktopSession(): Promise<boolean> {
   try {
-    const res = await fetch('/api/auth/desktop-login.php', opts({ method: 'POST' }));
+    const res = await fetchWithTimeout('/api/auth/desktop-login.php', opts({ method: 'POST' }));
     const json = await res.json().catch(() => null);
     return res.ok && !!json?.success;
   } catch {
@@ -73,7 +88,7 @@ async function ensureDesktopSession(): Promise<boolean> {
 }
 
 async function pcpndtFetch(url: string, options: RequestInit = {}): Promise<Response> {
-  const res = await fetch(url, opts(options));
+  const res = await fetchWithTimeout(url, opts(options));
   if (res.status !== 401) return res;
 
   // The desktop viewer starts with an app-level ADMIN state, while PHP still
@@ -81,7 +96,7 @@ async function pcpndtFetch(url: string, options: RequestInit = {}): Promise<Resp
   // the product-scoped desktop auto-login endpoint, then retry the original
   // request once. Networked installs keep returning 401/403 as before.
   if (await ensureDesktopSession()) {
-    return fetch(url, opts(options));
+    return fetchWithTimeout(url, opts(options));
   }
   return res;
 }

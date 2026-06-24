@@ -1019,8 +1019,38 @@ async function waitForSystemMySQL(maxAttempts = 5) {
     return false;
 }
 
+// Run all *.sql migrations from one directory against one database, tracked in
+// that DB's app_migrations table (so each runs exactly once; CREATE TABLE IF
+// NOT EXISTS + the per-file try/catch keep it safe to re-point at an existing DB).
+// The DB the PHP API actually connects to — read from config/.env (DB_NAME),
+// exactly like includes/config.php does, so Node migrations and PHP queries
+// always hit the same database. Falls back to the historical default.
+function phpConfiguredDbName() {
+    try {
+        const txt = fs.readFileSync(path.join(appPath, 'config', '.env'), 'utf8');
+        const m = txt.match(/^\s*DB_NAME\s*=\s*(.+?)\s*$/m);
+        if (m) return m[1].trim().replace(/^["']|["']$/g, '');
+    } catch { /* no .env — use default */ }
+    return 'dicom_viewer_pro';
+}
+
 async function runMigrations() {
-    const dbName = 'dicom_viewer_pro';
+    const dbName = phpConfiguredDbName();
+    // Core set: the bundled www migrations (multi-clinic, licensing, …).
+    await runMigrationSet(dbName, path.join(wwwPath, 'database', 'migrations'));
+    // Feature set: the fetal module / catalogs live in the project-root
+    // database/migrations. This is what creates the `examinations` table the
+    // report flow needs. Exclude files that also ship in the www set so the
+    // shared base files 001-004 (with plain seed INSERTs) don't run twice.
+    const wwwDir = path.join(wwwPath, 'database', 'migrations');
+    const wwwNames = fs.existsSync(wwwDir)
+        ? new Set(fs.readdirSync(wwwDir).filter(f => f.endsWith('.sql')))
+        : new Set();
+    await runMigrationSet(dbName, path.join(appPath, 'database', 'migrations'), wwwNames);
+}
+
+async function runMigrationSet(dbName, migrationsDir, excludeFilenames = new Set()) {
+    if (!migrationsDir || !fs.existsSync(migrationsDir)) return;
     const cmd = isDev && !fs.existsSync(mysqlClientPath)
         ? 'C:\\xampp\\mysql\\bin\\mysql.exe -u root -h 127.0.0.1 -P 3306'
         : `"${mysqlClientPath}" -u root --port=${MYSQL_PORT} --skip-ssl`;
@@ -1039,9 +1069,6 @@ async function runMigrations() {
         });
     } catch (e) { /* ignore */ }
 
-    const migrationsDir = path.join(wwwPath, 'database', 'migrations');
-    if (!fs.existsSync(migrationsDir)) return;
-
     // Get applied migrations
     let appliedMigrations = [];
     try {
@@ -1051,7 +1078,7 @@ async function runMigrations() {
         appliedMigrations = output.split('\n').map(s => s.trim()).filter(Boolean);
     } catch (e) { console.warn('[MySQL] Failed to fetch applied migrations:', e.message); }
 
-    const sqlFiles = fs.readdirSync(migrationsDir).filter(f => f.endsWith('.sql')).sort();
+    const sqlFiles = fs.readdirSync(migrationsDir).filter(f => f.endsWith('.sql') && !excludeFilenames.has(f)).sort();
     const pendingFiles = sqlFiles.filter(f => !appliedMigrations.includes(f));
 
     if (pendingFiles.length === 0) {
@@ -1255,7 +1282,11 @@ function startStaticServer() {
                     port: PHP_API_PORT,
                     path: parsed.path,
                     method: req.method,
-                    headers: { ...req.headers, host: `127.0.0.1:${PHP_API_PORT}` },
+                    // php -S is single-threaded and deadlocks on pooled keep-alive
+                    // sockets — force a fresh connection that closes after each
+                    // response so back-to-back /api calls don't hang.
+                    agent: false,
+                    headers: { ...req.headers, host: `127.0.0.1:${PHP_API_PORT}`, connection: 'close' },
                 };
                 const proxyReq = http.request(proxyOpts, (proxyRes) => {
                     res.writeHead(proxyRes.statusCode, proxyRes.headers);
@@ -1468,7 +1499,12 @@ async function startApp() {
 
         const phpPromise = (async () => {
             updateSplashStatus('Starting web server...');
-            await startPhpApiServer();   // local PHP backend for /api + *.php
+            // In dev the renderer loads from Vite (5173), whose own plugin spawns
+            // PHP on 8091 rooted at the htdocs parent (so its /dcm-prefixed proxy
+            // resolves). Starting a second PHP here — rooted at the app dir — would
+            // fight for the same port and serve the wrong root. So the bundled PHP
+            // backend is prod-only; dev relies on Vite's PHP.
+            if (!isDev) await startPhpApiServer();
             await startPhpServer();      // static SPA server (proxies /api → PHP)
             return await waitForServer();
         })();

@@ -10,11 +10,44 @@
  *   - StudyDescription (0008,1030)    : free text – we keyword-match
  *   - BodyPartExamined (0018,0015)    : 'FETUS', 'BREAST', 'CHEST', …
  */
-import type { ReportTypeDef, DetectionResult } from './types';
+import type { ReportTypeDef, DetectionResult, ReportRouterCtx } from './types';
+import type { Patient } from '@/types/patient';
 import { useReportStore } from '@/stores/reportStore';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 const norm = (s: string | null | undefined) => (s ?? '').toUpperCase();
+
+/**
+ * Ensure the CR Viewer is showing THIS study before we open a report panel.
+ * The report panels (inline radiology / fetal) render *next to* the images on
+ * /cr-viewer, which loads its study from the `cr-viewer-launch` handoff in
+ * localStorage. When Report is launched from the patient list there's no viewer
+ * yet — so seed the study and navigate. If we're already on the viewer we leave
+ * the loaded study alone (the user is reporting on what they're looking at).
+ */
+function ensureCrViewerWithStudy(ctx: ReportRouterCtx, patient: Patient) {
+  const onCrViewer = typeof window !== 'undefined'
+    && (window.location.hash.indexOf('/cr-viewer') !== -1 || window.location.pathname.endsWith('/cr-viewer'));
+  const filePaths: string[] = (patient as any).filePaths || [];
+  // Authorize with the local DICOM server up-front so serve-file (token +
+  // allowed-roots gated) will stream the images — don't rely solely on the
+  // CR page's own authorize call, which races the study load.
+  try { (window as any).electronAPI?.authorizeDicomPaths?.(filePaths); } catch { /* browser */ }
+  if (!onCrViewer) {
+    try {
+      localStorage.setItem('cr-viewer-launch', JSON.stringify({
+        patientName: patient.patientName,
+        patientId: patient.patientId || patient.id,
+        studyDate: patient.studyDate,
+        filePaths,
+        modality: patient.modality,
+        studyDescription: patient.studyDescription,
+        timestamp: Date.now(),
+      }));
+    } catch { /* ignore quota/serialisation errors */ }
+    ctx.navigate('/cr-viewer');
+  }
+}
 
 /** True if any keyword from `keywords` appears in `haystack`. */
 const hasKeyword = (haystack: string, keywords: readonly string[]): boolean => {
@@ -100,21 +133,14 @@ export const fetalMedicineType: ReportTypeDef = {
   },
 
   openCreate(ctx, patient) {
-    // Fetal panel only renders on the CR Viewer page — navigate there first
-    // (no-op if already there) so the panel has a host regardless of where
-    // the user clicked Report from.
-    if (typeof window !== 'undefined' && window.location.hash.indexOf('/cr-viewer') === -1
-        && !window.location.pathname.endsWith('/cr-viewer')) {
-      ctx.navigate('/cr-viewer');
-    }
+    // Fetal panel renders on the CR Viewer page beside the images — make sure
+    // the study is loaded there first (also covers launching from the list).
+    ensureCrViewerWithStudy(ctx, patient);
     useReportStore.getState().setShowFetalPanel(true, patient.patientId || patient.id);
   },
 
   openExisting(ctx, patient) {
-    if (typeof window !== 'undefined' && window.location.hash.indexOf('/cr-viewer') === -1
-        && !window.location.pathname.endsWith('/cr-viewer')) {
-      ctx.navigate('/cr-viewer');
-    }
+    ensureCrViewerWithStudy(ctx, patient);
     useReportStore.getState().setShowFetalPanel(true, patient.patientId || patient.id);
   },
 };
@@ -156,15 +182,20 @@ export const radiologyType: ReportTypeDef = {
   },
 
   openCreate(ctx, patient) {
-    // Always render the inline report panel in the current viewer window
-    // (splits the viewport 50/50) — no separate Electron windows. The
-    // viewer pages mount InlineReportPanel based on `showInlineReport`.
-    ctx.openLegacyReportEditor(patient.id, patient.patientName);
+    // Render the inline report panel beside the images on the CR Viewer. Seed
+    // the study + navigate when launched from the patient list, otherwise the
+    // panel flag is set but nothing is visible (the original bug).
+    ensureCrViewerWithStudy(ctx, patient);
+    // Open the editor under the SAME key used to look up existing reports
+    // (patientId, falling back to study id) so a saved report is found again
+    // by Open Report instead of being orphaned under a different key.
+    ctx.openLegacyReportEditor(patient.patientId || patient.id, patient.patientName);
     useReportStore.getState().setShowInlineReport(true);
   },
 
   openExisting(ctx, patient) {
-    ctx.openLegacyReportEditor(patient.id, patient.patientName);
+    ensureCrViewerWithStudy(ctx, patient);
+    ctx.openLegacyReportEditor(patient.patientId || patient.id, patient.patientName);
     useReportStore.getState().setShowInlineReport(true);
   },
 };

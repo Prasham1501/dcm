@@ -674,7 +674,12 @@ export const useDualViewerStore = create<DualViewerState>((set, get) => {
       })),
     });
 
-    const newImages = panel.images.filter((_, i) => i !== globalIdx);
+    // Drop the image AND resequence instanceNumber so the spot labels stay
+    // contiguous (1,2,3…). Without this, deleting #2 left labels reading
+    // 1,3,4,5,6 because the grid renders each image's original instanceNumber.
+    const newImages = panel.images
+      .filter((_, i) => i !== globalIdx)
+      .map((img, i) => ({ ...img, instanceNumber: i + 1 }));
     const newTotal = newImages.length;
     const spots = panel.currentLayout.spots;
     const newTotalPages = Math.max(1, Math.ceil(newTotal / spots));

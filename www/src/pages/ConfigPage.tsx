@@ -35,27 +35,29 @@ export function ConfigPage() {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-app-bg border-2 border-app-accent rounded-lg shadow-2xl w-[800px] max-h-[600px] flex flex-col">
-        {/* Tab header */}
-        <div className="flex items-center border-b-2 border-app-accent">
-          {TABS.map((tab) => (
-            <button
-              key={tab}
-              onClick={() => setActiveTab(tab)}
-              className={`px-5 py-2.5 text-xs font-bold uppercase tracking-wide transition-colors border-r border-app-border last:border-r-0 ${
-                activeTab === tab
-                  ? 'bg-app-accent text-white'
-                  : 'bg-app-header-bg text-app-text hover:bg-app-hover'
-              }`}
-            >
-              {tab}
-            </button>
-          ))}
-          <div className="flex-1" />
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-app-bg border-2 border-app-accent rounded-lg shadow-2xl w-[900px] max-w-[95vw] max-h-[600px] flex flex-col overflow-hidden">
+        {/* Tab header — tabs scroll horizontally inside the modal so they can
+            never spill outside its rounded border; the × stays pinned right. */}
+        <div className="flex items-stretch border-b-2 border-app-accent">
+          <div className="flex flex-1 overflow-x-auto">
+            {TABS.map((tab) => (
+              <button
+                key={tab}
+                onClick={() => setActiveTab(tab)}
+                className={`shrink-0 whitespace-nowrap px-4 py-2.5 text-xs font-bold uppercase tracking-wide transition-colors border-r border-app-border ${
+                  activeTab === tab
+                    ? 'bg-app-accent text-white'
+                    : 'bg-app-header-bg text-app-text hover:bg-app-hover'
+                }`}
+              >
+                {tab}
+              </button>
+            ))}
+          </div>
           <button
             onClick={() => navigate(-1)}
-            className="px-3 py-2.5 text-app-text-muted hover:text-app-text hover:bg-app-hover text-lg font-bold"
+            className="shrink-0 px-3 py-2.5 text-app-text-muted hover:text-app-text hover:bg-app-hover text-lg font-bold border-l border-app-border"
           >
             ×
           </button>

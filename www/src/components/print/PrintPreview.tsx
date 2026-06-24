@@ -484,9 +484,8 @@ export function PrintPreview() {
             {activePrinters.length > 0 ? (
               <select value={selectedPrinter} onChange={e => { e.stopPropagation(); setSelectedPrinter(e.target.value); }} onClick={e => e.stopPropagation()} className="h-7 px-1 text-xs border border-app-border bg-app-bg text-app-text rounded max-w-[130px]">{activePrinters.map(p => <option key={p.name} value={p.name}>{p.displayName || p.name}</option>)}</select>
             ) : <span className="text-[10px] text-red-400 italic">No printers configured</span>}
-            {!quotaEnabled && (
-              <button type="button" onClick={e => { e.stopPropagation(); setShowPrinterMgr(v => !v); }} className={`h-7 px-2 text-[10px] border rounded transition-colors ${showPrinterMgr ? 'border-app-accent bg-app-accent/10 text-app-accent' : 'border-app-border text-app-text-secondary hover:bg-app-hover'}`} title="Manage printers">⚙</button>
-            )}
+            {/* Printer management lives only in the "Default Printer" dialog /
+                Config → Printers now — no inline editor in the preview. */}
           </div>
           <div className="flex rounded overflow-hidden border border-app-border">
             <button type="button" onClick={e => { e.stopPropagation(); setPrintType('image'); }} className={`px-2 py-1 text-[10px] font-semibold transition-colors ${printType === 'image' ? 'bg-app-accent text-white' : 'bg-app-bg text-app-text-secondary hover:bg-app-hover'}`}>DICOM</button>
@@ -498,39 +497,6 @@ export function PrintPreview() {
           <button type="button" onClick={e => { e.stopPropagation(); setShowPrintPreview(false); }} className="p-1 text-app-text-secondary hover:text-app-text"><X className="w-4 h-4" /></button>
         </div>
       </div>
-      {showPrinterMgr && (
-        <div className="bg-app-surface border-b border-app-border px-4 py-3 flex-shrink-0" onClick={e => e.stopPropagation()}>
-          <div className="flex items-start gap-6">
-            <div className="flex-1">
-              <h4 className="text-xs font-bold text-app-accent mb-2">Configured Printers</h4>
-              {configuredPrinters.length === 0 ? (<p className="text-xs text-app-text-muted italic">No printers configured. Add one below.</p>) : (
-                <div className="space-y-1 max-h-32 overflow-auto">
-                  {configuredPrinters.map(p => (
-                    <div key={p.name} className="flex items-center gap-2 text-xs">
-                      <span className={`flex-1 ${!p.isActive ? 'opacity-40 line-through' : ''}`}>{p.displayName || p.name} <span className="text-app-text-muted">({p.type})</span></span>
-                      {p.isDefault && <span className="text-[9px] bg-app-accent text-white px-1 rounded">Default</span>}
-                      <button type="button" onClick={e => { e.stopPropagation(); hospitalConfig.setDefaultPrinter(p.name); }} title="Set as default" className="p-0.5 hover:text-app-accent"><Check className="w-3 h-3" /></button>
-                      <button type="button" onClick={e => { e.stopPropagation(); hospitalConfig.togglePrinterActive(p.name); }} title="Toggle active" className="p-0.5 hover:text-yellow-500 text-app-text-muted">{p.isActive ? '●' : '○'}</button>
-                      <button type="button" onClick={e => { e.stopPropagation(); hospitalConfig.removePrinter(p.name); if (selectedPrinter === p.name) setSelectedPrinter(''); }} title="Remove" className="p-0.5 hover:text-red-500 text-app-text-muted"><Trash2 className="w-3 h-3" /></button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-            <div className="w-64">
-              <h4 className="text-xs font-bold text-app-accent mb-2">Add Printer</h4>
-              <div className="space-y-1.5">
-                <input type="text" value={newPrinterName} onChange={e => { e.stopPropagation(); setNewPrinterName(e.target.value); }} onClick={e => e.stopPropagation()} placeholder="System printer name (exact)" className="w-full h-7 px-2 text-xs border border-app-border bg-app-bg text-app-text rounded" />
-                <input type="text" value={newPrinterDisplay} onChange={e => { e.stopPropagation(); setNewPrinterDisplay(e.target.value); }} onClick={e => e.stopPropagation()} placeholder="Display name (optional)" className="w-full h-7 px-2 text-xs border border-app-border bg-app-bg text-app-text rounded" />
-                <div className="flex gap-1">
-                  <select value={newPrinterType} onChange={e => { e.stopPropagation(); setNewPrinterType(e.target.value); }} onClick={e => e.stopPropagation()} className="flex-1 h-7 px-1 text-xs border border-app-border bg-app-bg text-app-text rounded">{['Laser', 'Inkjet', 'DICOM Thermal', 'Virtual', 'Other'].map(t => <option key={t} value={t}>{t}</option>)}</select>
-                  <button type="button" onClick={handleAddPrinter} disabled={!newPrinterName.trim()} className="h-7 px-3 text-xs font-semibold bg-app-accent text-white rounded hover:opacity-90 disabled:opacity-40 flex items-center gap-1"><Plus className="w-3 h-3" /> Add</button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
       <div className="flex-1 overflow-auto flex flex-col items-center bg-gray-900/50 p-4 gap-4" onClick={e => e.stopPropagation()}>
         {printType === 'pcpndt' ? (
           <div style={{ width: 420 * zoom, minWidth: 420 * zoom }} className="bg-white shadow-2xl p-6">

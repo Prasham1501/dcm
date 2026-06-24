@@ -211,15 +211,31 @@ export function DualViewportGrid({ panelId }: DualViewportGridProps) {
               onDoubleClick={() => { if (!wasDblClickHandled()) useDualViewerStore.getState().togglePanelSingleViewport(panelId, i); }}
             >
               <div className={`${isArrangeMode ? 'pointer-events-none' : ''} w-full h-full`}>
-                <DualViewport
-                  imageId={imageId}
-                  isSelected={isSelected}
-                  viewportIndex={i}
-                  panelId={panelId}
-                  onClick={(e) => handleViewportClick(i, e)}
-                  spotNumber={image ? image.instanceNumber : imgIndex + 1}
-                  showLogo={showLogo}
-                />
+                {imageId ? (
+                  <DualViewport
+                    imageId={imageId}
+                    isSelected={isSelected}
+                    viewportIndex={i}
+                    panelId={panelId}
+                    onClick={(e) => handleViewportClick(i, e)}
+                    spotNumber={image ? image.instanceNumber : imgIndex + 1}
+                    showLogo={showLogo}
+                  />
+                ) : (
+                  // Empty slot — render a plain placeholder, NOT a cornerstone
+                  // viewport. A mounted viewport keeps its last-displayed image
+                  // on the canvas (cornerstone redraws the cached image even
+                  // after clearRect), so a deleted image lingered behind the
+                  // "No image" text. No element = nothing stale to redraw.
+                  <div className="w-full h-full bg-black relative" onClick={(e) => handleViewportClick(i, e)}>
+                    <div className="absolute bottom-1 left-1 text-white text-base font-mono font-bold opacity-70 select-none pointer-events-none z-10 drop-shadow-md">
+                      {imgIndex + 1}
+                    </div>
+                    <div className="absolute inset-0 flex items-center justify-center text-gray-600 text-xs select-none pointer-events-none">
+                      No image
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Red selection border overlay */}

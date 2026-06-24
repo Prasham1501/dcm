@@ -610,48 +610,13 @@ export function DualPrintPreview({ onClose }: DualPrintPreviewProps) {
             {activePrinters.length > 0 ? (
               <select value={selectedPrinter} onChange={(e) => setSelectedPrinter(e.target.value)} className="h-7 px-1 text-xs border border-app-border bg-app-bg text-app-text rounded max-w-[130px]">{activePrinters.map(p => <option key={p.name} value={p.name}>{p.displayName || p.name}</option>)}</select>
             ) : <span className="text-[10px] text-red-400 italic">No printers configured</span>}
-            {!quotaEnabled && (
-              <button onClick={() => setShowPrinterMgr(v => !v)} className={`h-7 px-2 text-[10px] border rounded transition-colors ${showPrinterMgr ? 'border-app-accent bg-app-accent/10 text-app-accent' : 'border-app-border text-app-text-secondary hover:bg-app-hover'}`} title="Manage printers">⚙</button>
-            )}
+            {/* Printer management moved to "Default Printer" dialog / Config. */}
           </div>
           <button onClick={handlePrint} disabled={printing || capturing || (quotaEnabled && printCountRemaining <= 0) || activePrinters.length === 0} className="flex items-center gap-2 px-5 py-1.5 text-xs font-bold bg-app-accent text-white rounded hover:brightness-110 disabled:opacity-50 transition-colors">
             <Printer className="w-4 h-4" />{printing ? 'Printing…' : capturing ? 'Capturing…' : `Print${pagesToShow.length > 1 ? ` (${pagesToShow.length}p)` : ''}`}
           </button>
         </div>
       </div>
-      {showPrinterMgr && (
-        <div className="bg-app-surface border-b border-app-border px-4 py-3 flex-shrink-0">
-          <div className="flex items-start gap-6">
-            <div className="flex-1">
-              <h4 className="text-xs font-bold text-app-accent mb-2">Configured Printers</h4>
-              {configuredPrinters.length === 0 ? (<p className="text-xs text-app-text-muted italic">No printers configured. Add one below.</p>) : (
-                <div className="space-y-1 max-h-32 overflow-auto">
-                  {configuredPrinters.map(p => (
-                    <div key={p.name} className="flex items-center gap-2 text-xs">
-                      <span className={`flex-1 ${!p.isActive ? 'opacity-40 line-through' : ''}`}>{p.displayName || p.name} <span className="text-app-text-muted">({p.type})</span></span>
-                      {p.isDefault && <span className="text-[9px] bg-app-accent text-white px-1 rounded">Default</span>}
-                      <button onClick={() => hospitalConfig.setDefaultPrinter(p.name)} title="Set as default" className="p-0.5 hover:text-app-accent"><Check className="w-3 h-3" /></button>
-                      <button onClick={() => hospitalConfig.togglePrinterActive(p.name)} title="Toggle active" className="p-0.5 hover:text-yellow-500 text-app-text-muted">{p.isActive ? '●' : '○'}</button>
-                      <button onClick={() => { hospitalConfig.removePrinter(p.name); if (selectedPrinter === p.name) setSelectedPrinter(''); }} title="Remove" className="p-0.5 hover:text-red-500 text-app-text-muted"><Trash2 className="w-3 h-3" /></button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-            <div className="w-64">
-              <h4 className="text-xs font-bold text-app-accent mb-2">Add Printer</h4>
-              <div className="space-y-1.5">
-                <input type="text" value={newPrinterName} onChange={(e) => setNewPrinterName(e.target.value)} placeholder="System printer name (exact)" className="w-full h-7 px-2 text-xs border border-app-border bg-app-bg text-app-text rounded" />
-                <input type="text" value={newPrinterDisplay} onChange={(e) => setNewPrinterDisplay(e.target.value)} placeholder="Display name (optional)" className="w-full h-7 px-2 text-xs border border-app-border bg-app-bg text-app-text rounded" />
-                <div className="flex gap-1">
-                  <select value={newPrinterType} onChange={(e) => setNewPrinterType(e.target.value)} className="flex-1 h-7 px-1 text-xs border border-app-border bg-app-bg text-app-text rounded">{['Laser', 'Inkjet', 'DICOM Thermal', 'Virtual', 'Other'].map(t => <option key={t} value={t}>{t}</option>)}</select>
-                  <button onClick={handleAddPrinter} disabled={!newPrinterName.trim()} className="h-7 px-3 text-xs font-semibold bg-app-accent text-white rounded hover:opacity-90 disabled:opacity-40 flex items-center gap-1"><Plus className="w-3 h-3" /> Add</button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
       <div className="flex-1 overflow-auto flex flex-col items-center bg-gray-900/50 p-4 gap-4">
         {capturing ? (
           <div className="flex items-center justify-center h-full">
